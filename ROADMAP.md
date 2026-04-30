@@ -4674,6 +4674,161 @@ adoption with credit to canonical/skills PR #4.
 
 ---
 
+## Phase 92: Review Follow-Ups — Deterministic Scan, Validation Hardening, and Docs Discoverability
+
+**Goal:** A broad April 2026 project review turned up four clusters of
+follow-up work that are individually small-to-medium but collectively
+important: one deferred-but-user-visible product gap (the unfinished
+deterministic repo scan for custom apps), a handful of correctness and
+validation hardening fixes in ``charmlint`` / ``quickpack``, several
+test-suite reliability gaps, and documentation / onboarding surfaces
+that ship features without making them easy to discover.  The phase is
+explicitly a **follow-up sweep**: close the sharp edges the review
+identified rather than opening a new product line.
+
+### 92.1 High — Finish the deterministic pre-scan for non-PaaS repos
+
+- [ ] Turn ``src/cantrip/agent/tools/_scan.py`` from the current
+  documented stub into the real implementation sketched in
+  ``design/TOOLS.md``: filesystem walk with ``EXCLUDE_DIRS`` pruning,
+  manifest expansion, entry-point probing, CI/CD detection, container /
+  security / lint-config / env-template detection, charm-marker
+  detection, and recent-git-churn summary.
+- [ ] Wire ``AnalyseFrameworkTool.execute()`` to call the scan helper so
+  custom-application routing stops re-deriving deterministic facts ad
+  hoc.  Keep the existing user-facing return shape
+  (``framework``, ``language``, ``profile``, ``workload_hints``,
+  ``candidates``, ``notes``) and layer the scan output underneath it
+  rather than widening every downstream caller.
+- [ ] Add focused unit tests for the scan passes under
+  ``tests/unit/test_scan.py`` using tiny synthetic repo fixtures:
+  manifests-only, CI-only, entry-point-only, existing-charm marker,
+  mixed Docker/systemd hints, and a pathological excluded-directory
+  case so the walk budget stays bounded.
+- [ ] Record whether the scan should also feed future UI surfaces
+  (repo-stats sidebar, onboarding summary, print-mode preamble) so the
+  helper becomes the single source of truth for "what kind of repo is
+  this?" rather than a planner-only utility.
+
+### 92.2 High — Validation hardening in ``charmlint`` and ``quickpack``
+
+- [ ] Replace the current ``charmlint`` category extraction
+  (``rule_id.rstrip("0123456789")``) with an explicit parser so
+  category-level ``select`` / ``ignore`` / severity overrides cannot
+  mis-handle edge-case rule IDs.  Add regression tests for category
+  matching rather than relying on naming convention alone.
+- [ ] Remove the lazy rule-registration bootstrap in
+  ``src/charmlint/linter.py`` in favour of an explicit, import-at-module-
+  top registration path that keeps the rule set deterministic and
+  easier to reason about under tests and future concurrency.
+- [ ] Harden ``quickpack``'s generated dispatch script: fail fast on
+  missing interpreters, tighten shell quoting / error handling, and
+  surface launcher problems as clear pack-time failures instead of
+  delayed deploy-time breakage.
+- [ ] Validate ``quickpack`` metadata inputs earlier: reject invalid or
+  out-of-tree entrypoints, validate ``charmcraft.yaml`` fields that the
+  pack path depends on, and add tests covering malformed metadata so the
+  failures stay crisp.
+- [ ] Audit the remaining broad ``except Exception`` sites touched by
+  the review and either narrow them or document the boundary in the
+  established ``# noqa: BLE001 — <reason>`` style where the broad catch
+  is intentional.
+
+### 92.3 High — Test reliability, coverage, and evaluation depth
+
+- [ ] Replace the fixed sleeps in the executor and e2e harnesses with
+  polling / signalling helpers.  The review found multiple
+  ``asyncio.sleep(0.05–0.2)`` and ``time.sleep(5/10)`` waits that are
+  structurally flaky on slow CI runners; provide one shared helper and
+  codemod the obvious cases onto it.
+- [ ] Add a lightweight executor-test harness that waits on explicit
+  queue / task state transitions rather than timing assumptions, then
+  migrate ``tests/unit/executor/test_run_loop.py`` and similar files.
+- [ ] Enforce Python coverage in the main developer loop.  ``make unit``
+  already collects coverage; add a ``fail_under`` threshold and wire it
+  into ``make check`` so coverage regressions are visible before merge.
+- [ ] Expand the eval corpus beyond the current minimal set of gold
+  charms: cover more substrates (machine + k8s), at least one custom /
+  non-framework application path, and more relation / observability
+  shapes so prompt or planner regressions are easier to detect.
+- [ ] Add CI wiring for the eval work that is cheap enough to run
+  regularly: keep the full provider-matrix ambition in Phase 79, but
+  make the static gold-standard / rubric path and any cheap smoke path
+  first-class rather than manual-only.
+- [ ] Reduce test-maintenance drag in the heaviest files and fixtures:
+  split the monolithic ``tests/unit/agent/test_agent.py`` into
+  feature-scoped modules, centralise reusable fakes/builders, and
+  document the fixture hierarchy so unit / integration / e2e layers stop
+  growing parallel infrastructure by accident.
+- [ ] Add a small audit of exception-path coverage in high-value modules
+  (provider adapters, executor loop, juju/log plumbing, structured
+  output, persistence) and backfill the missing regression tests the
+  review called out.
+
+### 92.4 Medium — Docs and discoverability sweep
+
+- [ ] Fix command discoverability in ``docs/src/reference-cli.md``:
+  add ``cantrip audit`` and ``cantrip permissions`` to the
+  ``on_this_page`` list, make sure every implemented subcommand appears
+  in the reference navigation, and add brief prose explaining when a
+  user reaches for each command.
+- [ ] Rework the README opening so it distinguishes **end-user install**
+  from **contributor checkout** immediately.  The current clone+``uv
+  sync`` path is correct for development but obscures the simpler
+  install flow for users who just want the tool.
+- [ ] Add docs for the two underexplained interface surfaces:
+  **Web UI** and **CLI/REPL mode** (``--web`` and ``--no-tui``).  Cover
+  when to use each surface, any feature-parity caveats, and the
+  workflows that are easier there than in the TUI.
+- [ ] Expand ``howto-print-mode`` with concrete CI / automation
+  examples, and surface print mode, permissions, and audit from the docs
+  landing page instead of leaving them buried in the CLI reference.
+- [ ] Add a short "Start here" path to the docs landing page:
+  install, choose TUI/Web/CLI, build a new charm vs improve an existing
+  one, then link to the relevant how-tos.  The current card grid is rich
+  but gives new users no ordering signal.
+- [ ] Consolidate environment-variable guidance so setup is not repeated
+  piecemeal across README, tutorial, provider how-to, and CLI reference.
+  One authoritative how-to page should own the env-var story, with the
+  other docs linking to it.
+- [ ] Sweep user-facing docs for stray internal phase-language
+  references and remove them.  Roadmap/phase numbering belongs in the
+  roadmap, archive, changelog, and design notes — not in the user docs.
+
+### What this phase is *not*
+
+- Not a new architecture initiative.  The point is to finish deferred
+  or rough-edged pieces already implied by the current design.
+- Not a wholesale test-suite rewrite.  The target is the high-value
+  reliability and maintenance problems the review surfaced first.
+- Not a docs-platform rewrite.  The existing Markdown → HTML pipeline
+  stands; this phase improves content structure and discoverability
+  inside it.
+
+**Exit criteria:** the deterministic scan is implemented and used by
+``analyse_framework``; the ``charmlint`` / ``quickpack`` fixes above
+land with regression tests; the flaky fixed-sleep cases are gone from
+the reviewed executor/e2e paths and coverage is enforced in ``make
+check``; the docs surface ``audit``, ``permissions``, Web UI, CLI mode,
+print mode, onboarding, and env-var setup clearly enough that a new
+user can find them without prior project knowledge.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Deterministic pre-scan (92.1) | Phase 91 framework-detection port, design/TOOLS.md Phase 55.7 stub note | Finishes the deferred implementation rather than inventing a new surface |
+| Validation hardening (92.2) | Existing ``charmlint`` / ``quickpack`` test suites | Mostly surgical correctness work |
+| Test reliability (92.3) | Phase 79 eval work for provider-matrix follow-ons | Coverage / gold standards can land independently of full provider-in-loop eval |
+| Docs sweep (92.4) | Existing docs build pipeline | Source edits under ``docs/src/`` + regenerated HTML |
+
+**Discovered:** Project-wide review on 2026-04-30 covering code,
+tests, docs, and UX surfaces.  The strongest themes were the unfinished
+deterministic repo scan, a handful of correctness hardening fixes, flaky
+test timing, thin eval/discoverability coverage, and user-facing
+features that exist but are too hard to find.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
