@@ -133,6 +133,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **``cantrip.hooks`` and ``cantrip.update`` reshaped into
+  packages (Phase 85.7).**  ``hooks.py`` (1 037 lines) now lives
+  under ``hooks/`` with four submodules — ``types``, ``filter``,
+  ``config``, ``runner`` — and ``update.py`` (822 lines) under
+  ``update/`` with ``types``, ``release``, ``check``,
+  ``install``.  Each package's ``__init__.py`` re-exports the
+  public API and the private symbols the test suite reaches for,
+  so ``from cantrip.hooks import HookEvent`` and
+  ``cantrip.update.UpdateInfo`` still resolve unchanged.  Two
+  internal accommodations preserve existing test contracts:
+  ``cantrip.update`` re-exports ``httpx`` so patches against
+  ``cantrip.update.httpx.AsyncClient`` still apply to both
+  submodules that import it; ``upgrade_command`` resolves
+  ``detect_install_method`` lazily through the package binding
+  so monkey-patches at ``cantrip.update.detect_install_method``
+  still reach internal callers.  Pure refactor — every existing
+  call site (``cli.py``, ``main.py``, ``web/server.py``,
+  ``agent/core.py``, etc.) is unchanged.
 - **Function-level giants in ``rockcraft.py`` and ``juju.py``
   decomposed (Phase 85.6).**  ``SetupLocalRegistryTool.
   _deploy_k8s_registry`` shrank from 128 lines to 43 by

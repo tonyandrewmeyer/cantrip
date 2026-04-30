@@ -44,7 +44,7 @@ def isolated_cache(tmp_path, monkeypatch):
 def no_settings_optout(tmp_path, monkeypatch):
     """Make ``_settings_disabled`` look at an empty tmp file."""
     settings = tmp_path / "settings.json"
-    monkeypatch.setattr(update, "_SETTINGS_PATH", settings)
+    monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", settings)
     yield settings
 
 
@@ -1057,7 +1057,7 @@ class TestSetUpdateCheckDisabled:
 
     def test_writes_new_file(self, tmp_path, monkeypatch):
         path = tmp_path / "settings.json"
-        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", path)
         written = update.set_update_check_disabled(True)
         assert written == path
         assert json.loads(path.read_text())["update_check_disabled"] is True
@@ -1065,7 +1065,7 @@ class TestSetUpdateCheckDisabled:
     def test_preserves_existing_keys(self, tmp_path, monkeypatch):
         path = tmp_path / "settings.json"
         path.write_text(json.dumps({"other": "keep", "update_check_disabled": False}))
-        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", path)
         update.set_update_check_disabled(True)
         data = json.loads(path.read_text())
         assert data["update_check_disabled"] is True
@@ -1074,13 +1074,13 @@ class TestSetUpdateCheckDisabled:
     def test_replaces_malformed_file(self, tmp_path, monkeypatch):
         path = tmp_path / "settings.json"
         path.write_text("not json")
-        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", path)
         update.set_update_check_disabled(False)
         assert json.loads(path.read_text()) == {"update_check_disabled": False}
 
     def test_round_trip_with_update_check_disabled(self, tmp_path, monkeypatch):
         path = tmp_path / "settings.json"
-        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", path)
         monkeypatch.delenv(update.DISABLE_ENV, raising=False)
 
         update.set_update_check_disabled(True)
@@ -1099,7 +1099,7 @@ class TestSetUpdateCheckDisabled:
         path = tmp_path / "settings.json"
         original = {"other": "preserved", "update_check_disabled": False}
         path.write_text(json.dumps(original))
-        monkeypatch.setattr(update, "_SETTINGS_PATH", path)
+        monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", path)
 
         # Force ``Path.replace`` to fail so the rename never lands.
         def _boom(_self, _target):

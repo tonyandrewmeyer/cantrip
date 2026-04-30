@@ -895,10 +895,8 @@ class TestUpdate:
     ) -> None:
         import json
 
-        from cantrip import update
-
         settings_path = tmp_path / "settings.json"
-        monkeypatch.setattr(update, "_SETTINGS_PATH", settings_path)
+        monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", settings_path)
 
         agent = _fake_agent(memory_manager)
         result = dispatch(agent, "/update --no-check")
@@ -915,11 +913,9 @@ class TestUpdate:
     ) -> None:
         import json
 
-        from cantrip import update
-
         settings_path = tmp_path / "settings.json"
         settings_path.write_text(json.dumps({"update_check_disabled": True, "other": "keep"}))
-        monkeypatch.setattr(update, "_SETTINGS_PATH", settings_path)
+        monkeypatch.setattr("cantrip.update.check._SETTINGS_PATH", settings_path)
 
         agent = _fake_agent(memory_manager)
         result = dispatch(agent, "/update --check")

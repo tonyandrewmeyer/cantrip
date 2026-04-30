@@ -3949,15 +3949,33 @@ decomposition last.
 
 ### 85.7 Move — top-level Python files into packages
 
-- [ ] `src/cantrip/hooks.py` (946 lines) →
-  `src/cantrip/hooks/` with at least
-  `hooks/runner.py` (the executor + stats), `hooks/config.py`
-  (loading/parsing), and `hooks/types.py` (the dataclasses).
-  Re-export the public API from `hooks/__init__.py`.
-- [ ] `src/cantrip/update.py` (817 lines) → `update/` with
-  `update/check.py`, `update/install.py`, `update/release.py`
-  (or whatever the existing internal cohorts suggest after a
-  closer read).
+- [x] `src/cantrip/hooks.py` (was 1 037 lines) →
+  `src/cantrip/hooks/` package: `types.py` (HookEvent,
+  HookConfig, HookResult, helpers), `filter.py` (the AST-based
+  ``if:`` expression compiler + evaluator), `config.py`
+  (load_hooks + YAML parsers), `runner.py` (HookRunner,
+  HookStats, operator resolution).  `__init__.py` re-exports
+  every public name plus the private symbols the test suite
+  reaches for (``_FilterExpr``, ``_parse_yaml``, ``_resolve_operator``,
+  …).  Pure refactor — the only test change is that the four
+  ``_resolve_operator`` monkey-patches in ``test_hooks.py`` now
+  target ``cantrip.hooks.runner._resolve_operator`` (the actual
+  call-site lookup) instead of the package binding.
+- [x] `src/cantrip/update.py` (was 822 lines) → `update/`
+  package: `types.py` (UpdateInfo, InstallMethod), `release.py`
+  (CHANGELOG fetch + ``## <version>`` extraction), `check.py`
+  (opt-out / cache plumbing + the `check_for_update`
+  orchestrator + PyPI-payload helpers), `install.py`
+  (installer detection, upgrade-command rendering, CLI / slash
+  notice formatters).  `__init__.py` re-exports the public API,
+  the private symbols tests probe, and ``httpx`` (so
+  ``mock.patch("cantrip.update.httpx.AsyncClient")`` continues
+  to land on the live module).  ``upgrade_command`` resolves
+  ``detect_install_method`` lazily through the package so
+  external monkey-patches at the ``cantrip.update`` level still
+  reach internal callers; eight ``_SETTINGS_PATH`` patches in
+  ``test_update.py`` / ``test_slash.py`` were repointed to
+  ``cantrip.update.check._SETTINGS_PATH``.
 - [ ] `src/cantrip/main.py` (1 080 lines) — once 85.6 has
   removed the `parse_args` block, decide whether the
   remaining `_run` plus helpers warrants a package or stays

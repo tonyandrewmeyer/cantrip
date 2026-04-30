@@ -8,7 +8,6 @@ import pathlib
 import pytest
 import yaml
 
-from cantrip import hooks as hooks_module
 from cantrip.hooks import (
     DEFAULT_HOOK_TIMEOUT,
     REPO_CONFIG_FILENAME,
@@ -1580,7 +1579,7 @@ class TestOperatorField:
         async def fake_resolve(_repo_root):
             return {"name": "Ada Lovelace", "email": "ada@example.org"}
 
-        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        monkeypatch.setattr("cantrip.hooks.runner._resolve_operator", fake_resolve)
         runner = HookRunner([hook])
 
         [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
@@ -1604,7 +1603,7 @@ class TestOperatorField:
         async def fake_resolve(_repo_root):
             return None
 
-        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        monkeypatch.setattr("cantrip.hooks.runner._resolve_operator", fake_resolve)
         runner = HookRunner([hook])
 
         await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
@@ -1630,7 +1629,7 @@ class TestOperatorField:
         async def fake_resolve(_repo_root):
             return {"name": "Ada", "email": "ada@example.org"}
 
-        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        monkeypatch.setattr("cantrip.hooks.runner._resolve_operator", fake_resolve)
         runner = HookRunner([hook])
 
         [result] = await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "juju_status"})
@@ -1649,7 +1648,7 @@ class TestOperatorField:
             calls += 1
             return {"name": "Ada", "email": "ada@example.org"}
 
-        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        monkeypatch.setattr("cantrip.hooks.runner._resolve_operator", fake_resolve)
 
         hook = HookConfig(
             name="noop",
@@ -1680,7 +1679,7 @@ class TestOperatorField:
         async def fake_resolve(_repo_root):
             return {"name": "Ada", "email": "ada@example.org"}
 
-        monkeypatch.setattr(hooks_module, "_resolve_operator", fake_resolve)
+        monkeypatch.setattr("cantrip.hooks.runner._resolve_operator", fake_resolve)
         runner = HookRunner([hook])
 
         await runner.fire(HookEvent.PRE_TOOL_CALL, {"tool": "git_push"})
