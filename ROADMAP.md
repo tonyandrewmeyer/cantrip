@@ -3909,8 +3909,14 @@ decomposition last.
      `agent._triage_ctl._issue_triage`.  Pure refactor —
      `make check` and `make unit` (6 412 passed, 8 skipped)
      green.
-  5. **Arena** (2388-2480) — `active_arena`,
-     `begin_arena`, `handle_arena_pick`.
+  5. ✓ **Arena** — extracted to
+     `agent/arena_controller.py` as `ArenaController`, held on
+     `CantripAgent` as `self._arena_ctl`.  Public surface
+     unchanged: `active_arena`, `begin_arena`,
+     `handle_arena_pick` stay as one-line delegators.  No test
+     patches needed — arena tests target the `arena` module
+     directly.  Pure refactor — `make check` and `make unit`
+     (6 412 passed, 8 skipped) green.
   6. **Confirmations router** (2480-2780) —
      `handle_race_confirmation`, `handle_push_confirmation`,
      `handle_pr_creation`, `handle_repo_bootstrap`,
