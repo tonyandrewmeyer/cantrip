@@ -5,13 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
-- **Extracted executor lifecycle from `CantripAgent` (Phase 85.4 cohort 2).**
-  `ExecutorController` in `agent/executor_controller.py` now owns the
-  background-executor start/stop/pause/resume lifecycle and the six
-  event-bus callback closures.  `CantripAgent` keeps thin delegators.
-  Fixed a pre-existing bug in `/yolo` where `getattr(agent, "executor")`
-  never resolved, so toggling yolo mid-session had no effect on in-flight
-  subagents.
+- **Extracted four more cohorts from `CantripAgent` god class (Phase 85.4
+  cohorts 2–5).**  New controller modules:
+  `ExecutorController` (start/stop/pause/resume + event-bus callbacks),
+  `WatcherController` (watcher lifecycle + event routing),
+  `TriageController` (issue triage + upstream checks + issue commenting),
+  `ArenaController` (blind A/B arena sessions).  `CantripAgent` keeps
+  thin delegators; public API unchanged.  `core.py` drops from 3 893 to
+  3 470 lines (−423).  Fixed a pre-existing bug in `/yolo` where
+  `getattr(agent, "executor")` never resolved, so toggling yolo
+  mid-session had no effect on in-flight subagents.
 
 ### Added
 - **Identity-platform acceptance harness wiring + verdict (Phase 88.3).**
