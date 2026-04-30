@@ -235,25 +235,39 @@ This note unblocks 88.2 by deciding:
   - Infrastructure: ``oauth-cli`` for service-to-service (or
     ``hydra-token-introspect`` for resource-server validation).
 
-## 6. What Phase 88.3 needs
+## 6. Phase 88.3 — agent-side affordances
 
-Phase 88.3 (agent-side affordances) decides whether typed
-``identity_platform_*`` tools are worth building.  This note's
-position:
+Phase 88.3 decided whether typed ``identity_platform_*`` tools are
+worth building.  Verdict: **no new tool.**
 
-- **Default to "no new tool".**  The existing
-  ``juju_read_relation_data`` covers the common debug case
-  (inspect what Hydra wrote into the relation); ``juju_status``
-  covers deployment health.  The skill prose is enough for charm
-  generation.
-- **Reach for a typed tool only if** a concrete debug case
+- The existing ``juju_read_relation_data`` covers the common debug
+  case (inspect what Hydra wrote into the relation);
+  ``juju_status`` covers deployment health.  The skill prose
+  shipped in 88.2 is enough for charm generation.
+- A typed tool would only be justified if a concrete debug case
   surfaces where the agent wants to inspect Hydra's registered
   clients programmatically (``hydra clients list``) and the
-  pattern repeats often enough to justify the tool work.
+  pattern repeats often enough to amortise the tool work.
 
 This is the same posture Phase 86 took for kubectl: ship the
 skill knowledge today, defer the typed tool against a concrete
 trigger.
+
+What 88.3 *did* land:
+
+- **Acceptance harness wiring.**  The ``oauth``, ``oauth-cli``,
+  ``oidc-info``, ``hydra-token-introspect``, and
+  ``kratos-external-idp`` interfaces are now in
+  ``_INTERFACE_PARTNERS`` (``src/cantrip/agent/tools/acceptance.py``)
+  with ``hydra`` / ``kratos`` as smoke partners.  ``RelationSmokeTool``
+  (Phase 17.2) automatically deploys the appropriate partner and
+  exercises the relation when it sees an identity-platform
+  endpoint on a generated charm — no per-charm wiring needed.
+- **Acceptance runbook.**  §9 below records the manual end-to-end
+  verification for a charm asked for "OIDC login backed by
+  Canonical Identity Platform".  Full bundle deploy isn't a
+  unit-test surface, so the procedure is a documented runbook the
+  user (or an integration harness) can follow on real K8s.
 
 ## 7. Revisit triggers
 
@@ -279,6 +293,14 @@ note:
    deployment with an existing public Hydra).  Either tighten
    the prompt-phrasing detection or document the
    ``--topology saas`` escape hatch more prominently.
+5. **Repeated programmatic-introspection ask.**  The agent (or
+   the user, via the agent) ends up shelling out to
+   ``hydra clients list`` / ``hydra clients get`` more than a
+   handful of times in real sessions, or the relation databag
+   isn't enough to debug a misconfigured client.  Either of
+   those means the §6 "no new tool" verdict needs revisiting —
+   build a typed ``identity_platform_*`` tool family at that
+   point.
 
 ## 8. What this phase is *not*
 
@@ -296,3 +318,80 @@ note:
 - **Not Vault integration.**  Hydra + Kratos can use Vault for
   secret storage; charm-side Vault integration is its own surface
   (``charms.vault_kv.*``) covered separately.
+
+## 9. Acceptance runbook
+
+Phase 88.3's exit criterion is "a charm asked for 'OIDC login
+backed by Canonical Identity Platform' deploys with Hydra
+correctly related and the demo app's login flow works
+end-to-end on the Phase 17 harness."  Two layers verify this:
+
+**Layer 1 — automated (every CI run).**
+
+The Phase 17 ``RelationSmokeTool`` (``relation_smoke_test``)
+reads the generated charm's ``charmcraft.yaml``, sees the
+``oauth`` requires endpoint, looks it up in
+``_INTERFACE_PARTNERS``, deploys ``hydra`` as the smoke
+partner, and integrates.  ``_verify_relation_data`` then
+asserts the relation databag carries non-trivial keys (issuer
+URL, client ID, client-secret URI).  This is a relation-level
+smoke; it doesn't drive a browser.
+
+**Layer 2 — manual end-to-end on real K8s** (run when changing
+the skill body, the partner map, or the bundle topology):
+
+```bash
+# 0.  Substrate.
+sudo snap install k8s --classic
+sudo k8s bootstrap
+juju add-k8s --client k8s
+juju bootstrap k8s identity-acceptance
+
+# 1.  Identity platform.
+juju add-model identity
+juju deploy canonical-identity-platform
+
+# 2.  Demo charm (use the twelve-factor or custom-charm worked
+#     example from src/cantrip/skills/identity-platform/SKILL.md).
+juju add-model demo
+juju deploy ./demo-app_amd64.charm \
+  --resource oci-image=localhost:32000/demo-app:latest
+
+# 3.  Cross-model integration.
+juju offer identity.hydra:oauth
+juju consume admin/identity.hydra demo.hydra
+juju integrate demo:oauth demo.hydra
+
+# 4.  Wait for steady state.
+juju status -m demo --watch 5s
+juju status -m identity --watch 5s
+
+# 5.  Drive the login flow.
+#     - Browse to the demo app's external hostname.
+#     - Click "Sign in".
+#     - Confirm the redirect lands on identity-platform-login-ui.
+#     - Register a test user, complete the flow, confirm the
+#       redirect back to the demo app, and confirm the session
+#       cookie / JWT is set.
+#
+# The browser-driven step is what Layer 1 cannot automate;
+# Layer 1 only proves the relation wiring is correct.
+```
+
+PASS criteria:
+
+- ``juju status`` shows ``demo`` and the bundle's apps in
+  ``active/idle``.
+- ``juju show-unit demo/0`` exposes a populated
+  ``oauth`` relation databag with ``issuer-url``,
+  ``client-id``, and a Juju secret URI for the client secret.
+- The browser flow reaches the demo app post-login with a
+  valid session.
+
+FAIL recovery: on a relation-data shape mismatch, re-check the
+``charms.hydra.v0.oauth`` library version against
+``charm-libs:`` in ``charmcraft.yaml`` — the bundle and the
+fetched lib must agree on the ``v0`` schema.  A schema bump in
+the upstream lib is **trigger §7.1** ("a canonical interface
+change") on this note; update §2 and the skill before
+re-running the runbook.

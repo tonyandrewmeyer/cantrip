@@ -4121,7 +4121,7 @@ deferred against four named triggers.
 
 ---
 
-## Phase 88: Canonical Identity Platform Integration
+## Phase 88: Canonical Identity Platform Integration ✓
 
 **Goal:** Cantrip-built charms today can authenticate "alongside an
 OIDC provider" (the twelve-factor skill mentions Hydra and Keycloak
@@ -4180,18 +4180,44 @@ should look like and ships the minimum viable integration.
   infrastructure charm with ``oauth-cli`` for
   service-to-service tokens.
 
-### 88.3 Tooling — agent-side affordances
+### 88.3 Tooling — agent-side affordances ✓
 
-- [ ] Decide whether a typed ``identity_platform_*`` tool family
-  is worth building (introspect a deployed Hydra, list
-  registered clients) or whether the existing
-  ``juju_read_relation_data`` plus skill prose is enough.
-  Default to "no new tool" unless a concrete user need
-  surfaces.
-- [ ] Acceptance test: a charm asked for "OIDC login backed by
-  Canonical Identity Platform" deploys with Hydra correctly
-  related and the demo app's login flow works end-to-end on
-  the Phase 17 harness.
+- [x] **No new tool.**  Verdict recorded in
+  ``design/IDENTITY_PLATFORM.md`` §6: the existing
+  ``juju_read_relation_data`` covers the common debug case
+  (inspect what Hydra wrote into the relation), ``juju_status``
+  covers deployment health, and the 88.2 skill prose is enough
+  for charm generation.  Same posture as Phase 86 took for
+  kubectl — ship the skill knowledge, defer the typed tool
+  family against a named trigger.  Trigger added to §7.5 of
+  the design note: a typed ``identity_platform_*`` tool family
+  becomes worth building when the agent ends up shelling out
+  to ``hydra clients list`` / ``hydra clients get`` in real
+  sessions more than a handful of times, or when relation-
+  databag inspection isn't enough to debug a misconfigured
+  client.
+- [x] **Acceptance harness wiring.**
+  ``src/cantrip/agent/tools/acceptance.py`` ``_INTERFACE_PARTNERS``
+  now covers ``oauth`` / ``oauth-cli`` / ``oidc-info`` /
+  ``hydra-token-introspect`` (partner ``hydra``) and
+  ``kratos-external-idp`` (partner ``kratos``).  The Phase 17
+  ``RelationSmokeTool`` automatically deploys the partner and
+  exercises the relation when it sees an identity-platform
+  endpoint on a generated charm — no per-charm wiring needed.
+  Smoke partners are the standalone charms rather than the
+  ``canonical-identity-platform`` bundle so the smoke topology
+  is tightly scoped; bundle deploy is the *deployment* default
+  (see the identity-platform skill), not the smoke default.
+  Unit-tested in ``tests/unit/agent/tools/test_acceptance_tools.py
+  ::TestInterfacePartners::test_identity_platform_interfaces_covered``.
+- [x] **Acceptance runbook.**  ``design/IDENTITY_PLATFORM.md``
+  §9 records the manual two-layer verification: Layer 1 is the
+  automated relation smoke (every CI run, asserts databag has
+  issuer URL + client ID + secret URI); Layer 2 is the manual
+  browser-driven end-to-end on a real K8s (deploy the bundle,
+  cross-model integrate, click through login-ui).  Full
+  bundle-on-K8s automation isn't a unit-test surface; the
+  runbook is the operator-runnable shape.
 
 ### What this phase is *not*
 

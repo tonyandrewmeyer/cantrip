@@ -32,6 +32,15 @@ _DESTRUCTIVE_PATTERNS = re.compile(
 )
 
 # Well-known interface → partner charm mapping for relation smoke tests.
+#
+# Identity-platform interfaces (oauth, oauth-cli, oidc-info,
+# hydra-token-introspect, kratos-external-idp) are smoke-tested against
+# the standalone hydra / kratos charms rather than the
+# canonical-identity-platform bundle: the smoke harness deploys one
+# partner per interface, and a single charm gives a tighter blast radius
+# than a multi-app bundle.  The bundle topology is the *deployment*
+# default (see the identity-platform skill); the smoke topology is just
+# scoped narrower.
 _INTERFACE_PARTNERS: dict[str, str] = {
     "mysql_client": "mysql-k8s",
     "mysql": "mysql-k8s",
@@ -48,6 +57,11 @@ _INTERFACE_PARTNERS: dict[str, str] = {
     "redis": "redis-k8s",
     "s3": "s3-integrator",
     "certificates": "self-signed-certificates",
+    "oauth": "hydra",
+    "oauth-cli": "hydra",
+    "oidc-info": "hydra",
+    "hydra-token-introspect": "hydra",
+    "kratos-external-idp": "kratos",
 }
 
 

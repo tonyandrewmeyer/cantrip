@@ -398,6 +398,15 @@ class TestInterfacePartners:
         for interface, partner in _INTERFACE_PARTNERS.items():
             assert isinstance(partner, str), f"{interface} partner is not a string"
 
+    def test_identity_platform_interfaces_covered(self) -> None:
+        # Smoke-test partners for the five Canonical Identity Platform
+        # relations the identity-platform skill teaches the agent to use.
+        assert _INTERFACE_PARTNERS["oauth"] == "hydra"
+        assert _INTERFACE_PARTNERS["oauth-cli"] == "hydra"
+        assert _INTERFACE_PARTNERS["oidc-info"] == "hydra"
+        assert _INTERFACE_PARTNERS["hydra-token-introspect"] == "hydra"
+        assert _INTERFACE_PARTNERS["kratos-external-idp"] == "kratos"
+
 
 # ---------------------------------------------------------------------------
 # WorkloadEndpointTool

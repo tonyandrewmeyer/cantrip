@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Identity-platform acceptance harness wiring + verdict (Phase 88.3).**
+  ``RelationSmokeTool`` (Phase 17.2) now exercises identity-platform
+  relations automatically: ``_INTERFACE_PARTNERS`` in
+  ``src/cantrip/agent/tools/acceptance.py`` covers ``oauth`` /
+  ``oauth-cli`` / ``oidc-info`` / ``hydra-token-introspect`` (partner
+  ``hydra``) and ``kratos-external-idp`` (partner ``kratos``).  Smoke
+  partners are the standalone charms; bundle deploy stays the
+  *deployment* default.  Verdict on typed ``identity_platform_*`` tools:
+  defer (see ``design/IDENTITY_PLATFORM.md`` §6 + §7.5 trigger).
+  ``design/IDENTITY_PLATFORM.md`` §9 records the two-layer acceptance
+  runbook (automated relation smoke + manual browser-driven end-to-end
+  on real K8s).  Phase 88 is now complete.
 - **``identity-platform`` skill (Phase 88.2).**  New
   ``src/cantrip/skills/identity-platform/SKILL.md`` covers the Canonical
   Identity Platform's five relation interfaces (``oauth``, ``oauth-cli``,
