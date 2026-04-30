@@ -582,22 +582,41 @@ See [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
 
 ### 51b.1 Shared memory directory
 
-- [ ] Optional ``<charm-root>/.cantrip/shared/memory/`` directory
-  in the same Markdown-frontmatter format as global memory
-  (``$XDG_CONFIG_HOME/cantrip/memory/``).  Committed to the repo
-  alongside the charm.
-- [ ] ``MemoryStore.load()`` (``src/cantrip/agent/memory.py``)
-  reads from local SQLite + the shared directory and merges,
-  marking shared entries with ``source="shared"`` so they can be
-  filtered, displayed differently, or excluded by listing tools.
-- [ ] Setting ``team_memory_writes: shared | local | ask``
-  controls where new charm-scope writes land
-  (``src/cantrip/agent/memory_writer.py``).  Default ``local``
-  preserves today's behaviour; teams opt in by flipping to
-  ``shared`` or ``ask``.
+- [x] Optional shared memory directory in the same Markdown-
+  frontmatter format as global memory
+  (``$XDG_CONFIG_HOME/cantrip/memory/``), committed to the repo
+  alongside the charm.  Lives at
+  ``<charm-root>/.cantrip-shared/memory/`` rather than the spec's
+  ``<charm-root>/.cantrip/shared/memory/`` because
+  ``<charm>/.cantrip`` is the SQLite session file (a single path
+  cannot be both a file and a directory) — the rename has no
+  other behavioural consequence.  New ``SharedMemoryStore`` in
+  ``src/cantrip/agent/memory/core.py`` is a thin parameterisation
+  of ``GlobalMemoryStore`` that stamps entries with
+  ``scope="charm"`` and ``source="shared"``; a ``for_charm``
+  classmethod resolves the conventional path under the charm
+  root.
+- [x] ``MemoryManager`` reads from local SQLite + the shared
+  directory and merges (``list_entries``, ``read``, ``search``,
+  ``render_prompt_index``).  Local SQLite wins on ``read`` so a
+  teammate's just-pulled entry doesn't shadow a deliberately
+  customised local copy; listings surface both rows so divergence
+  is visible.  ``update`` and ``forget`` look in SQLite first
+  then fall through to the shared directory so an operator can
+  edit or delete a shared entry through the same tool surface.
+- [x] Setting ``team_memory_writes: shared | local | ask`` (env
+  var ``CANTRIP_TEAM_MEMORY_WRITES``) controls where new
+  charm-scope writes land.  Default ``local`` preserves today's
+  behaviour; ``shared`` routes to the directory; ``ask``
+  delegates to a registered decider callback and falls back to
+  ``local`` when no callback is configured (so an unwired TUI
+  never silently drops writes).  An invalid env value falls back
+  to the default with a warning so a typo never disables
+  charm-scope writes.
 - [ ] Conflict policy: textual git merge.  Document in the
   how-to that conflicts on the same key get resolved at the file
-  level by whoever pulls last; no in-app conflict UI.
+  level by whoever pulls last; no in-app conflict UI.  Tracked
+  alongside 51b.4 docs.
 
 ### 51b.2 Shared decisions log
 

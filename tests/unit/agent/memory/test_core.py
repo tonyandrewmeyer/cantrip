@@ -1096,3 +1096,288 @@ class TestMemoryPurgeCheckTool:
         assert not bad.success
         neg = await tools["memory_purge_check"].execute(hard_days=0)  # type: ignore[attr-defined]
         assert not neg.success
+
+
+# ── Phase 51b.1: shared (team-sync) memory ─────────────────────────────
+
+
+class TestSharedMemoryStore:
+    """The team-sync directory store under ``<charm>/.cantrip-shared/memory/``."""
+
+    def test_for_charm_resolves_conventional_path(self, tmp_path: pathlib.Path) -> None:
+        from cantrip.agent.memory import SharedMemoryStore, shared_memory_dir
+
+        store = SharedMemoryStore.for_charm(tmp_path)
+        assert store.directory == shared_memory_dir(tmp_path)
+        # Sibling of the SQLite ``.cantrip`` file rather than nested
+        # inside it (see ``shared_memory_dir`` docstring).
+        assert store.directory == tmp_path / ".cantrip-shared" / "memory"
+
+    def test_works_when_dot_cantrip_is_a_file(self, tmp_path: pathlib.Path) -> None:
+        """Production layout: ``.cantrip`` is the SQLite file.
+
+        The shared store still has to function.  The original spec path
+        of ``.cantrip/shared/memory/`` would collide with the SQLite
+        file; the sibling-path convention removes the collision.
+        """
+        from cantrip.agent.memory import SharedMemoryStore
+
+        (tmp_path / ".cantrip").write_text("fake sqlite")
+        store = SharedMemoryStore.for_charm(tmp_path)
+        entry = store.write("t", "fact", "body")
+        assert entry.source == "shared"
+        again = store.get("t")
+        assert again is not None
+        assert again.body == "body"
+
+    def test_write_marks_entries_with_charm_scope_and_shared_source(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        from cantrip.agent.memory import SharedMemoryStore
+
+        store = SharedMemoryStore(tmp_path / "shared")
+        entry = store.write("t1", "fact", "body", source="manual")
+        assert entry.scope == "charm"
+        assert entry.source == "shared"
+        # Re-read picks up the same scope/source.
+        again = store.get("t1")
+        assert again is not None
+        assert again.scope == "charm"
+        assert again.source == "shared"
+
+    def test_on_disk_source_stamped_shared(self, tmp_path: pathlib.Path) -> None:
+        """Even with caller source='auto' the on-disk file records 'shared'.
+
+        Ensures a teammate inspecting the file (without the override) still
+        sees that the entry came from the shared layer.
+        """
+        from cantrip.agent.memory import SharedMemoryStore
+
+        store = SharedMemoryStore(tmp_path / "shared")
+        store.write("t1", "fact", "body", source="auto")
+        raw = (tmp_path / "shared" / "t1.md").read_text()
+        assert "source: shared" in raw
+        assert "source: auto" not in raw
+
+
+class TestTeamMemoryWritesEnv:
+    """``CANTRIP_TEAM_MEMORY_WRITES`` honoured with safe fallbacks."""
+
+    def test_default_is_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cantrip.agent.memory.core import _resolve_team_memory_writes
+
+        monkeypatch.delenv("CANTRIP_TEAM_MEMORY_WRITES", raising=False)
+        assert _resolve_team_memory_writes() == "local"
+
+    def test_env_value_picked_up(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cantrip.agent.memory.core import _resolve_team_memory_writes
+
+        monkeypatch.setenv("CANTRIP_TEAM_MEMORY_WRITES", "shared")
+        assert _resolve_team_memory_writes() == "shared"
+        monkeypatch.setenv("CANTRIP_TEAM_MEMORY_WRITES", " ASK ")
+        assert _resolve_team_memory_writes() == "ask"
+
+    def test_invalid_value_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cantrip.agent.memory.core import _resolve_team_memory_writes
+
+        monkeypatch.setenv("CANTRIP_TEAM_MEMORY_WRITES", "wat")
+        assert _resolve_team_memory_writes() == "local"
+
+
+@pytest.fixture
+def shared_store(tmp_path: pathlib.Path) -> object:
+    from cantrip.agent.memory import SharedMemoryStore
+
+    return SharedMemoryStore(tmp_path / "shared")
+
+
+class TestMemoryManagerShared:
+    """Manager wiring for the shared layer: list / read / search / dispatch."""
+
+    @pytest.fixture
+    def shared_manager(
+        self,
+        store: SessionStore,
+        global_store: GlobalMemoryStore,
+        shared_store: object,
+    ) -> MemoryManager:
+        return MemoryManager(
+            session_store=store,
+            global_store=global_store,
+            shared_store=shared_store,  # type: ignore[arg-type]
+            team_memory_writes="local",
+        )
+
+    def test_invalid_team_memory_writes_rejected(
+        self, store: SessionStore, global_store: GlobalMemoryStore
+    ) -> None:
+        with pytest.raises(MemoryScopeError):
+            MemoryManager(
+                session_store=store,
+                global_store=global_store,
+                team_memory_writes="weird",
+            )
+
+    def test_list_includes_shared_entries(self, shared_manager: MemoryManager) -> None:
+        shared_manager.write(scope="charm", title="local", kind="fact", body="L")
+        # Direct write to the shared store bypasses the team-write setting
+        # so we can prove the merge surfaces both.
+        shared_manager.shared_store.write("team", "rule", "T")  # type: ignore[union-attr]
+        entries = shared_manager.list_entries(scope="charm")
+        by_title = {e.title: e for e in entries}
+        assert set(by_title) == {"local", "team"}
+        assert by_title["local"].source != "shared"
+        assert by_title["team"].source == "shared"
+
+    def test_read_prefers_local_then_shared(self, shared_manager: MemoryManager) -> None:
+        shared_manager.shared_store.write("only-shared", "fact", "S")  # type: ignore[union-attr]
+        shared_manager.shared_store.write("both", "fact", "shared body")  # type: ignore[union-attr]
+        shared_manager.write(scope="charm", title="both", kind="fact", body="local body")
+        # Title only in shared dir resolves to the shared entry.
+        only = shared_manager.read(title="only-shared")
+        assert only is not None
+        assert only.source == "shared"
+        # Title in both → local SQLite wins.
+        both = shared_manager.read(title="both")
+        assert both is not None
+        assert both.source != "shared"
+        assert both.body == "local body"
+
+    def test_search_spans_local_and_shared(self, shared_manager: MemoryManager) -> None:
+        shared_manager.write(scope="charm", title="l", kind="fact", body="apple local")
+        shared_manager.shared_store.write("s", "fact", "apple shared")  # type: ignore[union-attr]
+        hits = {h.title for h in shared_manager.search("apple", scope="charm")}
+        assert hits == {"l", "s"}
+
+    def test_render_prompt_index_includes_shared_marker(
+        self, shared_manager: MemoryManager
+    ) -> None:
+        shared_manager.write(scope="charm", title="local-one", kind="fact", body="L")
+        shared_manager.shared_store.write("team-one", "rule", "T")  # type: ignore[union-attr]
+        rendered = shared_manager.render_prompt_index()
+        assert "### Charm" in rendered
+        assert "- **local-one** (fact)" in rendered
+        assert "- **team-one** (rule, shared)" in rendered
+
+    def test_update_falls_through_to_shared(self, shared_manager: MemoryManager) -> None:
+        shared_manager.shared_store.write("only-shared", "fact", "old")  # type: ignore[union-attr]
+        updated = shared_manager.update(scope="charm", title="only-shared", body="new")
+        assert updated is not None
+        assert updated.body == "new"
+        assert updated.source == "shared"
+
+    def test_forget_falls_through_to_shared(self, shared_manager: MemoryManager) -> None:
+        shared_manager.shared_store.write("doomed", "fact", "x")  # type: ignore[union-attr]
+        assert shared_manager.forget(scope="charm", title="doomed")
+        assert shared_manager.read(title="doomed", scope="charm") is None
+
+
+class TestMemoryWriteDispatch:
+    """``team_memory_writes`` controls where new charm-scope writes land."""
+
+    @pytest.fixture
+    def make_manager(
+        self,
+        store: SessionStore,
+        global_store: GlobalMemoryStore,
+        shared_store: object,
+    ):
+        def _factory(mode: str, decider: object | None = None) -> MemoryManager:
+            return MemoryManager(
+                session_store=store,
+                global_store=global_store,
+                shared_store=shared_store,  # type: ignore[arg-type]
+                team_memory_writes=mode,
+                team_memory_decider=decider,  # type: ignore[arg-type]
+            )
+
+        return _factory
+
+    def test_local_mode_writes_to_sqlite(self, make_manager) -> None:  # type: ignore[no-untyped-def]
+        manager = make_manager("local")
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source != "shared"
+        # Shared dir is empty.
+        assert manager.shared_store is not None
+        assert manager.shared_store.list_entries(status=None) == []
+
+    def test_shared_mode_writes_to_shared_dir(self, make_manager) -> None:  # type: ignore[no-untyped-def]
+        manager = make_manager("shared")
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source == "shared"
+        # SQLite is empty.
+        assert manager._session_store is not None  # type: ignore[attr-defined]
+        rows = manager._session_store.list_memory(status=None)  # type: ignore[attr-defined]
+        assert rows == []
+
+    def test_ask_mode_with_decider_returning_shared(self, make_manager) -> None:  # type: ignore[no-untyped-def]
+        manager = make_manager("ask", lambda _title, _kind: "shared")
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source == "shared"
+
+    def test_ask_mode_with_decider_returning_local(self, make_manager) -> None:  # type: ignore[no-untyped-def]
+        manager = make_manager("ask", lambda _title, _kind: "local")
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source != "shared"
+
+    def test_ask_mode_without_decider_falls_back_to_local(self, make_manager) -> None:  # type: ignore[no-untyped-def]
+        manager = make_manager("ask", None)
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source != "shared"
+
+    def test_ask_mode_decider_exception_falls_back_to_local(self, make_manager) -> None:  # type: ignore[no-untyped-def]
+        def boom(_title: str, _kind: str) -> str:
+            raise RuntimeError("nope")
+
+        manager = make_manager("ask", boom)
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source != "shared"
+
+    def test_ask_mode_decider_invalid_return_falls_back_to_local(
+        self,
+        make_manager,  # type: ignore[no-untyped-def]
+    ) -> None:
+        manager = make_manager("ask", lambda _title, _kind: "neither")
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source != "shared"
+
+    def test_shared_mode_without_shared_store_falls_back_to_local(
+        self,
+        store: SessionStore,
+        global_store: GlobalMemoryStore,
+    ) -> None:
+        manager = MemoryManager(
+            session_store=store,
+            global_store=global_store,
+            team_memory_writes="shared",
+        )
+        entry = manager.write(scope="charm", title="t", kind="fact", body="b")
+        assert entry.source != "shared"
+
+
+class TestMemoryManagerAutoSharedStore:
+    """When ``charm_path`` is given, a shared store is auto-created."""
+
+    def test_charm_path_provisions_shared_store(
+        self,
+        store: SessionStore,
+        global_store: GlobalMemoryStore,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        from cantrip.agent.memory import shared_memory_dir
+
+        manager = MemoryManager(
+            session_store=store,
+            global_store=global_store,
+            charm_path=tmp_path,
+        )
+        assert manager.shared_store is not None
+        assert manager.shared_store.directory == shared_memory_dir(tmp_path)
+
+    def test_no_charm_path_no_shared_store(
+        self,
+        store: SessionStore,
+        global_store: GlobalMemoryStore,
+    ) -> None:
+        manager = MemoryManager(session_store=store, global_store=global_store)
+        assert manager.shared_store is None

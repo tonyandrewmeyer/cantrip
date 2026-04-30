@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Shared (team-sync) charm-scope memory directory (Phase 51b.1).**
+  Optional ``<charm-root>/.cantrip-shared/memory/`` directory in the
+  same Markdown frontmatter format as global memory.  When present, the
+  ``MemoryManager`` reads from local SQLite *and* the shared directory
+  and merges the results, marking shared entries with
+  ``source="shared"`` so listings, search, and the prompt index can
+  display them differently.  A new ``team_memory_writes`` setting
+  (env var ``CANTRIP_TEAM_MEMORY_WRITES``) chooses where new
+  charm-scope writes land: ``local`` (default — pre-51b behaviour),
+  ``shared`` (commit alongside the charm so teammates pick it up on
+  the next pull), or ``ask`` (delegate to a registered decider
+  callback, falling back to ``local`` when none is configured).
+  Existing single-user installations see zero behavioural change —
+  the directory is created lazily on the first shared write.  Path
+  note: the team-sync spec proposed ``.cantrip/shared/...`` but
+  ``<charm>/.cantrip`` is currently the SQLite session file, so the
+  shared layer lives at a sibling path; teammates commit
+  ``.cantrip-shared/`` to git the same way.
 - **Human co-author trailer on auto-commits (Phase 51b.3).**  The
   agent commit (``src/cantrip/agent/auto_commit.py``) now appends a
   second ``Co-Authored-By:`` line built from the local

@@ -8,6 +8,12 @@ Phase 43 adds two complementary memory scopes:
   ``~/.config/cantrip/memory/`` as Markdown files with YAML frontmatter,
   fronted by an always-loaded ``MEMORY.md`` index.
 
+Phase 51b.1 adds an optional **shared** charm-scope layer rooted at
+``<charm-root>/.cantrip/shared/memory/`` (same Markdown frontmatter format)
+that teammates commit to git so memories travel with the charm.  Entries
+loaded from the shared directory keep ``scope="charm"`` but carry
+``source="shared"`` so listings can filter or display them differently.
+
 This module provides the filesystem side and a unified :class:`MemoryManager`
 that the agent tools and the system-prompt builder talk to.
 """
@@ -66,6 +72,59 @@ def _default_global_dir() -> pathlib.Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = pathlib.Path(xdg).expanduser() if xdg else pathlib.Path.home() / ".config"
     return base / "cantrip" / "memory"
+
+
+def shared_memory_dir(charm_path: pathlib.Path) -> pathlib.Path:
+    """Return the conventional shared-memory directory under *charm_path*.
+
+    The path is ``<charm-root>/.cantrip-shared/memory/``.  The team-sync
+    spec originally proposed ``.cantrip/shared/memory/``, but
+    ``<charm-root>/.cantrip`` is currently the per-charm SQLite session
+    file — a single path cannot be both a file and a directory — so the
+    shared layer lives at a sibling path.  Teammates commit
+    ``.cantrip-shared/`` to git the same way; the rename has no other
+    behavioural consequence.
+    """
+    return charm_path / ".cantrip-shared" / "memory"
+
+
+# Valid values for the ``team_memory_writes`` setting (Phase 51b.1).
+#
+# - ``local`` (default): charm-scope writes land in the per-charm SQLite
+#   store, matching pre-51b behaviour.
+# - ``shared``: charm-scope writes land in the shared memory directory
+#   so teammates pick them up on the next pull.
+# - ``ask``: each charm-scope write is routed through the decider
+#   callback registered on :class:`MemoryManager`; if no callback is
+#   registered the write falls back to ``local`` with a debug log so an
+#   unconfigured TUI never silently drops writes.
+TEAM_MEMORY_WRITES_LOCAL = "local"
+TEAM_MEMORY_WRITES_SHARED = "shared"
+TEAM_MEMORY_WRITES_ASK = "ask"
+VALID_TEAM_MEMORY_WRITES = frozenset(
+    {TEAM_MEMORY_WRITES_LOCAL, TEAM_MEMORY_WRITES_SHARED, TEAM_MEMORY_WRITES_ASK}
+)
+
+
+def _resolve_team_memory_writes(default: str = TEAM_MEMORY_WRITES_LOCAL) -> str:
+    """Read the ``CANTRIP_TEAM_MEMORY_WRITES`` env var, falling back to *default*.
+
+    An unset or unrecognised value falls back to the default rather than
+    raising, so a typo in the environment never disables charm-scope
+    writes outright.
+    """
+    raw = os.environ.get("CANTRIP_TEAM_MEMORY_WRITES")
+    if not raw:
+        return default
+    value = raw.strip().lower()
+    if value not in VALID_TEAM_MEMORY_WRITES:
+        log.warning(
+            "Ignoring unknown CANTRIP_TEAM_MEMORY_WRITES=%r (expected one of %s)",
+            raw,
+            ", ".join(sorted(VALID_TEAM_MEMORY_WRITES)),
+        )
+        return default
+    return value
 
 
 def slugify_title(title: str) -> str:
@@ -318,10 +377,24 @@ class GlobalMemoryStore:
     sibling ``MEMORY.md`` is an always-loaded index — one line per memory —
     that the system prompt injects verbatim so the agent can decide which
     memories to ``memory_read`` for full context.
+
+    Parameters ``scope`` and ``source_override`` exist so subclasses
+    (notably :class:`SharedMemoryStore`) can reuse the same on-disk
+    machinery while reporting a different ``MemoryEntry.scope`` / ``source``
+    pair to callers.  The ``GlobalMemoryStore`` defaults preserve the
+    pre-51b behaviour: ``scope="global"``, no source override.
     """
 
-    def __init__(self, directory: pathlib.Path | None = None) -> None:
+    def __init__(
+        self,
+        directory: pathlib.Path | None = None,
+        *,
+        scope: str = "global",
+        source_override: str | None = None,
+    ) -> None:
         self._dir = directory or _default_global_dir()
+        self._scope = scope
+        self._source_override = source_override
 
     @property
     def directory(self) -> pathlib.Path:
@@ -412,10 +485,15 @@ class GlobalMemoryStore:
         self._ensure_dir()
         path = self._path_for(title)
         now = _now_iso()
+        # Stamp the on-disk source with the override so a future reader
+        # without the override (e.g. someone manually inspecting the file
+        # on a teammate's machine) still sees that the entry came from
+        # the shared layer.
+        effective_source = self._source_override if self._source_override is not None else source
         frontmatter: dict[str, Any] = {
             "title": title,
             "kind": kind,
-            "source": source,
+            "source": effective_source,
             "created": now,
             "updated": now,
             "status": status,
@@ -453,10 +531,13 @@ class GlobalMemoryStore:
         if existing is None:
             return None
         now = _now_iso()
+        effective_source = (
+            self._source_override if self._source_override is not None else existing.source
+        )
         frontmatter: dict[str, Any] = {
             "title": existing.title,
             "kind": kind if kind is not None else existing.kind,
-            "source": existing.source,
+            "source": effective_source,
             "created": existing.created_at or now,
             "updated": now,
             "status": status if status is not None else existing.status,
@@ -526,8 +607,7 @@ class GlobalMemoryStore:
             lines.append(f"- [{entry.title}]({filename}) — {hook}\n")
         self.index_path.write_text("".join(lines))
 
-    @staticmethod
-    def _read_file(path: pathlib.Path) -> MemoryEntry:
+    def _read_file(self, path: pathlib.Path) -> MemoryEntry:
         """Parse a memory Markdown file into a :class:`MemoryEntry`."""
         raw = path.read_text()
         frontmatter, body = _split_frontmatter(raw)
@@ -537,12 +617,16 @@ class GlobalMemoryStore:
         kind = frontmatter.get("kind")
         if not title or not kind:
             raise ValueError(f"Frontmatter missing title or kind in {path}")
+        if self._source_override is not None:
+            source = self._source_override
+        else:
+            source = str(frontmatter.get("source", "manual"))
         return MemoryEntry(
             title=str(title),
             kind=str(kind),
             body=body,
-            scope="global",
-            source=str(frontmatter.get("source", "manual")),
+            scope=self._scope,
+            source=source,
             tags=[str(t) for t in frontmatter.get("tags", []) or []],
             citations=list(frontmatter.get("citations", []) or []),
             status=str(frontmatter.get("status", "active")),
@@ -551,6 +635,28 @@ class GlobalMemoryStore:
             last_accessed_at=_opt_str(frontmatter.get("last_accessed")),
             last_validated_at=_opt_str(frontmatter.get("last_validated")),
         )
+
+
+class SharedMemoryStore(GlobalMemoryStore):
+    """Filesystem-backed shared memory store under ``<charm-root>/.cantrip/shared/memory/``.
+
+    Reuses the on-disk format and machinery of :class:`GlobalMemoryStore`,
+    but reports entries with ``scope="charm"`` (since the directory is
+    charm-rooted) and ``source="shared"`` so callers can filter shared
+    entries out of listings or display them differently from local
+    charm-scope entries living in SQLite.
+
+    Construct via :meth:`for_charm` so the conventional path under the
+    charm root is used; pass an explicit ``directory`` for tests.
+    """
+
+    def __init__(self, directory: pathlib.Path) -> None:
+        super().__init__(directory, scope="charm", source_override="shared")
+
+    @classmethod
+    def for_charm(cls, charm_path: pathlib.Path) -> SharedMemoryStore:
+        """Return a store rooted at the conventional path under *charm_path*."""
+        return cls(shared_memory_dir(charm_path))
 
 
 def _now_iso() -> str:
@@ -605,6 +711,11 @@ class MemoryManager:
     Tools call the manager to list, read, write, update, and forget memories
     without caring which scope they live in.  The manager picks the backend
     from the ``scope`` argument; read and search default to spanning both.
+
+    Phase 51b.1: when a :class:`SharedMemoryStore` is supplied, charm-scope
+    operations also consult ``<charm-root>/.cantrip/shared/memory/``.  The
+    ``team_memory_writes`` setting selects between the local SQLite store
+    and the shared directory for new charm-scope writes.
     """
 
     def __init__(
@@ -613,10 +724,25 @@ class MemoryManager:
         global_store: GlobalMemoryStore | None = None,
         *,
         charm_path: pathlib.Path | None = None,
+        shared_store: SharedMemoryStore | None = None,
+        team_memory_writes: str | None = None,
+        team_memory_decider: Callable[[str, str], str] | None = None,
     ) -> None:
         self._session_store = session_store
         self._global_store = global_store or GlobalMemoryStore()
         self._charm_path = charm_path
+        if shared_store is None and charm_path is not None:
+            shared_store = SharedMemoryStore.for_charm(charm_path)
+        self._shared_store = shared_store
+        if team_memory_writes is None:
+            team_memory_writes = _resolve_team_memory_writes()
+        elif team_memory_writes not in VALID_TEAM_MEMORY_WRITES:
+            raise MemoryScopeError(
+                f"Invalid team_memory_writes: {team_memory_writes!r}. "
+                f"Must be one of: {', '.join(sorted(VALID_TEAM_MEMORY_WRITES))}"
+            )
+        self._team_memory_writes = team_memory_writes
+        self._team_memory_decider = team_memory_decider
         self._on_recall: Callable[[MemoryEntry], None] | None = None
         self._on_write: Callable[[MemoryEntry], None] | None = None
 
@@ -643,6 +769,16 @@ class MemoryManager:
         """The filesystem-backed global memory store."""
         return self._global_store
 
+    @property
+    def shared_store(self) -> SharedMemoryStore | None:
+        """The shared (team-sync) memory store, or ``None`` when not configured."""
+        return self._shared_store
+
+    @property
+    def team_memory_writes(self) -> str:
+        """Current ``team_memory_writes`` setting (``local`` / ``shared`` / ``ask``)."""
+        return self._team_memory_writes
+
     def has_charm_scope(self) -> bool:
         """Return True when a per-charm SQLite store is available."""
         return self._session_store is not None
@@ -657,11 +793,19 @@ class MemoryManager:
         status: str | None = "active",
         tag: str | None = None,
     ) -> list[MemoryEntry]:
-        """Return entries matching the filters.  ``scope=None`` spans both sides."""
+        """Return entries matching the filters.  ``scope=None`` spans both sides.
+
+        When a shared store is configured, charm-scope listings include
+        entries from ``<charm-root>/.cantrip/shared/memory/`` after the
+        local SQLite rows; titles that exist in both stores are surfaced
+        twice — local and shared — so callers can see the divergence.
+        """
         entries: list[MemoryEntry] = []
         if scope in (None, "charm") and self._session_store is not None:
             for row in self._session_store.list_memory(kind=kind, status=status, tag=tag):
                 entries.append(_row_to_entry(row))
+        if scope in (None, "charm") and self._shared_store is not None:
+            entries.extend(self._shared_store.list_entries(kind=kind, status=status, tag=tag))
         if scope in (None, "global"):
             entries.extend(self._global_store.list_entries(kind=kind, status=status, tag=tag))
         return entries
@@ -670,8 +814,11 @@ class MemoryManager:
         """Read a single memory by title; optionally restrict to one scope.
 
         When ``scope`` is ``None``, charm-scope is searched first so a charm
-        override shadows a global memory of the same name.  The matched entry's
-        access counter is bumped as a side effect, and the recall callback
+        override shadows a global memory of the same name.  Within charm
+        scope, the local SQLite store wins over the shared directory so a
+        teammate's just-pulled entry doesn't overwrite something the local
+        operator deliberately customised.  The matched entry's access
+        counter is bumped as a side effect, and the recall callback
         (if any) is fired so UIs can show "Recalled memory: …".
         """
         entry: MemoryEntry | None = None
@@ -680,6 +827,8 @@ class MemoryManager:
             if row is not None:
                 self._session_store.touch_memory(cast("int", row["id"]))
                 entry = _row_to_entry(row)
+        if entry is None and scope in (None, "charm") and self._shared_store is not None:
+            entry = self._shared_store.get(title)
         if entry is None and scope in (None, "global"):
             entry = self._global_store.get(title)
         if entry is not None and self._on_recall is not None:
@@ -695,6 +844,8 @@ class MemoryManager:
         if scope in (None, "charm") and self._session_store is not None:
             for row in self._session_store.search_memory(query):
                 entries.append(_row_to_entry(row))
+        if scope in (None, "charm") and self._shared_store is not None:
+            entries.extend(self._shared_store.search(query))
         if scope in (None, "global"):
             entries.extend(self._global_store.search(query))
         return entries
@@ -713,37 +864,61 @@ class MemoryManager:
         citations: list[dict[str, Any]] | None = None,
         status: str = "active",
     ) -> MemoryEntry:
-        """Create a new memory in *scope*. Overwrites an existing entry with the same title."""
+        """Create a new memory in *scope*. Overwrites an existing entry with the same title.
+
+        Charm-scope writes consult the ``team_memory_writes`` setting:
+        ``local`` (default) routes to the SQLite store, ``shared`` routes
+        to the shared directory under ``<charm-root>/.cantrip/shared/memory/``,
+        and ``ask`` calls the registered decider callback (falling back
+        to local when no callback is registered).
+        """
         _validate_kind(kind)
         _validate_status(status)
         entry: MemoryEntry
         if scope == "charm":
-            if self._session_store is None:
-                raise MemoryScopeError("charm-scope memory requires an active charm session")
-            existing = self._session_store.get_memory_by_title(title)
-            if existing is None:
-                memory_id = self._session_store.record_memory(
-                    title=title,
-                    kind=kind,
-                    body=body,
+            target = self._resolve_charm_write_target(title, kind)
+            if target == "shared":
+                if self._shared_store is None:
+                    raise MemoryScopeError(
+                        "shared charm-scope memory requires a shared store "
+                        "(needs charm_path on MemoryManager)"
+                    )
+                entry = self._shared_store.write(
+                    title,
+                    kind,
+                    body,
                     source=source,
                     citations=citations,
                     tags=tags,
                     status=status,
                 )
-                row = self._session_store.get_memory(memory_id)
             else:
-                self._session_store.update_memory(
-                    cast("int", existing["id"]),
-                    body=body,
-                    kind=kind,
-                    tags=tags,
-                    status=status,
-                    citations=citations,
-                )
-                row = self._session_store.get_memory(cast("int", existing["id"]))
-            assert row is not None
-            entry = _row_to_entry(row)
+                if self._session_store is None:
+                    raise MemoryScopeError("charm-scope memory requires an active charm session")
+                existing = self._session_store.get_memory_by_title(title)
+                if existing is None:
+                    memory_id = self._session_store.record_memory(
+                        title=title,
+                        kind=kind,
+                        body=body,
+                        source=source,
+                        citations=citations,
+                        tags=tags,
+                        status=status,
+                    )
+                    row = self._session_store.get_memory(memory_id)
+                else:
+                    self._session_store.update_memory(
+                        cast("int", existing["id"]),
+                        body=body,
+                        kind=kind,
+                        tags=tags,
+                        status=status,
+                        citations=citations,
+                    )
+                    row = self._session_store.get_memory(cast("int", existing["id"]))
+                assert row is not None
+                entry = _row_to_entry(row)
         elif scope == "global":
             entry = self._global_store.write(
                 title,
@@ -763,6 +938,39 @@ class MemoryManager:
                 log.debug("write callback failed", exc_info=True)
         return entry
 
+    def _resolve_charm_write_target(self, title: str, kind: str) -> str:
+        """Pick ``"local"`` or ``"shared"`` for a charm-scope write.
+
+        ``team_memory_writes`` drives the choice.  ``ask`` mode invokes
+        the registered decider callback with ``(title, kind)`` and
+        expects ``"local"`` or ``"shared"`` back; any other return falls
+        back to ``"local"`` with a warning.  An unset decider in ``ask``
+        mode also falls back to ``"local"`` so an unconfigured TUI never
+        silently drops writes.
+        """
+        mode = self._team_memory_writes
+        if mode == TEAM_MEMORY_WRITES_SHARED:
+            return "shared" if self._shared_store is not None else "local"
+        if mode == TEAM_MEMORY_WRITES_ASK:
+            if self._team_memory_decider is None or self._shared_store is None:
+                log.debug(
+                    "team_memory_writes=ask but no decider/shared store; falling back to local"
+                )
+                return "local"
+            try:
+                choice = self._team_memory_decider(title, kind)
+            except Exception:  # noqa: BLE001 - decider is user code, never break the write.
+                log.warning("team_memory_decider raised; falling back to local", exc_info=True)
+                return "local"
+            if choice == "shared":
+                return "shared"
+            if choice != "local":
+                log.warning(
+                    "team_memory_decider returned %r (expected local|shared); using local", choice
+                )
+            return "local"
+        return "local"
+
     def update(
         self,
         *,
@@ -781,23 +989,35 @@ class MemoryManager:
         if status is not None:
             _validate_status(status)
         if scope == "charm":
-            if self._session_store is None:
-                return None
-            row = self._session_store.get_memory_by_title(title)
-            if row is None:
-                return None
-            self._session_store.update_memory(
-                cast("int", row["id"]),
-                body=body,
-                kind=kind,
-                tags=tags,
-                status=status,
-                citations=citations,
-                last_validated_at=last_validated_at,
-            )
-            return _row_to_entry(
-                cast("dict[str, object]", self._session_store.get_memory(cast("int", row["id"])))
-            )
+            if self._session_store is not None:
+                row = self._session_store.get_memory_by_title(title)
+                if row is not None:
+                    self._session_store.update_memory(
+                        cast("int", row["id"]),
+                        body=body,
+                        kind=kind,
+                        tags=tags,
+                        status=status,
+                        citations=citations,
+                        last_validated_at=last_validated_at,
+                    )
+                    return _row_to_entry(
+                        cast(
+                            "dict[str, object]",
+                            self._session_store.get_memory(cast("int", row["id"])),
+                        )
+                    )
+            if self._shared_store is not None:
+                return self._shared_store.update(
+                    title,
+                    body=body,
+                    kind=kind,
+                    tags=tags,
+                    status=status,
+                    citations=citations,
+                    last_validated_at=last_validated_at,
+                )
+            return None
         if scope == "global":
             return self._global_store.update(
                 title,
@@ -811,14 +1031,22 @@ class MemoryManager:
         raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
 
     def forget(self, *, scope: str, title: str) -> bool:
-        """Delete the memory; return True when something was removed."""
+        """Delete the memory; return True when something was removed.
+
+        Charm-scope deletes prefer the local SQLite store; if the title
+        exists only in the shared directory the shared file is removed
+        instead.  An entry that lives in both stores has only its local
+        copy deleted — the caller has to forget again to remove the
+        shared copy, mirroring the read-precedence rule.
+        """
         if scope == "charm":
-            if self._session_store is None:
-                return False
-            row = self._session_store.get_memory_by_title(title)
-            if row is None:
-                return False
-            return self._session_store.delete_memory(cast("int", row["id"]))
+            if self._session_store is not None:
+                row = self._session_store.get_memory_by_title(title)
+                if row is not None:
+                    return self._session_store.delete_memory(cast("int", row["id"]))
+            if self._shared_store is not None:
+                return self._shared_store.delete(title)
+            return False
         if scope == "global":
             return self._global_store.delete(title)
         raise MemoryScopeError(f"Unknown memory scope: {scope!r}")
@@ -945,17 +1173,20 @@ class MemoryManager:
         global_index = self._global_store.read_index()
         if global_index.strip():
             parts.append("### Global\n\n" + global_index.strip())
+        charm_lines: list[str] = []
         if self._session_store is not None:
-            rows = self._session_store.list_memory(status="active")
-            if rows:
-                charm_lines = ["### Charm\n"]
-                for row in rows:
-                    title = row["title"]
-                    kind = row["kind"]
-                    tags = row["tags"] if isinstance(row["tags"], list) else []
-                    tag_suffix = f" [{', '.join(tags)}]" if tags else ""
-                    charm_lines.append(f"- **{title}** ({kind}){tag_suffix}")
-                parts.append("\n".join(charm_lines))
+            for row in self._session_store.list_memory(status="active"):
+                title = row["title"]
+                kind = row["kind"]
+                tags = row["tags"] if isinstance(row["tags"], list) else []
+                tag_suffix = f" [{', '.join(tags)}]" if tags else ""
+                charm_lines.append(f"- **{title}** ({kind}){tag_suffix}")
+        if self._shared_store is not None:
+            for entry in self._shared_store.list_entries(status="active"):
+                tag_suffix = f" [{', '.join(entry.tags)}]" if entry.tags else ""
+                charm_lines.append(f"- **{entry.title}** ({entry.kind}, shared){tag_suffix}")
+        if charm_lines:
+            parts.append("### Charm\n\n" + "\n".join(charm_lines))
         return "\n\n".join(parts).strip()
 
 
@@ -1004,16 +1235,22 @@ __all__ = [
     "DEFAULT_SOFT_EXPIRY_DAYS",
     "INDEX_FILENAME",
     "MEMORY_INDEX_MAX_LINES",
+    "TEAM_MEMORY_WRITES_ASK",
+    "TEAM_MEMORY_WRITES_LOCAL",
+    "TEAM_MEMORY_WRITES_SHARED",
     "VALID_KINDS",
     "VALID_STATUSES",
+    "VALID_TEAM_MEMORY_WRITES",
     "CitationCheck",
     "GlobalMemoryStore",
     "MemoryEntry",
     "MemoryManager",
     "MemoryScopeError",
     "RevalidationResult",
+    "SharedMemoryStore",
     "SweepResult",
     "sha_for_range",
+    "shared_memory_dir",
     "slugify_title",
     "validate_citation",
 ]
