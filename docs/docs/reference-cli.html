@@ -45,10 +45,12 @@
     <ul>
       <li><a href="#run">cantrip run</a></li>
       <li><a href="#compare">cantrip compare</a></li>
-      <li><a href="#export-transcript">export-transcript</a></li>
+      <li><a href="#export-transcript">cantrip export-transcript</a></li>
       <li><a href="#hooks">cantrip hooks</a></li>
       <li><a href="#skill">cantrip skill</a></li>
       <li><a href="#checkpoints">cantrip checkpoints</a></li>
+      <li><a href="#audit">cantrip audit</a></li>
+      <li><a href="#permissions">cantrip permissions</a></li>
       <li><a href="#docs">cantrip docs</a></li>
       <li><a href="#slash-commands">Slash commands</a></li>
       <li><a href="#mentions">@-mention context providers</a></li>
@@ -78,14 +80,70 @@ cantrip skill export NAME PATH [--charm-path DIR] [--force]
 cantrip checkpoints list [--db PATH] [--task-id ID]
 cantrip checkpoints show [--db PATH] TASK_ID STEP_NAME ORDINAL
 cantrip checkpoints delete [--db PATH] --task-id ID [--yes]
+cantrip audit list [--path PATH] [--task-id ID] [--action KIND] [--tool NAME]
+cantrip audit export [--path PATH] [--format {jsonl,csv}]
 cantrip permissions test TOOL [OPTIONS]
 cantrip permissions list [--charm-path DIR] [--user-config DIR] [--no-builtin]
+cantrip docs index [--site NAME | --all] [--embed-provider NAME] [--embed-model MODEL]
+cantrip docs list [--root PATH]
+cantrip docs search SITE QUERY [--top-k N]
 cantrip --version
 cantrip --help
 </code></pre>
 <p>The <code>run</code> subcommand is the default &mdash; you can omit it.
 <code>cantrip /path/to/charm</code> is equivalent to
 <code>cantrip run /path/to/charm</code>.</p>
+<h2>Which command to reach for</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Reach for it when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cantrip</code> / <code>cantrip run</code></td>
+<td>You want a normal interactive session to build or improve a charm.</td>
+</tr>
+<tr>
+<td><code>cantrip compare</code></td>
+<td>You need a charm-aware diff between two charm trees.</td>
+</tr>
+<tr>
+<td><code>cantrip export-transcript</code></td>
+<td>You want to save a session for review, sharing, or CI artefacts.</td>
+</tr>
+<tr>
+<td><code>cantrip hooks test</code></td>
+<td>You are iterating on <code>cantrip.hooks.yaml</code> and want to fire one synthetic event locally.</td>
+</tr>
+<tr>
+<td><code>cantrip skill export</code></td>
+<td>You want to re-export a discovered skill as a standard <code>SKILL.md</code> bundle.</td>
+</tr>
+<tr>
+<td><code>cantrip checkpoints ...</code></td>
+<td>You need to inspect or clear durable-execution checkpoints in a <code>.cantrip</code> session file.</td>
+</tr>
+<tr>
+<td><code>cantrip audit ...</code></td>
+<td>You want to inspect the policy-decision trail after a run or export it for spreadsheets and CI logs.</td>
+</tr>
+<tr>
+<td><code>cantrip permissions ...</code></td>
+<td>You want to see what the permission gate would do before the agent makes a real tool call.</td>
+</tr>
+<tr>
+<td><code>cantrip docs ...</code></td>
+<td>You want to build or query the local documentation index that powers <code>@docs</code>.</td>
+</tr>
+<tr>
+<td>Slash commands</td>
+<td>You are already in chat and want to drive built-in features without another shell command.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="run">cantrip run</h2>
 <p>Start the agent and build or improve a charm.</p>
 <h3>Positional arguments</h3>
@@ -147,10 +205,14 @@ cantrip --help
   <dt>--no-tui</dt>
   <dd>
     Run in CLI mode (command-line REPL) without the terminal UI.
+    See <a href="howto-interface.html">Choose an interface</a>
+    for when to prefer the CLI REPL over the TUI, Web UI, or print mode.
   </dd>
   <dt>--web</dt>
   <dd>
     Run with a browser-based Web UI instead of the TUI.
+    See <a href="howto-interface.html">Choose an interface</a>
+    for browser-vs-terminal tradeoffs and Web-specific caveats.
   </dd>
   <dt>--web-port PORT</dt>
   <dd>
@@ -467,6 +529,58 @@ a fresh run from turn 1 without setting
   <dd>Task id whose checkpoints should be removed.</dd>
   <dt><code>--yes</code></dt>
   <dd>Skip the interactive <code>y/N</code> confirmation prompt. Intended for scripted use.</dd>
+</dl>
+<h2 id="audit">cantrip audit</h2>
+<p>Read the JSONL policy-decision trail written during agent and
+subagent tool execution. Reach for it after unattended runs, when a
+tool call was denied unexpectedly, or when you want a machine-readable
+record to attach to CI artefacts.</p>
+<h3>cantrip audit list</h3>
+<p>Print audit entries as JSONL, optionally filtered by task, outcome, or
+tool. This is the quickest way to answer questions like &quot;why did that
+call get denied?&quot; or &quot;which task triggered a review request?&quot;.</p>
+<pre><code>cantrip audit list [--path PATH] [--task-id ID]
+                   [--action {allowed,denied,review-requested,rate-limited}]
+                   [--tool NAME]
+</code></pre>
+<dl>
+  <dt><code>--path PATH</code></dt>
+  <dd>
+    Audit file to read. Defaults to
+    <code>&lt;cwd&gt;/.cantrip-audit.jsonl</code>.
+  </dd>
+  <dt><code>--task-id ID</code></dt>
+  <dd>Filter to a single task id.</dd>
+  <dt><code>--action ...</code></dt>
+  <dd>
+    Filter to one decision kind:
+    <code>allowed</code>, <code>denied</code>,
+    <code>review-requested</code>, or
+    <code>rate-limited</code>.
+  </dd>
+  <dt><code>--tool NAME</code></dt>
+  <dd>Filter to one exact tool name.</dd>
+</dl>
+<p>The command exits <code>1</code> if the audit file does not exist so
+automation can fail clearly instead of silently reading nothing.</p>
+<h3>cantrip audit export</h3>
+<p>Re-emit the audit trail in a format that composes with downstream
+tools. JSONL passes through unchanged; CSV is useful for spreadsheet
+review or attaching a compact artefact to CI.</p>
+<pre><code>cantrip audit export [--path PATH] [--format {jsonl,csv}]
+</code></pre>
+<dl>
+  <dt><code>--path PATH</code></dt>
+  <dd>
+    Audit file to read. Defaults to
+    <code>&lt;cwd&gt;/.cantrip-audit.jsonl</code>.
+  </dd>
+  <dt><code>--format {jsonl,csv}</code></dt>
+  <dd>
+    Output format. <code>jsonl</code> prints the original lines;
+    <code>csv</code> writes one row per decision with JSON-encoded
+    arguments in the final column.
+  </dd>
 </dl>
 <h2 id="permissions">cantrip permissions</h2>
 <p>Inspect the per-call permission gate without standing up the full

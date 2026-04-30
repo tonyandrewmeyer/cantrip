@@ -13,6 +13,34 @@ section: index
   up, or understanding how the system works.
 </p>
 
+<h2 id="start-here">Start here</h2>
+
+<ol>
+  <li>
+    <strong>Install Cantrip.</strong> The
+    <a href="tutorial.html#install">tutorial starts with the end-user install flow</a>;
+    if you still need to choose a provider, continue with
+    <a href="howto-provider.html">Choose an LLM provider</a>.
+  </li>
+  <li>
+    <strong>Pick your surface.</strong> Use
+    <a href="howto-interface.html">Choose an interface</a> to decide between
+    the TUI, Web UI, CLI REPL, and print mode.
+  </li>
+  <li>
+    <strong>Decide whether you are building or improving.</strong> For a new
+    charm, start with the <a href="tutorial.html">tutorial</a>. For an
+    existing charm, jump to
+    <a href="howto-improve.html">Improve an existing charm</a>.
+  </li>
+  <li>
+    <strong>Need automation or tighter governance?</strong> Go straight to
+    <a href="howto-print-mode.html">print mode</a>,
+    <a href="howto-permissions.html">tool permissions</a>, and
+    <a href="reference-cli.html#audit">audit trail inspection</a>.
+  </li>
+</ol>
+
 <div class="doc-cards">
 
   <a href="tutorial.html" class="doc-card">
@@ -33,6 +61,15 @@ section: index
     </p>
   </a>
 
+  <a href="howto-interface.html" class="doc-card">
+    <span class="doc-card-label">How-to</span>
+    <h3>Choose an interface</h3>
+    <p>
+      Decide between the TUI, Web UI, CLI REPL, and print mode based on
+      your terminal, browser, or automation workflow.
+    </p>
+  </a>
+
   <a href="howto-improve.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Improve an existing charm</h3>
@@ -48,6 +85,15 @@ section: index
     <p>
       Export session transcripts as HTML, Markdown, or JSONL for
       documentation or review.
+    </p>
+  </a>
+
+  <a href="howto-print-mode.html" class="doc-card">
+    <span class="doc-card-label">How-to</span>
+    <h3>Run a single goal non-interactively</h3>
+    <p>
+      Drive one goal end to end in CI, shell pipelines, or scheduled jobs
+      with <code>cantrip run --print</code>.
     </p>
   </a>
 
@@ -148,6 +194,15 @@ section: index
     </p>
   </a>
 
+  <a href="howto-permissions.html" class="doc-card">
+    <span class="doc-card-label">How-to</span>
+    <h3>Configure tool permissions</h3>
+    <p>
+      Control which tool calls auto-run, ask for confirmation, or are
+      denied outright with repository and user-level policy files.
+    </p>
+  </a>
+
   <a href="howto-feelings.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Convene the inner parliament</h3>
@@ -162,6 +217,15 @@ section: index
     <h3>CLI reference</h3>
     <p>
       Complete listing of all commands, flags, and environment variables.
+    </p>
+  </a>
+
+  <a href="reference-cli.html#audit" class="doc-card">
+    <span class="doc-card-label">Reference</span>
+    <h3>Audit policy decisions</h3>
+    <p>
+      Inspect <code>.cantrip-audit.jsonl</code> after unattended runs or
+      export it as JSONL or CSV for review and CI artefacts.
     </p>
   </a>
 

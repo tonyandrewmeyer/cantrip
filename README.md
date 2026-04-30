@@ -4,6 +4,11 @@
 
 Cantrip is an AI-powered **autonomous agent** that builds production-quality [Juju charms](https://juju.is/) independently. Describe your workload, and Cantrip researches it, designs the charm, writes the code, deploys it, tests it, and debugs it — with you confirming key decisions and providing domain expertise.
 
+**Quick start**
+
+- **Just use Cantrip:** `uv tool install juju-cantrip`
+- **Contribute to Cantrip:** clone this repo and run `uv sync --dev`
+
 ```
 > build a charm for Redis
 
@@ -40,15 +45,32 @@ Status: active | 3 subagents working
 - **MCP-extensible**: Plug in third-party tools via the Model Context Protocol — stdio or HTTP servers, OAuth 2.1, token storage, mid-task elicitation, and marketplace discovery
 - **Ecosystem showcase**: Juju, Charmcraft, Rockcraft, Ops, Jubilant, Concierge, Scenario, Showboat
 
-## Installation
+## Install to use Cantrip
+
+```bash
+# Install the CLI
+uv tool install juju-cantrip
+
+# Set your API key
+export GEMINI_API_KEY='your-key-here'
+
+# Run
+cantrip
+```
+
+See [`docs/docs/howto-provider.html`](docs/docs/howto-provider.html) for
+other provider setups and [`docs/docs/howto-interface.html`](docs/docs/howto-interface.html)
+for choosing between the TUI, Web UI, CLI REPL, and print mode.
+
+## Contributor checkout
 
 ```bash
 # Clone the repository
 git clone https://github.com/canonical/cantrip
 cd cantrip
 
-# Install with uv
-uv sync
+# Install dev dependencies
+uv sync --dev
 
 # Set your API key
 export GEMINI_API_KEY='your-key-here'

@@ -156,6 +156,37 @@ inspection; the <code>jq</code> filter prints only the agent's
 chat replies for the build log. Exit-code propagation lets the CI
 job decide whether the build counts as green.</p>
 
+<h2 id="automation-examples">Concrete automation examples</h2>
+
+<p>A GitHub Actions step can keep the full NDJSON transcript while
+still failing the job on a blocked or failed run:</p>
+
+<pre><code>- name: Cantrip charm gate
+  run: |
+    cantrip run \
+      --print "Audit the charm, fix lint issues, then pack it" \
+      --json \
+      --yolo \
+      "$GITHUB_WORKSPACE" \
+      | tee cantrip.ndjson
+</code></pre>
+
+<p>For scheduled maintenance, keep the same one-shot shape but swap the
+goal. A nightly cron job can re-audit a repo and archive the event log
+without opening an interactive session:</p>
+
+<pre><code><span class="prompt">$</span> cantrip run \
+--print "Audit this charm and report any regressions" \
+--json \
+/srv/charms/my-charm \
+| tee /var/log/cantrip/nightly-audit.ndjson</code></pre>
+
+<p>When you need stricter governance than blanket
+<code>--yolo</code>, pair print mode with an explicit
+<a href="howto-permissions.html">permissions policy</a> and use
+<a href="reference-cli.html#audit">cantrip audit</a> to inspect the
+decisions afterwards.</p>
+
 <h2 id="reference">Related references</h2>
 
 <ul>

@@ -9,6 +9,7 @@ sections:
     heading: "How-to guides"
     pages:
       - { slug: howto-provider, label: "Choose an LLM provider" }
+      - { slug: howto-interface, label: "Choose an interface" }
       - { slug: howto-improve, label: "Improve an existing charm" }
       - { slug: howto-export, label: "Export transcripts" }
       - { slug: howto-light-models, label: "Configure light models" }

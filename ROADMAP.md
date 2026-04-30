@@ -4767,23 +4767,23 @@ identified rather than opening a new product line.
 
 ### 92.4 Medium — Docs and discoverability sweep
 
-- [ ] Fix command discoverability in ``docs/src/reference-cli.md``:
+- [x] Fix command discoverability in ``docs/src/reference-cli.md``:
   add ``cantrip audit`` and ``cantrip permissions`` to the
   ``on_this_page`` list, make sure every implemented subcommand appears
   in the reference navigation, and add brief prose explaining when a
   user reaches for each command.
-- [ ] Rework the README opening so it distinguishes **end-user install**
+- [x] Rework the README opening so it distinguishes **end-user install**
   from **contributor checkout** immediately.  The current clone+``uv
   sync`` path is correct for development but obscures the simpler
   install flow for users who just want the tool.
-- [ ] Add docs for the two underexplained interface surfaces:
+- [x] Add docs for the two underexplained interface surfaces:
   **Web UI** and **CLI/REPL mode** (``--web`` and ``--no-tui``).  Cover
   when to use each surface, any feature-parity caveats, and the
   workflows that are easier there than in the TUI.
-- [ ] Expand ``howto-print-mode`` with concrete CI / automation
+- [x] Expand ``howto-print-mode`` with concrete CI / automation
   examples, and surface print mode, permissions, and audit from the docs
   landing page instead of leaving them buried in the CLI reference.
-- [ ] Add a short "Start here" path to the docs landing page:
+- [x] Add a short "Start here" path to the docs landing page:
   install, choose TUI/Web/CLI, build a new charm vs improve an existing
   one, then link to the relevant how-tos.  The current card grid is rich
   but gives new users no ordering signal.
@@ -4985,6 +4985,108 @@ strong overall (~89%), with the biggest blind spots concentrated in
 paths; non-unit coverage is much stronger for happy-path build/deploy flows
 than for failure handling, durability, isolation, and advanced controller
 workflows.
+
+---
+
+## Phase 94: Go Kubernetes Diagnostics Binary — Pod-Layer Insight for Charm Debugging
+
+**Goal:** Implement the Kubernetes diagnostic gap identified in
+[`design/K8S_TOOL.md`](design/K8S_TOOL.md) as a small, read-only **Go**
+binary and wire it into Cantrip as a first-class typed tool.  The new
+design document [`design/K8S_DIAGNOSTICS_BINARY.md`](design/K8S_DIAGNOSTICS_BINARY.md)
+is the source of truth for scope, command shape, JSON contract, safety
+boundary, and Python integration.
+
+### 94.1 High — Ship the Go binary itself
+
+- [ ] Add a new Go module under ``src/cantrip-kdiag/`` with a small,
+  explicit package layout (`cmd/`, `internal/cli`, `internal/kube`,
+  `internal/collect`, `internal/summarise`, `internal/output`) matching
+  the design doc.
+- [ ] Implement the three v1 commands from the design:
+  ``summary``, ``pod``, and ``preflight``.
+- [ ] Support kubeconfig/context loading, namespace selection, and
+  bounded targeting by exact pod, Juju app, or Juju unit.
+- [ ] Collect the initial read-only diagnostic set only: pods, container
+  statuses, warning events, PVC state, previous log tails for crashed
+  containers, and pod metrics when the metrics API is present.
+- [ ] Emit deterministic JSON with an explicit schema version and crisp,
+  documented exit codes for usage error, kubeconfig/context failure, API
+  reachability failure, target-not-found, metrics unavailable, and
+  internal error.
+
+### 94.2 High — Integrate the binary into the Python tool layer
+
+- [ ] Add a typed Python wrapper in ``src/cantrip/agent/tools/`` (likely
+  ``k8s.py``) that invokes ``cantrip-kdiag`` via ``subprocess.run``,
+  parses the JSON output, and returns a structured ``ToolResult`` with a
+  concise caption plus the full report in ``data``.
+- [ ] Register the new tool in ``build_tools()`` and scope its
+  description/schema so the agent reaches for it only when Juju does not
+  explain a pod-layer problem.
+- [ ] Mirror the existing Juju-tool pattern for environment handling:
+  bypass the subprocess sandbox, thread through ``KUBECONFIG`` /
+  explicit context inputs, and fail clearly when the binary is missing.
+- [ ] Decide whether v1 uses a single ``k8s_diagnostics`` tool with a
+  mode parameter or a thin pair (summary vs pod drilldown); keep the
+  external contract aligned with the Go commands rather than inventing a
+  Python-only abstraction.
+
+### 94.3 Medium — Teach the agent when to use it
+
+- [ ] Update the Kubernetes diagnostic guidance so the agent prefers the
+  typed tool over prescribing raw ``kubectl`` when the binary is
+  available, while keeping the existing `fix-broken-juju-k8s` skill for
+  substrate-rebuild flows and manual fallback.
+- [ ] Add or update the relevant prompt/skill/tool guidance so the tool
+  is used specifically for the documented gap cases:
+  ``CrashLoopBackOff``, ``ImagePullBackOff``, ``OOMKilled``, PVC binding
+  failures, and namespace-event clues that Juju does not surface.
+- [ ] Keep the scope charm-focused and read-only; do not expose a raw
+  generic Kubernetes command runner or write-path surface.
+
+### 94.4 Medium — Validation, tests, and packaging hygiene
+
+- [ ] Add Go tests for target resolution, warning synthesis, output
+  shape, and the read-only collectors using fake clients where practical.
+- [ ] Add Python unit tests for the wrapper tool covering happy path,
+  missing binary, malformed JSON, non-zero exit codes, and missing
+  kubeconfig/context.
+- [ ] Decide the developer and CI build path for the binary (including
+  where the built executable lives during tests) and document that path
+  alongside the new subsystem rather than leaving it implicit.
+- [ ] Add user/developer docs for the new tool surface only where the
+  feature becomes externally visible; keep internal implementation notes
+  in the design doc.
+
+### What this phase is *not*
+
+- Not a generic ``kubectl`` wrapper.
+- Not a write path to the cluster (`apply`, `delete`, `patch`, `exec`,
+  `port-forward`).
+- Not a rewrite of other Cantrip native helpers in Go.
+- Not a requirement to replace Juju-native debugging with Kubernetes
+  debugging; the binary fills the specific gap where Juju's view stops.
+
+**Exit criteria:** Cantrip can diagnose the common pod-layer failure modes
+called out in ``design/K8S_TOOL.md`` through a first-class typed tool
+powered by ``cantrip-kdiag``; the binary stays read-only and bounded; the
+Python wrapper surfaces crisp structured output and failures; and tests
+cover both the Go report contract and the Python integration.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Go binary (94.1) | `design/K8S_DIAGNOSTICS_BINARY.md`; Kubernetes client-go ecosystem | Keep the initial command set small and the contract explicit |
+| Python integration (94.2) | 94.1; existing `Tool` / `ToolResult` conventions in `design/TOOLS.md` | Mirror Juju-tool subprocess patterns rather than shelling out through `run_command` |
+| Agent guidance (94.3) | 94.2; existing Kubernetes skill content | Prefer typed-tool guidance without deleting the manual fallback story |
+| Validation/docs (94.4) | 94.1 + 94.2 | Tests should lock the JSON contract and error handling in place |
+
+**Discovered:** Follow-up design work on 2026-04-30 after reviewing
+Cantrip's current features, planned features, and native-helper pattern
+(``quickpack-rs`` / ``charmlint-rs``).  Verdict: Kubernetes pod-layer
+diagnostics is the highest-value feature that is distinctly well suited to
+a Go binary.
 
 ---
 

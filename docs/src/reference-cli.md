@@ -8,10 +8,12 @@ breadcrumb_label: "CLI reference"
 on_this_page:
   - { anchor: "run", label: "cantrip run" }
   - { anchor: "compare", label: "cantrip compare" }
-  - { anchor: "export-transcript", label: "export-transcript" }
+  - { anchor: "export-transcript", label: "cantrip export-transcript" }
   - { anchor: "hooks", label: "cantrip hooks" }
   - { anchor: "skill", label: "cantrip skill" }
   - { anchor: "checkpoints", label: "cantrip checkpoints" }
+  - { anchor: "audit", label: "cantrip audit" }
+  - { anchor: "permissions", label: "cantrip permissions" }
   - { anchor: "docs", label: "cantrip docs" }
   - { anchor: "slash-commands", label: "Slash commands" }
   - { anchor: "mentions", label: "@-mention context providers" }
@@ -33,8 +35,13 @@ cantrip skill export NAME PATH [--charm-path DIR] [--force]
 cantrip checkpoints list [--db PATH] [--task-id ID]
 cantrip checkpoints show [--db PATH] TASK_ID STEP_NAME ORDINAL
 cantrip checkpoints delete [--db PATH] --task-id ID [--yes]
+cantrip audit list [--path PATH] [--task-id ID] [--action KIND] [--tool NAME]
+cantrip audit export [--path PATH] [--format {jsonl,csv}]
 cantrip permissions test TOOL [OPTIONS]
 cantrip permissions list [--charm-path DIR] [--user-config DIR] [--no-builtin]
+cantrip docs index [--site NAME | --all] [--embed-provider NAME] [--embed-model MODEL]
+cantrip docs list [--root PATH]
+cantrip docs search SITE QUERY [--top-k N]
 cantrip --version
 cantrip --help
 ```
@@ -42,6 +49,21 @@ cantrip --help
 The `run` subcommand is the default — you can omit it.
 `cantrip /path/to/charm` is equivalent to
 `cantrip run /path/to/charm`.
+
+## Which command to reach for
+
+| Command | Reach for it when |
+| --- | --- |
+| `cantrip` / `cantrip run` | You want a normal interactive session to build or improve a charm. |
+| `cantrip compare` | You need a charm-aware diff between two charm trees. |
+| `cantrip export-transcript` | You want to save a session for review, sharing, or CI artefacts. |
+| `cantrip hooks test` | You are iterating on `cantrip.hooks.yaml` and want to fire one synthetic event locally. |
+| `cantrip skill export` | You want to re-export a discovered skill as a standard `SKILL.md` bundle. |
+| `cantrip checkpoints ...` | You need to inspect or clear durable-execution checkpoints in a `.cantrip` session file. |
+| `cantrip audit ...` | You want to inspect the policy-decision trail after a run or export it for spreadsheets and CI logs. |
+| `cantrip permissions ...` | You want to see what the permission gate would do before the agent makes a real tool call. |
+| `cantrip docs ...` | You want to build or query the local documentation index that powers `@docs`. |
+| Slash commands | You are already in chat and want to drive built-in features without another shell command. |
 
 {#run}
 ## cantrip run
@@ -119,11 +141,15 @@ Start the agent and build or improve a charm.
   <dt>--no-tui</dt>
   <dd>
     Run in CLI mode (command-line REPL) without the terminal UI.
+    See <a href="howto-interface.html">Choose an interface</a>
+    for when to prefer the CLI REPL over the TUI, Web UI, or print mode.
   </dd>
 
   <dt>--web</dt>
   <dd>
     Run with a browser-based Web UI instead of the TUI.
+    See <a href="howto-interface.html">Choose an interface</a>
+    for browser-vs-terminal tradeoffs and Web-specific caveats.
   </dd>
 
   <dt>--web-port PORT</dt>
@@ -513,6 +539,72 @@ cantrip checkpoints delete --task-id ID [--db PATH] [--yes]
   <dd>Task id whose checkpoints should be removed.</dd>
   <dt><code>--yes</code></dt>
   <dd>Skip the interactive <code>y/N</code> confirmation prompt. Intended for scripted use.</dd>
+</dl>
+
+{#audit}
+## cantrip audit
+
+Read the JSONL policy-decision trail written during agent and
+subagent tool execution. Reach for it after unattended runs, when a
+tool call was denied unexpectedly, or when you want a machine-readable
+record to attach to CI artefacts.
+
+### cantrip audit list
+
+Print audit entries as JSONL, optionally filtered by task, outcome, or
+tool. This is the quickest way to answer questions like "why did that
+call get denied?" or "which task triggered a review request?".
+
+```
+cantrip audit list [--path PATH] [--task-id ID]
+                   [--action {allowed,denied,review-requested,rate-limited}]
+                   [--tool NAME]
+```
+
+<dl>
+  <dt><code>--path PATH</code></dt>
+  <dd>
+    Audit file to read. Defaults to
+    <code>&lt;cwd&gt;/.cantrip-audit.jsonl</code>.
+  </dd>
+  <dt><code>--task-id ID</code></dt>
+  <dd>Filter to a single task id.</dd>
+  <dt><code>--action ...</code></dt>
+  <dd>
+    Filter to one decision kind:
+    <code>allowed</code>, <code>denied</code>,
+    <code>review-requested</code>, or
+    <code>rate-limited</code>.
+  </dd>
+  <dt><code>--tool NAME</code></dt>
+  <dd>Filter to one exact tool name.</dd>
+</dl>
+
+The command exits <code>1</code> if the audit file does not exist so
+automation can fail clearly instead of silently reading nothing.
+
+### cantrip audit export
+
+Re-emit the audit trail in a format that composes with downstream
+tools. JSONL passes through unchanged; CSV is useful for spreadsheet
+review or attaching a compact artefact to CI.
+
+```
+cantrip audit export [--path PATH] [--format {jsonl,csv}]
+```
+
+<dl>
+  <dt><code>--path PATH</code></dt>
+  <dd>
+    Audit file to read. Defaults to
+    <code>&lt;cwd&gt;/.cantrip-audit.jsonl</code>.
+  </dd>
+  <dt><code>--format {jsonl,csv}</code></dt>
+  <dd>
+    Output format. <code>jsonl</code> prints the original lines;
+    <code>csv</code> writes one row per decision with JSON-encoded
+    arguments in the final column.
+  </dd>
 </dl>
 
 {#permissions}

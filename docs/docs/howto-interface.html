@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to choose between the TUI, Web UI, CLI, and print mode &mdash; Cantrip</title>
+<meta name="description" content="Pick the right Cantrip surface: terminal UI, browser UI, CLI REPL, or one-shot print mode.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-interface.html" class="current">Choose an interface</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#comparison">Surface comparison</a></li>
+      <li><a href="#tui">TUI</a></li>
+      <li><a href="#web">Web UI</a></li>
+      <li><a href="#cli">CLI REPL</a></li>
+      <li><a href="#print">Print mode</a></li>
+      <li><a href="#caveats">Feature-parity caveats</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+      <li><a href="explanation-tui-screens.html">TUI screens and shortcuts</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Choose an interface
+    </div>
+
+    <h1>Choose an interface</h1>
+    <p class="subtitle">
+      Cantrip ships four ways to drive the same agent core. Pick the one that matches your terminal, browser, or automation workflow.
+    </p>
+
+<h2 id="overview">Overview</h2>
+<p>Cantrip has four entry surfaces:</p>
+<ul>
+  <li><strong>TUI</strong> (<code>cantrip</code>) &mdash; the default full-screen terminal experience.</li>
+  <li><strong>Web UI</strong> (<code>cantrip --web</code>) &mdash; the same live agent loop in a browser tab.</li>
+  <li><strong>CLI REPL</strong> (<code>cantrip --no-tui</code>) &mdash; a minimal interactive command-line session.</li>
+  <li><strong>Print mode</strong> (<code>cantrip run --print "goal"</code>) &mdash; one-shot, non-interactive execution for scripts and CI.</li>
+</ul>
+<p>If you are unsure, start with the default TUI. It exposes the most
+agent state at once and is the best fit for day-to-day charm work.</p>
+<h2 id="comparison">Surface comparison</h2>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Start with</th>
+<th>Best for</th>
+<th>Main caveat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TUI</td>
+<td><code>cantrip</code></td>
+<td>Rich interactive sessions with task pane, file tree, logs, traces, and model status visible together</td>
+<td>Requires a full-screen terminal</td>
+</tr>
+<tr>
+<td>Web UI</td>
+<td><code>cantrip --web</code></td>
+<td>Browser-based chat, easy scrolling/copying, keeping Cantrip beside docs or dashboards</td>
+<td><code>--improve</code> is not supported in Web mode</td>
+</tr>
+<tr>
+<td>CLI REPL</td>
+<td><code>cantrip --no-tui</code></td>
+<td>SSH, tmux, minimal terminals, and interactive sessions where plain text is enough</td>
+<td>No TUI panes or function-key screens</td>
+</tr>
+<tr>
+<td>Print mode</td>
+<td><code>cantrip run --print &quot;goal&quot;</code></td>
+<td>CI, shell pipelines, scheduled jobs, and one-off unattended goals</td>
+<td>No conversation or REPL; exits when the queue drains</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tui">TUI</h2>
+<p>The default terminal UI is the richest interactive surface. Use it
+when you want the chat, task list, Juju status, and file tree on screen
+at once, or when you rely on the function-key screens for logs, traces,
+the integration graph, transcript browsing, and file detail.</p>
+<p>This is the best surface for "build a charm, watch it research,
+inspect the logs, then confirm the next step" workflows. See
+<a href="explanation-tui-screens.html">TUI screens and shortcuts</a>
+for the modal screens and hotkeys.</p>
+<h2 id="web">Web UI</h2>
+<p>The Web UI runs the same live session in a browser tab:</p>
+<pre><code><span class="prompt">$</span> cantrip --web
+Cantrip Web UI running at http://127.0.0.1:8471</code></pre>
+<p>Choose it when a browser is more comfortable than a full-screen
+terminal: long chat transcripts are easier to scroll, links are easier
+to follow, and it fits well beside web docs, Grafana, or GitHub in the
+same window layout.</p>
+<p>The important caveat is that <code>--improve</code> is not supported
+here. Improvement mode relies on interactive confirmation flows that the
+TUI and CLI REPL provide directly, so use one of those surfaces for
+existing-charm upgrade work.</p>
+<h2 id="cli">CLI REPL</h2>
+<p>The CLI REPL keeps the session interactive but drops the full-screen
+UI chrome:</p>
+<pre><code><span class="prompt">$</span> cantrip --no-tui</code></pre>
+<p>Use it when you are on a remote shell, inside tmux, or in any
+terminal where a line-oriented interface is easier than a full TUI. The
+REPL still supports normal chat plus slash commands, and it adds
+Tab-completion for slash verbs when <code>readline</code> is available.</p>
+<p>This is the best fit when you want an interactive session over SSH,
+need plain-text logs in your terminal history, or prefer to drive the
+agent with a small command-line footprint.</p>
+<h2 id="print">Print mode</h2>
+<p>Print mode is deliberately not another interactive surface. It runs
+one goal to completion, streams progress to stdout, and exits:</p>
+<pre><code><span class="prompt">$</span> cantrip run --print "Pack and test this charm"</code></pre>
+<p>Use it for CI, shell pipelines, cron jobs, and one-off automation.
+With <code>--json</code> it emits NDJSON events, which makes it easy to
+pipe into <code>jq</code>, <code>tee</code>, or log collectors.</p>
+<p>If you want back-and-forth conversation, do not use print mode; use
+the TUI, Web UI, or CLI REPL instead. For the full automation workflow,
+see <a href="howto-print-mode.html">Run a single goal non-interactively</a>.</p>
+<h2 id="caveats">Feature-parity caveats</h2>
+<ul>
+  <li><strong>Only the TUI</strong> has the function-key screens, file tree,
+  and modal inspectors described in
+  <a href="explanation-tui-screens.html">TUI screens and shortcuts</a>.</li>
+  <li><strong>Web UI</strong> and <strong>print mode</strong> are different:
+  <code>--web</code> is interactive, <code>--print</code> is one-shot, and the
+  two flags cannot be combined.</li>
+  <li><strong>Web UI</strong> does not support <code>--improve</code>; use the
+  TUI or CLI REPL for that workflow.</li>
+  <li><strong>Print mode</strong> is unattended by default. Pending
+  confirmation tasks stop the run unless you resolve them first or opt
+  into <code>--yolo</code>.</li>
+  <li><strong>Slash commands</strong> are for interactive surfaces. Use the
+  TUI, Web UI, or CLI REPL when you need chat-native commands like
+  <code>/memory</code> and <code>/mcp</code>; the CLI REPL also adds
+  text-first helpers such as <code>/tasks</code> and
+  <code>/status</code>.</li>
+</ul>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
