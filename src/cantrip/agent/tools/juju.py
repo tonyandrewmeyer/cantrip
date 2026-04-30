@@ -278,72 +278,31 @@ class JujuDeployTool(Tool):
         )
         if blocked:
             return ToolResult(success=False, output="", error=reason)
-
         if not _juju_available():
             return ToolResult(
                 success=False,
                 output="",
                 error="Juju CLI not found. Is Juju installed?",
             )
-
         temp_copy: pathlib.Path | None = None
         try:
             juju = jubilant.Juju(model=model)
-
-            # Resolve local .charm paths to absolute so juju doesn't
-            # misinterpret them as Charmhub names.
-            charm_path = pathlib.Path(charm)
-            if charm_path.suffix == ".charm" and charm_path.exists():
-                charm = str(charm_path.resolve())
-            elif not charm_path.is_absolute() and (pathlib.Path.cwd() / charm_path).exists():
-                charm = str((pathlib.Path.cwd() / charm_path).resolve())
-
-            # The Juju snap uses strict confinement and cannot read files
-            # outside the user's home directory.  If the charm file lives
-            # in a non-accessible location (e.g. /tmp), copy it to a
-            # snap-accessible path before deploying.
-            charm_file = pathlib.Path(charm)
-            if charm_file.suffix == ".charm" and charm_file.exists():
-                home = pathlib.Path.home()
-                if not str(charm_file).startswith(str(home)):
-                    snap_dir = home / "snap" / "juju" / "common"
-                    snap_dir.mkdir(parents=True, exist_ok=True)
-                    temp_copy = snap_dir / charm_file.name
-                    shutil.copy2(charm_file, temp_copy)
-                    charm = str(temp_copy)
-
-            # Build deploy arguments.
-            deploy_args: dict[str, Any] = {"charm": charm}
-            if app_name:
-                deploy_args["app"] = app_name
-            if config:
-                deploy_args["config"] = config
-            if num_units != 1:
-                deploy_args["num_units"] = num_units
-            if resources:
-                deploy_args["resources"] = resources
-            if trust:
-                deploy_args["trust"] = True
-            if channel:
-                deploy_args["channel"] = channel
-            if base:
-                deploy_args["base"] = base
-
+            charm, temp_copy = self._resolve_and_stage_charm(charm)
+            deploy_args = self._build_deploy_args(
+                charm,
+                app_name=app_name,
+                config=config,
+                num_units=num_units,
+                resources=resources,
+                trust=trust,
+                channel=channel,
+                base=base,
+            )
             await asyncio.wait_for(
                 asyncio.to_thread(functools.partial(juju.deploy, **deploy_args)),
                 timeout=300,
             )
-
-            display_name = app_name or pathlib.Path(charm).stem
-            caption = f"Deployed {display_name}"
-            if model:
-                caption += f" to {model}"
-            return ToolResult(
-                success=True,
-                output=f"Deployed {charm}" + (f" as {app_name}" if app_name else ""),
-                data={"charm": charm, "app_name": app_name or charm},
-                caption=caption,
-            )
+            return self._deploy_success_result(charm, app_name, model)
         except TimeoutError:
             return ToolResult(
                 success=False,
@@ -359,6 +318,78 @@ class JujuDeployTool(Tool):
         finally:
             if temp_copy is not None and temp_copy.exists():
                 temp_copy.unlink(missing_ok=True)
+
+    @staticmethod
+    def _resolve_and_stage_charm(charm: str) -> tuple[str, pathlib.Path | None]:
+        """Resolve a local ``.charm`` path and stage it for snap confinement.
+
+        Returns the (possibly rewritten) charm reference plus a temp copy that
+        the caller must clean up, or ``None`` when nothing was staged.
+
+        The Juju snap uses strict confinement and cannot read files outside
+        the user's home directory — paths under ``/tmp`` are copied to
+        ``~/snap/juju/common/`` before deploy.
+        """
+        # Resolve local .charm paths to absolute so juju doesn't misinterpret
+        # them as Charmhub names.
+        charm_path = pathlib.Path(charm)
+        if charm_path.suffix == ".charm" and charm_path.exists():
+            charm = str(charm_path.resolve())
+        elif not charm_path.is_absolute() and (pathlib.Path.cwd() / charm_path).exists():
+            charm = str((pathlib.Path.cwd() / charm_path).resolve())
+        charm_file = pathlib.Path(charm)
+        if charm_file.suffix != ".charm" or not charm_file.exists():
+            return charm, None
+        home = pathlib.Path.home()
+        if str(charm_file).startswith(str(home)):
+            return charm, None
+        snap_dir = home / "snap" / "juju" / "common"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        temp_copy = snap_dir / charm_file.name
+        shutil.copy2(charm_file, temp_copy)
+        return str(temp_copy), temp_copy
+
+    @staticmethod
+    def _build_deploy_args(
+        charm: str,
+        *,
+        app_name: str | None,
+        config: dict[str, Any] | None,
+        num_units: int,
+        resources: dict[str, str] | None,
+        trust: bool,
+        channel: str | None,
+        base: str | None,
+    ) -> dict[str, Any]:
+        deploy_args: dict[str, Any] = {"charm": charm}
+        if app_name:
+            deploy_args["app"] = app_name
+        if config:
+            deploy_args["config"] = config
+        if num_units != 1:
+            deploy_args["num_units"] = num_units
+        if resources:
+            deploy_args["resources"] = resources
+        if trust:
+            deploy_args["trust"] = True
+        if channel:
+            deploy_args["channel"] = channel
+        if base:
+            deploy_args["base"] = base
+        return deploy_args
+
+    @staticmethod
+    def _deploy_success_result(charm: str, app_name: str | None, model: str | None) -> ToolResult:
+        display_name = app_name or pathlib.Path(charm).stem
+        caption = f"Deployed {display_name}"
+        if model:
+            caption += f" to {model}"
+        return ToolResult(
+            success=True,
+            output=f"Deployed {charm}" + (f" as {app_name}" if app_name else ""),
+            data={"charm": charm, "app_name": app_name or charm},
+            caption=caption,
+        )
 
 
 class BundleDeployTool(Tool):
@@ -1549,67 +1580,21 @@ class CharmSyncTool(Tool):
                 output="",
                 error="Juju CLI not found. Is Juju installed?",
             )
-
         local_root = pathlib.Path(charm_dir) if charm_dir else pathlib.Path.cwd()
         dirs_to_sync = directories or ["src", "lib"]
         remote_root = _agent_charm_dir(unit)
-
         try:
             juju = jubilant.Juju(model=model)
             k8s = await _is_k8s_model(juju)
-
-            # Collect all .py files from the requested directories.
-            files: list[tuple[pathlib.Path, str]] = []
-            for dir_name in dirs_to_sync:
-                local_dir = local_root / dir_name
-                if not local_dir.is_dir():
-                    continue
-                for root, _dirs, filenames in os.walk(local_dir):
-                    for fname in filenames:
-                        if not fname.endswith(".py"):
-                            continue
-                        local_path = pathlib.Path(root) / fname
-                        relative = local_path.relative_to(local_root)
-                        remote_path = f"{remote_root}/{relative}"
-                        files.append((local_path, remote_path))
-
+            files = self._collect_python_files(local_root, dirs_to_sync, remote_root)
             if not files:
                 return ToolResult(
                     success=True,
                     output=f"No .py files found in {dirs_to_sync}. Nothing to sync.",
                     data={"files_synced": 0},
                 )
-
-            # Push each file to the unit.
             for local_path, remote_path in files:
-                remote_parent = str(pathlib.Path(remote_path).parent)
-                safe_parent = shlex.quote(remote_parent)
-                safe_path = shlex.quote(remote_path)
-
-                if k8s:
-                    await _run_juju(
-                        juju.ssh,
-                        unit,
-                        f"mkdir -p {safe_parent}",
-                        container="charm",
-                    )
-                    await _run_juju(
-                        juju.scp,
-                        str(local_path),
-                        f"{unit}:{remote_path}",
-                        container="charm",
-                    )
-                else:
-                    await _run_juju(juju.ssh, unit, f"sudo mkdir -p {safe_parent}")
-                    content = local_path.read_text()
-                    await _run_juju(
-                        juju.cli,
-                        "ssh",
-                        unit,
-                        f"sudo tee {safe_path}",
-                        stdin=content,
-                    )
-
+                await self._push_file(juju, unit, local_path, remote_path, k8s=k8s)
             synced_names = [str(f[0].relative_to(local_root)) for f in files]
             return ToolResult(
                 success=True,
@@ -1631,6 +1616,65 @@ class CharmSyncTool(Tool):
                 success=False,
                 output="",
                 error=str(e),
+            )
+
+    @staticmethod
+    def _collect_python_files(
+        local_root: pathlib.Path, dirs_to_sync: list[str], remote_root: str
+    ) -> list[tuple[pathlib.Path, str]]:
+        """Walk *dirs_to_sync* under *local_root* and pair each ``.py`` with its remote target."""
+        files: list[tuple[pathlib.Path, str]] = []
+        for dir_name in dirs_to_sync:
+            local_dir = local_root / dir_name
+            if not local_dir.is_dir():
+                continue
+            for root, _dirs, filenames in os.walk(local_dir):
+                for fname in filenames:
+                    if not fname.endswith(".py"):
+                        continue
+                    local_path = pathlib.Path(root) / fname
+                    relative = local_path.relative_to(local_root)
+                    remote_path = f"{remote_root}/{relative}"
+                    files.append((local_path, remote_path))
+        return files
+
+    @staticmethod
+    async def _push_file(
+        juju: jubilant.Juju,
+        unit: str,
+        local_path: pathlib.Path,
+        remote_path: str,
+        *,
+        k8s: bool,
+    ) -> None:
+        """Copy one local file to *unit*; k8s uses ``juju scp`` into the charm container,
+        machine charms shell out to ``sudo tee`` because scp drops privileges.
+        """
+        remote_parent = str(pathlib.Path(remote_path).parent)
+        safe_parent = shlex.quote(remote_parent)
+        safe_path = shlex.quote(remote_path)
+        if k8s:
+            await _run_juju(
+                juju.ssh,
+                unit,
+                f"mkdir -p {safe_parent}",
+                container="charm",
+            )
+            await _run_juju(
+                juju.scp,
+                str(local_path),
+                f"{unit}:{remote_path}",
+                container="charm",
+            )
+        else:
+            await _run_juju(juju.ssh, unit, f"sudo mkdir -p {safe_parent}")
+            content = local_path.read_text()
+            await _run_juju(
+                juju.cli,
+                "ssh",
+                unit,
+                f"sudo tee {safe_path}",
+                stdin=content,
             )
 
 
@@ -1988,7 +2032,38 @@ class JujuReadRelationDataTool(Tool):
                 output="",
                 error="Juju CLI not found. Is Juju installed?",
             )
+        parsed = await self._fetch_show_unit_json(model, unit)
+        if isinstance(parsed, ToolResult):
+            return parsed
+        relations = parsed.get(unit, {}).get("relation-info", [])
+        if endpoint:
+            relations = [r for r in relations if r.get("endpoint") == endpoint]
+        if not relations:
+            msg = f"No relation data found for {unit}"
+            if endpoint:
+                msg += f" on endpoint '{endpoint}'"
+            return ToolResult(
+                success=True,
+                output=msg,
+                data={"unit": unit, "relations": []},
+                caption=f"no relations on {unit}",
+            )
+        lines = [f"Relation data for {unit}:", ""]
+        relation_list: list[dict[str, Any]] = []
+        for rel in relations:
+            block_lines, block_data = self._format_relation_block(rel, unit)
+            lines.extend(block_lines)
+            relation_list.append(block_data)
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={"unit": unit, "relations": relation_list},
+            caption=f"{len(relation_list)} relation{'s' if len(relation_list) != 1 else ''} on {unit}",
+        )
 
+    @staticmethod
+    async def _fetch_show_unit_json(model: str | None, unit: str) -> dict[str, Any] | ToolResult:
+        """Run ``juju show-unit`` and parse the JSON envelope."""
         try:
             juju = jubilant.Juju(model=model)
             stdout = await _run_juju(juju.cli, "show-unit", unit, "--format", "json")
@@ -2004,9 +2079,8 @@ class JujuReadRelationDataTool(Tool):
                 output="",
                 error=f"juju show-unit failed: {e}",
             )
-
         try:
-            data = json.loads(stdout)
+            return json.loads(stdout)
         except json.JSONDecodeError:
             return ToolResult(
                 success=False,
@@ -2014,89 +2088,56 @@ class JujuReadRelationDataTool(Tool):
                 error="Failed to parse juju show-unit output.",
             )
 
-        unit_data = data.get(unit, {})
-        relations = unit_data.get("relation-info", [])
-
-        if endpoint:
-            relations = [r for r in relations if r.get("endpoint") == endpoint]
-
-        if not relations:
-            msg = f"No relation data found for {unit}"
-            if endpoint:
-                msg += f" on endpoint '{endpoint}'"
-            return ToolResult(
-                success=True,
-                output=msg,
-                data={"unit": unit, "relations": []},
-                caption=f"no relations on {unit}",
-            )
-
-        lines = [f"Relation data for {unit}:", ""]
-        relation_list: list[dict[str, Any]] = []
-
-        for rel in relations:
-            ep = rel.get("endpoint", "unknown")
-            rel_id = rel.get("relation-id", "?")
-            lines.append(f"## {ep} (relation {rel_id})")
+    @staticmethod
+    def _format_relation_block(rel: dict[str, Any], unit: str) -> tuple[list[str], dict[str, Any]]:
+        """Render one relation's databags as Markdown plus structured data."""
+        ep = rel.get("endpoint", "unknown")
+        rel_id = rel.get("relation-id", "?")
+        lines: list[str] = [f"## {ep} (relation {rel_id})", ""]
+        related_units = rel.get("related-units", {})
+        app_data = rel.get("application-data", {})
+        if app_data:
+            lines.append("**Application data:**")
+            for key, value in app_data.items():
+                lines.append(f"  {key}: {value}")
             lines.append("")
-
-            related_units = rel.get("related-units", {})
-            app_data = rel.get("application-data", {})
-
-            if app_data:
-                lines.append("**Application data:**")
-                for key, value in app_data.items():
+        local_unit_data = rel.get("local-unit", {}).get("data", {})
+        if local_unit_data:
+            lines.append(f"**Local unit data ({unit}):**")
+            for key, value in local_unit_data.items():
+                lines.append(f"  {key}: {value}")
+            lines.append("")
+        if related_units:
+            for runit, rdata in related_units.items():
+                lines.append(f"**Related unit: {runit}**")
+                unit_rel_data = rdata.get("data", {})
+                for key, value in unit_rel_data.items():
                     lines.append(f"  {key}: {value}")
                 lines.append("")
-
-            local_unit_data = rel.get("local-unit", {}).get("data", {})
-            if local_unit_data:
-                lines.append(f"**Local unit data ({unit}):**")
-                for key, value in local_unit_data.items():
-                    lines.append(f"  {key}: {value}")
-                lines.append("")
-
-            if related_units:
-                for runit, rdata in related_units.items():
-                    lines.append(f"**Related unit: {runit}**")
-                    unit_rel_data = rdata.get("data", {})
-                    for key, value in unit_rel_data.items():
-                        lines.append(f"  {key}: {value}")
-                    lines.append("")
-
-            # Highlight asymmetries.
-            expected_keys = set()
-            for rdata in related_units.values():
-                expected_keys.update(rdata.get("data", {}).keys())
-            missing_in_local = (
-                expected_keys
-                - set(local_unit_data.keys())
-                - {"ingress-address", "private-address", "egress-subnets"}
-            )
-            if missing_in_local:
-                lines.append(
-                    f"**Asymmetry:** remote has keys not in local: {', '.join(sorted(missing_in_local))}"
-                )
-                lines.append("")
-
-            relation_list.append(
-                {
-                    "endpoint": ep,
-                    "relation_id": rel_id,
-                    "application_data": app_data,
-                    "local_unit_data": local_unit_data,
-                    "related_units": {
-                        runit: rdata.get("data", {}) for runit, rdata in related_units.items()
-                    },
-                }
-            )
-
-        return ToolResult(
-            success=True,
-            output="\n".join(lines),
-            data={"unit": unit, "relations": relation_list},
-            caption=f"{len(relation_list)} relation{'s' if len(relation_list) != 1 else ''} on {unit}",
+        # Highlight asymmetries — remote keys absent from local, ignoring the
+        # three address keys Juju synthesises that the local side never sets.
+        expected_keys: set[str] = set()
+        for rdata in related_units.values():
+            expected_keys.update(rdata.get("data", {}).keys())
+        missing_in_local = (
+            expected_keys
+            - set(local_unit_data.keys())
+            - {"ingress-address", "private-address", "egress-subnets"}
         )
+        if missing_in_local:
+            lines.append(
+                f"**Asymmetry:** remote has keys not in local: {', '.join(sorted(missing_in_local))}"
+            )
+            lines.append("")
+        return lines, {
+            "endpoint": ep,
+            "relation_id": rel_id,
+            "application_data": app_data,
+            "local_unit_data": local_unit_data,
+            "related_units": {
+                runit: rdata.get("data", {}) for runit, rdata in related_units.items()
+            },
+        }
 
 
 def _validate_config_against_charm(
@@ -2215,78 +2256,12 @@ class JujuGetAppConfigTool(Tool):
                 output="",
                 error="Juju CLI not found. Is Juju installed?",
             )
-
-        try:
-            juju = jubilant.Juju(model=model)
-            stdout = await _run_juju(juju.cli, "config", app, "--format", "json")
-        except TimeoutError:
-            return ToolResult(
-                success=False,
-                output="",
-                error="juju config timed out.",
-            )
-        except (jubilant.CLIError, OSError, ValueError) as e:
-            return ToolResult(
-                success=False,
-                output="",
-                error=f"juju config failed: {e}",
-            )
-
-        try:
-            data = json.loads(stdout)
-        except json.JSONDecodeError:
-            return ToolResult(
-                success=False,
-                output="",
-                error="Failed to parse juju config output.",
-            )
-
-        settings = data.get("settings", {})
-        lines = [f"Configuration for {app}:", ""]
-        config_list: list[dict[str, Any]] = []
-        user_set_count = 0
-
-        for opt_name, opt_data in sorted(settings.items()):
-            if not isinstance(opt_data, dict):
-                continue
-            source = opt_data.get("source", "default")
-            value = opt_data.get("value", "")
-            opt_type = opt_data.get("type", "")
-            description = opt_data.get("description", "")
-
-            marker = "*" if source != "default" else " "
-            lines.append(f"  {marker} {opt_name}: {value} ({opt_type}, {source})")
-
-            if source != "default":
-                user_set_count += 1
-
-            config_list.append(
-                {
-                    "name": opt_name,
-                    "value": value,
-                    "type": opt_type,
-                    "source": source,
-                    "description": description,
-                }
-            )
-
-        if user_set_count:
-            lines.append("")
-            lines.append(f"* = user-set ({user_set_count} non-default value(s))")
-
-        # Config validation: cross-reference against charmcraft.yaml if provided.
-        validation: list[dict[str, str]] = []
-        if charm_path:
-            validation = _validate_config_against_charm(
-                {c["name"] for c in config_list}, charm_path
-            )
-            if validation:
-                lines.append("")
-                lines.append("## Validation Issues")
-                lines.append("")
-                for issue in validation:
-                    lines.append(f"  ! {issue['key']}: {issue['issue']}")
-
+        parsed = await self._fetch_config_json(model, app)
+        if isinstance(parsed, ToolResult):
+            return parsed
+        settings = parsed.get("settings", {})
+        lines, config_list, user_set_count = self._render_config_table(settings, app)
+        validation = self._render_validation_block(lines, config_list, charm_path)
         caption = f"{app} config: {user_set_count} user-set, {len(config_list)} total"
         if validation:
             caption += (
@@ -2303,6 +2278,84 @@ class JujuGetAppConfigTool(Tool):
             },
             caption=caption,
         )
+
+    @staticmethod
+    async def _fetch_config_json(model: str | None, app: str) -> dict[str, Any] | ToolResult:
+        """Run ``juju config <app> --format json`` and parse the envelope."""
+        try:
+            juju = jubilant.Juju(model=model)
+            stdout = await _run_juju(juju.cli, "config", app, "--format", "json")
+        except TimeoutError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="juju config timed out.",
+            )
+        except (jubilant.CLIError, OSError, ValueError) as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"juju config failed: {e}",
+            )
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            return ToolResult(
+                success=False,
+                output="",
+                error="Failed to parse juju config output.",
+            )
+
+    @staticmethod
+    def _render_config_table(
+        settings: dict[str, Any], app: str
+    ) -> tuple[list[str], list[dict[str, Any]], int]:
+        """Format the per-key config table; return (lines, structured rows, user-set count)."""
+        lines = [f"Configuration for {app}:", ""]
+        config_list: list[dict[str, Any]] = []
+        user_set_count = 0
+        for opt_name, opt_data in sorted(settings.items()):
+            if not isinstance(opt_data, dict):
+                continue
+            source = opt_data.get("source", "default")
+            value = opt_data.get("value", "")
+            opt_type = opt_data.get("type", "")
+            description = opt_data.get("description", "")
+            marker = "*" if source != "default" else " "
+            lines.append(f"  {marker} {opt_name}: {value} ({opt_type}, {source})")
+            if source != "default":
+                user_set_count += 1
+            config_list.append(
+                {
+                    "name": opt_name,
+                    "value": value,
+                    "type": opt_type,
+                    "source": source,
+                    "description": description,
+                }
+            )
+        if user_set_count:
+            lines.append("")
+            lines.append(f"* = user-set ({user_set_count} non-default value(s))")
+        return lines, config_list, user_set_count
+
+    @staticmethod
+    def _render_validation_block(
+        lines: list[str],
+        config_list: list[dict[str, Any]],
+        charm_path: str | None,
+    ) -> list[dict[str, str]]:
+        """Cross-reference deployed config against charmcraft.yaml; append findings to *lines*."""
+        if not charm_path:
+            return []
+        validation = _validate_config_against_charm({c["name"] for c in config_list}, charm_path)
+        if validation:
+            lines.append("")
+            lines.append("## Validation Issues")
+            lines.append("")
+            for issue in validation:
+                lines.append(f"  ! {issue['key']}: {issue['issue']}")
+        return validation
 
 
 class JujuListOffersTool(Tool):

@@ -1025,106 +1025,21 @@ class SetupLocalRegistryTool(Tool):
                 ),
                 caption="Juju CLI not found",
             )
-
         try:
             juju = jubilant.Juju(model=model)
-
-            # If the registry is already deployed in this model, reuse
-            # it.  Saves a 5-minute deploy on every retry of the
-            # surrounding "set up local registry" workflow.
-            try:
-                status = juju.status()
-            except jubilant.CLIError as exc:
-                return ToolResult(
-                    success=False,
-                    output="",
-                    error=f"Cannot reach Juju controller: {exc}",
-                    caption="Juju controller unreachable",
-                )
-
-            existing = status.apps.get(app_name)
+            status_or_error = self._fetch_juju_status(juju)
+            if isinstance(status_or_error, ToolResult):
+                return status_or_error
+            existing = status_or_error.apps.get(app_name)
             if existing is not None:
-                url = self._registry_url(existing)
-                return ToolResult(
-                    success=True,
-                    output=(
-                        f"Registry already deployed as '{app_name}' "
-                        f"(charm={existing.charm}).  In-cluster address: {url}.\n"
-                        + self._containerd_trust_block(url)
-                    ),
-                    data={
-                        "url": url,
-                        "substrate": "k8s",
-                        "already_deployed": True,
-                        "needs_containerd_trust": True,
-                        "app_name": app_name,
-                    },
-                    caption=f"Reused {app_name} at {url}",
-                )
-
-            # Deploy the charm.  Failures here are usually "charm not
-            # found on Charmhub" or "wrong substrate" — surface verbatim
-            # so the agent can retry with a different ``charm_name``.
-            try:
-                juju.deploy(charm_name, app_name, channel=channel)
-            except jubilant.CLIError as exc:
-                return ToolResult(
-                    success=False,
-                    output="",
-                    error=(
-                        f"Failed to deploy '{charm_name}' as '{app_name}': {exc}.\n"
-                        "If the charm name is unknown to Charmhub, run "
-                        "charmhub_search with query='registry' to find a valid one."
-                    ),
-                    data={"charm_name": charm_name},
-                    caption=f"juju deploy {charm_name} failed",
-                )
-
-            try:
-                juju.wait(jubilant.all_active, timeout=wait_timeout)
-            except jubilant.WaitError as exc:
-                return ToolResult(
-                    success=False,
-                    output="",
-                    error=(
-                        f"Registry charm did not reach active within {wait_timeout}s: {exc}.\n"
-                        "Check juju_status / juju_debug_log for the unit; the "
-                        "charm may be blocked on a config requirement."
-                    ),
-                    caption=f"{app_name} did not reach active",
-                )
-
-            status = juju.status()
-            app = status.apps.get(app_name)
-            if app is None:
-                # Should not happen — wait succeeded — but fail loudly if it does.
-                return ToolResult(
-                    success=False,
-                    output="",
-                    error=(
-                        f"Deploy succeeded but '{app_name}' is missing from "
-                        "juju status.  Inspect manually with juju_status."
-                    ),
-                    caption=f"{app_name} missing post-deploy",
-                )
-
-            url = self._registry_url(app)
-            return ToolResult(
-                success=True,
-                output=(
-                    f"Deployed '{charm_name}' as '{app_name}' on canonical k8s.\n"
-                    f"In-cluster registry address: {url}\n\n" + self._containerd_trust_block(url)
-                ),
-                data={
-                    "url": url,
-                    "substrate": "k8s",
-                    "already_deployed": False,
-                    "needs_containerd_trust": True,
-                    "app_name": app_name,
-                    "charm_name": charm_name,
-                },
-                caption=f"Deployed {charm_name} at {url}",
-            )
+                return self._existing_registry_success(app_name, existing)
+            deploy_error = self._deploy_registry_charm(juju, charm_name, app_name, channel)
+            if deploy_error is not None:
+                return deploy_error
+            wait_error = self._wait_for_registry_active(juju, app_name, wait_timeout)
+            if wait_error is not None:
+                return wait_error
+            return self._fresh_registry_success(juju, charm_name, app_name)
         except (jubilant.CLIError, jubilant.TaskError, OSError) as exc:
             return ToolResult(
                 success=False,
@@ -1132,6 +1047,117 @@ class SetupLocalRegistryTool(Tool):
                 error=f"Registry setup failed: {exc}",
                 caption="setup_local_registry failed",
             )
+
+    @staticmethod
+    def _fetch_juju_status(juju: jubilant.Juju) -> jubilant.statustypes.Status | ToolResult:
+        try:
+            return juju.status()
+        except jubilant.CLIError as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Cannot reach Juju controller: {exc}",
+                caption="Juju controller unreachable",
+            )
+
+    def _existing_registry_success(
+        self, app_name: str, existing: jubilant.statustypes.AppStatus
+    ) -> ToolResult:
+        # Reusing an already-deployed registry saves a 5-minute deploy on
+        # every retry of the surrounding "set up local registry" workflow.
+        url = self._registry_url(existing)
+        return ToolResult(
+            success=True,
+            output=(
+                f"Registry already deployed as '{app_name}' "
+                f"(charm={existing.charm}).  In-cluster address: {url}.\n"
+                + self._containerd_trust_block(url)
+            ),
+            data={
+                "url": url,
+                "substrate": "k8s",
+                "already_deployed": True,
+                "needs_containerd_trust": True,
+                "app_name": app_name,
+            },
+            caption=f"Reused {app_name} at {url}",
+        )
+
+    @staticmethod
+    def _deploy_registry_charm(
+        juju: jubilant.Juju, charm_name: str, app_name: str, channel: str
+    ) -> ToolResult | None:
+        # Failures here are usually "charm not found on Charmhub" or "wrong
+        # substrate" — surface verbatim so the agent can retry with a
+        # different ``charm_name``.
+        try:
+            juju.deploy(charm_name, app_name, channel=channel)
+        except jubilant.CLIError as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Failed to deploy '{charm_name}' as '{app_name}': {exc}.\n"
+                    "If the charm name is unknown to Charmhub, run "
+                    "charmhub_search with query='registry' to find a valid one."
+                ),
+                data={"charm_name": charm_name},
+                caption=f"juju deploy {charm_name} failed",
+            )
+        return None
+
+    @staticmethod
+    def _wait_for_registry_active(
+        juju: jubilant.Juju, app_name: str, wait_timeout: int
+    ) -> ToolResult | None:
+        try:
+            juju.wait(jubilant.all_active, timeout=wait_timeout)
+        except jubilant.WaitError as exc:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Registry charm did not reach active within {wait_timeout}s: {exc}.\n"
+                    "Check juju_status / juju_debug_log for the unit; the "
+                    "charm may be blocked on a config requirement."
+                ),
+                caption=f"{app_name} did not reach active",
+            )
+        return None
+
+    def _fresh_registry_success(
+        self, juju: jubilant.Juju, charm_name: str, app_name: str
+    ) -> ToolResult:
+        status = juju.status()
+        app = status.apps.get(app_name)
+        if app is None:
+            # Should not happen — wait succeeded — but fail loudly if it does.
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Deploy succeeded but '{app_name}' is missing from "
+                    "juju status.  Inspect manually with juju_status."
+                ),
+                caption=f"{app_name} missing post-deploy",
+            )
+        url = self._registry_url(app)
+        return ToolResult(
+            success=True,
+            output=(
+                f"Deployed '{charm_name}' as '{app_name}' on canonical k8s.\n"
+                f"In-cluster registry address: {url}\n\n" + self._containerd_trust_block(url)
+            ),
+            data={
+                "url": url,
+                "substrate": "k8s",
+                "already_deployed": False,
+                "needs_containerd_trust": True,
+                "app_name": app_name,
+                "charm_name": charm_name,
+            },
+            caption=f"Deployed {charm_name} at {url}",
+        )
 
     @staticmethod
     def _registry_url(app: jubilant.statustypes.AppStatus) -> str:

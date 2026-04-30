@@ -3929,13 +3929,23 @@ decomposition last.
   into model / session / budget / loop / print / appearance
   groups; argv fall-through lifted into `_normalise_argv`.  No
   CLI behaviour change.
-- [ ] `src/cantrip/agent/tools/rockcraft.py:915
-  _deploy_k8s_registry` (128 lines) and the four `juju.py`
-  `execute()` methods that exceed 100 lines (lines 188,
-  1381, 1821, 2048): extract the body into
-  module-private helpers per logical phase.  These do not
-  block the phase; they are the next-cleanest one-shot
-  improvements once the bigger moves above land.
+- [x] `src/cantrip/agent/tools/rockcraft.py
+  _deploy_k8s_registry` (was 128 lines, now 43) decomposed
+  into per-phase helpers: `_fetch_juju_status`,
+  `_existing_registry_success`, `_deploy_registry_charm`,
+  `_wait_for_registry_active`, `_fresh_registry_success`.
+  The four `juju.py` `execute()` methods that exceeded 100
+  lines now sit at 36–48 line bodies after extracting
+  per-phase helpers: `JujuReadRelationDataTool` →
+  `_fetch_show_unit_json` + `_format_relation_block`;
+  `JujuGetAppConfigTool` → `_fetch_config_json` +
+  `_render_config_table` + `_render_validation_block`;
+  `JujuDeployTool` → `_resolve_and_stage_charm` +
+  `_build_deploy_args` + `_deploy_success_result`;
+  `CharmSyncTool` → `_collect_python_files` + `_push_file`.
+  Pure refactor — no behaviour change, all 141 tests across
+  `test_juju_tools.py`, `test_juju_introspection.py`, and
+  `test_rockcraft_tools.py` still pass.
 
 ### 85.7 Move — top-level Python files into packages
 

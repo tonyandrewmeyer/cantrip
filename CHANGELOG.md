@@ -133,6 +133,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **Function-level giants in ``rockcraft.py`` and ``juju.py``
+  decomposed (Phase 85.6).**  ``SetupLocalRegistryTool.
+  _deploy_k8s_registry`` shrank from 128 lines to 43 by
+  splitting each registry-deploy phase into its own helper
+  (status fetch, reuse-existing, deploy, wait-active,
+  fresh-success).  Four ``juju.py`` ``execute()`` methods
+  that exceeded 100 lines — ``JujuReadRelationDataTool``,
+  ``JujuGetAppConfigTool``, ``JujuDeployTool``, and
+  ``CharmSyncTool`` — now sit at 36–48 line bodies after
+  extracting per-phase helpers (JSON fetch + parse, table
+  rendering, validation, deploy-arg building, file
+  collection, snap-confined charm staging).  Pure refactor;
+  the existing 141 unit tests across the affected modules
+  still pass.
 - **``main.parse_args`` decomposed into per-subsystem helpers
   (Phase 85.6).**  The 675-line argparse setup is now a 32-line
   composition: nine ``_add_<subcommand>_subparser`` helpers cover
