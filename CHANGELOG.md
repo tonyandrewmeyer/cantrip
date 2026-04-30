@@ -38,6 +38,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   load as ``"local"`` so existing decisions retain their meaning.
   Shared rows are skipped on ``save_session`` so the JSONL file stays
   the canonical record.
+- **Team-sync how-to docs (Phase 51b.4).**  New
+  ``docs/docs/howto-team-sync.html`` covers the three opt-in
+  toggles (shared memory, shared decisions, human co-author
+  trailer), the ``.cantrip-shared/`` layout, the textual-git-merge
+  conflict policy, and a worked two-operator walkthrough.
+  ``docs/docs/howto-memory.html`` gains a third bullet for the
+  shared scope alongside charm and global, with a cross-link.
+  Sidebar nav (``docs/src/_site.yaml``) and the docs landing page
+  card grid both surface the new how-to.
 - **Human co-author trailer on auto-commits (Phase 51b.3).**  The
   agent commit (``src/cantrip/agent/auto_commit.py``) now appends a
   second ``Co-Authored-By:`` line built from the local

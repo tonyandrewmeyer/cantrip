@@ -10,6 +10,8 @@ see_also:
     href: "reference-cli.html#slash-commands"
   - label: "Agent tools reference"
     href: "reference-tools.html"
+  - label: "Share charm context with teammates"
+    href: "howto-team-sync.html"
 ---
 
 {#overview}
@@ -17,7 +19,7 @@ see_also:
 
 Cantrip’s memory layer is separate from its conversation
 history. Individual chats forget everything on exit; memory
-survives. Two scopes exist:
+survives. Three scopes exist:
 
 - **Charm-scope** — specific to one charm.
   Stored inside the charm’s `.cantrip` SQLite
@@ -26,6 +28,14 @@ survives. Two scopes exist:
   charm. Stored under
   `~/.config/cantrip/memory/` as Markdown files with
   YAML frontmatter (override via `CANTRIP_MEMORY_DIR`).
+- **Shared (team-sync) scope** — opt-in, charm-rooted, and
+  committed to git so teammates pick it up on the next pull.
+  Stored under `<charm>/.cantrip-shared/memory/` as
+  Markdown files in the same format as global memory.
+  Off by default; flip on with
+  `CANTRIP_TEAM_MEMORY_WRITES=shared`. See
+  [Share charm context with teammates](howto-team-sync.html)
+  for the full walkthrough.
 
 Each memory has a *kind*:
 

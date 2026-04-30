@@ -13,6 +13,7 @@ sections:
       - { slug: howto-export, label: "Export transcripts" }
       - { slug: howto-light-models, label: "Configure light models" }
       - { slug: howto-memory, label: "Use durable memory" }
+      - { slug: howto-team-sync, label: "Share with teammates" }
       - { slug: howto-skills, label: "Add a custom skill" }
       - { slug: howto-mcp, label: "Configure MCP servers" }
       - { slug: howto-charm-library, label: "Search the charm library" }

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to share charm context with teammates &mdash; Cantrip</title>
+<meta name="description" content="Three opt-in settings &mdash; shared memory, shared decisions log, human co-author trailer &mdash; turn Cantrip into a small-team tool without standing up a server.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html" class="current">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Share with teammates
+    </div>
+
+    <h1>Share charm context with teammates</h1>
+    <p class="subtitle">
+      Three opt-in toggles share memory, decisions, and attribution with teammates via the same git repo, no server required.
+    </p>
+
+<h2 id="what">What team-sync gives you</h2>
+<p>Cantrip is a single-operator tool by default &mdash; every memory and
+every decision lives only on the machine that recorded it. Teams of
+two to five charm authors collaborating on the same repo hit the
+same gap repeatedly: each operator builds up context the others
+never see.</p>
+<p>Team-sync closes that gap with three opt-in toggles. All three are
+file-based, all three live alongside the charm in git, and all
+three are reversible by removing the
+<code>&lt;charm&gt;/.cantrip-shared/</code> directory or flipping the matching
+setting back off:</p>
+<ul>
+<li><strong>Shared memory</strong> &mdash; charm-scope memories travel with the repo
+via <code>&lt;charm&gt;/.cantrip-shared/memory/</code>.</li>
+<li><strong>Shared decisions log</strong> &mdash; every <code>add_decision</code>
+optionally appends to
+<code>&lt;charm&gt;/.cantrip-shared/decisions.jsonl</code> so the <em>why</em>
+behind every choice is visible to teammates.</li>
+<li><strong>Human co-author trailer</strong> &mdash; auto-commit messages get a
+second <code>Co-Authored-By:</code> line built from <code>git config user.name</code> / <code>user.email</code>, so <code>git log</code> shows
+which human steered each agent commit.</li>
+</ul>
+<p>The three are independent &mdash; you can flip any one on without the
+others. None of them needs a Cantrip server, and none of them
+changes behaviour for an operator who has not opted in.</p>
+<h2 id="shared-memory">Share memories across the team</h2>
+<p>The memory subsystem already has two scopes (charm and global &mdash;
+see <a href="howto-memory.html">Use durable memory</a>). Team-sync adds a
+third surface: an opt-in shared directory under the charm root
+that everybody on the team commits to git.</p>
+<h3>Turn it on</h3>
+<p>Set the environment variable before launching Cantrip:</p>
+<pre><code>CANTRIP_TEAM_MEMORY_WRITES=shared cantrip run .
+</code></pre>
+<p>The setting takes one of three values:</p>
+<ul>
+<li><strong><code>local</code></strong> <em>(default)</em> &mdash; charm-scope writes land in
+the per-charm SQLite store, matching pre-team-sync
+behaviour.</li>
+<li><strong><code>shared</code></strong> &mdash; every new charm-scope memory lands in
+<code>&lt;charm&gt;/.cantrip-shared/memory/</code> and is staged for
+the next commit.</li>
+<li><strong><code>ask</code></strong> &mdash; delegate the decision to a registered
+callback. With no callback wired up, falls back to
+<code>local</code> so an unconfigured TUI never silently drops
+writes.</li>
+</ul>
+<h3>What teammates see</h3>
+<p>Reads always merge the shared directory regardless of the write
+setting, so an operator who flipped to <code>shared</code> last
+week still sees teammates' memories today even after toggling
+back to <code>local</code>. Shared entries surface in
+<code>/memory</code> listings with the <code>source: shared</code>
+marker so they're easy to tell apart from local-only entries.</p>
+<p>The on-disk format is the same Markdown-with-frontmatter shape as
+<a href="howto-memory.html#overview">global memory</a>:</p>
+<pre><code>---
+title: postgres-version
+kind: fact
+source: shared
+created: 2026-04-30T12:00:00
+status: active
+tags: []
+citations: []
+---
+
+Workload pins Postgres 16.
+</code></pre>
+<p><code>source: shared</code> is the marker that makes a memory team-visible.
+Hand-written files in <code>.cantrip-shared/memory/</code> work
+just as well as auto-writer captures &mdash; the directory is a regular
+folder, not a database.</p>
+<h3>When to use shared scope</h3>
+<p>Three rules of thumb:</p>
+<ul>
+<li><strong>Shared</strong> for facts and rules the <em>charm</em> needs to obey,
+not the operator. <em>&quot;Workload pins Postgres 16&quot;</em>. <em>&quot;Never
+push to main without approval&quot;</em>. The next teammate to touch
+this charm will need the same constraints.</li>
+<li><strong>Charm (local)</strong> for opinions personal to the operator.
+<em>&quot;I prefer to test on microk8s before k8s&quot;</em>. Don't push your
+workflow preferences onto teammates.</li>
+<li><strong>Global</strong> for cross-charm rules that apply to every charm
+you touch. Already personal &mdash; sharing globally would mean
+pushing your prefs onto everyone else's repos.</li>
+</ul>
+<h2 id="shared-decisions">Share the decisions log</h2>
+<p>Cantrip records every routing decision (which model, which
+substrate, which path) in a per-session SQLite table. Team-sync
+adds an append-only JSONL log alongside it so teammates pick up
+the <em>why</em> on the next pull.</p>
+<h3>Turn it on</h3>
+<pre><code>CANTRIP_TEAM_DECISIONS_WRITES=shared cantrip run .
+</code></pre>
+<p>Two values:</p>
+<ul>
+<li><strong><code>local</code></strong> <em>(default)</em> &mdash; decisions only land in the
+per-charm SQLite store.</li>
+<li><strong><code>shared</code></strong> &mdash; every <code>add_decision</code> also appends a
+JSON line to <code>&lt;charm&gt;/.cantrip-shared/decisions.jsonl</code>.</li>
+</ul>
+<h3>What's in the log</h3>
+<p>One JSON object per line:</p>
+<pre><code>{&quot;type&quot;: &quot;substrate&quot;, &quot;choice&quot;: &quot;K8s&quot;, &quot;reason&quot;: &quot;containers&quot;, &quot;timestamp&quot;: &quot;2026-04-30T12:00:00&quot;}
+{&quot;type&quot;: &quot;framework&quot;, &quot;choice&quot;: &quot;ops&quot;, &quot;reason&quot;: &quot;team standardised&quot;, &quot;timestamp&quot;: &quot;2026-04-30T12:01:34&quot;}
+</code></pre>
+<p>On load, every entry is flagged with <code>source=&quot;shared&quot;</code>
+so:</p>
+<ul>
+<li>The local SQLite save path <strong>skips</strong> shared rows. The JSONL
+file is the canonical record; SQLite never duplicates it.</li>
+<li>The agent UI can render shared decisions distinctly from
+the operator's own.</li>
+<li>A save &rarr; load &rarr; save round-trip never grows the JSONL &mdash; only
+fresh <code>add_decision</code> calls do.</li>
+</ul>
+<h3>Reads merge regardless of the write setting</h3>
+<p>Just like shared memory, reads always merge the shared decisions
+log when <code>charm_path</code> is set. Toggling
+<code>CANTRIP_TEAM_DECISIONS_WRITES</code> only changes whether
+<em>new</em> decisions get pushed to the file; the rest of the team's
+history is always visible.</p>
+<h2 id="attribution">Surface which human steered each commit</h2>
+<p>When <a href="howto-auto-commit.html">auto-commit-per-turn</a> is on,
+Cantrip stamps every commit with a
+<code>Co-Authored-By: Cantrip &lt;noreply@aotearoa.dev&gt;</code>
+trailer to mark the agent as a co-author. Team-sync extends this
+with a second trailer built from your local git config:</p>
+<pre><code>feat(charm): add ops-tracing integration
+
+Prompt: Add ops-tracing to src/charm.py &hellip;
+
+Touched:
+  - src/charm.py
+
+Co-Authored-By: Cantrip &lt;noreply@aotearoa.dev&gt;
+Co-Authored-By: Tony Meyer &lt;tony.meyer@example.com&gt;
+</code></pre>
+<p>No setting required &mdash; the trailer is added automatically when
+<code>git config user.name</code> and <code>user.email</code> are set.
+Skipped silently for single-operator setups where the git
+config matches Cantrip's canonical, so no behavioural change for
+existing solo installs.</p>
+<h2 id="layout">Where the files live</h2>
+<pre><code>&lt;charm&gt;/
+├── .cantrip                      ← per-operator SQLite session (gitignored)
+├── .cantrip-shared/              ← committed; teammates pull this
+│   ├── memory/
+│   │   ├── postgres-version.md
+│   │   ├── ops-tracing-required.md
+│   │   └── &hellip;
+│   └── decisions.jsonl
+└── src/
+    └── &hellip;
+</code></pre>
+<p>A few things worth noting:</p>
+<ul>
+<li><strong><code>.cantrip</code> is per-operator.</strong> It's the local SQLite
+session file &mdash; never commit it. Add to
+<code>.gitignore</code> if it isn't already.</li>
+<li><strong><code>.cantrip-shared/</code> is committed.</strong> Teammates pull it the
+same way they pull source. The path differs from the
+internal-design proposal of <code>.cantrip/shared/</code>
+because <code>.cantrip</code> is occupied by the SQLite file &mdash;
+a single path can't be both a file and a directory.</li>
+<li><strong>No external service.</strong> Everything sits next to the charm.
+If you remove <code>.cantrip-shared/</code> and stop passing
+the env vars, the team-sync surface disappears with
+zero residue.</li>
+</ul>
+<h2 id="conflicts">Conflict policy &mdash; textual git merge</h2>
+<p>When two teammates edit the same shared memory or append the
+same decision concurrently, git resolves the merge textually:</p>
+<ul>
+<li><strong>Memory files.</strong> Two teammates who edit
+<code>.cantrip-shared/memory/postgres-version.md</code> on
+diverging branches see git's standard merge-conflict
+markers in the file. Resolve like any other Markdown
+conflict.</li>
+<li><strong>Decisions log.</strong> The JSONL file is append-only, so
+concurrent appends usually merge cleanly &mdash; git treats
+them as adjacent line additions. Real conflicts (two
+appends at the literal same byte offset) again get the
+standard markers; remove duplicates by hand.</li>
+<li><strong>No in-app conflict UI.</strong> Cantrip doesn't try to
+reconcile divergent shared state &mdash; that's git's job. The
+upside is that there's nothing to learn beyond
+<code>git pull</code> and <code>git push</code>.</li>
+</ul>
+<p>If the JSONL file accumulates unwanted history, hand-edit it.
+Cantrip never rewrites the file outside the append path, so
+removing a stale line is safe.</p>
+<h2 id="worked-example">Worked example &mdash; two operators</h2>
+<p>Alice picks up a new charm and turns on team-sync from the
+shell:</p>
+<pre><code>export CANTRIP_TEAM_MEMORY_WRITES=shared
+export CANTRIP_TEAM_DECISIONS_WRITES=shared
+cantrip run .
+</code></pre>
+<p>She does some work. The auto-writer captures a memory
+(&quot;<code>postgres-version</code>&quot;) and Cantrip records a routing
+decision (&quot;<code>framework=ops</code>&quot;). Both land under
+<code>.cantrip-shared/</code>. Auto-commit-per-turn picks them up
+and pushes a commit with both trailer lines. She pushes:</p>
+<pre><code>git push
+</code></pre>
+<p>Bob pulls. He doesn't even need the env vars set &mdash; <em>reads</em>
+always merge the shared layer:</p>
+<pre><code>git pull
+cantrip run .
+</code></pre>
+<p>His next session starts with Alice's
+<code>postgres-version</code> memory loaded into the prompt index
+and her <code>framework=ops</code> decision visible in
+<code>/decisions</code>. The shared memory shows up in
+<code>/memory</code> with a <code>source: shared</code> marker so
+he knows it came from a teammate.</p>
+<p>When he wants to <em>write</em> a shared memory of his own, he flips
+the env var on for that session:</p>
+<pre><code>CANTRIP_TEAM_MEMORY_WRITES=shared cantrip run .
+</code></pre>
+<p>His new memory lands in <code>.cantrip-shared/memory/</code>,
+auto-commit picks it up, and Alice gets it on her next
+<code>git pull</code>.</p>
+<h2 id="what-its-not">What team-sync is <em>not</em></h2>
+<ul>
+<li><strong>Not a shared server.</strong> No daemon, no service, no extra
+port. Coordination is git, the same way the rest of the
+charm is.</li>
+<li><strong>Not real-time collaboration.</strong> Teammates see each
+other's changes only after a push and pull. If you need
+live co-editing, this isn't it.</li>
+<li><strong>Not a substitute for code review.</strong> A shared memory is
+not a PR &mdash; anybody on the team can append. Use the same
+judgement you'd use about anything else committed to the
+repo.</li>
+<li><strong>Not the same as the global scope.</strong> Global memories are
+yours alone, scoped to your laptop. Shared memories are
+charm-scoped and pushed to teammates.</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3>&quot;Why don't I see my teammate's memories?&quot;</h3>
+<p>Check that <code>.cantrip-shared/</code> is actually in the repo:</p>
+<pre><code>git ls-files .cantrip-shared/
+</code></pre>
+<p>If the directory is missing, your teammate hasn't pushed any
+shared writes yet, or <code>.cantrip-shared/</code> is in
+<code>.gitignore</code> somewhere up the tree. Cantrip never
+auto-creates the directory &mdash; it's only made on the first
+shared write.</p>
+<h3>&quot;I want to stop sharing without losing what's already shared&quot;</h3>
+<p>Just unset the env vars:</p>
+<pre><code>unset CANTRIP_TEAM_MEMORY_WRITES
+unset CANTRIP_TEAM_DECISIONS_WRITES
+</code></pre>
+<p>Existing shared files stay where they are &mdash; teammates keep
+seeing them on <code>git pull</code> until somebody removes the
+files explicitly. New writes go back to the local SQLite
+store.</p>
+<h3>&quot;I want to wipe the shared layer entirely&quot;</h3>
+<pre><code>git rm -r .cantrip-shared/
+git commit -m &quot;Stop using cantrip team-sync&quot;
+</code></pre>
+<p>Reverting to a single-operator setup is just removing the
+directory. Local SQLite stores are untouched.</p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

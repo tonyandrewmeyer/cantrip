@@ -42,6 +42,7 @@
       <li><a href="howto-export.html">Export transcripts</a></li>
       <li><a href="howto-light-models.html">Configure light models</a></li>
       <li><a href="howto-memory.html" class="current">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
       <li><a href="howto-skills.html">Add a custom skill</a></li>
       <li><a href="howto-mcp.html">Configure MCP servers</a></li>
       <li><a href="howto-charm-library.html">Search the charm library</a></li>
@@ -66,6 +67,7 @@
     <ul>
       <li><a href="reference-cli.html#slash-commands">Slash commands reference</a></li>
       <li><a href="reference-tools.html">Agent tools reference</a></li>
+      <li><a href="howto-team-sync.html">Share charm context with teammates</a></li>
     </ul>
   </aside>
 
@@ -82,7 +84,7 @@
 <h2 id="overview">What Cantrip remembers</h2>
 <p>Cantrip&rsquo;s memory layer is separate from its conversation
 history. Individual chats forget everything on exit; memory
-survives. Two scopes exist:</p>
+survives. Three scopes exist:</p>
 <ul>
 <li><strong>Charm-scope</strong> &mdash; specific to one charm.
 Stored inside the charm&rsquo;s <code>.cantrip</code> SQLite
@@ -91,6 +93,14 @@ database alongside the session.</li>
 charm. Stored under
 <code>~/.config/cantrip/memory/</code> as Markdown files with
 YAML frontmatter (override via <code>CANTRIP_MEMORY_DIR</code>).</li>
+<li><strong>Shared (team-sync) scope</strong> &mdash; opt-in, charm-rooted, and
+committed to git so teammates pick it up on the next pull.
+Stored under <code>&lt;charm&gt;/.cantrip-shared/memory/</code> as
+Markdown files in the same format as global memory.
+Off by default; flip on with
+<code>CANTRIP_TEAM_MEMORY_WRITES=shared</code>. See
+<a href="howto-team-sync.html">Share charm context with teammates</a>
+for the full walkthrough.</li>
 </ul>
 <p>Each memory has a <em>kind</em>:</p>
 <ul>

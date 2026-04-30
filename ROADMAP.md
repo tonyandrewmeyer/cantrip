@@ -665,13 +665,15 @@ See [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
 
 ### 51b.4 Documentation
 
-- [ ] New ``docs/docs/howto-team-sync.html`` covers the three
-  opt-in settings, the shared-directory format, the conflict
-  policy, and the worked example of two operators collaborating
-  via the shared layer.
-- [ ] Updates to ``docs/docs/howto-memory.html`` mention shared
-  scope alongside charm and global.
-- [ ] CHANGELOG entry under Unreleased.
+- [x] New ``docs/docs/howto-team-sync.html`` covers the three
+  opt-in settings, the shared-directory format, the textual-git
+  -merge conflict policy, and a worked two-operator example.
+  Sidebar nav (``docs/src/_site.yaml``) and the docs landing
+  page card grid both surface the new how-to.
+- [x] Updates to ``docs/docs/howto-memory.html`` mention shared
+  scope alongside charm and global, with a cross-link to the
+  team-sync how-to and a ``see_also`` entry.
+- [x] CHANGELOG entry under Unreleased.
 
 **Exit criteria:** Three settings ship with sensible defaults
 (all ``local`` / off — opt-in only).  ``make check`` passes.
