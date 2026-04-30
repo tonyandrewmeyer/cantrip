@@ -25,7 +25,7 @@ from cantrip.tui.widgets import chat as chat_widget
 from cantrip.tui.widgets import status as status_widgets
 from cantrip.tui.widgets import statusbar as statusbar_widget
 from cantrip.ui import events as ui_events
-from tests.unit.test_tui import _patch_app
+from tests.unit.tui.test_tui import _patch_app
 
 pytestmark = pytest.mark.tui
 

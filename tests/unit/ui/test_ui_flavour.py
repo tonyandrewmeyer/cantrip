@@ -144,7 +144,7 @@ class TestJsPoolDrift:
         small regex does the job without adding a test dependency.
         """
         js_path = (
-            pathlib.Path(__file__).resolve().parents[2]
+            pathlib.Path(__file__).resolve().parents[3]
             / "src"
             / "cantrip"
             / "web"

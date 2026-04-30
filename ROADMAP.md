@@ -3984,27 +3984,32 @@ decomposition last.
 
 ### 85.8 Mirror — `tests/unit/` folder structure
 
-- [ ] Move test files into folders that mirror `src/cantrip/`
-  for the heaviest groups.  Concretely:
-  `tests/unit/agent/` (catch-all for non-grouped agent tests),
-  `tests/unit/agent/memory/` (already covered in 85.2),
-  `tests/unit/agent/commands/`, `tests/unit/agent/tools/`,
-  `tests/unit/llm/`, `tests/unit/mcp/`, `tests/unit/tui/`,
-  `tests/unit/web/`, `tests/unit/repomap/`.  The 167-flat-
-  files state at the top level of `tests/unit/` is the
-  symptom; the goal is that browsing the test tree gives
-  the same shape as browsing `src/`.
-- [ ] Keep the existing sub-folders in place (`executor/`,
-  `subagent/`, `planner/`, `charm_tools/`, `charmlint/`,
-  `quickpack/`) — they're already correctly grouped.
-- [ ] Rename one ambiguous pair: `tests/unit/test_tool_caption.py`
-  (helper unit-tests) and `tests/unit/test_tool_captions.py`
-  (per-tool integration tests) differ only by an `s`.  Pick
-  unambiguous names — e.g. `test_caption_builder.py` and
-  `test_caption_coverage.py`.
-- [ ] Run `make unit` after the moves; pytest discovery is
-  path-relative so this is mostly a `git mv` exercise plus
-  `__init__.py` housekeeping.
+- [x] Moved 171 of the 184 flat test files at the top level of
+  `tests/unit/` into folders mirroring `src/cantrip/`.  New
+  groups (in addition to the existing `agent/`, `agent/memory/`,
+  `agent/commands/`, `executor/`, `subagent/`, `planner/`,
+  `charm_tools/`, `charmlint/`, `quickpack/`): `agent/tools/`
+  (56 files), `llm/` (10), `mcp/` (7), `tui/` (12), `web/` (2),
+  `ui/` (4), `repomap/` (1), `docs_index/` (3), `transcript/`
+  (2).  13 files stay at the top level — they test top-level
+  modules (`main`, `cli`-style standalones, `clipboard`,
+  `compare`, `diagnostics`, `workspace`, `update`, `hooks`)
+  or are root-level fixtures (`test_e2e_harness`, `test_status`,
+  `test_pypi_attest`, `test_cookbook_recipes`).
+- [x] Existing sub-folders (`executor/`, `subagent/`, `planner/`,
+  `charm_tools/`, `charmlint/`, `quickpack/`) left in place;
+  they were already correctly grouped.
+- [x] Renamed the ambiguous pair: `test_tool_caption.py` →
+  `test_caption_builder.py` (helper unit tests) and
+  `test_tool_captions.py` → `test_caption_coverage.py`
+  (per-tool coverage matrix), both now under
+  `tests/unit/agent/tools/`.
+- [x] `make unit` passes after the moves (6 411 passed, 8
+  skipped).  Five `__file__`-relative path constants and two
+  cross-test imports (`tests.unit.test_tui` → `tests.unit.tui.
+  test_tui`) needed `parents[]` index updates to match the
+  new depth; otherwise pytest discovery handled the renames
+  automatically.
 
 ### What this phase is *not*
 

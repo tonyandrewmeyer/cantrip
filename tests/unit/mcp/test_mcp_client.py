@@ -20,7 +20,7 @@ from cantrip.mcp.types import TransportKind
 
 # Project root — ``python -m tests.unit.mcp_stub_server`` only resolves
 # when invoked from here, and xdist workers may have a different cwd.
-_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
 def _stub_config(name: str = "stub", **overrides: object) -> ServerConfig:

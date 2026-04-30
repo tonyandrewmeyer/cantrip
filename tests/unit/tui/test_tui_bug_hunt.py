@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from cantrip.tui.app import CantripApp
-from tests.unit.test_tui import _patch_app
+from tests.unit.tui.test_tui import _patch_app
 
 pytestmark = pytest.mark.tui
 

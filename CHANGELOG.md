@@ -133,6 +133,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **``tests/unit/`` now mirrors ``src/cantrip/`` (Phase 85.8).**
+  171 of the 184 flat test files at the top level of
+  ``tests/unit/`` moved into folders matching their target
+  subpackage: ``agent/tools/`` (56), ``llm/`` (10), ``mcp/`` (7),
+  ``tui/`` (12), ``web/`` (2), ``ui/`` (4), ``repomap/``,
+  ``docs_index/``, ``transcript/``.  Renamed the easily-confused
+  ``test_tool_caption.py`` / ``test_tool_captions.py`` pair to
+  ``test_caption_builder.py`` and ``test_caption_coverage.py``.
+  13 files stay at the top level — they test top-level modules
+  (``main``, ``compare``, ``clipboard``, ``diagnostics``,
+  ``workspace``, ``update``, ``hooks``) or are package-level
+  fixtures.  Pure layout change — ``make unit`` passes
+  unchanged (6 411 passed); the only code edits were five
+  ``__file__``-relative path constants and two cross-test
+  imports that needed their ``parents[]`` index updated to
+  match the new depth.
 - **``cantrip.hooks`` and ``cantrip.update`` reshaped into
   packages (Phase 85.7).**  ``hooks.py`` (1 037 lines) now lives
   under ``hooks/`` with four submodules — ``types``, ``filter``,

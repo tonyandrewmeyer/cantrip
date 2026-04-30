@@ -16,7 +16,7 @@ from cantrip.agent.tools.mcp_tool import MCPTool
 from cantrip.mcp import MCPRegistry, ServerConfig
 from cantrip.mcp.types import MCPToolInfo, TransportKind
 
-_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 
 def _stub_config(name: str = "stub", **overrides: object) -> ServerConfig:

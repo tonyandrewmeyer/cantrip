@@ -14,9 +14,7 @@ from cantrip.agent.skill_scanner import (
     scan_skill,
 )
 
-_BUNDLED_SKILLS = (
-    pathlib.Path(__file__).resolve().parent.parent.parent / "src" / "cantrip" / "skills"
-)
+_BUNDLED_SKILLS = pathlib.Path(__file__).resolve().parents[3] / "src" / "cantrip" / "skills"
 
 
 def _write_skill(
