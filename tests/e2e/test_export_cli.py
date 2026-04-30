@@ -11,74 +11,7 @@ import subprocess
 
 import pytest
 
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.agent.state import AgentState
-from cantrip.agent.store import SessionStore
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _seed_database(charm_path: pathlib.Path) -> None:
-    """Create a .cantrip database with enough data for meaningful exports."""
-    db_path = charm_path / ".cantrip"
-    store = SessionStore(db_path)
-    store.open()
-
-    state = AgentState(
-        charm_name="cli-test-charm",
-        charm_path=charm_path,
-        charm_type="k8s",
-        framework="ops",
-    )
-    store.save_session(state)
-
-    store.record_message("user", "Build me a charm")
-    store.record_message("assistant", "Sure, building your charm now.")
-    store.record_message(
-        "assistant",
-        "",
-        tool_calls=[
-            {"id": "tc1", "name": "write_file", "arguments": {"path": "src/charm.py"}},
-        ],
-    )
-    store.record_message(
-        "tool",
-        "",
-        tool_results=[
-            {"tool_call_id": "tc1", "content": "Written.", "is_error": False},
-        ],
-    )
-    store.record_message("assistant", "Done!")
-
-    tasks = [
-        AgentTask(
-            id="research",
-            title="Research workload",
-            status=TaskStatus.DONE,
-            category=TaskCategory.RESEARCH,
-            result="Researched.",
-        ),
-        AgentTask(
-            id="build",
-            title="Build charm",
-            status=TaskStatus.DONE,
-            category=TaskCategory.BUILD,
-            result="Built.",
-        ),
-    ]
-    store.save_tasks(tasks)
-
-    store.record_subagent_message("research", 0, "system", "You are a subagent.")
-    store.record_subagent_message("research", 1, "assistant", "Research complete.")
-
-    store.record_event("task_started", {"task_id": "research"})
-    store.record_event("task_completed", {"task_id": "research"})
-
-    store.record_usage("gemini", "gemini-2.0-flash", 100, 50)
-
-    store.close()
+from tests.support import transcript_seed
 
 
 def _run_cantrip(*args: str) -> subprocess.CompletedProcess:
@@ -104,7 +37,7 @@ class TestExportCLI:
         """Export as HTML produces a valid HTML file."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
-        _seed_database(charm_path)
+        transcript_seed.seed_cli_export_session(charm_path)
 
         result = _run_cantrip("export-transcript", str(charm_path), "--format", "html")
 
@@ -121,7 +54,7 @@ class TestExportCLI:
         """Export as Markdown produces a valid .md file."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
-        _seed_database(charm_path)
+        transcript_seed.seed_cli_export_session(charm_path)
 
         result = _run_cantrip("export-transcript", str(charm_path), "--format", "markdown")
 
@@ -139,7 +72,7 @@ class TestExportCLI:
         """Export as JSONL produces valid newline-delimited JSON."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
-        _seed_database(charm_path)
+        transcript_seed.seed_cli_export_session(charm_path)
 
         result = _run_cantrip("export-transcript", str(charm_path), "--format", "jsonl")
 
@@ -160,7 +93,7 @@ class TestExportCLI:
         """--output writes to the specified path."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
-        _seed_database(charm_path)
+        transcript_seed.seed_cli_export_session(charm_path)
 
         output_file = tmp_path / "custom_output.md"
         result = _run_cantrip(
@@ -180,7 +113,7 @@ class TestExportCLI:
         """--task filters to a single task."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
-        _seed_database(charm_path)
+        transcript_seed.seed_cli_export_session(charm_path)
 
         output_file = tmp_path / "filtered.jsonl"
         result = _run_cantrip(
@@ -206,7 +139,7 @@ class TestExportCLI:
         """--phase filters tasks by category group."""
         charm_path = tmp_path / "my-charm"
         charm_path.mkdir()
-        _seed_database(charm_path)
+        transcript_seed.seed_cli_export_session(charm_path)
 
         output_file = tmp_path / "phase.jsonl"
         result = _run_cantrip(
