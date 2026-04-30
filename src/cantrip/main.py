@@ -135,6 +135,7 @@ def _add_run_model_options(parser: argparse.ArgumentParser) -> None:
             "inference-snap",
             "fireworks",
             "openrouter",
+            "opencode-zen",
             "openai-compatible",
         ],
         default="gemini",
@@ -168,7 +169,14 @@ def _add_run_model_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--light-provider",
-        choices=["gemini", "claude", "inference-snap", "fireworks", "openrouter"],
+        choices=[
+            "gemini",
+            "claude",
+            "inference-snap",
+            "fireworks",
+            "openrouter",
+            "opencode-zen",
+        ],
         help="Use a different provider for light tasks (enables hybrid mode)",
     )
     parser.add_argument(
@@ -930,6 +938,13 @@ def _run(args: argparse.Namespace) -> int:
         print("Error: OPENROUTER_API_KEY environment variable not set")
         print("Get a key from: https://openrouter.ai/settings/keys")
         print("Set it with: export OPENROUTER_API_KEY='your-key-here'")
+        return 1
+    elif args.provider == "opencode-zen" and not (
+        os.environ.get("OPENCODE_ZEN_API_KEY") or os.environ.get("ZEN_API_KEY")
+    ):
+        print("Error: OPENCODE_ZEN_API_KEY environment variable not set")
+        print("Get a key from: https://opencode.ai/zen")
+        print("Set it with: export OPENCODE_ZEN_API_KEY='your-key-here'")
         return 1
     elif args.provider == "openai-compatible":
         if not getattr(args, "base_url", None):

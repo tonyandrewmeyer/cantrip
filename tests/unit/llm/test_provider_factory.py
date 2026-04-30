@@ -140,6 +140,46 @@ class TestCreateProvider:
         ):
             create_provider("openrouter")
 
+    @patch("cantrip.llm.opencode_zen.OpenCodeZenProvider._probe_models")
+    def test_create_opencode_zen_default(self, _mock_probe):
+        """Default OpenCode Zen provider uses claude-haiku-4-5."""
+        with patch.dict("os.environ", {"OPENCODE_ZEN_API_KEY": "test-key"}, clear=True):
+            provider = create_provider("opencode-zen")
+
+        from cantrip.llm.opencode_zen import DEFAULT_MODEL, OpenCodeZenProvider
+
+        assert isinstance(provider, OpenCodeZenProvider)
+        assert provider.model_name == DEFAULT_MODEL
+        assert provider.base_url == "https://opencode.ai/zen/v1"
+
+    @patch("cantrip.llm.opencode_zen.OpenCodeZenProvider._probe_models")
+    def test_create_opencode_zen_custom_model(self, _mock_probe):
+        """``--model`` overrides the OpenCode Zen default."""
+        with patch.dict("os.environ", {"OPENCODE_ZEN_API_KEY": "test-key"}, clear=True):
+            provider = create_provider("opencode-zen", model="gpt-5.5")
+
+        assert provider.model_name == "gpt-5.5"
+
+    @patch("cantrip.llm.opencode_zen.OpenCodeZenProvider._probe_models")
+    def test_create_opencode_zen_zen_api_key_alias(self, _mock_probe):
+        """``ZEN_API_KEY`` is an accepted alias when the canonical name is unset."""
+        with patch.dict("os.environ", {"ZEN_API_KEY": "alias-key"}, clear=True):
+            provider = create_provider("opencode-zen")
+
+        from cantrip.llm.opencode_zen import OpenCodeZenProvider
+
+        assert isinstance(provider, OpenCodeZenProvider)
+
+    def test_create_opencode_zen_requires_api_key(self):
+        """Missing OPENCODE_ZEN_API_KEY surfaces an actionable ProviderError."""
+        from cantrip.llm.base import ProviderError
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(ProviderError, match="OPENCODE_ZEN_API_KEY"),
+        ):
+            create_provider("opencode-zen")
+
     @patch("cantrip.llm.openai_compatible.OpenAICompatibleProvider._probe_context_window")
     def test_create_openai_compatible(self, _mock_probe):
         """openai-compatible requires base_url + model and picks them up."""

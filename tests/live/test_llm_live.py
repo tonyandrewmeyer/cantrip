@@ -153,6 +153,50 @@ class TestFireworksKimiReasoning:
         )
 
 
+class TestOpenCodeZenLive:
+    """Tests using a real OpenCode Zen provider.
+
+    Mirrors the Gemini and Claude live shape — one tool-call check
+    against a tiny Flask repo, one greeting check — so a provider
+    regression on the OpenAI-compatible code path surfaces here.
+    Skipped unless ``OPENCODE_ZEN_API_KEY`` (or the legacy
+    ``ZEN_API_KEY`` alias) is in the environment.
+    """
+
+    pytestmark = pytest.mark.skipif(
+        not (os.environ.get("OPENCODE_ZEN_API_KEY") or os.environ.get("ZEN_API_KEY")),
+        reason="OPENCODE_ZEN_API_KEY not set",
+    )
+
+    @pytest.mark.asyncio
+    async def test_opencode_zen_analyse_framework_call(self, tmp_path: pathlib.Path):
+        """Send a prompt about a Flask app; verify an analyse_framework tool call."""
+        (tmp_path / "requirements.txt").write_text("flask>=3.0\n")
+        (tmp_path / "app.py").write_text("from flask import Flask\napp = Flask(__name__)\n")
+
+        provider = create_provider("opencode-zen")
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        await agent.process_message(
+            "Analyse the Flask app in the current directory using analyse_framework."
+        )
+
+        tool_calls_made = [tc.name for msg in agent.state.messages for tc in msg.tool_calls]
+        assert "analyse_framework" in tool_calls_made, (
+            f"Expected analyse_framework call, got: {tool_calls_made}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_opencode_zen_responds_to_greeting(self, tmp_path: pathlib.Path):
+        """Send 'hello'; verify a non-empty text response."""
+        provider = create_provider("opencode-zen")
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        result = await agent.process_message("Hello! Just say hi back briefly.")
+
+        assert len(result) > 0
+
+
 class TestVoyageLive:
     """Live smoke for Voyage embed and rerank providers (Phase 72.3).
 

@@ -98,12 +98,13 @@ def create_provider(
 
     Args:
         name: Provider name — one of ``inference-snap``, ``gemini``,
-            ``claude``, ``fireworks``, ``openrouter``, ``openai-compatible``.
+            ``claude``, ``fireworks``, ``openrouter``, ``opencode-zen``,
+            ``openai-compatible``.
         model: Optional model override. If not given, the provider's default is used.
         snap_name: Inference snap to use (only for "inference-snap" provider).
         base_url: Override the API base URL.  Required for
             ``openai-compatible``; optional for ``inference-snap``,
-            ``fireworks`` and ``openrouter``.
+            ``fireworks``, ``openrouter`` and ``opencode-zen``.
     """
     if name == "gemini":
         from cantrip.llm.gemini import GeminiProvider
@@ -151,6 +152,16 @@ def create_provider(
             or_kwargs["base_url"] = base_url
         return OpenRouterProvider(**or_kwargs)
 
+    elif name == "opencode-zen":
+        from cantrip.llm.opencode_zen import OpenCodeZenProvider
+
+        oz_kwargs: dict = {}
+        if model:
+            oz_kwargs["model"] = model
+        if base_url:
+            oz_kwargs["base_url"] = base_url
+        return OpenCodeZenProvider(**oz_kwargs)
+
     elif name == "openai-compatible":
         from cantrip.llm.openai_compatible import OpenAICompatibleProvider
 
@@ -169,6 +180,6 @@ def create_provider(
     else:
         raise ValueError(
             f"Unknown provider: {name!r}. Use 'gemini', 'claude', "
-            f"'inference-snap', 'fireworks', 'openrouter', or "
-            f"'openai-compatible'."
+            f"'inference-snap', 'fireworks', 'openrouter', "
+            f"'opencode-zen', or 'openai-compatible'."
         )

@@ -101,7 +101,7 @@ on_this_page:
       <td><code>response_mime_type=application/json</code> + <code>response_schema</code></td>
     </tr>
     <tr>
-      <td>OpenAI-compatible (vLLM, Fireworks, OpenRouter, inference-snap)</td>
+      <td>OpenAI-compatible (vLLM, Fireworks, OpenRouter, OpenCode Zen, inference-snap)</td>
       <td>Yes (where the backend supports it)</td>
       <td><code>response_format: {type: json_schema, json_schema: {...}}</code></td>
     </tr>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How to choose an LLM provider &mdash; Cantrip</title>
-<meta name="description" content="Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, OpenRouter, or any OpenAI-compatible endpoint.">
+<meta name="description" content="Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, OpenRouter, OpenCode Zen, or any OpenAI-compatible endpoint.">
 <link rel="icon" href="../favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
@@ -77,7 +77,7 @@
 
     <h1>Choose an LLM provider</h1>
     <p class="subtitle">
-      Cantrip supports six LLM providers. This guide helps you pick the right one for your situation.
+      Cantrip supports seven LLM providers. This guide helps you pick the right one for your situation.
     </p>
 
 <h2 id="overview">Provider comparison</h2>
@@ -120,6 +120,12 @@
 <td>Yes (<code>OPENROUTER_API_KEY</code>)</td>
 <td>Meta-gateway to GPT, Claude, Llama, Grok, Mistral, &hellip; through one key</td>
 <td>Paid</td>
+</tr>
+<tr>
+<td><strong>OpenCode Zen</strong></td>
+<td>Yes (<code>OPENCODE_ZEN_API_KEY</code>)</td>
+<td>OpenCode's curated gateway to Claude, GPT-5, Gemini 3, GLM, Kimi, Qwen behind one key</td>
+<td>Paid (free tier)</td>
 </tr>
 <tr>
 <td><strong>OpenAI-compatible</strong></td>
@@ -234,6 +240,37 @@ ranking dashboards.</p>
     on any of those.
   </p>
 </div>
+<h2 id="opencode-zen">Use OpenCode Zen</h2>
+<p>OpenCode Zen is a curated model gateway run by the
+<a href="https://opencode.ai" target="_blank" rel="noopener">OpenCode</a> project. It exposes Anthropic Claude
+(Opus, Sonnet, Haiku), OpenAI GPT-5 family, Gemini 3 family, and a
+handful of strong open-weights models (GLM, Kimi, Qwen, MiniMax)
+behind a single OpenAI-compatible API and a single key, with a free
+tier for the lighter models.</p>
+<p>Get a key from the <a href="https://opencode.ai/zen" target="_blank" rel="noopener">OpenCode Zen page</a>,
+then:</p>
+<pre><code><span class="prompt">$</span> export OPENCODE_ZEN_API_KEY="your-key-here"
+<span class="prompt">$</span> cantrip --provider opencode-zen</code></pre>
+<p>The default model is <code>claude-haiku-4-5</code> &mdash; fast, cheap, with native
+tool use. Override with any Zen slug (no vendor prefix):</p>
+<pre><code><span class="prompt">$</span> cantrip --provider opencode-zen --model gpt-5.5
+
+<span class="prompt">$</span> cantrip --provider opencode-zen --model gemini-3.1-pro
+
+<span class="prompt">$</span> cantrip --provider opencode-zen --model kimi-k2.6</code></pre>
+<p>The legacy <code>ZEN_API_KEY</code> environment variable is also accepted as a
+fallback when <code>OPENCODE_ZEN_API_KEY</code> is unset.</p>
+<div class="callout-note callout">
+  <p>
+    Like OpenRouter, Zen adds a routing hop on top of the upstream
+    vendor. Prefer a dedicated provider when one exists &mdash;
+    <code>claude</code> for Anthropic, <code>gemini</code> for
+    Google, <code>fireworks</code> for the open-weights models
+    Fireworks hosts directly. Reach for <code>opencode-zen</code>
+    when you want OpenCode's curation, its free tier, or a model
+    only available there.
+  </p>
+</div>
 <h2 id="openai-compatible">Use any OpenAI-compatible endpoint</h2>
 <p>For any backend that speaks the OpenAI chat-completions wire format &mdash;
 Together, Groq, DeepInfra, LiteLLM proxies, self-hosted vLLM &mdash; use
@@ -321,8 +358,8 @@ summarisation and log queries:</p>
 <pre><code><span class="prompt">$</span> cantrip --provider claude \
     --light-provider inference-snap --light-snap nemotron-3-nano</code></pre>
 <p><code>--light-provider</code> accepts <code>gemini</code>,
-<code>claude</code>, <code>inference-snap</code>, <code>fireworks</code>, or
-<code>openrouter</code>.
+<code>claude</code>, <code>inference-snap</code>, <code>fireworks</code>,
+<code>openrouter</code>, or <code>opencode-zen</code>.
 See <a href="howto-light-models.html">Configure light models</a> for full
 details on cost routing.</p>
   </main>

@@ -1,8 +1,8 @@
 ---
 title: "How to choose an LLM provider — Cantrip"
-description: "Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, OpenRouter, or any OpenAI-compatible endpoint."
+description: "Select the right LLM provider for Cantrip: inference snaps, Gemini, Claude, Fireworks.ai, OpenRouter, OpenCode Zen, or any OpenAI-compatible endpoint."
 h1: "Choose an LLM provider"
-subtitle: "Cantrip supports six LLM providers. This guide helps you pick the right one for your situation."
+subtitle: "Cantrip supports seven LLM providers. This guide helps you pick the right one for your situation."
 section: howto
 breadcrumb_label: "Choose an LLM provider"
 see_also:
@@ -22,6 +22,7 @@ see_also:
 | **Claude** | Yes (`ANTHROPIC_API_KEY`) | Best output quality, complex charms | Paid |
 | **Fireworks.ai** | Yes (`FIREWORKS_API_KEY`) | Open-weights models (Kimi, GLM, DeepSeek) with tool use | Paid |
 | **OpenRouter** | Yes (`OPENROUTER_API_KEY`) | Meta-gateway to GPT, Claude, Llama, Grok, Mistral, … through one key | Paid |
+| **OpenCode Zen** | Yes (`OPENCODE_ZEN_API_KEY`) | OpenCode's curated gateway to Claude, GPT-5, Gemini 3, GLM, Kimi, Qwen behind one key | Paid (free tier) |
 | **OpenAI-compatible** | Yes (`OPENAI_COMPATIBLE_API_KEY`) | Any other OpenAI-compatible endpoint (Together, Groq, vLLM, …) | Depends |
 
 {#inference-snap}
@@ -164,6 +165,46 @@ ranking dashboards.
   </p>
 </div>
 
+{#opencode-zen}
+## Use OpenCode Zen
+
+OpenCode Zen is a curated model gateway run by the
+[OpenCode](https://opencode.ai) project. It exposes Anthropic Claude
+(Opus, Sonnet, Haiku), OpenAI GPT-5 family, Gemini 3 family, and a
+handful of strong open-weights models (GLM, Kimi, Qwen, MiniMax)
+behind a single OpenAI-compatible API and a single key, with a free
+tier for the lighter models.
+
+Get a key from the [OpenCode Zen page](https://opencode.ai/zen),
+then:
+
+<pre><code><span class="prompt">$</span> export OPENCODE_ZEN_API_KEY="your-key-here"
+<span class="prompt">$</span> cantrip --provider opencode-zen</code></pre>
+
+The default model is `claude-haiku-4-5` — fast, cheap, with native
+tool use. Override with any Zen slug (no vendor prefix):
+
+<pre><code><span class="prompt">$</span> cantrip --provider opencode-zen --model gpt-5.5
+
+<span class="prompt">$</span> cantrip --provider opencode-zen --model gemini-3.1-pro
+
+<span class="prompt">$</span> cantrip --provider opencode-zen --model kimi-k2.6</code></pre>
+
+The legacy `ZEN_API_KEY` environment variable is also accepted as a
+fallback when `OPENCODE_ZEN_API_KEY` is unset.
+
+<div class="callout-note callout">
+  <p>
+    Like OpenRouter, Zen adds a routing hop on top of the upstream
+    vendor. Prefer a dedicated provider when one exists —
+    <code>claude</code> for Anthropic, <code>gemini</code> for
+    Google, <code>fireworks</code> for the open-weights models
+    Fireworks hosts directly. Reach for <code>opencode-zen</code>
+    when you want OpenCode's curation, its free tier, or a model
+    only available there.
+  </p>
+</div>
+
 {#openai-compatible}
 ## Use any OpenAI-compatible endpoint
 
@@ -275,7 +316,7 @@ summarisation and log queries:
     --light-provider inference-snap --light-snap nemotron-3-nano</code></pre>
 
 `--light-provider` accepts `gemini`,
-`claude`, `inference-snap`, `fireworks`, or
-`openrouter`.
+`claude`, `inference-snap`, `fireworks`,
+`openrouter`, or `opencode-zen`.
 See [Configure light models](howto-light-models.html) for full
 details on cost routing.

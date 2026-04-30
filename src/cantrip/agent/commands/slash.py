@@ -405,7 +405,7 @@ _SETTINGS_LABEL = "~/.config/cantrip/settings.json"
 # the session with ``cantrip --provider openai-compatible --base-url ...``
 # when targeting a generic endpoint.
 _MODEL_SWITCH_PROVIDERS: frozenset[str] = frozenset(
-    {"gemini", "claude", "fireworks", "openrouter", "inference-snap"}
+    {"gemini", "claude", "fireworks", "openrouter", "opencode-zen", "inference-snap"}
 )
 
 

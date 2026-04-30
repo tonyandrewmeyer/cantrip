@@ -61,7 +61,7 @@ Start the agent and build or improve a charm.
 ### Provider and model
 
 <dl>
-  <dt>--provider {gemini,claude,inference-snap,fireworks,openrouter,openai-compatible}</dt>
+  <dt>--provider {gemini,claude,inference-snap,fireworks,openrouter,opencode-zen,openai-compatible}</dt>
   <dd>
     LLM provider to use. Default: <code>gemini</code>.
     See <a href="howto-provider.html">Choose an LLM provider</a>
@@ -87,8 +87,8 @@ Start the agent and build or improve a charm.
     <code>--provider openai-compatible</code> (e.g.
     <code>https://api.together.xyz/v1</code>). Optional for
     <code>inference-snap</code> (overrides snap discovery),
-    <code>fireworks</code>, and <code>openrouter</code> (for
-    proxies or compatible hosts).
+    <code>fireworks</code>, <code>openrouter</code>, and
+    <code>opencode-zen</code> (for proxies or compatible hosts).
   </dd>
 </dl>
 
@@ -101,7 +101,7 @@ Start the agent and build or improve a charm.
     Auto-detected if omitted.
   </dd>
 
-  <dt>--light-provider {gemini,claude,inference-snap,fireworks,openrouter}</dt>
+  <dt>--light-provider {gemini,claude,inference-snap,fireworks,openrouter,opencode-zen}</dt>
   <dd>
     Use a different provider for light tasks, enabling hybrid mode.
   </dd>
@@ -774,7 +774,8 @@ command prints a setup hint and exits.
   <dd>
     Swap to <code>provider</code>&rsquo;s default model. Accepts
     <code>gemini</code>, <code>claude</code>,
-    <code>fireworks</code>, <code>openrouter</code>, and
+    <code>fireworks</code>, <code>openrouter</code>,
+    <code>opencode-zen</code>, and
     <code>inference-snap</code>. <code>openai-compatible</code>
     requires a <code>--base-url</code> that doesn&rsquo;t fit the
     slash syntax&mdash;restart the session instead.
@@ -1203,6 +1204,7 @@ protocol and conventions are in `design/CONTEXT_PROVIDERS.md`.
 | `ANTHROPIC_API_KEY` | `--provider claude` | Anthropic API key |
 | `FIREWORKS_API_KEY` | `--provider fireworks` | Fireworks.ai API key |
 | `OPENROUTER_API_KEY` | `--provider openrouter` | OpenRouter.ai API key |
+| `OPENCODE_ZEN_API_KEY` | `--provider opencode-zen` | OpenCode Zen API key.  `ZEN_API_KEY` is accepted as a fallback. |
 | `OPENAI_COMPATIBLE_API_KEY` | `--provider openai-compatible` | Bearer token for the configured endpoint; set to any non-empty string when auth is not required. |
 | `VOYAGE_API_KEY` | `--embed-provider voyage` / `--rerank-provider voyage` | Voyage AI key.  Required when Voyage serves the `embed` or `rerank` role. |
 | `OPENAI_API_KEY` | `--embed-provider openai` | OpenAI key for the embed role.  The chat-side `--provider openai-compatible` path uses `OPENAI_COMPATIBLE_API_KEY` instead. |

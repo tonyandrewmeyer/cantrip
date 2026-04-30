@@ -19,6 +19,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   yolo mid-session had no effect on in-flight subagents.
 
 ### Added
+- **OpenCode Zen as an LLM provider.**  New ``--provider opencode-zen``
+  fronts OpenCode's curated gateway at ``https://opencode.ai/zen/v1`` —
+  Anthropic Claude (Opus, Sonnet, Haiku), OpenAI GPT-5 family, Gemini 3
+  family, and a handful of open-weights models (GLM, Kimi, Qwen,
+  MiniMax) behind a single OpenAI-compatible API and bearer token.
+  Default model is ``claude-haiku-4-5``; ``OPENCODE_ZEN_API_KEY`` (or
+  the legacy ``ZEN_API_KEY`` alias) supplies the key.  Available
+  through ``--light-provider opencode-zen`` and ``/model opencode-zen``
+  too.  Unit tests in the factory suite; live smoke tests under
+  ``tests/live/test_llm_live.py`` skip when no key is set.
 - **Identity-platform acceptance harness wiring + verdict (Phase 88.3).**
   ``RelationSmokeTool`` (Phase 17.2) now exercises identity-platform
   relations automatically: ``_INTERFACE_PARTNERS`` in
