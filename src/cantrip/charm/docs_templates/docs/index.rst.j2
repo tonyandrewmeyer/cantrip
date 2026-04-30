@@ -1,0 +1,36 @@
+{{ display_name }} documentation
+{{ "=" * (display_name | length + 14) }}
+
+{{ summary }}
+
+---------
+
+In this documentation
+---------------------
+
+.. grid:: 2
+
+   .. grid-item-card:: `Tutorial </tutorial/getting-started>`_
+
+      **Get started** - a hands-on introduction to {{ display_name }}
+
+   .. grid-item-card:: `How-to guides </how-to/index>`_
+
+      **Step-by-step guides** - key operations and common tasks
+
+   .. grid-item-card:: `Reference </reference/index>`_
+
+      **Technical information** - configuration, actions, integrations
+
+   .. grid-item-card:: `Explanation </explanation/index>`_
+
+      **Discussion and clarification** - architecture and design decisions
+
+.. toctree::
+   :hidden:
+   :maxdepth: 2
+
+   tutorial/getting-started
+   how-to/index
+   reference/index
+   explanation/index

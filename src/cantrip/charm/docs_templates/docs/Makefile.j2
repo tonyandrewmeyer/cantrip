@@ -1,0 +1,51 @@
+# Docs Makefile — canonical starter pack
+#
+# Install:  make install
+# Build:    make html
+# Serve:    make run
+
+SPHINX_DIR       ?= .sphinx
+SPHINX_OPTS      ?= -c . -d $(SPHINX_DIR)/.doctrees -j auto
+SPHINX_BUILD     ?= $(DOCS_VENVDIR)/bin/sphinx-build
+SPHINX_HOST      ?= 127.0.0.1
+SPHINX_PORT      ?= 8000
+DOCS_VENVDIR     ?= $(SPHINX_DIR)/venv
+DOCS_VENV        ?= $(DOCS_VENVDIR)/bin/activate
+DOCS_SOURCEDIR   ?= .
+DOCS_BUILDDIR    ?= _build
+
+help:
+	@echo
+	@echo "  make run        — watch, build and serve the documentation"
+	@echo "  make html       — build HTML output"
+	@echo "  make serve      — serve already-built documentation"
+	@echo "  make clean-doc  — clean built doc files"
+	@echo "  make clean      — clean full environment"
+	@echo "  make install    — set up the build environment"
+	@echo
+
+.PHONY: help html run serve install clean clean-doc
+
+$(DOCS_VENVDIR):
+	@echo '... setting up virtualenv'
+	python3 -m venv $(DOCS_VENVDIR)
+	. $(DOCS_VENV); pip install --upgrade -r requirements.txt \
+	    --log $(DOCS_VENVDIR)/pip_install.log
+	@touch $(DOCS_VENVDIR)
+
+install: $(DOCS_VENVDIR)
+
+run: install
+	. $(DOCS_VENV); sphinx-autobuild -b dirhtml "$(DOCS_SOURCEDIR)" "$(DOCS_BUILDDIR)" $(SPHINX_OPTS) --host $(SPHINX_HOST) --port $(SPHINX_PORT)
+
+html: install
+	. $(DOCS_VENV); $(SPHINX_BUILD) -b dirhtml "$(DOCS_SOURCEDIR)" "$(DOCS_BUILDDIR)" $(SPHINX_OPTS)
+
+serve:
+	cd "$(DOCS_BUILDDIR)" && python3 -m http.server $(SPHINX_PORT) --bind $(SPHINX_HOST)
+
+clean: clean-doc
+	@test ! -e "$(DOCS_VENVDIR)" -o -d "$(DOCS_VENVDIR)" && rm -rf $(DOCS_VENVDIR)
+
+clean-doc:
+	@test ! -e "$(DOCS_BUILDDIR)" -o -d "$(DOCS_BUILDDIR)" && rm -rf $(DOCS_BUILDDIR)

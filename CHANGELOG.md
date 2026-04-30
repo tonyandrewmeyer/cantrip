@@ -158,6 +158,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **``generate_docs_scaffold`` now drives Jinja2 templates (Phase 85.6).**
+  The 502-line f-string concatenation that built ~30 generated docs
+  files (``docs/index.rst``, the Diátaxis tutorial / how-to / reference
+  / explanation pages, ``conf.py``, ``Makefile``, ``.readthedocs.yaml``,
+  …) is replaced by per-output templates under
+  ``src/cantrip/charm/docs_templates/`` plus a ~70-line render loop in
+  ``src/cantrip/agent/tools/publishing.py``.  Dynamic per-item lists
+  (config-option examples, action sections, integration entries)
+  precompute to ``_block`` strings via small ``_build_*_block`` helpers
+  and substitute as single placeholders, keeping the templates as
+  static skeletons.  Acceptance-artefact overrides and Phase 74.1
+  root-file bridges stay in the renderer.  Pure refactor — no
+  behaviour change; an ad-hoc byte-for-byte comparison across eleven
+  scenarios (rich/bare/no-actions/no-source/bridged/artefacts/etc.)
+  matched the pre-refactor output exactly, and the existing 135 docs
+  tests in ``test_publishing.py`` / ``test_docs_from_acceptance.py`` /
+  ``test_docs_bridge.py`` still pass.
 - **``tests/unit/`` now mirrors ``src/cantrip/`` (Phase 85.8).**
   171 of the 184 flat test files at the top level of
   ``tests/unit/`` moved into folders matching their target

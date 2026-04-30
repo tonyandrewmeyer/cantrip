@@ -1,0 +1,23 @@
+import datetime
+
+project = "{{ display_name }}"
+author = "Canonical Ltd."
+
+html_title = project + " documentation"
+
+copyright = "{{ year }}, %s" % author
+
+extensions = [
+    "canonical_sphinx",
+]
+
+html_context = {
+{% if source_url %}
+    "github_url": "{{ source_url }}",
+{% endif %}
+}
+
+exclude_patterns = [
+    "_build",
+    ".sphinx",
+]

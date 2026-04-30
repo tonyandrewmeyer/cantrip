@@ -1,0 +1,34 @@
+# Get started with {{ display_name }}
+
+This tutorial walks you through deploying {{ display_name }} and verifying
+that it is running correctly.
+
+## Prerequisites
+
+- A Juju controller bootstrapped and ready
+- A Juju model created (`juju add-model {{ charm_name }}`)
+
+## Deploy the charm
+
+```bash
+juju deploy {{ charm_name }}
+```
+
+Wait for the deployment to settle:
+
+```bash
+juju wait-for application {{ charm_name }} --query='status.current=="active"'
+```
+
+## Verify the deployment
+
+Check that the application is active and idle:
+
+```bash
+juju status
+```
+{{ integrations_block }}
+## Next steps
+
+- Read the [how-to guides](../how-to/index) for common operations
+- See the [configuration reference](../reference/configuration) for available options

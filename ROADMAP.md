@@ -3910,17 +3910,24 @@ decomposition last.
 
 ### 85.6 Decompose — function-level giants
 
-- [ ] `src/cantrip/agent/tools/publishing.py:1108
-  generate_docs_scaffold` (502 lines).  Currently emits
-  ~30 documentation files via inline f-string concatenation.
-  Move the templated content out alongside the existing
-  Jinja templates the prompts subsystem uses: create
-  `src/cantrip/charm/docs_templates/` (or extend
-  `src/cantrip/charm/templates/`) with one `.md.j2` /
-  `.rst.j2` per generated file, and reduce the function to a
-  loop that walks the template list and renders each.
-  Acceptance-artefact substitution stays in the renderer; the
-  templates carry only the static skeleton.
+- [x] `src/cantrip/agent/tools/publishing.py:1108
+  generate_docs_scaffold` (was 502 lines, now ~70 lines of
+  context assembly + a render loop).  Each generated file
+  now lives as its own template under
+  `src/cantrip/charm/docs_templates/` (one `.md.j2`,
+  `.rst.j2`, or filename-suffixed `.j2` per output, mirroring
+  the output paths).  Dynamic per-item lists (config-option
+  examples, action sections, integration entries) precompute
+  to `_block` strings via small `_build_*_block` helpers and
+  drop into templates as single placeholders, keeping the
+  templates as static skeletons.  Acceptance-artefact
+  overrides and the Phase 74.1 root-file bridges stay in the
+  renderer.  Pure refactor — every existing test in
+  `test_publishing.py`, `test_docs_from_acceptance.py`, and
+  `test_docs_bridge.py` (135 cases) still passes, and an
+  ad-hoc byte-for-byte comparison across eleven scenarios
+  (rich/bare/no-actions/no-source/bridged/artefacts/etc.)
+  matched the pre-refactor output exactly.
 - [x] `src/cantrip/main.py:46 parse_args` (was 675 lines).
   Now a 32-line composition: nine `_add_<subcommand>_subparser`
   helpers cover `run`, `compare`, `export-transcript`, `hooks`,
