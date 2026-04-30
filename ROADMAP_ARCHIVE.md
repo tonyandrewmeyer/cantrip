@@ -9601,3 +9601,256 @@ Existing hooks unaffected.  ``make check`` passes.  CHANGELOG
 entry under "Unreleased".
 
 ---
+
+## Phase 92: Deterministic Helpers for Existing Skills ✓
+
+**Goal:** Phase 91 showed that deterministic helper scripts —
+the kind canonical/skills ships next to its 12-factor skills —
+turn LLM-reasoning loops into one-shot tool calls and remove a
+slice of token cost and context pressure.  The four ports
+landed against the ``twelve-factor`` skill specifically.  This
+phase audits the rest of Cantrip's bundled skills and lifts
+the work each one currently asks the agent to do *by reading
+files and reasoning* into deterministic code where the answer
+is mechanical.
+
+The audit walked all 31 skills under
+``src/cantrip/skills/`` and asked each one: is there grep-style
+search, file-shape validation, schema cross-reference, or
+per-rule recitation that a few hundred lines of Python would
+do faster, cheaper, and without context cost?  Six skills
+yielded clear "yes" answers.  The phase ships those six as
+either new ``charmlint`` rule modules (the natural home for
+charm-shaped lint diagnostics) or standalone Cantrip tools
+(when the work is more inventory than diagnostic).
+
+The architectural call is per-item: charmlint already covers
+this sort of work for narrower rules (actions metadata
+descriptions, fetch-libs PyPI presence), so extending its rule
+catalogue keeps every new check on the same reporter, cache,
+and CI gate.  Standalone tools earn their keep only when the
+output shape (an inventory, a coverage report, a migration
+checklist) does not naturally compose with charmlint's
+file-by-file lint loop.
+
+### 92.1 Charmlint extensions — handler / metadata coverage
+
+- [x] **Action handler coverage** (extend
+  ``src/charmlint/rules/actions.py``).  Every action declared
+  in ``charmcraft.yaml`` should have an observer registered
+  in ``src/charm.py``'s ``__init__``, and every handler should
+  end in ``event.set_results(...)`` or ``event.fail(...)``.
+  Today the ``adding-actions`` skill recites these rules; the
+  agent then reads ``charmcraft.yaml`` and ``src/charm.py``
+  every time and compares them by hand.  AST walk for the
+  handler list, YAML scan for the action set, ``set_results``
+  / ``fail`` regex pass over each handler body — one rule
+  module, ~80 LoC, per-skill diagnostics replace per-turn
+  reasoning.  Shipped as ``ACT006`` (missing observer) and
+  ``ACT007`` (handler does not terminate); the ``adding-actions``
+  skill body's pitfall list now points at the rules.
+- [x] **Config option coverage** (extend
+  ``src/charmlint/rules/config_quality.py``).  Every option in
+  ``charmcraft.yaml::config.options`` should be read by
+  ``self.config.get(...)`` somewhere in ``src/charm.py``;
+  every config-driven path should set ``BlockedStatus`` when
+  the value is invalid.  Today the ``adding-config`` skill
+  guides the agent through the same checks.  YAML option set
+  vs source-code regex sweep, ~100 LoC.  Shipped as
+  ``CFG004`` (option declared but never read) and ``CFG005``
+  (config options exist but no ``BlockedStatus`` reference);
+  the ``adding-config`` skill body's pitfall list now points
+  at the rules.  CFG005 is intentionally a floor (any
+  ``BlockedStatus`` reference satisfies it) rather than per-
+  path validation, which would need dataflow we do not have.
+
+### 92.2 Charmlint extensions — library and relation hygiene
+
+- [x] **Charm-library semver validator** (new
+  ``src/charmlint/rules/library_versions.py``).  Walk
+  ``lib/charms/*/v*/*.py``; verify ``LIBID`` / ``LIBAPI`` /
+  ``LIBPATCH`` are present and shaped right; flag ``LIBPATCH``
+  decreases between git history points; detect breaking
+  changes (removed / renamed public names) between versioned
+  files in the same library.  ``charmlint``'s existing
+  ``libraries.py`` only covers PyPI fetch-libs concerns
+  (``LIB001``); the metadata + semver gap is real.  AST walk
+  for module-level names, ~150 LoC.  Cross-references the
+  ``charm-library`` skill's authoring rules.  Shipped as
+  ``LIB003`` (metadata shape — present, typed, and ``LIBAPI``
+  matches the ``v<N>`` directory) and ``LIB004`` (public name
+  dropped between sibling versioned files).  ``LIBPATCH``-
+  decrease detection across git revisions is intentionally
+  out of scope — charmlint is a static linter, and the
+  ``charm-library`` skill body keeps that one as an LLM-side
+  check.
+- [x] **Relation-data missing-guard detector** (new
+  ``src/charmlint/rules/relation_data.py``).  Every relation
+  event handler that reads ``event.relation.data[event.app]``
+  / ``event.relation.data[event.unit]`` should guard with an
+  ``is None`` / ``in`` check, and writes to peer or app
+  databags should be inside an ``is_leader`` guard.  The
+  ``relation-data-design`` skill describes these rules; the
+  agent currently grep-and-reasons over each handler.
+  Per-handler regex over the relation-event functions, ~60
+  LoC.  Shipped as ``REL001`` (subscript read without a
+  ``None`` guard) and ``REL002`` (write to ``self.app``
+  databag without ``is_leader()``); the
+  ``relation-data-design`` skill body's pitfall list now
+  points at the rules.
+
+### 92.3 Charmlint extensions — Pebble layer validation
+
+- [x] **Pebble layer rule module** (new
+  ``src/charmlint/rules/pebble.py``).  K8s charms call
+  ``container.add_layer(name, layer, combine=True)``,
+  ``container.replan()``; layer dictionaries declare services
+  with required keys (``override``, ``command``, ``startup``,
+  ``user`` for non-root); restarts should be guarded by
+  ``container.can_connect()``.  The ``custom-charm`` skill
+  recites these rules in its K8s subsection — they all map
+  cleanly to deterministic checks.  Pebble layer parser +
+  call-site detector, ~130 LoC.  Shipped as ``PEB001``
+  (``add_layer`` missing ``combine=True``), ``PEB002``
+  (Pebble call without ``can_connect()`` guard, with
+  ``pebble_ready`` handlers exempt), and ``PEB003`` (service
+  dict missing ``override`` / ``command`` / ``startup``).
+  ``user`` is intentionally not checked — the skill says "for
+  non-root", which is not statically derivable.  The
+  ``custom-charm`` skill body's pitfall list now points at
+  the rules.
+
+### 92.4 Standalone tools — inventory and migration
+
+- [x] **Harness-call inventory tool** (new
+  ``src/cantrip/agent/tools/harness_inventory.py``,
+  ``harness_inventory`` tool).  Walk ``tests/unit/``, run the
+  Harness-call regex pattern the
+  ``src/cantrip/skills/harness-migration`` skill already
+  spells out, return a per-file checklist of remaining
+  Harness usages plus a per-file count of mixed-imports
+  (``ops.testing.Harness`` and ``scenario`` imported in the
+  same module).  Output shape: ``{files: [{path, harness:
+  N, scenario: M, mixed: bool}], total_remaining: int}``.
+  ~50 LoC.  This is *not* a lint rule because the deliverable
+  is a migration checklist, not a per-file pass / fail.
+  Shipped; the ``harness-migration`` skill body's "Inventory
+  first" section now points at the tool.
+- [x] **Scenario-test coverage probe** (new
+  ``src/cantrip/agent/tools/scenario_coverage.py``,
+  ``scenario_coverage`` tool).  Map every observer
+  registration in ``src/charm.py`` (every
+  ``self.framework.observe(self.on.<X>, self._on_<X>)``) to
+  the test functions in ``tests/unit/`` that exercise it;
+  return the unexercised-handler list plus an
+  unexercised-event-shape list (every charm should have at
+  least one test where ``container.can_connect=False`` and at
+  least one where a relation is ``relation-broken``).  AST
+  walk + grep, ~120 LoC.  ``pytest-cov`` measures *line*
+  coverage; this measures *event-shape* coverage, which
+  pytest-cov cannot see — a charm with 100% line coverage can
+  still ship without a single relation-broken test.  Shipped;
+  the ``scenario-tests`` skill body grew an "Auditing test
+  coverage" section that points at the tool.
+
+### What this phase is *not*
+
+- **Not** a wholesale rewrite of charmlint.  Every new rule
+  module slots into the existing rule registry; the reporter,
+  cache, CI gate, and ``charmlint_tool`` agent surface stay
+  as they are.
+- **Not** a port from canonical/skills.  These are Cantrip-
+  authored deterministic helpers derived from Cantrip's own
+  skill bodies — no upstream Apache-2.0 attribution needed.
+  The *philosophical* origin (Phase 91 demonstrated the
+  pattern's value) belongs in the phase intro and the per-rule
+  module docstring.
+- **Not** a replacement for the LLM workflow guide.  Each
+  helper deletes one mechanical pass the agent currently
+  does; the surrounding skill body stays as the reasoning
+  scaffold for *which* checks to consult and *how* to act on
+  the results.
+- **Not** the long tail.  The audit dismissed ``charm-debug``
+  (workflow already efficient), ``observability`` (only ~3
+  mechanical checks; LLM spots them in a readthrough),
+  ``find-bugs`` (scope already broad enough),
+  ``infrastructure-charm`` (primary / replica patterns vary
+  too widely between charms to validate deterministically),
+  ``performance`` (needs Tempo / Loki data, not static
+  validation), ``security-review`` (human judgment), and the
+  meta skills (``skill-scanner``, ``skill-writer``,
+  ``iterate-fix``).  Revisit if a concrete trigger fires on
+  any of those — e.g. a real infrastructure-charm pattern
+  ships often enough to need its own rule.
+
+### Per-rule module conventions
+
+- New rule modules under ``src/charmlint/rules/`` follow the
+  existing ``Rule`` subclass shape and rule-code namespace
+  (``ACT###`` for actions, ``CFG###`` for config, ``LIB###``
+  for library, ``REL###`` for relation, ``PEB###`` for
+  Pebble).  Reuse a free code if the rule fits a category;
+  add a new prefix only when the topic is genuinely new.
+- Rules ship with golden-file unit tests under
+  ``tests/unit/charmlint/`` covering pass and fail fixtures.
+- Each rule's docstring cites the source skill section so
+  future readers can trace the rule back to its prose
+  origin.
+- Charmlint's CI gate (``make charmlint``) keeps the new
+  rules at the same severity as the existing ones — no rule
+  is allowed to break the gate without being prove-ably high
+  signal.
+
+### What success looks like
+
+When the agent enters a charm-improvement or charm-build
+session, it runs ``charmlint`` once, gets every new
+diagnostic alongside the existing ones, and acts on the
+report without needing to re-derive any of the rules from
+the skill bodies.  The ``harness-migration`` skill's
+checklist becomes a one-tool invocation; the same for
+``scenario-tests`` coverage probing.  Six skills shed their
+"and now please grep for X across every Y" passages —
+those passages either become rule-module docstrings or get
+deleted.
+
+### What shipped
+
+All six items shipped across four commits.  Ten new
+``charmlint`` rules — ``ACT006`` / ``ACT007`` (actions),
+``CFG004`` / ``CFG005`` (config), ``LIB003`` / ``LIB004``
+(libraries), ``REL001`` / ``REL002`` (relation data), and
+``PEB001`` / ``PEB002`` / ``PEB003`` (Pebble) — plus two
+new agent tools: ``harness_inventory`` and
+``scenario_coverage`` (registered in
+``tools/__init__.py``, surfaced in
+``docs/src/reference-tools.md``).  Seven ``SKILL.md`` bodies
+trimmed (``adding-actions``, ``adding-config``,
+``charm-library``, ``relation-data-design``, ``custom-charm``,
+``harness-migration``, ``scenario-tests``) — every "rule
+recitation" passage replaced with a "run charmlint to
+check" or "run ``<tool>`` to check" pointer.  38 new tests
+(137 charmlint + 16 tool); ruff and ty clean.
+
+Out-of-scope items called out and deferred at the per-item
+level: ``LIBPATCH``-decrease detection across git revisions
+(charmlint is static; the ``charm-library`` skill keeps that
+one as an LLM-side check); ``CFG005`` as a floor rather
+than per-path validation (no dataflow analysis available);
+Pebble service ``user`` key (not statically derivable as
+"non-root"); delegated handlers in ACT007/REL001/REL002
+(handler-resolved-elsewhere returns a skip rather than a
+false-positive flag).
+
+**Exit criteria met:** all six items shipped as either a new
+``charmlint`` rule module (with golden-file tests, registered
+in the rule catalogue, surfaced through ``charmlint_tool``)
+or a new standalone Cantrip tool (with attribution-style
+docstring citing the source skill, ``ToolResult.caption``,
+unit tests covering happy and gap paths, registration in
+``tools/__init__.py``).  Each affected skill body has its
+rule-recitation passages either deleted or trimmed to a
+one-line "run ``X`` to check" pointer.  ``CHANGELOG.md``
+records each helper.
+
+---
