@@ -3917,12 +3917,25 @@ decomposition last.
      patches needed — arena tests target the `arena` module
      directly.  Pure refactor — `make check` and `make unit`
      (6 412 passed, 8 skipped) green.
-  6. **Confirmations router** (2480-2780) —
-     `handle_race_confirmation`, `handle_push_confirmation`,
-     `handle_pr_creation`, `handle_repo_bootstrap`,
-     `handle_triage_confirmation`,
+  6. ✓ **Confirmations router** — extracted to
+     `agent/confirmations.py` as `ConfirmationsController`, held
+     on `CantripAgent` as `self._confirmations`.  Public surface
+     unchanged: `handle_race_confirmation`,
+     `handle_push_confirmation`, `handle_pr_creation`,
+     `handle_repo_bootstrap`, `handle_triage_confirmation`,
      `should_offer_bootstrap`,
-     `build_repo_bootstrap_confirm_task`.
+     `build_repo_bootstrap_confirm_task` stay as one-line
+     delegators.  Shared helpers `_create_feature_branch` /
+     `_build_push_confirm_task` remain on the agent and are
+     passed to the controller as callables.
+     `detect_github_repo` (module-level in `core.py`) passed
+     via late-binding lambda to preserve test patchability.
+     Test patches of `cantrip.agent.core.{push_branch,
+     create_pull_request,build_pr_body,bootstrap_github_repo,
+     can_bootstrap,build_issue_work_tasks}` retargeted to
+     `cantrip.agent.confirmations.<name>`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
   7. **Session persistence** (3026-3290) —
      `save_state`, `preview_session`, `transcript_tail`,
      `archive_session`, `load_state`,
