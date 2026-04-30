@@ -1718,7 +1718,7 @@ class ExtractDesignDecisionsTool(Tool):
                 error=f"Directory not found: {path}",
             )
 
-        store_path = pathlib.Path(db_path).resolve() if db_path else charm_dir / ".cantrip"
+        store_path = pathlib.Path(db_path).expanduser() if db_path else charm_dir / ".cantrip"
         decisions = _read_decisions(store_path)
         intro = _resolve_architecture_intro(charm_dir)
         content = _compose_architecture_page(intro, decisions)
@@ -2203,7 +2203,7 @@ class ExtractTroubleshootingTool(Tool):
                 error=f"Directory not found: {path}",
             )
 
-        store_path = pathlib.Path(db_path).resolve() if db_path else charm_dir / ".cantrip"
+        store_path = pathlib.Path(db_path).expanduser() if db_path else charm_dir / ".cantrip"
         entries = _read_transcript_pairs(store_path)
         intro = _resolve_troubleshooting_intro(charm_dir)
         body = format_troubleshooting_page(entries)

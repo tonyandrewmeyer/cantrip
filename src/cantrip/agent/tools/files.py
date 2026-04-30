@@ -18,15 +18,17 @@ class PathAwareTool(Tool):
 
     def _resolve_path(self, path: str) -> pathlib.Path:
         """Resolve *path*, ensuring it stays within ``base_path`` when set."""
-        resolved = pathlib.Path(path)
-        if not resolved.is_absolute() and self.base_path:
-            resolved = self.base_path / path
-        resolved = resolved.resolve()
+        candidate = pathlib.Path(path).expanduser()
+        if self.base_path is None:
+            if candidate.is_absolute():
+                return candidate
+            return candidate.resolve()
 
-        if self.base_path:
-            base_resolved = self.base_path.resolve()
-            if not resolved.is_relative_to(base_resolved):
-                raise ValueError(f"Path {path} is outside allowed directory")
+        base_resolved = self.base_path.resolve()
+        resolved = candidate if candidate.is_absolute() else base_resolved / candidate
+        resolved = resolved.resolve()
+        if not resolved.is_relative_to(base_resolved):
+            raise ValueError(f"Path {path} is outside allowed directory")
 
         return resolved
 

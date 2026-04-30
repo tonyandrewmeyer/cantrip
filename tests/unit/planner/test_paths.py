@@ -1,5 +1,7 @@
 """Planner tests: paths."""
 
+from unittest import mock
+
 import pytest
 
 from cantrip.agent.planner import (
@@ -146,6 +148,21 @@ class TestSprint:
         desc = tasks[0].description.lower()
         assert "do not write tests" in desc
         assert "do not run charm_validate" in desc
+
+    def test_plan_sprint_deploy_falls_back_when_os_release_missing(self) -> None:
+        ctx = PlanningContext(intent="build", framework="flask", charm_name="my-app")
+        with (
+            mock.patch(
+                "cantrip.agent.planner.deterministic.open",
+                side_effect=OSError("missing"),
+            ),
+            mock.patch(
+                "cantrip.agent.planner.deterministic.platform.freedesktop_os_release",
+                side_effect=OSError("missing"),
+            ),
+        ):
+            tasks = plan_sprint_deploy(ctx)
+        assert "24.04" in tasks[0].description
 
 
 # ===================================================================

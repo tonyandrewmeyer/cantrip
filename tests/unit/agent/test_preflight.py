@@ -314,6 +314,8 @@ class TestBootstrap:
             ),
             patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
@@ -809,6 +811,8 @@ class TestPrepare:
             patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
             patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
             patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
             patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
         ):
             result = await runner.prepare("k8s")

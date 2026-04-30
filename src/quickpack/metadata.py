@@ -13,6 +13,7 @@ import quickpack
 # Maps ``platform.machine()`` values to Juju architecture labels.
 _MACHINE_TO_ARCH: dict[str, str] = {
     "x86_64": "amd64",
+    "arm64": "arm64",
     "aarch64": "arm64",
     "armv7l": "armhf",
     "ppc64le": "ppc64el",

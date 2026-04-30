@@ -38,6 +38,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 from collections.abc import Callable, Sequence
 from typing import Any, Literal
@@ -52,6 +53,7 @@ log = logging.getLogger(__name__)
 _EventSink = Callable[[str, dict[str, Any]], None]
 _event_sink: _EventSink | None = None
 _event_sink_lock = threading.Lock()
+_mechanism_probe_cache: dict[Mechanism, bool] = {}
 
 
 def set_event_sink(sink: _EventSink | None) -> None:
@@ -138,6 +140,92 @@ def sandbox_available() -> Mechanism:
     return "none"
 
 
+def _probe_mechanism(mechanism: Mechanism) -> bool:
+    """Return whether *mechanism* is actually usable on this host.
+
+    Some CI hosts expose ``unshare`` or ``sandbox-exec`` on ``PATH`` but block
+    them at runtime.  In that case we fall back to the existing unsandboxed
+    path instead of breaking every subprocess call.
+    """
+    cached = _mechanism_probe_cache.get(mechanism)
+    if cached is not None:
+        return cached
+
+    try:
+        if mechanism == "bwrap":
+            result = subprocess.run(
+                [
+                    "bwrap",
+                    "--die-with-parent",
+                    "--new-session",
+                    "--proc",
+                    "/proc",
+                    "--dev",
+                    "/dev",
+                    "--ro-bind",
+                    "/usr",
+                    "/usr",
+                    "--ro-bind",
+                    "/bin",
+                    "/bin",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    "exit 0",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        elif mechanism == "unshare":
+            result = subprocess.run(
+                [
+                    "unshare",
+                    "--user",
+                    "--map-root-user",
+                    "--pid",
+                    "--fork",
+                    "--mount-proc",
+                    "--uts",
+                    "--ipc",
+                    "--kill-child",
+                    "--net",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    "exit 0",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        elif mechanism == "sandbox-exec":
+            with tempfile.TemporaryDirectory(prefix="cantrip-sandbox-probe-") as tmp:
+                profile = SandboxedRunner._build_sandbox_exec_profile(
+                    cwd=pathlib.Path(tmp),
+                    policy=SandboxPolicy(),
+                )
+                result = subprocess.run(
+                    ["sandbox-exec", "-p", profile, "/bin/sh", "-c", "exit 0"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+        else:
+            _mechanism_probe_cache[mechanism] = False
+            return False
+    except (OSError, subprocess.TimeoutExpired):
+        _mechanism_probe_cache[mechanism] = False
+        return False
+
+    usable = result.returncode == 0
+    _mechanism_probe_cache[mechanism] = usable
+    return usable
+
+
 class SandboxedRunner:
     """Run subprocess commands under Linux namespace isolation.
 
@@ -151,7 +239,11 @@ class SandboxedRunner:
     _warned_about_fallback: bool = False
 
     def __init__(self, mechanism: Mechanism | None = None) -> None:
-        self._mechanism: Mechanism = mechanism if mechanism is not None else sandbox_available()
+        if mechanism is not None:
+            self._mechanism = mechanism
+            return
+        detected = sandbox_available()
+        self._mechanism = detected if _probe_mechanism(detected) else "none"
 
     @property
     def mechanism(self) -> Mechanism:

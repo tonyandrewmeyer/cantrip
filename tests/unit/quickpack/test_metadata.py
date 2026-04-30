@@ -89,6 +89,10 @@ class TestMetadata:
         """
         assert metadata.resolve_target_python({"base": "centos@9"}) is None
 
+    def test_local_arch_accepts_arm64_alias(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("quickpack.metadata.platform.machine", lambda: "arm64")
+        assert metadata.local_arch() == "arm64"
+
     def test_generate_metadata_basic(self) -> None:
         project = {
             "name": "test-charm",

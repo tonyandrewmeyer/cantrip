@@ -128,8 +128,11 @@ def _host_ubuntu_version() -> str:
                     return line.split("=")[1].strip().strip('"')
     except OSError:
         pass
-    # Fallback to platform.
-    return platform.freedesktop_os_release().get("VERSION_ID", "24.04")
+    try:
+        version = platform.freedesktop_os_release().get("VERSION_ID")
+    except OSError:
+        return "24.04"
+    return version or "24.04"
 
 
 def _sprint_design_paas(workload: str, framework: str) -> str:

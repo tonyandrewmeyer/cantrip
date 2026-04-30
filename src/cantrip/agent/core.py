@@ -2807,6 +2807,11 @@ class CantripAgent:
     # -- Executor integration -------------------------------------------------
 
     @property
+    def _executor(self):
+        """Backward-compatible access to the live background executor."""
+        return self._executor_ctl._executor
+
+    @property
     def executor_running(self) -> bool:
         """Whether the background executor is currently running."""
         return self._executor_ctl.running
