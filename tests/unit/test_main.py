@@ -100,6 +100,21 @@ class TestParseArgs:
         assert args.left == left
         assert args.right == right
 
+    def test_docs_subcommand_is_not_rewritten_as_run(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``docs`` must reach its own parser, not fall through to ``run``.
+
+        Regression: the argv fall-through used to omit ``docs`` from its
+        known-subcommand allowlist, so ``cantrip docs index --site ops``
+        got rewritten as ``cantrip run docs index ...`` and exited with
+        an "unrecognized arguments" error.
+        """
+        _set_argv(monkeypatch, "docs", "list")
+        args = cantrip_main.parse_args()
+        assert args.command == "docs"
+        assert args.docs_command == "list"
+
     def test_audit_list_subcommand(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_argv(monkeypatch, "audit", "list", "--action", "denied", "--tool", "read_file")
         args = cantrip_main.parse_args()

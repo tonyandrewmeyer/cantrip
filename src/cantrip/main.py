@@ -100,6 +100,7 @@ _SUBCOMMANDS = frozenset(
         "hooks",
         "skill",
         "checkpoints",
+        "docs",
         "audit",
         "permissions",
     }
