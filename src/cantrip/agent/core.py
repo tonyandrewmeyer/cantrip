@@ -1,7 +1,6 @@
 """Core agent logic."""
 
 import asyncio
-import datetime
 import logging
 import pathlib
 import re
@@ -44,6 +43,7 @@ from cantrip.agent.permissions import (
     PLAN_MODE_ALLOWED_TOOLS,
     plan_mode_message,
 )
+from cantrip.agent.persistence import PersistenceController
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
@@ -469,6 +469,16 @@ class CantripAgent:
             detect_github_repo=lambda p: detect_github_repo(p),
         )
 
+        self._persistence = PersistenceController(
+            state=self.state,
+            work_queue=self._work_queue,
+            ensure_store=self._ensure_store,
+            get_store=lambda: self._store,
+            reset_store=self._reset_store,
+            restore_safety_state=self._context_manager.restore_safety_state,
+            rebuild_messages=self._rebuild_messages_from_active_branch,
+        )
+
         # Phase 68.1: per-turn working-tree snapshots feed ``/undo``.
         # Built lazily so sessions that never touch a charm path or
         # opt out via ``--no-snapshots`` pay no init cost.  Lives on
@@ -810,6 +820,15 @@ class CantripAgent:
         self._store_initialised = True
         if self.state.charm_path:
             self._init_store(self.state.charm_path)
+
+    def _reset_store(self) -> None:
+        """Clear the store reference and lazy-init flag.
+
+        Called by the persistence controller when archiving or recovering
+        from a corrupt database.
+        """
+        self._store = None
+        self._store_initialised = False
 
     def _init_store(self, charm_path: pathlib.Path) -> None:
         """Initialise the session store, migrating from JSON if necessary."""
@@ -2852,258 +2871,27 @@ class CantripAgent:
 
     def save_state(self) -> None:
         """Save agent state to the session store."""
-        self._ensure_store()
-        if self._store:
-            self._store.save_session(self.state)
-            self._store.save_tasks(self._work_queue.all_tasks())
+        self._persistence.save_state()
 
     def preview_session(self) -> SessionPreview:
-        """Peek at the persisted session without mutating agent state.
-
-        Called on launch by every surface (CLI, TUI, Web) to decide
-        whether to show a resume prompt.  Returns
-        ``SessionPreview(exists=False)`` when there's nothing on disk,
-        when the charm path hasn't been set, or when the store can't be
-        opened — so callers can branch on ``preview.exists`` without
-        catching.
-        """
-        if not self.state.charm_path:
-            return SessionPreview()
-        db_path = self.state.charm_path / ".cantrip"
-        if not db_path.is_file():
-            return SessionPreview()
-        try:
-            self._ensure_store()
-        except (sqlite3.Error, OSError):
-            log.warning("Failed to open session store for preview")
-            return SessionPreview()
-        store = self._store
-        if store is None:
-            return SessionPreview()
-        try:
-            peek = store.peek_session()
-            if peek is None:
-                return SessionPreview()
-            tasks = store.load_tasks()
-            counts: dict[str, int] = {}
-            for t in tasks:
-                counts[t.status.value] = counts.get(t.status.value, 0) + 1
-            message_count = store.count_messages()
-        except (sqlite3.Error, KeyError, ValueError):
-            log.warning("Failed to preview session — .cantrip file may be corrupt")
-            return SessionPreview()
-        return SessionPreview(
-            exists=True,
-            charm_name=peek.get("charm_name") if isinstance(peek.get("charm_name"), str) else None,
-            charm_type=peek.get("charm_type") if isinstance(peek.get("charm_type"), str) else None,
-            framework=peek.get("framework") if isinstance(peek.get("framework"), str) else None,
-            dev_model=peek.get("dev_model") if isinstance(peek.get("dev_model"), str) else None,
-            cos_model=peek.get("cos_model") if isinstance(peek.get("cos_model"), str) else None,
-            updated_at=peek.get("updated_at") if isinstance(peek.get("updated_at"), str) else None,
-            message_count=message_count,
-            task_counts=counts,
-        )
+        """Peek at the persisted session without mutating agent state."""
+        return self._persistence.preview_session()
 
     def transcript_tail(self, limit: int = 20) -> list[Message]:
-        """Return the last ``limit`` persisted messages, for "review" mode.
-
-        Used when the user answers *Transcript* at the resume prompt —
-        they see the tail before committing to Resume or Fresh.  Reads
-        from the store but does not touch ``self.state.messages``.
-        """
-        self._ensure_store()
-        if self._store is None:
-            return []
-        try:
-            raw = self._store.load_active_branch()
-        except (sqlite3.Error, KeyError, ValueError):
-            return []
-        result: list[Message] = []
-        for msg in raw[-limit:]:
-            role_str = msg.get("role", "")
-            try:
-                role = Role(role_str)
-            except ValueError:
-                continue
-            content = msg.get("content", "")
-            if not content:
-                continue
-            result.append(Message(role=role, content=str(content)))
-        return result
+        """Return the last ``limit`` persisted messages, for "review" mode."""
+        return self._persistence.transcript_tail(limit)
 
     def archive_session(self) -> pathlib.Path | None:
-        """Rename the current ``.cantrip`` file aside so a fresh session can start.
-
-        Closes the session store, moves the file to
-        ``.cantrip.bak-<timestamp>``, and resets the lazy-init flag so
-        the next ``_ensure_store()`` call creates a new, empty database.
-        Returns the backup path, or None if there was nothing to archive.
-        """
-        if not self.state.charm_path:
-            return None
-        db_path = self.state.charm_path / ".cantrip"
-        if not db_path.is_file():
-            return None
-        if self._store is not None:
-            try:
-                self._store.close()
-            except sqlite3.Error:
-                log.warning("Failed to close session store before archiving")
-        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
-        backup = db_path.with_name(f".cantrip.bak-{timestamp}")
-        db_path.rename(backup)
-        self._store = None
-        self._store_initialised = False
-        log.info("Archived prior session to %s", backup)
-        return backup
+        """Rename the current ``.cantrip`` file aside so a fresh session can start."""
+        return self._persistence.archive_session()
 
     def load_state(self) -> bool:
-        """Load agent state from the session store.
-
-        Returns True if state was loaded, False if no state exists
-        or the database is corrupt.
-        """
-        self._ensure_store()
-        if not self._store:
-            return False
-
-        try:
-            loaded = self._store.load_session()
-        except (sqlite3.Error, KeyError, ValueError, TypeError):
-            log.warning("Failed to load session — .cantrip file may be corrupt")
-            self._store = None
-            self._store_initialised = False
-            return False
-        if loaded is None:
-            return False
-
-        self.state.charm_name = loaded.charm_name
-        self.state.charm_path = loaded.charm_path
-        self.state.charm_type = loaded.charm_type
-        self.state.framework = loaded.framework
-        self.state.dev_model = loaded.dev_model
-        self.state.cos_model = loaded.cos_model
-        self.state.decisions = loaded.decisions
-
-        # Restore compaction safety counters so per-session budgets survive
-        # resume and we don't hand a fresh budget to a session that has
-        # already been compacting aggressively.
-        try:
-            compactions, emergencies, cycle, exhausted = self._store.load_compaction_counters()
-            self._context_manager.restore_safety_state(
-                compactions,
-                emergencies,
-                cycle_detected=cycle,
-                budget_exhausted=exhausted,
-            )
-        except sqlite3.Error:
-            log.warning("Failed to restore compaction counters")
-
-        # Restore conversation history so the LLM retains context.
-        # Phase 67.1: load only the active branch so a /branch made
-        # before quitting carries through to resume; off-branch
-        # messages stay in the DB and remain reachable via /tree.
-        try:
-            self._rebuild_messages_from_active_branch()
-            if self.state.messages:
-                log.info(
-                    "Restored %d conversation messages from prior session",
-                    len(self.state.messages),
-                )
-        except (sqlite3.Error, KeyError, ValueError):
-            log.warning("Failed to load conversation history — continuing without it")
-
-        # Restore persisted tasks into the work queue, resetting any that
-        # were mid-flight when the previous session ended.  Skip tasks
-        # whose IDs are already in the queue — a background worker
-        # (issue triage, watcher) may have raced ahead of resume and
-        # added the same deterministic ID.  Logging at warning level so
-        # the operator sees the collision without the session crashing.
-        tasks = self._store.load_tasks()
-        existing_ids = {t.id for t in self._work_queue.all_tasks()}
-        fresh_tasks: list[AgentTask] = []
-        for task in tasks:
-            if task.status == TaskStatus.ACTIVE:
-                log.warning(
-                    "Resetting stale active task %s (%s) to pending",
-                    task.id,
-                    task.title,
-                )
-                task.status = TaskStatus.PENDING
-            if task.id in existing_ids:
-                log.warning(
-                    "Skipping persisted task %s (%s): already in the work "
-                    "queue from a background worker",
-                    task.id,
-                    task.title,
-                )
-                continue
-            fresh_tasks.append(task)
-        if fresh_tasks:
-            self._work_queue.add_tasks(fresh_tasks)
-
-        if self._store:
-            self._store.record_event(
-                "session_resume",
-                {
-                    "charm_name": self.state.charm_name,
-                    "task_count": len(tasks),
-                },
-            )
-
-        return True
+        """Load agent state from the session store."""
+        return self._persistence.load_state()
 
     def build_resume_summary(self) -> str | None:
-        """Build a structured summary of prior session work.
-
-        Returns a Markdown-formatted string suitable for injection as a
-        USER message, or ``None`` if the state contains nothing useful
-        to summarise.
-        """
-        state = self.state
-        has_content = state.charm_name or state.decisions or self._work_queue.all_tasks()
-        if not has_content:
-            return None
-
-        parts: list[str] = ["[Session resumed] Previous session context:\n"]
-
-        if state.charm_name:
-            charm_type = state.charm_type or "unknown"
-            charm_path = state.charm_path or "unknown"
-            parts.append(f"**Charm:** {state.charm_name} ({charm_type}) at {charm_path}")
-        if state.framework:
-            parts.append(f"**Framework:** {state.framework}")
-        if state.dev_model or state.cos_model:
-            parts.append(
-                f"**Models:** dev={state.dev_model or 'none'}, cos={state.cos_model or 'none'}"
-            )
-
-        if state.decisions:
-            parts.append("\n**Decisions:**")
-            for d in state.decisions:
-                parts.append(f"- {d.type}: {d.choice}")
-
-        tasks = self._work_queue.all_tasks()
-        if tasks:
-            counts: dict[str, int] = {}
-            for t in tasks:
-                counts[t.status.value] = counts.get(t.status.value, 0) + 1
-            done = counts.get("done", 0)
-            failed = counts.get("failed", 0)
-            pending = counts.get("pending", 0) + counts.get("active", 0) + counts.get("blocked", 0)
-            parts.append(f"\n**Task progress:** {done} done, {failed} failed, {pending} pending")
-            completed = [t.title for t in tasks if t.status == TaskStatus.DONE]
-            if completed:
-                parts.append("**Recent completed tasks:**")
-                for title in completed[-5:]:
-                    parts.append(f"- {title}")
-
-        summary = "\n".join(parts)
-
-        # Inject into conversation history so the LLM sees prior context.
-        # Use SYSTEM role to avoid breaking alternating user/assistant patterns.
-        self.state.messages.append(Message(role=Role.SYSTEM, content=summary))
-        return summary
+        """Build a structured summary of prior session work."""
+        return self._persistence.build_resume_summary()
 
     async def prepare(
         self,

@@ -3936,10 +3936,16 @@ decomposition last.
      `cantrip.agent.confirmations.<name>`.  Pure refactor —
      `make check` and `make unit` (6 412 passed, 8 skipped)
      green.
-  7. **Session persistence** (3026-3290) —
+  7. ✓ **Session persistence** → `agent/persistence.py`
+     `PersistenceController` (327 lines).  Six methods extracted:
      `save_state`, `preview_session`, `transcript_tail`,
-     `archive_session`, `load_state`,
-     `build_resume_summary`.
+     `archive_session`, `load_state`, `build_resume_summary`.
+     Shared internals injected as callables (`ensure_store`,
+     `get_store`, `reset_store`, `restore_safety_state`,
+     `rebuild_messages`).  Added `_reset_store()` helper on
+     `CantripAgent`.  `core.py` 3199 → 2987 lines (−212).
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
 - [ ] For each extraction: introduce a focused class in its
   own module (e.g. `agent/mcp_controller.py`,
   `agent/watcher_controller.py`, `agent/arena_controller.py`,
