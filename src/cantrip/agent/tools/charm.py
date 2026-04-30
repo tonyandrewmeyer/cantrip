@@ -9,8 +9,8 @@ from typing import Any
 
 import yaml
 
+from cantrip.agent.tools._scan import scan
 from cantrip.agent.tools.base import Tool, ToolResult
-from cantrip.agent.tools.framework_detection import detect_frameworks
 from cantrip.agent.tools.testing import RunCharmTestsTool
 from cantrip.agent.tools.workflows import inject_github_workflows
 from cantrip.charm import terraform
@@ -1071,31 +1071,6 @@ class AnalyseFrameworkTool(Tool):
         "spring-boot": "java",
     }
 
-    # Evidence files that hint at a language ecosystem even when no
-    # PaaS framework is detected — used to keep ``language`` populated
-    # so custom-charm callers can still route on it.
-    _LANGUAGE_EVIDENCE: tuple[tuple[str, str], ...] = (
-        ("go.mod", "go"),
-        ("package.json", "javascript"),
-        ("app/package.json", "javascript"),
-        ("pom.xml", "java"),
-        ("build.gradle", "java"),
-        ("build.gradle.kts", "java"),
-        ("requirements.txt", "python"),
-        ("pyproject.toml", "python"),
-        ("setup.py", "python"),
-        ("manage.py", "python"),
-    )
-
-    @classmethod
-    def _infer_language_from_evidence(cls, files_found: list[str]) -> str | None:
-        """Pick a language label from the evidence files seen on disk."""
-        seen = set(files_found)
-        for evidence, language in cls._LANGUAGE_EVIDENCE:
-            if evidence in seen:
-                return language
-        return None
-
     async def execute(self, path: str) -> ToolResult:
         """Analyse the codebase."""
         try:
@@ -1121,53 +1096,38 @@ class AnalyseFrameworkTool(Tool):
                 "Load the 'twelve-factor' skill for step-by-step instructions."
             )
 
-            for evidence_file in (
-                "requirements.txt",
-                "pyproject.toml",
-                "setup.py",
-                "go.mod",
-                "package.json",
-                "app/package.json",
-                "pom.xml",
-                "build.gradle",
-                "build.gradle.kts",
-                "manage.py",
-            ):
-                if (app_path / evidence_file).exists():
-                    findings["files_found"].append(evidence_file)
+            scan_result = scan(app_path)
+            detection_notes = list(scan_result.extras.get("framework_detection_notes", []))
+            framework_candidates = list(scan_result.extras.get("framework_candidates", []))
+            web_app_signals = scan_result.extras.get("web_app_signals", {})
+            config_files = list(scan_result.extras.get("config_files", []))
+            systemd_units = list(scan_result.extras.get("systemd_units", []))
 
-            detection = detect_frameworks(app_path)
-            framework = (
-                self._UPSTREAM_NAME_MAP.get(detection.detected, detection.detected)
-                if detection.detected
-                else None
+            files_found = sorted(
+                set(scan_result.manifests)
+                | set(scan_result.entry_points)
+                | set(scan_result.containers)
+                | set(scan_result.env_templates)
+                | set(config_files)
+                | set(systemd_units)
             )
+            findings["files_found"] = files_found
+
+            framework = scan_result.framework
             if framework:
                 findings["framework"] = framework
-                findings["language"] = self._LANGUAGE_MAP.get(framework)
+                findings["language"] = scan_result.language or self._LANGUAGE_MAP.get(framework)
                 findings["suggestions"].append(paas_hint)
             else:
-                # No framework detected, but the file evidence still
-                # tells us which language ecosystem the repo lives in.
-                # Custom-charm callers downstream lean on this label.
-                findings["language"] = self._infer_language_from_evidence(findings["files_found"])
+                findings["language"] = scan_result.language
 
-            findings["candidates"] = [
-                {
-                    **candidate,
-                    "framework": self._UPSTREAM_NAME_MAP.get(
-                        str(candidate["framework"]),
-                        candidate["framework"],
-                    ),
-                }
-                for candidate in detection.candidates
-            ]
-            findings["web_app_guess"] = detection.web_app_guess
+            findings["candidates"] = framework_candidates
+            findings["web_app_guess"] = bool(scan_result.extras.get("web_app_guess", False))
             findings["web_app_signals"] = {
-                "positive": detection.web_app_signals_positive,
-                "negative": detection.web_app_signals_negative,
+                "positive": list(web_app_signals.get("positive", [])),
+                "negative": list(web_app_signals.get("negative", [])),
             }
-            findings["detection_notes"] = detection.notes
+            findings["detection_notes"] = detection_notes
 
             # Map framework to profile.
             if framework and framework in self._PROFILE_MAP:
@@ -1183,42 +1143,20 @@ class AnalyseFrameworkTool(Tool):
                 "suggested_substrate": None,
             }
 
-            dockerfile = app_path / "Dockerfile"
-            if dockerfile.exists():
-                findings["files_found"].append("Dockerfile")
+            if "Dockerfile" in scan_result.containers:
                 workload_hints["has_dockerfile"] = True
 
-            for compose_name in ("docker-compose.yml", "docker-compose.yaml", "compose.yml"):
-                compose_file = app_path / compose_name
-                if compose_file.exists():
-                    findings["files_found"].append(compose_name)
-                    workload_hints["has_docker_compose"] = True
-                    break
+            if any(
+                compose_name in scan_result.containers
+                for compose_name in ("docker-compose.yml", "docker-compose.yaml", "compose.yml")
+            ):
+                workload_hints["has_docker_compose"] = True
 
-            # Look for systemd .service files in the repo root or common locations.
-            service_locations = [app_path] + [
-                app_path / d for d in ("systemd", "contrib", "deploy", "packaging")
-            ]
-            for location in service_locations:
-                if location.is_dir() and list(location.glob("*.service")):
-                    workload_hints["has_systemd"] = True
-                    break
+            if systemd_units:
+                workload_hints["has_systemd"] = True
 
-            # Check for common config file patterns.
-            config_patterns = [
-                "config.yaml",
-                "config.yml",
-                "config.json",
-                "config.toml",
-                ".env.example",
-                ".env.sample",
-                "settings.yaml",
-                "settings.yml",
-            ]
-            for pattern in config_patterns:
-                if (app_path / pattern).exists():
-                    workload_hints["has_config_files"] = True
-                    break
+            if config_files or scan_result.env_templates:
+                workload_hints["has_config_files"] = True
 
             # Suggest a substrate when no PaaS framework was detected.
             if not findings["framework"]:
@@ -1235,9 +1173,7 @@ class AnalyseFrameworkTool(Tool):
             findings["workload_hints"] = workload_hints
 
             # Check for existing charm structure.
-            charmcraft_yaml = app_path / "charmcraft.yaml"
-            if charmcraft_yaml.exists():
-                findings["files_found"].append("charmcraft.yaml")
+            if scan_result.is_existing_charm:
                 findings["suggestions"].append("Existing charm found - will modify")
 
             # Build output.

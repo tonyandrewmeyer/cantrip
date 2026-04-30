@@ -1,44 +1,27 @@
-"""Deterministic codebase pre-scan for Path B discovery (Phase 55.7 stub).
+"""Deterministic codebase pre-scan for Path B discovery.
 
-This module is a **stub** filed by Phase 55.7 of the roadmap to anchor
-the port decision.  It defines the target library surface — data
-tables + ``ScanResult`` dataclass + a ``scan(path)`` entry point —
-without actually implementing the detection passes.  The accompanying
-roadmap entry records *why* we're porting rather than vendoring or
-subprocess-invoking the upstream script; the accompanying
-``design/TOOLS.md`` section records the output shape contract.
-
-Attribution
------------
-The detection tables in this module are ported from the
-``scan.py`` helper of the ``acquire-codebase-knowledge`` skill in
+The detection tables in this module are ported from the ``scan.py``
+helper of the ``acquire-codebase-knowledge`` skill in
 ``github/awesome-copilot`` (MIT licence, Copyright GitHub, Inc.):
 
   https://github.com/github/awesome-copilot/blob/main/skills/acquire-codebase-knowledge/scripts/scan.py
 
 Charm-specific additions (``charmcraft.yaml`` / ``rockcraft.yaml`` /
-``.cantrip`` detection, ``ops``-version hints, the ``ScanResult``
+``.cantrip`` detection, workload-hint extras, and the ``ScanResult``
 shape) are Cantrip-local work that the upstream version does not
 cover.
-
-Status
-------
-- Data tables and ``ScanResult`` shape: authored.
-- ``scan(path)`` function: stub with TODO markers for each pass.
-- Tests: none — the stub isn't wired into a ``Tool`` yet.
-
-Wiring into ``AnalyseFrameworkTool`` (``tools/charm.py``) and
-populating the detection passes is the follow-up work Phase 55.7
-sized and deferred.  When that lands, convert this module from a
-stub to a full implementation; add unit tests under
-``tests/unit/test_scan.py`` exercising each detection pass against
-small in-process charm-directory fixtures.
 """
 
 from __future__ import annotations
 
+import collections
 import dataclasses
+import os
+import pathlib
+import subprocess
 from typing import Any
+
+from cantrip.agent.tools.framework_detection import detect_frameworks
 
 # ---------------------------------------------------------------------------
 # Detection tables — ported from awesome-copilot scan.py + Cantrip extensions.
@@ -184,6 +167,7 @@ CONTAINER_FILES: tuple[str, ...] = (
     "Dockerfile",
     "docker-compose.yml",
     "docker-compose.yaml",
+    "compose.yml",
     ".dockerignore",
     "Dockerfile.*",
     "k8s",
@@ -291,6 +275,73 @@ CHARM_MARKERS: tuple[str, ...] = (
 )
 
 
+_CONFIG_HINT_FILES: tuple[str, ...] = (
+    "config.yaml",
+    "config.yml",
+    "config.json",
+    "config.toml",
+    "settings.yaml",
+    "settings.yml",
+)
+
+_SYSTEMD_SEARCH_DIRS: tuple[str, ...] = ("systemd", "contrib", "deploy", "packaging")
+_UPSTREAM_FRAMEWORK_MAP: dict[str, str] = {"expressjs": "express"}
+_FRAMEWORK_LANGUAGE_MAP: dict[str, str] = {
+    "flask": "python",
+    "django": "python",
+    "fastapi": "python",
+    "go": "go",
+    "express": "javascript",
+    "spring-boot": "java",
+}
+_MANIFEST_LANGUAGE_HINTS: tuple[tuple[str, str], ...] = (
+    ("go.mod", "go"),
+    ("package.json", "javascript"),
+    ("app/package.json", "javascript"),
+    ("pom.xml", "java"),
+    ("build.gradle", "java"),
+    ("build.gradle.kts", "java"),
+    ("requirements.txt", "python"),
+    ("pyproject.toml", "python"),
+    ("setup.py", "python"),
+    ("manage.py", "python"),
+    ("Cargo.toml", "rust"),
+    ("mix.exs", "elixir"),
+    ("composer.json", "php"),
+    ("Gemfile", "ruby"),
+    ("pubspec.yaml", "dart"),
+    ("Package.swift", "swift"),
+    ("build.sbt", "scala"),
+    ("Program.cs", "csharp"),
+    ("src/Program.cs", "csharp"),
+)
+_SOURCE_SUFFIX_LANGUAGE_MAP: dict[str, str] = {
+    ".c": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cs": "csharp",
+    ".dart": "dart",
+    ".el": "elisp",
+    ".ex": "elixir",
+    ".go": "go",
+    ".java": "java",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".kt": "kotlin",
+    ".php": "php",
+    ".py": "python",
+    ".rb": "ruby",
+    ".rs": "rust",
+    ".scala": "scala",
+    ".swift": "swift",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+}
+_MAX_SCAN_DEPTH = 8
+_MAX_SCANNED_FILES = 4000
+_RECENT_COMMIT_WINDOW = "30.days"
+
+
 # ---------------------------------------------------------------------------
 # Output shape.
 # ---------------------------------------------------------------------------
@@ -353,48 +404,243 @@ class ScanResult:
 
 
 # ---------------------------------------------------------------------------
-# Entry point — stub.
+# Entry point.
 # ---------------------------------------------------------------------------
 
 
-def scan(path: str | Any) -> ScanResult:  # noqa: ARG001
+def _is_glob(pattern: str) -> bool:
+    return any(token in pattern for token in ("*", "?", "["))
+
+
+def _expand_patterns(
+    patterns: tuple[str, ...],
+    files_found: set[str],
+    directories_found: set[str] | None = None,
+) -> tuple[str, ...]:
+    directories = directories_found or set()
+    matches: set[str] = set()
+    for pattern in patterns:
+        if _is_glob(pattern):
+            for relative_path in files_found:
+                if pathlib.PurePosixPath(relative_path).match(pattern):
+                    matches.add(relative_path)
+            continue
+        if pattern in files_found or pattern in directories:
+            matches.add(pattern)
+    return tuple(sorted(matches))
+
+
+def _detect_ci_cd(files_found: set[str], directories_found: set[str]) -> tuple[str, ...]:
+    detected: list[str] = []
+    for relative_path, platform_name in CI_CD_CONFIGS.items():
+        if relative_path == ".github/workflows":
+            has_workflow = any(
+                path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml"))
+                for path in files_found
+            )
+            if has_workflow:
+                detected.append(platform_name)
+            continue
+        if relative_path in files_found or relative_path in directories_found:
+            detected.append(platform_name)
+    return tuple(detected)
+
+
+def _detect_systemd_units(files_found: set[str]) -> tuple[str, ...]:
+    units: list[str] = []
+    for relative_path in sorted(files_found):
+        candidate = pathlib.PurePosixPath(relative_path)
+        if candidate.suffix != ".service":
+            continue
+        if len(candidate.parts) == 1 or (
+            len(candidate.parts) == 2 and candidate.parts[0] in _SYSTEMD_SEARCH_DIRS
+        ):
+            units.append(relative_path)
+    return tuple(units)
+
+
+def _infer_language(
+    files_found: set[str],
+    manifests: tuple[str, ...],
+    suffix_counts: collections.Counter[str],
+) -> str | None:
+    seen = set(manifests) | files_found
+    for evidence, language in _MANIFEST_LANGUAGE_HINTS:
+        if evidence in seen:
+            return language
+
+    language_counts: collections.Counter[str] = collections.Counter()
+    for suffix, count in suffix_counts.items():
+        language = _SOURCE_SUFFIX_LANGUAGE_MAP.get(suffix)
+        if language:
+            language_counts[language] += count
+    if not language_counts:
+        return None
+    return min(
+        language_counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    )[0]
+
+
+def _count_recent_commits(root: pathlib.Path) -> int | None:
+    if not (root / ".git").exists():
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "rev-list",
+                "--count",
+                f"--since={_RECENT_COMMIT_WINDOW}",
+                "HEAD",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    output = result.stdout.strip()
+    return int(output) if output.isdigit() else None
+
+
+def _walk_filesystem(
+    root: pathlib.Path,
+) -> tuple[set[str], set[str], collections.Counter[str], dict[str, Any]]:
+    files_found: set[str] = set()
+    directories_found: set[str] = set()
+    suffix_counts: collections.Counter[str] = collections.Counter()
+    traversed_directories = 0
+    scanned_files = 0
+    truncated = False
+
+    for current_root, dirnames, filenames in os.walk(root, topdown=True):
+        current_path = pathlib.Path(current_root)
+        traversed_directories += 1
+        relative_dir = (
+            pathlib.Path(".") if current_path == root else current_path.relative_to(root)
+        )
+        depth = 0 if current_path == root else len(relative_dir.parts)
+
+        kept_dirs: list[str] = []
+        for dirname in sorted(dirnames):
+            if dirname in EXCLUDE_DIRS:
+                continue
+            candidate = current_path / dirname
+            if candidate.is_symlink():
+                continue
+            candidate_relative = candidate.relative_to(root)
+            if len(candidate_relative.parts) > _MAX_SCAN_DEPTH:
+                continue
+            kept_dirs.append(dirname)
+            directories_found.add(candidate_relative.as_posix())
+        dirnames[:] = kept_dirs
+
+        for filename in sorted(filenames):
+            relative_path = (current_path / filename).relative_to(root).as_posix()
+            files_found.add(relative_path)
+            suffix = pathlib.Path(filename).suffix.lower()
+            if suffix:
+                suffix_counts[suffix] += 1
+            scanned_files += 1
+            if scanned_files >= _MAX_SCANNED_FILES:
+                truncated = True
+                dirnames[:] = []
+                break
+
+        if truncated or depth >= _MAX_SCAN_DEPTH:
+            dirnames[:] = []
+        if truncated:
+            break
+
+    stats = {
+        "directories_scanned": traversed_directories,
+        "files_scanned": scanned_files,
+        "max_depth": _MAX_SCAN_DEPTH,
+        "max_files": _MAX_SCANNED_FILES,
+        "truncated": truncated,
+    }
+    return files_found, directories_found, suffix_counts, stats
+
+
+def scan(path: str | os.PathLike[str] | Any) -> ScanResult:
     """Scan a codebase root and return a structured summary.
 
-    **Stub implementation** — Phase 55.7 ships the surface proposal;
-    the detection passes are TODO.  Returning an empty
-    :class:`ScanResult` keeps callers un-broken while the
-    implementation lands.
-
-    Implementation plan (each bullet is a pass over the tree):
-
-    1. Walk the filesystem with :data:`EXCLUDE_DIRS` pruning; cap
-       depth and file count so pathological repos don't explode.
-    2. Resolve :data:`MANIFESTS` patterns against the tree
-       (expanding ``*.csproj`` / ``*.gemspec`` / etc.); build
-       ``manifests``.
-    3. Detect language + framework from manifest contents — re-use
-       the Python/Go/JS/Java decisions already in
-       :class:`AnalyseFrameworkTool` rather than duplicating them
-       here; the port converges the tool onto this helper.
-    4. Probe :data:`ENTRY_CANDIDATES` and keep the existing ones.
-    5. Probe :data:`CI_CD_CONFIGS`; include ``.github/workflows``
-       only when the directory contains at least one ``.yml``
-       file.
-    6. Probe :data:`CONTAINER_FILES`; expand ``Dockerfile.*`` via
-       glob.
-    7. Probe :data:`SECURITY_CONFIGS`, :data:`LINT_FILES`,
-       :data:`ENV_TEMPLATES`.
-    8. Set ``is_existing_charm`` when any :data:`CHARM_MARKERS`
-       are present at root.
-    9. If the path is a git checkout, count commits in the last
-       30 days for ``recent_commit_count``.
-
-    Budget: the whole scan should complete in well under a second
-    on a typical charm repo; skip any pass that starts scaling
-    with repo size (line counts, per-file AST parsing) — those
-    belong in a heavier follow-up tool.
+    The scan is deliberately cheap and deterministic: one bounded
+    filesystem walk with excluded-directory pruning, then shallow
+    pattern matching and framework inference via the existing
+    ``framework_detection`` helper.
     """
-    return ScanResult()
+    root = pathlib.Path(path).resolve()
+    if not root.exists():
+        raise ValueError(f"Scan path not found: {path}")
+    if not root.is_dir():
+        raise ValueError(f"Scan path is not a directory: {path}")
+
+    files_found, directories_found, suffix_counts, scan_stats = _walk_filesystem(root)
+
+    manifests = _expand_patterns(MANIFESTS, files_found)
+    entry_points = _expand_patterns(ENTRY_CANDIDATES, files_found)
+    containers = _expand_patterns(CONTAINER_FILES, files_found, directories_found)
+    security_configs = _expand_patterns(SECURITY_CONFIGS, files_found)
+    lint_configs = _expand_patterns(LINT_FILES, files_found)
+    env_templates = _expand_patterns(ENV_TEMPLATES, files_found)
+    config_files = _expand_patterns(_CONFIG_HINT_FILES, files_found)
+    systemd_units = _detect_systemd_units(files_found)
+    ci_cd = _detect_ci_cd(files_found, directories_found)
+
+    detection = detect_frameworks(root)
+    framework = _UPSTREAM_FRAMEWORK_MAP.get(detection.detected, detection.detected)
+    language = (
+        _FRAMEWORK_LANGUAGE_MAP.get(framework)
+        if framework
+        else _infer_language(files_found, manifests, suffix_counts)
+    )
+
+    root_markers = {marker for marker in CHARM_MARKERS if (root / marker).exists()}
+
+    return ScanResult(
+        manifests=manifests,
+        language=language,
+        framework=framework,
+        entry_points=entry_points,
+        ci_cd=ci_cd,
+        containers=containers,
+        security_configs=security_configs,
+        lint_configs=lint_configs,
+        env_templates=env_templates,
+        is_existing_charm=bool(root_markers),
+        recent_commit_count=_count_recent_commits(root),
+        extras={
+            "config_files": list(config_files),
+            "framework_candidates": [
+                {
+                    **candidate,
+                    "framework": _UPSTREAM_FRAMEWORK_MAP.get(
+                        str(candidate["framework"]),
+                        candidate["framework"],
+                    ),
+                }
+                for candidate in detection.candidates
+            ],
+            "framework_detection_notes": list(detection.notes),
+            "root_markers": sorted(root_markers),
+            "scan_stats": scan_stats,
+            "systemd_units": list(systemd_units),
+            "web_app_guess": detection.web_app_guess,
+            "web_app_signals": {
+                "positive": list(detection.web_app_signals_positive),
+                "negative": list(detection.web_app_signals_negative),
+            },
+        },
+    )
 
 
 __all__ = [

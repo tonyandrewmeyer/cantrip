@@ -336,11 +336,11 @@ the `ScanResult.is_existing_charm` routing signal, the
 anyway, so forking in the form of a port is the cleaner
 long-term home.
 
-### Stub shipped
+### Implementation shipped
 
-Phase 55.7 commits a **stub**, not an implementation:
+Phase 92.1 completes the port in
 [`src/cantrip/agent/tools/_scan.py`](../src/cantrip/agent/tools/_scan.py).
-The stub defines:
+The helper now provides:
 
 - The data tables (`MANIFESTS`, `ENTRY_CANDIDATES`,
   `CI_CD_CONFIGS`, `CONTAINER_FILES`, `SECURITY_CONFIGS`,
@@ -348,28 +348,26 @@ The stub defines:
   `CHARM_MARKERS`) with upstream values plus Cantrip extensions.
 - A frozen `ScanResult` dataclass describing the output shape —
   JSON-friendly so it slots into the Phase 52.3 checkpoint
-  envelope when (not if) this scan gets wrapped by
-  `checkpoint()`.
-- A stub `scan(path)` that returns an empty `ScanResult` with
-  TODO comments enumerating the detection passes in order.
+  envelope if this scan later gets wrapped by `checkpoint()`.
+- A bounded `scan(path)` implementation: one filesystem walk with
+  excluded-directory pruning and stable ordering, then manifest /
+  entry-point / CI/CD / container / security / lint / env-template
+  / charm-marker detection plus recent-git-churn counting.
+- Framework inference reused from
+  `cantrip.agent.tools.framework_detection`, with the candidate
+  list, web-app-fit signals, config-file hints, and systemd-unit
+  hints carried in `ScanResult.extras`.
+- `AnalyseFrameworkTool.execute()` wired to read from `scan(path)`
+  rather than re-deriving deterministic facts ad hoc.
+- Unit coverage in `tests/unit/test_scan.py` for manifests-only,
+  CI-only, entry-point-only, existing-charm-marker, mixed
+  Docker/systemd/config, excluded-directory, and git-churn cases.
 
-The stub is **not wired into any `Tool` yet**.  The follow-up
-work:
-
-1. Fill in the detection passes (filesystem walk, manifest
-   expansion, framework inference, entry-point probing, CI/CD
-   + container + security + lint + env + charm-marker
-   detection, git churn).
-2. Refactor `AnalyseFrameworkTool.execute` to call `scan(path)`
-   and layer charm-specific reasoning (PaaS profile map,
-   ROCKCRAFT_ENABLE_EXPERIMENTAL flagging, substrate suggestion,
-   improvement-path routing) on top of the structured result.
-3. Unit tests under `tests/unit/test_scan.py`, one per
-   detection pass, against tiny in-process fixtures.
-
-Size estimate: ~400-500 lines of implementation + ~100-150
-lines of tests.  Not scoped to a roadmap phase yet — file when a
-real Path B (custom app) user demonstrates the round-trip cost.
+Decision on future UI surfaces: **yes, use this helper as the
+single source of truth for repo-shape summaries.**  Phase 92.1 only
+wires the planner/tool path; the repo-stats sidebar, onboarding
+summary, and print-mode preamble remain follow-on consumers and
+should call `scan()` rather than growing their own tree walks.
 Until then the stub anchors the shape decision and keeps the
 port proposal honest (by forcing it into a concrete
 `_scan.py`-lives-here layout rather than staying abstract).

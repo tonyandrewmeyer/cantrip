@@ -197,3 +197,23 @@ class TestAnalyseFrameworkTool:
         assert "has_systemd" in hints
         assert "has_config_files" in hints
         assert "suggested_substrate" in hints
+
+    @pytest.mark.asyncio
+    async def test_custom_app_env_template_counts_as_config_hint(self, tool, temp_dir):
+        """Env templates still surface as config-file hints via the scan helper."""
+        (temp_dir / ".env.example").write_text("PORT=8080\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert result.data["workload_hints"]["has_config_files"] is True
+
+    @pytest.mark.asyncio
+    async def test_cantrip_marker_counts_as_existing_charm(self, tool, temp_dir):
+        """A prior Cantrip session marker triggers existing-charm guidance."""
+        (temp_dir / ".cantrip").mkdir()
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        assert "Existing charm found - will modify" in result.output

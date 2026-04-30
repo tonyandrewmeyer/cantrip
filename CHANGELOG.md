@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Deterministic repo scan now backs ``analyse_framework`` (Phase 92.1).**
+  ``src/cantrip/agent/tools/_scan.py`` is no longer a stub: it now does
+  a bounded, excluded-directory-pruned repo walk that collects manifests,
+  entry points, CI/CD config, container/security/lint/env-template
+  signals, existing-charm markers, and recent git churn.  The
+  ``analyse_framework`` tool now reads that structured result instead of
+  re-deriving deterministic facts itself, keeping its public output
+  shape unchanged while making custom-app routing and workload hints more
+  consistent.  Focused regression coverage lives in
+  ``tests/unit/test_scan.py``.
 - **Extracted six more cohorts from `CantripAgent` god class (Phase 85.4
   cohorts 2–7).**  New controller modules:
   `ExecutorController` (start/stop/pause/resume + event-bus callbacks),

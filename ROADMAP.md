@@ -4688,24 +4688,24 @@ identified rather than opening a new product line.
 
 ### 92.1 High — Finish the deterministic pre-scan for non-PaaS repos
 
-- [ ] Turn ``src/cantrip/agent/tools/_scan.py`` from the current
+- [x] Turn ``src/cantrip/agent/tools/_scan.py`` from the current
   documented stub into the real implementation sketched in
   ``design/TOOLS.md``: filesystem walk with ``EXCLUDE_DIRS`` pruning,
   manifest expansion, entry-point probing, CI/CD detection, container /
   security / lint-config / env-template detection, charm-marker
   detection, and recent-git-churn summary.
-- [ ] Wire ``AnalyseFrameworkTool.execute()`` to call the scan helper so
+- [x] Wire ``AnalyseFrameworkTool.execute()`` to call the scan helper so
   custom-application routing stops re-deriving deterministic facts ad
   hoc.  Keep the existing user-facing return shape
   (``framework``, ``language``, ``profile``, ``workload_hints``,
   ``candidates``, ``notes``) and layer the scan output underneath it
   rather than widening every downstream caller.
-- [ ] Add focused unit tests for the scan passes under
+- [x] Add focused unit tests for the scan passes under
   ``tests/unit/test_scan.py`` using tiny synthetic repo fixtures:
   manifests-only, CI-only, entry-point-only, existing-charm marker,
   mixed Docker/systemd hints, and a pathological excluded-directory
   case so the walk budget stays bounded.
-- [ ] Record whether the scan should also feed future UI surfaces
+- [x] Record whether the scan should also feed future UI surfaces
   (repo-stats sidebar, onboarding summary, print-mode preamble) so the
   helper becomes the single source of truth for "what kind of repo is
   this?" rather than a planner-only utility.
