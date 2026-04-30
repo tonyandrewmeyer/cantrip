@@ -1,6 +1,6 @@
 ---
 name: twelve-factor
-description: End-to-end workflow for building 12-factor PaaS charms with rockcraft and charmcraft — fit assessment, rock generation, charm generation, build, push, deploy, verify
+description: Build 12-factor PaaS charms with paas-charm — fit, rock, charm, build, push, deploy, verify.
 ---
 
 # 12-Factor PaaS Charm Workflow
