@@ -4829,6 +4829,158 @@ features that exist but are too hard to find.
 
 ---
 
+## Phase 93: Testing Depth Sweep — Failure Paths, Durability, and System-Level Confidence
+
+**Goal:** Cantrip's **unit** suite is already broad and healthy
+(``make coverage`` currently reports ~89% total Python coverage), but the
+review on 2026-04-30 found that the **non-unit** story is much thinner than
+the unit numbers suggest.  Integration / e2e / live / eval coverage is good
+for the happy-path planner→build→deploy flow, transcript export, and a handful
+of real charm-build scenarios, but the suite is still light on failure-mode
+behaviour, restart/durability, sandbox/worktree isolation, git automation, and
+newer controller surfaces.  This phase closes that gap by treating testing as
+a product feature: the goal is not "more tests" in the abstract, but
+confidence that Cantrip keeps working when reality is messy.
+
+### 93.1 High — Backfill the highest-value unit-coverage holes
+
+- [ ] Turn the current zero-coverage deterministic repo scan helper
+  (``src/cantrip/agent/tools/_scan.py``) into a fully-tested module once
+  Phase 92.1 lands.  The helper should not remain both architecturally
+  important *and* entirely uncovered.
+- [ ] Add focused unit coverage for the current "important but thinly covered"
+  modules surfaced by the review: ``executor_controller.py``,
+  ``preflight.py``, ``context_providers_builtin.py``,
+  ``github_issues.py``, ``watcher.py``, ``auto_commit.py``,
+  ``git_branch.py``, and the higher-branching paths in
+  ``agent/tools/acceptance.py`` and ``agent/tools/charm.py``.
+- [ ] Reduce the TUI blind spots in ``src/cantrip/tui/app.py`` and adjacent
+  screens/widgets by promoting the highest-value flows to behaviour tests:
+  screen switching, resume/restart affordances, task/status updates, modal
+  transitions, and failure states that currently live only in manual use.
+- [ ] When a module remains below the surrounding package average after this
+  sweep, record *why* in the test or roadmap text instead of letting the gap
+  look accidental.
+
+### 93.2 High — Add failure-injection integration tests
+
+- [ ] Add a first-class integration harness for **LLM/provider failures**:
+  timeout, rate-limit, malformed response, provider 5xx, and tool-call shape
+  violations.  Assert user-visible failure handling, retry behaviour, and
+  queue/task state transitions rather than only that an exception bubbles.
+- [ ] Add **tool execution failure** integration coverage: subprocess exits
+  non-zero, partial output + timeout, missing binaries, Juju command failures,
+  export/write failures, and cleanup hooks that should still run on final
+  failure.
+- [ ] Exercise the existing retry / recovery surfaces under pressure:
+  transient failure that later succeeds, retry budget exhausted, and "final
+  failure produces a crisp summary instead of hanging the loop".
+- [ ] Cover degraded-environment paths that are realistic in operator use:
+  controller unreachable, model missing, missing API key, network blip during
+  export or provider call, and partial state already written when the failure
+  hits.
+
+### 93.3 High — Test durability, resume, and long-running-session recovery
+
+- [ ] Add integration tests for **checkpoint → stop → restart → resume** on
+  active sessions, including queued work, decisions, transcript state, and any
+  pending follow-up tasks.
+- [ ] Add crash-recovery tests for the executor / store boundary: interrupted
+  task execution, partially-persisted task results, and replay after restart
+  without duplicate work or corrupted queue state.
+- [ ] Cover the context-budget lifecycle end to end: budget exhaustion,
+  compaction trigger, compaction failure, and recovery once the session
+  continues.
+- [ ] Add explicit persistence/resume coverage for long-running flows that are
+  currently unit-tested in pieces but not exercised as a whole.
+
+### 93.4 High — Add isolation and security-oriented system tests
+
+- [ ] Add tests proving the sandbox/workspace/worktree boundaries hold under
+  pressure: path traversal attempts, symlink escapes, out-of-tree writes,
+  temporary-file leakage, and cleanup after cancellation/failure.
+- [ ] Add integration coverage for worktree lifecycle and git isolation:
+  branch creation, temporary worktree setup/teardown, dirty-tree handling,
+  merge/reconcile paths, and failure cleanup.
+- [ ] Add system tests around the policy/permission boundary so "plan mode",
+  destructive-command gates, and category-scoped tool access are verified in
+  real flows rather than only at unit granularity.
+- [ ] Treat these as regression guards for Phase 49's sandbox promise, not as
+  optional hardening.
+
+### 93.5 Medium — Cover advanced controllers and automation workflows
+
+- [ ] Add integration coverage for the controller surfaces that currently have
+  little or no non-unit protection: ``MCPController``,
+  ``ArenaController``, ``TriageController``, and the extracted
+  ``ExecutorController`` / ``WatcherController`` seams where real message flow
+  matters.
+- [ ] Add non-unit tests for git automation workflows: ``git_branch`` branch
+  tracking, PR/open-feedback loops, and ``auto_commit`` message/trailer logic
+  in realistic repositories rather than fake objects only.
+- [ ] Add end-to-end coverage for at least one **triage → confirm → build
+  improvement** path so the improvement workflow is tested across handoff
+  boundaries, not only as isolated controller pieces.
+- [ ] Add provider-routing / failover tests so a primary-provider problem does
+  not silently strand the work loop when a fallback is configured.
+
+### 93.6 Medium — Broaden the higher-level test portfolio
+
+- [ ] Expand the **eval corpus** beyond the current happy-path examples with
+  at least one more machine-oriented charm, one more custom/non-framework app,
+  and one case that stresses relations / observability / operational actions
+  more heavily than the current set.
+- [ ] Add more **stateful e2e** scenarios: interrupted deploy, failed verify
+  followed by debug task creation, improvement flows on an existing charm, and
+  "user says no" / override branches that materially change the plan.
+- [ ] Build **differential / metamorphic** checks where Cantrip should preserve
+  invariants across providers or surfaces: stable task-graph validity, export
+  shape, permission enforcement, and transcript/event consistency.
+- [ ] Extend accessibility regression coverage beyond the current Web-only
+  smoke test where feasible, and at minimum document the deliberate boundary
+  if TUI accessibility remains manual.
+- [ ] Where a "fuzz" or property style makes more sense than examples
+  (workspace paths, provider payload normalisation, queue/task invariants),
+  prefer that style over adding another list of hand-authored cases.
+
+### What this phase is *not*
+
+- Not a vanity push for a single coverage percentage.  The problem is not that
+  89% is too low; it is that the remaining uncovered and non-unit gaps cluster
+  around failure, isolation, and recovery.
+- Not a wholesale rewrite of the existing unit suite.  Keep the broad base;
+  add the missing higher-confidence layers around it.
+- Not a promise that every live/provider matrix case runs in default CI.  The
+  aim is a balanced portfolio: cheap deterministic coverage in the main loop,
+  with richer live/e2e paths still available where they earn their cost.
+
+**Exit criteria:** the highest-value unit blind spots above are closed or
+explicitly explained; failure-injection integration tests cover provider, tool,
+and recovery paths that previously had no protection; restart/resume and
+isolation behaviour are exercised end to end; advanced controller/git
+automation flows have non-unit coverage; and the eval/e2e portfolio covers more
+than the happy-path build/deploy story so a regression in failure handling or
+durability is likely to be caught before release.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Unit hotspot backfill (93.1) | Phase 92.1 for the deterministic scan; existing TUI/unit harnesses | Mostly additive tests, with small seam tweaks where the code is hard to drive |
+| Failure injection (93.2) | Existing integration/e2e harnesses; retry and structured-output surfaces from prior phases | Prefer reusable fake-provider / fake-tool helpers over one-off per-file harness code |
+| Durability/resume (93.3) | Existing session store, persistence, queue, and compaction machinery | May surface small product fixes rather than test-only changes |
+| Isolation/security (93.4) | Phase 49 sandboxing, Phase 44 worktrees, Phase 68 permissions | These are promise-keeping regression guards, not new product lines |
+| Controllers/automation (93.5) | Phase 85 controller extraction, existing git/GitHub flows | Good candidate to share builders between unit and integration layers |
+| Higher-level portfolio (93.6) | Existing eval/e2e/live suites; Phase 79 for future provider-matrix ambitions | Grow breadth without turning every scenario into an expensive live test |
+
+**Discovered:** Test-suite review on 2026-04-30.  Findings: unit coverage is
+strong overall (~89%), with the biggest blind spots concentrated in
+``_scan.py``, TUI-heavy modules, and a handful of controller/git/acceptance
+paths; non-unit coverage is much stronger for happy-path build/deploy flows
+than for failure handling, durability, isolation, and advanced controller
+workflows.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
