@@ -31,17 +31,14 @@ from cantrip.agent.git_branch import (
     bootstrap_github_repo,
     build_pr_body,
     can_bootstrap,
-    check_upstream_diverged,
     create_branch,
     create_pull_request,
-    gh_issue_comment,
     gh_pr_view,
     push_branch,
     suggest_repo_name,
 )
 from cantrip.agent.github_issues import (
     TRIAGE_CONFIRM_PREFIX,
-    IssueTriage,
     build_issue_work_tasks,
 )
 from cantrip.agent.mcp_controller import MCPController
@@ -88,6 +85,7 @@ from cantrip.agent.tools import (
     expand_leaves,
     resolve_subcommand,
 )
+from cantrip.agent.triage_controller import TriageController
 from cantrip.agent.watcher import WatcherConfig, WatcherEvent
 from cantrip.agent.watcher_controller import WatcherController
 from cantrip.hooks import (
@@ -448,7 +446,13 @@ class CantripAgent:
             publish_tool_invoked=self._publish_tool_invoked,
             publish_tool_invoked_pending=self._publish_tool_invoked_pending,
         )
-        self._issue_triage: IssueTriage | None = None
+        self._triage_ctl = TriageController(
+            state=self.state,
+            event_bus=self._event_bus,
+            work_queue=self._work_queue,
+            ensure_store=self._ensure_store,
+            get_store=lambda: self._store,
+        )
 
         # Session-level prompt cache accumulators (Claude-specific).
         self.cache_creation_tokens: int = 0
@@ -2611,136 +2615,27 @@ class CantripAgent:
     @property
     def issue_triage_running(self) -> bool:
         """Whether the GitHub issue triage worker is active."""
-        return self._issue_triage is not None and self._issue_triage.running
+        return self._triage_ctl.running
 
     def start_issue_triage(self) -> bool:
-        """Start the background issue triage worker.
-
-        Returns ``False`` if no ``github_repo`` is detected or triage
-        has already run this session.
-        """
-        if not self.state.github_repo:
-            return False
-        if self._issue_triage is not None:
-            return False
-
-        def _on_issues_found(confirm_tasks: list[AgentTask]) -> None:
-            for task in confirm_tasks:
-                self._work_queue.add_task(task)
-            self._event_bus.publish(
-                ui_events.chat_message(
-                    role="system",
-                    content=(
-                        f"Found {len(confirm_tasks)} actionable GitHub issue(s) "
-                        f"— check the task list to approve."
-                    ),
-                )
-            )
-            self._ensure_store()
-            if self._store:
-                self._store.record_event(
-                    "issue_triage_complete",
-                    {
-                        "repo": self.state.github_repo,
-                        "candidates": len(confirm_tasks),
-                    },
-                )
-
-        self._issue_triage = IssueTriage(
-            repo=self.state.github_repo,
-            on_issues_found=_on_issues_found,
-        )
-        self._issue_triage.start()
-        log.info("Issue triage started for %s", self.state.github_repo)
-        return True
+        """Start the background issue triage worker."""
+        return self._triage_ctl.start()
 
     async def stop_issue_triage(self) -> None:
         """Stop the issue triage worker if running."""
-        if self._issue_triage:
-            await self._issue_triage.stop()
-            self._issue_triage = None
+        await self._triage_ctl.stop()
 
     def retriage_issues(self) -> bool:
-        """Re-run issue triage to check for new issues.
-
-        Preserves the set of already-examined issues so the user is
-        not re-prompted for issues they have already seen.  Returns
-        ``False`` if triage cannot run (no repo or already running).
-        """
-        if not self.state.github_repo:
-            return False
-        if self._issue_triage and self._issue_triage.running:
-            return False
-
-        # Preserve examined set across triage runs.
-        examined: set[int] = set()
-        if self._issue_triage:
-            examined = self._issue_triage.examined_issues
-
-        def _on_issues_found(confirm_tasks: list[AgentTask]) -> None:
-            for task in confirm_tasks:
-                self._work_queue.add_task(task)
-            if confirm_tasks:
-                self._event_bus.publish(
-                    ui_events.chat_message(
-                        role="system",
-                        content=(
-                            f"Found {len(confirm_tasks)} new actionable issue(s) "
-                            f"— check the task list to approve."
-                        ),
-                    )
-                )
-
-        self._issue_triage = IssueTriage(
-            repo=self.state.github_repo,
-            on_issues_found=_on_issues_found,
-        )
-        # Transfer examined set from previous run.
-        self._issue_triage._examined = examined  # noqa: SLF001
-        self._issue_triage.start()
-        log.info("Issue re-triage started for %s", self.state.github_repo)
-        return True
+        """Re-run issue triage to check for new issues."""
+        return self._triage_ctl.retriage()
 
     def comment_on_issue(self, issue_number: int, pr_url: str) -> str:
-        """Post a comment on a resolved GitHub issue.
-
-        Returns a status message for the user.
-        """
-        repo = self.state.github_repo
-        if not repo:
-            return "No GitHub repository detected."
-
-        body = (
-            f"This issue has been addressed by {pr_url}.\n\n"
-            f"*Automated by [Cantrip](https://github.com/canonical/cantrip)*"
-        )
-        success, result = gh_issue_comment(repo, issue_number, body)
-
-        self._ensure_store()
-        if self._store:
-            self._store.record_event(
-                "issue_commented" if success else "issue_comment_failed",
-                {"issue_number": issue_number, "result": result[:500]},
-            )
-
-        if success:
-            return f"Commented on issue #{issue_number}."
-        return f"Failed to comment on issue #{issue_number}: {result}"
+        """Post a comment on a resolved GitHub issue."""
+        return self._triage_ctl.comment_on_issue(issue_number, pr_url)
 
     def check_upstream(self) -> str | None:
-        """Check if the default branch has diverged from the remote.
-
-        Returns a warning message if behind, or ``None`` if up to date.
-        """
-        if not self.state.charm_path:
-            return None
-        diverged, behind = check_upstream_diverged(str(self.state.charm_path))
-        if diverged:
-            return (
-                f"**Warning:** The default branch is {behind} commit(s) behind "
-                f"origin. Consider pulling or rebasing before starting new work."
-            )
-        return None
+        """Check if the default branch has diverged from the remote."""
+        return self._triage_ctl.check_upstream()
 
     # -- PR feedback loop (Phase 42.7) ----------------------------------------
 

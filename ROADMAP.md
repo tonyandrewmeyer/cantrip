@@ -3896,10 +3896,19 @@ decomposition last.
      `agent._watcher_ctl._watcher._enqueue`.  Pure refactor —
      `make check` and `make unit` (6 412 passed, 8 skipped)
      green.
-  4. **Issue triage** (2152-2270) — `issue_triage_running`,
-     `start_issue_triage`, `stop_issue_triage`,
-     `retriage_issues`, `comment_on_issue`,
-     `check_upstream`.
+  4. ✓ **Issue triage** — extracted to
+     `agent/triage_controller.py` as `TriageController`, held
+     on `CantripAgent` as `self._triage_ctl`.  Public surface
+     unchanged: `issue_triage_running`, `start_issue_triage`,
+     `stop_issue_triage`, `retriage_issues`, `comment_on_issue`,
+     `check_upstream` stay as one-line delegators.  Test patches
+     of `cantrip.agent.core.{IssueTriage,gh_issue_comment,
+     check_upstream_diverged}` retargeted to
+     `cantrip.agent.triage_controller.<name>`; tests injecting
+     `agent._issue_triage` retargeted to
+     `agent._triage_ctl._issue_triage`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
   5. **Arena** (2388-2480) — `active_arena`,
      `begin_arena`, `handle_arena_pick`.
   6. **Confirmations router** (2480-2780) —
