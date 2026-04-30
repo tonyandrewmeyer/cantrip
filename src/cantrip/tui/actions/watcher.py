@@ -56,13 +56,13 @@ async def stop_watcher(app: CantripApp) -> None:
 
 def refresh_model_panes(app: CantripApp) -> None:
     """Push the watcher's latest status snapshots into the model widget."""
-    if not (app._agent and app._agent._watcher):
+    if not app._agent:
         return
     status_widget = app.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
-    latest = app._agent._watcher.latest_status
+    latest = app._agent._watcher_ctl.latest_status
     if latest is not None:
         status_widget.dev_status = latest
-    latest_cos = app._agent._watcher.latest_cos_status
+    latest_cos = app._agent._watcher_ctl.latest_cos_status
     if latest_cos is not None:
         status_widget.cos_status = latest_cos
 

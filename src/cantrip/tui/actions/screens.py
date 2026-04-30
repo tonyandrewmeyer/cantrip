@@ -24,7 +24,7 @@ def show_debug(app: CantripApp) -> None:
     from cantrip.tui.screens import traces as traces_screen
 
     cos_model = app._agent.state.cos_model if app._agent else None
-    status = app._agent._watcher.latest_cos_status if app._agent and app._agent._watcher else None
+    status = app._agent._watcher_ctl.latest_cos_status if app._agent else None
     endpoints = cos_endpoints.derive_endpoints(status)
     app.push_screen(traces_screen.TraceScreen(cos_model=cos_model, endpoints=endpoints))
 

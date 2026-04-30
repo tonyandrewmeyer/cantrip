@@ -3879,9 +3879,23 @@ decomposition last.
      "executor")` never resolved — now accesses
      `_executor_ctl.set_yolo()`.  Pure refactor — `make check`
      and `make unit` (6 412 passed, 8 skipped) green.
-  3. **Watcher lifecycle** (2023-2150) — `watcher_running`,
-     `start_watcher`, `stop_watcher`, `route_watcher_event`,
-     `process_watcher_event`.
+  3. ✓ **Watcher lifecycle** — extracted to
+     `agent/watcher_controller.py` as `WatcherController`, held
+     on `CantripAgent` as `self._watcher_ctl`.  Public surface
+     unchanged: `watcher_running`, `start_watcher`,
+     `stop_watcher`, `route_watcher_event`,
+     `process_watcher_event` stay as one-line delegators.
+     `latest_status` / `latest_cos_status` properties added to
+     the controller so TUI code (`tui/actions/screens.py`,
+     `tui/actions/watcher.py`) no longer reaches into the
+     private `_watcher` instance.  Test patches of
+     `cantrip.agent.core.{detect_current_juju_model,
+     detect_cos_juju_model,juju_model_substrate}` retargeted to
+     `cantrip.agent.watcher_controller.<name>`; tests injecting
+     `agent._watcher._enqueue` retargeted to
+     `agent._watcher_ctl._watcher._enqueue`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
   4. **Issue triage** (2152-2270) — `issue_triage_running`,
      `start_issue_triage`, `stop_issue_triage`,
      `retriage_issues`, `comment_on_issue`,

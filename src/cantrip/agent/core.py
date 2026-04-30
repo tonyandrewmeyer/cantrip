@@ -18,7 +18,6 @@ from cantrip.agent import (
     context_providers_builtin,
     sandbox,
 )
-from cantrip.agent.autodeploy import task_for_watcher_event
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.context import ContextManager, VirtualFileStore
@@ -89,12 +88,8 @@ from cantrip.agent.tools import (
     expand_leaves,
     resolve_subcommand,
 )
-from cantrip.agent.tools.planning import (
-    detect_cos_juju_model,
-    detect_current_juju_model,
-    juju_model_substrate,
-)
-from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
+from cantrip.agent.watcher import WatcherConfig, WatcherEvent
+from cantrip.agent.watcher_controller import WatcherController
 from cantrip.hooks import (
     HookEvent,
     HookResult,
@@ -440,7 +435,13 @@ class CantripAgent:
             invalidate_tools_cache=self._invalidate_tools_cache,
         )
 
-        self._watcher: EventWatcher | None = None
+        self._watcher_ctl = WatcherController(
+            state=self.state,
+            event_bus=self._event_bus,
+            work_queue=self._work_queue,
+            ensure_store=self._ensure_store,
+            get_store=lambda: self._store,
+        )
         self._executor_ctl = ExecutorController(
             state=self.state,
             event_bus=self._event_bus,
@@ -2583,129 +2584,27 @@ class CantripAgent:
     @property
     def watcher_running(self) -> bool:
         """Whether the event watcher is currently running."""
-        return self._watcher is not None and self._watcher.running
+        return self._watcher_ctl.running
 
     def start_watcher(
         self,
         config: WatcherConfig | None = None,
         on_event: Callable | None = None,
     ) -> bool:
-        """Create and start the event watcher.
-
-        If ``state.dev_model`` is not set, falls back to the currently
-        active Juju model (from ``juju models``), so the panes populate
-        immediately when the user already has a model.  Returns ``False``
-        only when no model can be detected at all — callers may retry
-        later once the agent has provisioned one.  Every watcher event is
-        automatically routed to the task queue before the external
-        callback fires.
-        """
-        if self._watcher is not None and self._watcher.running:
-            return True
-        substrate = self.state.charm_type
-        # If a previously-set dev_model belongs to the wrong substrate
-        # (e.g. LXD model for a k8s charm), drop it so auto-detect can
-        # pick a matching one.  When ``charm_type`` is unknown we trust
-        # whatever the user/state had.
-        if self.state.dev_model and substrate:
-            actual = juju_model_substrate(self.state.dev_model)
-            if actual is not None and actual != substrate:
-                log.info(
-                    "Dev model '%s' is %s but charm is %s — re-detecting",
-                    self.state.dev_model,
-                    actual,
-                    substrate,
-                )
-                self.state.dev_model = None
-        if not self.state.dev_model:
-            detected = detect_current_juju_model(prefer_substrate=substrate)
-            if detected:
-                self.state.dev_model = detected
-            else:
-                return False
-        # Auto-detect a ``cos`` model so the COS pane populates without
-        # waiting for one of the narrow code paths that set
-        # ``state.cos_model`` explicitly (sprint-deploy planning, etc.).
-        if not self.state.cos_model:
-            cos = detect_cos_juju_model()
-            if cos:
-                self.state.cos_model = cos
-
-        def _auto_route(event: WatcherEvent) -> None:
-            """Route the event to the task queue, then publish to the bus."""
-            self.route_watcher_event(event)
-            self._event_bus.publish(
-                ui_events.watcher_event(
-                    source=event.source,
-                    category=event.category,
-                    summary=event.summary,
-                    detail=getattr(event, "detail", ""),
-                    app=getattr(event, "app", ""),
-                    unit=getattr(event, "unit", ""),
-                )
-            )
-            if on_event is not None:
-                on_event(event)
-
-        def _on_status_poll(model_type: str) -> None:
-            """Publish a status-changed tick so UIs refresh their model panes."""
-            self._event_bus.publish(
-                ui_events.juju_status_changed(status_data={"model_type": model_type})
-            )
-
-        self._watcher = EventWatcher(
-            dev_model=self.state.dev_model,
-            cos_model=self.state.cos_model,
-            config=config,
-            on_event=_auto_route,
-            on_status_poll=_on_status_poll,
-        )
-        self._watcher.start()
-        self.state.watcher_enabled = True
-        return True
+        """Create and start the event watcher."""
+        return self._watcher_ctl.start(config=config, on_event=on_event)
 
     async def stop_watcher(self) -> None:
         """Stop the event watcher if it is running."""
-        if self._watcher:
-            await self._watcher.stop()
-            self._watcher = None
-        self.state.watcher_enabled = False
+        await self._watcher_ctl.stop()
 
     def route_watcher_event(self, event: WatcherEvent) -> AgentTask | None:
-        """Convert a watcher event into a task and add it to the work queue.
-
-        Returns the created task, or ``None`` if the event did not map to a
-        task (e.g. no dev_model or unrecognised category).
-        """
-        self._ensure_store()
-        if self._store:
-            self._store.record_event(
-                "watcher_event",
-                {
-                    "category": event.category,
-                    "summary": event.summary,
-                },
-            )
-
-        task = task_for_watcher_event(event, self.state)
-        if task is not None:
-            self._work_queue.add_task(task)
-        return task
+        """Convert a watcher event into a task and add it to the work queue."""
+        return self._watcher_ctl.route_event(event)
 
     async def process_watcher_event(self) -> str | None:
-        """Dequeue one watcher event and route it to the task queue.
-
-        Returns the task title, or ``None`` if no events are pending.
-        """
-        if not self._watcher:
-            return None
-        event = await self._watcher.dequeue()
-        if event is None:
-            return None
-        task = self.route_watcher_event(event)
-        if task is not None:
-            return task.title
-        return None
+        """Dequeue one watcher event and route it to the task queue."""
+        return await self._watcher_ctl.process_event()
 
     # -- Issue triage integration -----------------------------------------------
 

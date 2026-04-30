@@ -976,9 +976,10 @@ class TestWatcher:
     @pytest.mark.asyncio
     async def test_on_bus_watcher_event_writes_chat_line(self):
         p1, p2, mock_agent = _patch_app()
-        # ``_refresh_model_panes`` checks the agent's private ``_watcher`` — set
-        # it to None so the method short-circuits cleanly.
-        mock_agent._watcher = None
+        # ``_refresh_model_panes`` reads status from ``_watcher_ctl`` —
+        # set both properties to None so the method short-circuits cleanly.
+        mock_agent._watcher_ctl.latest_status = None
+        mock_agent._watcher_ctl.latest_cos_status = None
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 _sync_passthrough(pilot.app)
