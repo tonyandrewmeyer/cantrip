@@ -3843,10 +3843,23 @@ decomposition last.
 - [ ] Extract one cohort at a time as a delegate object held
   by `CantripAgent`.  The seven natural cohorts (with rough
   line ranges in `agent/core.py`):
-  1. **MCP lifecycle** (lines 2911-3025) — `mcp_registry`,
-     `mcp_marketplace_sources`, `mcp_marketplace_loader`,
-     `start_mcp`, `complete_mcp_elicitation`, `stop_mcp`.
-     Most self-contained; do this one first.
+  1. ✓ **MCP lifecycle** — extracted to
+     `agent/mcp_controller.py` as `MCPController`, held on
+     `CantripAgent` as `self._mcp`.  Public surface unchanged:
+     `mcp_registry`, `mcp_marketplace_sources`,
+     `mcp_marketplace_loader`, `start_mcp`,
+     `complete_mcp_elicitation`, `stop_mcp` (and the
+     `_on_mcp_elicitation` test hook) stay as one-line
+     delegators.  `_build_tools` reads the cached registry via
+     `self._mcp.registry_if_loaded()` so the lazy "expose
+     servers only after `start`" behaviour holds.  Test patches
+     of `cantrip.agent.core.{MCPRegistry,MarketplaceLoader,
+     load_mcp_configs,load_marketplace_sources}` retargeted to
+     `cantrip.agent.mcp_controller.<name>`; tests injecting
+     `agent._mcp_registry_cache` / `_mcp_started` retargeted to
+     `agent._mcp._registry_cache` / `_started`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
   2. **Executor lifecycle** (2786-2910) — `executor_running`,
      `start_executor`, `stop_executor`, plus the wrapper
      callbacks.

@@ -229,9 +229,9 @@ class TestMcpPlumbing:
     def test_mcp_registry_is_lazy_and_cached(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with (
-            patch("cantrip.agent.core.load_mcp_configs", return_value=[]),
+            patch("cantrip.agent.mcp_controller.load_mcp_configs", return_value=[]),
             patch(
-                "cantrip.agent.core.MCPRegistry",
+                "cantrip.agent.mcp_controller.MCPRegistry",
                 return_value=MagicMock(),
             ) as cls,
         ):
@@ -243,7 +243,7 @@ class TestMcpPlumbing:
     def test_mcp_marketplace_sources_cached(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.core.load_marketplace_sources",
+            "cantrip.agent.mcp_controller.load_marketplace_sources",
             return_value=[MagicMock(name="src")],
         ) as loader:
             one = agent.mcp_marketplace_sources
@@ -254,7 +254,7 @@ class TestMcpPlumbing:
     def test_mcp_marketplace_loader_is_lazy(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.core.MarketplaceLoader",
+            "cantrip.agent.mcp_controller.MarketplaceLoader",
             return_value=MagicMock(),
         ) as cls:
             a = agent.mcp_marketplace_loader
@@ -267,7 +267,7 @@ class TestMcpPlumbing:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.start_all = AsyncMock()
-        agent._mcp_registry_cache = fake
+        agent._mcp._registry_cache = fake
 
         await agent.start_mcp()
         await agent.start_mcp()  # second call is a no-op
@@ -277,7 +277,7 @@ class TestMcpPlumbing:
     @pytest.mark.asyncio
     async def test_stop_mcp_noop_when_registry_uninitialised(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
-        agent._mcp_registry_cache = None
+        agent._mcp._registry_cache = None
         await agent.stop_mcp()  # must not raise
 
     @pytest.mark.asyncio
@@ -285,8 +285,8 @@ class TestMcpPlumbing:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.stop_all = AsyncMock()
-        agent._mcp_registry_cache = fake
-        agent._mcp_started = True
+        agent._mcp._registry_cache = fake
+        agent._mcp._started = True
         await agent.stop_mcp()
         fake.stop_all.assert_awaited_once()
 
@@ -334,13 +334,13 @@ class TestMcpElicitation:
 
     def test_complete_without_registry_returns_false(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
-        agent._mcp_registry_cache = None
+        agent._mcp._registry_cache = None
         assert agent.complete_mcp_elicitation("r1", "accept") is False
 
     def test_complete_forwards_to_registry(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         fake = MagicMock()
         fake.complete_elicitation.return_value = True
-        agent._mcp_registry_cache = fake
+        agent._mcp._registry_cache = fake
         assert agent.complete_mcp_elicitation("r1", "accept", {"x": 1}) is True
         fake.complete_elicitation.assert_called_once_with("r1", "accept", {"x": 1})

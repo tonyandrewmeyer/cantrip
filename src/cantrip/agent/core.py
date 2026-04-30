@@ -9,7 +9,7 @@ import sqlite3
 import subprocess
 import time
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cantrip.agent import (
     arena,
@@ -45,6 +45,7 @@ from cantrip.agent.github_issues import (
     IssueTriage,
     build_issue_work_tasks,
 )
+from cantrip.agent.mcp_controller import MCPController
 from cantrip.agent.memory import (
     AutoWriter,
     MemoryEntry,
@@ -105,14 +106,10 @@ from cantrip.hooks import (
 from cantrip.llm import base as llm
 from cantrip.llm import create_provider, resolve_light_provider, roles
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Role
-from cantrip.mcp import (
-    MarketplaceLoader,
-    MarketplaceSource,
-    MCPRegistry,
-    load_marketplace_sources,
-)
-from cantrip.mcp import load_configs as load_mcp_configs
 from cantrip.repomap import RepoMap
+
+if TYPE_CHECKING:
+    from cantrip.mcp import MarketplaceLoader, MarketplaceSource, MCPRegistry
 from cantrip.ui import events as ui_events
 from cantrip.ui import flavour
 
@@ -437,10 +434,11 @@ class CantripAgent:
         # remember the last (loaded, skipped) signature and only record
         # when the set actually changes.
         self._last_skill_filter_signature: tuple[tuple[str, ...], tuple[str, ...]] | None = None
-        self._mcp_registry_cache: MCPRegistry | None = None
-        self._mcp_started: bool = False
-        self._mcp_marketplace_sources_cache: list[MarketplaceSource] | None = None
-        self._mcp_marketplace_loader: MarketplaceLoader | None = None
+        self._mcp = MCPController(
+            state=self.state,
+            event_bus=self._event_bus,
+            invalidate_tools_cache=self._invalidate_tools_cache,
+        )
 
         self._watcher: EventWatcher | None = None
         self._executor: BackgroundExecutor | None = None
@@ -1156,6 +1154,11 @@ class CantripAgent:
         except Exception:  # noqa: BLE001 - UI hook must not break the swap.
             log.debug("model_switched event publish failed", exc_info=True)
 
+    def _invalidate_tools_cache(self) -> None:
+        """Drop the cached tool list and tool map; next access rebuilds."""
+        self._tools_cache = None
+        self._tool_map_cache = None
+
     def _build_tools(self) -> list[Tool]:
         """Build available tools."""
         return build_tools(
@@ -1166,7 +1169,7 @@ class CantripAgent:
             state=self.state,
             queue=self._work_queue,
             memory_manager=self._memory_manager,
-            mcp_registry=self._mcp_registry_cache,
+            mcp_registry=self._mcp.registry_if_loaded(),
             store_getter=lambda: self._store,
             role_router=self.role_router if self.role_router.has_embed() else None,
         )
@@ -3481,53 +3484,23 @@ class CantripAgent:
             self._executor = None
 
     @property
-    def mcp_registry(self) -> MCPRegistry:
-        """Lazy registry of configured MCP servers (Phase 45.2).
-
-        Loads ``cantrip.mcp.yaml`` (repo) and ``~/.config/cantrip/mcp.yaml``
-        (user) on first access and builds an :class:`MCPRegistry` over
-        them.  Returns the same instance on subsequent calls — call
-        :meth:`start_mcp` to actually open the connections.
-        """
-        if self._mcp_registry_cache is None:
-            configs = load_mcp_configs(repo_root=self.state.charm_path)
-            self._mcp_registry_cache = MCPRegistry(configs)
-        return self._mcp_registry_cache
+    def mcp_registry(self) -> "MCPRegistry":
+        """Lazy registry of configured MCP servers — see :class:`MCPController`."""
+        return self._mcp.registry
 
     @property
-    def mcp_marketplace_sources(self) -> list[MarketplaceSource]:
-        """Marketplace sources declared in user + repo MCP configs (Phase 45.5)."""
-        if self._mcp_marketplace_sources_cache is None:
-            self._mcp_marketplace_sources_cache = load_marketplace_sources(
-                repo_root=self.state.charm_path
-            )
-        return list(self._mcp_marketplace_sources_cache)
+    def mcp_marketplace_sources(self) -> "list[MarketplaceSource]":
+        """Marketplace sources declared in user + repo MCP configs."""
+        return self._mcp.marketplace_sources
 
     @property
-    def mcp_marketplace_loader(self) -> MarketplaceLoader:
+    def mcp_marketplace_loader(self) -> "MarketplaceLoader":
         """Lazy :class:`MarketplaceLoader` shared across slash-command calls."""
-        if self._mcp_marketplace_loader is None:
-            self._mcp_marketplace_loader = MarketplaceLoader()
-        return self._mcp_marketplace_loader
+        return self._mcp.marketplace_loader
 
     async def start_mcp(self) -> None:
-        """Open every configured MCP connection.  Idempotent.
-
-        Failures are captured by the registry — a misconfigured server
-        logs a warning but never blocks the others.  Safe to call from
-        any UI startup path; subsequent calls are no-ops.  Invalidates
-        the tools cache so the next access picks up the newly-connected
-        servers' tools.  Wires the elicitation callback so server-driven
-        prompts surface as ``MCP_ELICITATION_REQUEST`` events.
-        """
-        if self._mcp_started:
-            return
-        self._mcp_started = True
-        self.mcp_registry.set_elicitation_callback(self._on_mcp_elicitation)
-        await self.mcp_registry.start_all()
-        # Force tool list rebuild so MCP tools surface to the agent.
-        self._tools_cache = None
-        self._tool_map_cache = None
+        """Open every configured MCP connection.  Idempotent."""
+        await self._mcp.start()
 
     def _forward_permission_auto_approved(self, request: object) -> None:
         """Phase 69.2: publish a ``permission_auto_approved`` UI event.
@@ -3556,23 +3529,7 @@ class CantripAgent:
 
     def _on_mcp_elicitation(self, request: object) -> None:
         """Forward an MCP elicitation request to the UI event bus."""
-        from cantrip.mcp.elicitation import ElicitationRequest
-
-        if not isinstance(request, ElicitationRequest):
-            return
-        try:
-            self._event_bus.publish(
-                ui_events.mcp_elicitation_request(
-                    request_id=request.request_id,
-                    server_name=request.server_name,
-                    mode=request.mode,
-                    message=request.message,
-                    requested_schema=request.requested_schema,
-                    url=request.url,
-                )
-            )
-        except Exception:  # noqa: BLE001 - UI hook must not break the SDK call.
-            log.debug("mcp_elicitation_request publish failed", exc_info=True)
+        self._mcp.handle_elicitation(request)
 
     def complete_mcp_elicitation(
         self,
@@ -3580,21 +3537,12 @@ class CantripAgent:
         action: str,
         content: dict[str, Any] | None = None,
     ) -> bool:
-        """UI entry point — answer a parked MCP elicitation by id.
-
-        Returns ``True`` when the request was found and resolved.
-        Validates ``action`` against ``accept|decline|cancel``.
-        """
-        if self._mcp_registry_cache is None:
-            return False
-        return self._mcp_registry_cache.complete_elicitation(request_id, action, content)
+        """UI entry point — answer a parked MCP elicitation by id."""
+        return self._mcp.complete_elicitation(request_id, action, content)
 
     async def stop_mcp(self) -> None:
         """Tear down every MCP connection.  Best-effort, never raises."""
-        if self._mcp_registry_cache is None:
-            return
-        await self._mcp_registry_cache.stop_all()
-        self._mcp_started = False
+        await self._mcp.stop()
 
     def save_state(self) -> None:
         """Save agent state to the session store."""

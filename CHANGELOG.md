@@ -158,6 +158,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **MCP lifecycle extracted from ``CantripAgent`` (Phase 85.4 cohort 1).**
+  The MCP registry, marketplace state, and elicitation bridge moved
+  to a new ``src/cantrip/agent/mcp_controller.py`` (``MCPController``),
+  held on ``CantripAgent`` as ``self._mcp``.  The public surface
+  stays put: ``mcp_registry``, ``mcp_marketplace_sources``,
+  ``mcp_marketplace_loader``, ``start_mcp``,
+  ``complete_mcp_elicitation``, and ``stop_mcp`` are now one-line
+  delegators (and ``_on_mcp_elicitation`` keeps its name on the
+  agent for the existing test hooks).  ``_build_tools`` reads the
+  cached registry via ``self._mcp.registry_if_loaded()`` so the
+  lazy "expose servers only after ``start``" behaviour is
+  preserved.  Test patches that targeted module-private names on
+  ``cantrip.agent.core`` retargeted to
+  ``cantrip.agent.mcp_controller``; tests that injected
+  ``agent._mcp_registry_cache`` / ``agent._mcp_started`` retargeted
+  to ``agent._mcp._registry_cache`` / ``agent._mcp._started``.
+  Pure refactor — ``make check`` and ``make unit`` (6 412 passed,
+  8 skipped) green.
 - **TUI action handlers grouped under ``tui/actions/`` (Phase 85.5).**
   ``src/cantrip/tui/app.py`` (was 2 053 lines, now 1 934) now
   delegates its screen, status, chat, and watcher action handlers
