@@ -56,10 +56,77 @@ def parse_args() -> argparse.Namespace:
     )
 
     subparsers = parser.add_subparsers(dest="command")
+    _add_run_subparser(subparsers)
+    _add_compare_subparser(subparsers)
+    _add_export_transcript_subparser(subparsers)
+    _add_hooks_subparser(subparsers)
+    _add_skill_subparser(subparsers)
+    _add_checkpoints_subparser(subparsers)
+    _add_docs_subparser(subparsers)
+    _add_audit_subparser(subparsers)
+    _add_permissions_subparser(subparsers)
 
-    # ── run (default) ────────────────────────────────────────────────
+    return parser.parse_args(_normalise_argv(sys.argv[1:]))
+
+
+# Type alias for the value returned by ``ArgumentParser.add_subparsers``.
+# Spelt out so the per-subcommand helpers below can be annotated; the
+# runtime class is private but ``from __future__ import annotations``
+# defers evaluation of annotations.
+_SubParsers = argparse._SubParsersAction
+
+
+def _normalise_argv(argv: list[str]) -> list[str]:
+    """Treat a missing or non-subcommand first arg as ``cantrip run``.
+
+    Lets ``cantrip /path/to/charm`` and ``cantrip --no-tui`` work without an
+    explicit ``run`` subcommand, while still routing real subcommands to
+    their parsers.
+    """
+    if (
+        not argv
+        or (argv[0] not in _SUBCOMMANDS and not argv[0].startswith("-"))
+        or (argv[0].startswith("-") and argv[0] not in ("--version", "-h", "--help"))
+    ):
+        return ["run", *argv]
+    return list(argv)
+
+
+_SUBCOMMANDS = frozenset(
+    {
+        "run",
+        "export-transcript",
+        "compare",
+        "hooks",
+        "skill",
+        "checkpoints",
+        "audit",
+        "permissions",
+    }
+)
+
+
+def _add_run_subparser(subparsers: _SubParsers) -> None:
+    """Build the default ``run`` subcommand."""
     run_parser = subparsers.add_parser("run", help="Run cantrip agent")
+    _add_run_model_options(run_parser)
+    _add_run_session_options(run_parser)
+    _add_run_budget_options(run_parser)
+    _add_run_loop_options(run_parser)
+    _add_run_print_options(run_parser)
+    _add_run_appearance_options(run_parser)
     run_parser.add_argument(
+        "path",
+        nargs="?",
+        type=pathlib.Path,
+        default=pathlib.Path.cwd(),
+        help="Path to charm project (default: current directory)",
+    )
+
+
+def _add_run_model_options(parser: argparse.ArgumentParser) -> None:
+    """Provider, model, and Phase 72.3 role-router selection."""
+    parser.add_argument(
         "--provider",
         choices=[
             "gemini",
@@ -72,16 +139,16 @@ def parse_args() -> argparse.Namespace:
         default="gemini",
         help="LLM provider to use (default: gemini)",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--model",
         help="Specific model to use (provider-dependent)",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--snap",
         default="gemma3",
         help=("Inference snap name when using --provider inference-snap (default: gemma3)"),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--base-url",
         default=None,
         help=(
@@ -90,20 +157,20 @@ def parse_args() -> argparse.Namespace:
             "snap discovery) and fireworks (proxies or compatible hosts)."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--light-model",
         help=("Cheaper model for internal tasks like compaction (auto-detected if omitted)"),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--light-snap",
         help="Lighter inference snap for internal tasks (e.g. nemotron-3-nano)",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--light-provider",
         choices=["gemini", "claude", "inference-snap", "fireworks", "openrouter"],
         help="Use a different provider for light tasks (enables hybrid mode)",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--embed-provider",
         choices=["voyage", "openai"],
         help=(
@@ -112,7 +179,7 @@ def parse_args() -> argparse.Namespace:
             "via the ``CANTRIP_EMBED_PROVIDER`` env var."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--embed-model",
         help=(
             "Phase 72.3: embed model identifier (e.g. ``voyage-3``, "
@@ -120,7 +187,7 @@ def parse_args() -> argparse.Namespace:
             "also settable via ``CANTRIP_EMBED_MODEL``."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--rerank-provider",
         choices=["voyage"],
         help=(
@@ -130,7 +197,7 @@ def parse_args() -> argparse.Namespace:
             "``CANTRIP_RERANK_PROVIDER``."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--rerank-model",
         help=(
             "Phase 72.3: rerank model identifier (e.g. ``rerank-2``, "
@@ -138,29 +205,37 @@ def parse_args() -> argparse.Namespace:
             "``CANTRIP_RERANK_MODEL``."
         ),
     )
-    run_parser.add_argument(
+
+
+def _add_run_session_options(parser: argparse.ArgumentParser) -> None:
+    """How the session surfaces to the user — TUI, Web UI, or headless CLI."""
+    parser.add_argument(
         "--no-tui",
         action="store_true",
         help="Run in CLI mode without TUI",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--web",
         action="store_true",
         help="Run with a browser-based Web UI instead of the TUI",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--web-port",
         type=int,
         default=8471,
         help="Port for the Web UI (default: 8471)",
     )
-    run_parser.add_argument(
+
+
+def _add_run_budget_options(parser: argparse.ArgumentParser) -> None:
+    """Per-goal hard caps that block the work queue when exceeded."""
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=None,
         help="Maximum concurrent subagent tasks (default: 3)",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--max-iterations",
         type=int,
         default=None,
@@ -171,7 +246,7 @@ def parse_args() -> argparse.Namespace:
             "``CANTRIP_MAX_ITERATIONS`` env var."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--max-tokens",
         type=int,
         default=None,
@@ -183,14 +258,23 @@ def parse_args() -> argparse.Namespace:
             "``CANTRIP_MAX_TOKENS`` env var."
         ),
     )
-    run_parser.add_argument(
+
+
+def _add_run_loop_options(parser: argparse.ArgumentParser) -> None:
+    """Toggles that change how the autonomous loop behaves each turn.
+
+    Covers improve mode, snapshotting, per-edit linting, YOLO, the Ralph
+    iterate-until-green loop, the architect/editor split, and per-turn
+    auto-commit.
+    """
+    parser.add_argument(
         "--improve",
         type=pathlib.Path,
         default=None,
         metavar="CHARM_PATH",
         help="Improve an existing charm at the given path (audit, fix, redeploy)",
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--no-snapshots",
         action="store_true",
         dest="no_snapshots",
@@ -203,7 +287,7 @@ def parse_args() -> argparse.Namespace:
             "where snapshotting is too slow."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--no-auto-lint",
         action="store_true",
         dest="no_auto_lint",
@@ -217,7 +301,7 @@ def parse_args() -> argparse.Namespace:
             "noisy in your workflow."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--yolo",
         "-y",
         action="store_true",
@@ -230,7 +314,7 @@ def parse_args() -> argparse.Namespace:
             "`/yolo`."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--ralph",
         type=int,
         default=0,
@@ -245,7 +329,7 @@ def parse_args() -> argparse.Namespace:
             "useful in ``--print`` runs."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--architect",
         action="store_true",
         dest="architect",
@@ -260,7 +344,7 @@ def parse_args() -> argparse.Namespace:
             "``/architect on <provider>/<model>``."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--editor-provider",
         dest="editor_provider",
         default=None,
@@ -271,7 +355,7 @@ def parse_args() -> argparse.Namespace:
             "editor=Gemini-Flash.  Ignored without ``--architect``."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--editor-model",
         dest="editor_model",
         default=None,
@@ -282,7 +366,7 @@ def parse_args() -> argparse.Namespace:
             "model.  Ignored without ``--architect``."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--no-auto-commit",
         action="store_true",
         dest="no_auto_commit",
@@ -296,7 +380,11 @@ def parse_args() -> argparse.Namespace:
             "batch agent edits into your own commits."
         ),
     )
-    run_parser.add_argument(
+
+
+def _add_run_print_options(parser: argparse.ArgumentParser) -> None:
+    """Non-interactive print mode for scripted/CI invocations."""
+    parser.add_argument(
         "--print",
         "-p",
         dest="print_goal",
@@ -311,7 +399,7 @@ def parse_args() -> argparse.Namespace:
             "ask permission."
         ),
     )
-    run_parser.add_argument(
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="json_output",
@@ -322,21 +410,20 @@ def parse_args() -> argparse.Namespace:
             "the documented event schema."
         ),
     )
-    run_parser.add_argument(
+
+
+def _add_run_appearance_options(parser: argparse.ArgumentParser) -> None:
+    """TUI look & feel."""
+    parser.add_argument(
         "--theme",
         type=str,
         default=None,
         help="TUI colour theme (cantrip, ubuntu, monokai, solarized-dark, light)",
     )
-    run_parser.add_argument(
-        "path",
-        nargs="?",
-        type=pathlib.Path,
-        default=pathlib.Path.cwd(),
-        help="Path to charm project (default: current directory)",
-    )
 
-    # ── compare (Phase 31.7) ─────────────────────────────────────────
+
+def _add_compare_subparser(subparsers: _SubParsers) -> None:
+    """Phase 31.7 — diff two charm implementations side by side."""
     compare_parser = subparsers.add_parser(
         "compare",
         help="Diff two charm implementations (structure, config, relations, tests)",
@@ -352,7 +439,9 @@ def parse_args() -> argparse.Namespace:
         help="Second charm directory",
     )
 
-    # ── export-transcript ────────────────────────────────────────────
+
+def _add_export_transcript_subparser(subparsers: _SubParsers) -> None:
+    """Render a session's `.cantrip` file as HTML / JSONL / Markdown."""
     export_parser = subparsers.add_parser(
         "export-transcript",
         help="Export a session transcript",
@@ -410,7 +499,9 @@ def parse_args() -> argparse.Namespace:
         help="Split HTML output into pages of N conversation messages each",
     )
 
-    # ── hooks (Phase 46.5) ────────────────────────────────────────────
+
+def _add_hooks_subparser(subparsers: _SubParsers) -> None:
+    """Phase 46.5 — manage user-defined hooks (the ``cantrip hooks`` group)."""
     hooks_parser = subparsers.add_parser(
         "hooks",
         help="Manage user-defined hooks (test them, see which are loaded)",
@@ -437,7 +528,9 @@ def parse_args() -> argparse.Namespace:
         help="Repo root for cantrip.hooks.yaml discovery (default: CWD)",
     )
 
-    # ── skill (Phase 50.2) ────────────────────────────────────────────
+
+def _add_skill_subparser(subparsers: _SubParsers) -> None:
+    """Phase 50.2 — export discovered skills in the standard SKILL.md format."""
     skill_parser = subparsers.add_parser(
         "skill",
         help="Manage Cantrip skills (export them in the standard SKILL.md format)",
@@ -475,7 +568,9 @@ def parse_args() -> argparse.Namespace:
         help="Overwrite the target file if it already exists",
     )
 
-    # ── checkpoints (Phase 52.5) ──────────────────────────────────────
+
+def _add_checkpoints_subparser(subparsers: _SubParsers) -> None:
+    """Phase 52.5 — inspect and surgically remove durable-execution checkpoints."""
     checkpoints_parser = subparsers.add_parser(
         "checkpoints",
         help=(
@@ -521,7 +616,9 @@ def parse_args() -> argparse.Namespace:
         help="Skip the interactive confirmation prompt",
     )
 
-    # ── docs (Phase 72.1) ─────────────────────────────────────────────
+
+def _add_docs_subparser(subparsers: _SubParsers) -> None:
+    """Phase 72.1 — index Canonical doc sites for retrieval."""
     docs_parser = subparsers.add_parser(
         "docs",
         help=(
@@ -570,7 +667,9 @@ def parse_args() -> argparse.Namespace:
         help="Number of hits to return (default: 5)",
     )
 
-    # ── audit (Phase 80.4) ────────────────────────────────────────────
+
+def _add_audit_subparser(subparsers: _SubParsers) -> None:
+    """Phase 80.4 — read the JSONL policy-decision audit trail."""
     audit_parser = subparsers.add_parser(
         "audit",
         help="Inspect the JSONL policy-decision audit trail written by the subagent",
@@ -613,7 +712,9 @@ def parse_args() -> argparse.Namespace:
         help="Output format (default: jsonl, which passes through unchanged).",
     )
 
-    # ── permissions (Phase 70 follow-up — Amp parity) ────────────────
+
+def _add_permissions_subparser(subparsers: _SubParsers) -> None:
+    """Inspect and test the discovered permission ruleset."""
     permissions_parser = subparsers.add_parser(
         "permissions",
         help="Inspect the permission ruleset (test a hypothetical call, list rules)",
@@ -692,32 +793,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip the built-in safe defaults so only file-loaded rules are listed",
     )
-
-    # When the first positional argument is not a known subcommand, treat
-    # the entire argv as arguments to the "run" sub-parser.  This lets
-    # ``cantrip /path/to/charm`` and ``cantrip --no-tui`` work without
-    # requiring an explicit ``run`` subcommand.
-    _subcommands = {
-        "run",
-        "export-transcript",
-        "compare",
-        "hooks",
-        "skill",
-        "checkpoints",
-        "audit",
-        "permissions",
-    }
-    argv = sys.argv[1:]
-    if (
-        not argv
-        or (argv[0] not in _subcommands and not argv[0].startswith("-"))
-        or (argv[0].startswith("-") and argv[0] not in ("--version", "-h", "--help"))
-    ):
-        argv = ["run", *argv]
-
-    args = parser.parse_args(argv)
-
-    return args
 
 
 def _is_cantrip_source_tree(path: pathlib.Path) -> bool:

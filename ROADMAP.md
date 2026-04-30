@@ -3921,11 +3921,13 @@ decomposition last.
   loop that walks the template list and renders each.
   Acceptance-artefact substitution stays in the renderer; the
   templates carry only the static skeleton.
-- [ ] `src/cantrip/main.py:46 parse_args` (452 lines).
-  Argparse setup is naturally splittable: extract one
-  `_add_X_options(parser)` helper per subsystem (model,
-  session, hooks, web, watcher, etc.), keep the top-level
-  `parse_args` as a slim composition of those helpers.  No
+- [x] `src/cantrip/main.py:46 parse_args` (was 675 lines).
+  Now a 32-line composition: nine `_add_<subcommand>_subparser`
+  helpers cover `run`, `compare`, `export-transcript`, `hooks`,
+  `skill`, `checkpoints`, `docs`, `audit`, `permissions`; six
+  `_add_run_<group>_options` helpers split the `run` subparser
+  into model / session / budget / loop / print / appearance
+  groups; argv fall-through lifted into `_normalise_argv`.  No
   CLI behaviour change.
 - [ ] `src/cantrip/agent/tools/rockcraft.py:915
   _deploy_k8s_registry` (128 lines) and the four `juju.py`

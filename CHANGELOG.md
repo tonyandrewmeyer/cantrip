@@ -133,6 +133,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **``main.parse_args`` decomposed into per-subsystem helpers
+  (Phase 85.6).**  The 675-line argparse setup is now a 32-line
+  composition: nine ``_add_<subcommand>_subparser`` helpers cover
+  ``run``, ``compare``, ``export-transcript``, ``hooks``, ``skill``,
+  ``checkpoints``, ``docs``, ``audit``, and ``permissions``; six
+  ``_add_run_<group>_options`` helpers slice the ``run`` subparser
+  into model / session / budget / loop / print / appearance groups;
+  the argv fall-through that lets ``cantrip /path/to/charm`` work
+  without an explicit ``run`` lifted into ``_normalise_argv``.
+  Pure refactor — no CLI behaviour change, identical
+  ``Namespace`` for every existing invocation.
 - **``twelve-factor`` skill restructured around the canonical/skills
   checkpoint workflow (Phase 91.2).**  The skill body now opens with
   a four-phase plan (fit → rock → charm → build), inlines the
