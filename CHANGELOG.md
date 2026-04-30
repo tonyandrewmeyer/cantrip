@@ -158,6 +158,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **TUI action handlers grouped under ``tui/actions/`` (Phase 85.5).**
+  ``src/cantrip/tui/app.py`` (was 2 053 lines, now 1 934) now
+  delegates its screen, status, chat, and watcher action handlers
+  to free functions in a new ``src/cantrip/tui/actions/``
+  subpackage: ``screens.py`` (``show_help`` / ``show_debug`` /
+  ``show_logs`` / ``show_graph`` / ``show_transcript`` /
+  ``open_relation_detail``), ``status.py`` (``toggle_status`` /
+  ``toggle_files`` / ``toggle_model_info`` /
+  ``show_status_panel_when_data_arrives``), ``chat.py``
+  (``clear_chat`` / ``open_search`` / ``search_closed`` /
+  ``cancel_agent``), and ``watcher.py`` (the watcher cohort:
+  ``subscribe_events``, ``start_watcher``, ``stop_watcher``,
+  ``refresh_model_panes``, ``on_watcher_event``,
+  ``on_juju_status``, ``update_status_bar``,
+  ``refresh_subagent_status_bar``, ``toggle_watcher``).
+  ``CantripApp`` keeps thin ``action_*`` / ``on_*`` methods that
+  delegate so Textual's binding discovery and event-handler-by-
+  name plumbing still work.  Pure refactor — ``make check`` and
+  ``make unit`` (6 412 passed, 8 skipped) green.
 - **``BackgroundExecutor`` split into a subpackage (Phase 85.5).**
   ``src/cantrip/agent/executor.py`` (was 1 722 lines) is now
   ``src/cantrip/agent/executor/`` with four modules:

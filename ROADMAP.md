@@ -3916,13 +3916,31 @@ decomposition last.
   `cantrip.agent.executor.git_service.<name>`.  Pure refactor
   — `make check` and `make unit` (6 412 passed, 8 skipped)
   green.
-- [ ] `tui/app.py` (1 859 lines) is one `CantripApp` class
-  with 83 methods.  Group action handlers by surface — chat
-  actions, status actions, screen-switching actions,
-  watcher/executor actions — and lift each group into a
-  module under `tui/actions/` that takes the app instance as
-  argument.  Keep `compose()`, `on_mount()`, and Textual
-  reactive plumbing in `tui/app.py`.
+- [x] `tui/app.py` action handlers grouped by surface and
+  lifted into a new `tui/actions/` subpackage (was 2 053
+  lines, now 1 934).  The four named buckets each get a
+  module: `tui/actions/screens.py` (`show_help`, `show_debug`,
+  `show_logs`, `show_graph`, `show_transcript`,
+  `open_relation_detail`); `tui/actions/status.py`
+  (`toggle_status`, `toggle_files`, `toggle_model_info`,
+  `show_status_panel_when_data_arrives`); `tui/actions/chat.py`
+  (`clear_chat`, `open_search`, `search_closed`,
+  `cancel_agent`); `tui/actions/watcher.py`
+  (`subscribe_events`, `start_watcher`, `stop_watcher`,
+  `refresh_model_panes`, `on_watcher_event`, `on_juju_status`,
+  `update_status_bar`, `refresh_subagent_status_bar`,
+  `toggle_watcher`).  Each function takes the app instance as
+  its first argument; `CantripApp` keeps thin `action_*` /
+  `on_*` methods that delegate so Textual's binding discovery
+  and event-handler-by-name plumbing keep working unchanged.
+  `compose()`, `on_mount()`, the preflight integration, the
+  bus subscriber registration, the confirmation flow methods
+  (`_handle_*_response` / `_present_*_confirmation`), and the
+  chat input pipeline (`on_input_submitted`,
+  `_process_agent_message`) stay on the class — those are
+  bigger cohorts and are left for a follow-up.  Pure refactor
+  — `make check` and `make unit` (6 412 passed, 8 skipped)
+  green.
 
 ### 85.6 Decompose — function-level giants
 

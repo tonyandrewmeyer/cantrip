@@ -26,6 +26,10 @@ from cantrip.agent.race import RACE_CONFIRM_PREFIX
 from cantrip.hooks import HookRunner
 from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError, Role
+from cantrip.tui.actions import chat as chat_actions
+from cantrip.tui.actions import screens as screens_actions
+from cantrip.tui.actions import status as status_actions
+from cantrip.tui.actions import watcher as watcher_actions
 from cantrip.tui.widgets import chat as chat_widget
 from cantrip.tui.widgets import filetree as filetree_widget
 from cantrip.tui.widgets import modelbar as modelbar_widget
@@ -582,8 +586,7 @@ class CantripApp(App):
 
     def action_toggle_model_info(self) -> None:
         """Toggle model info bar visibility."""
-        bar = self.query_one("#model-info", modelbar_widget.ModelInfoBar)
-        bar.display = not bar.display
+        status_actions.toggle_model_info(self)
 
     # -- Preflight integration ------------------------------------------------
 
@@ -1454,102 +1457,43 @@ class CantripApp(App):
         """Subscribe to watcher events so the panes update even if the
         watcher starts later (e.g. once the agent provisions a model).
         """
-        if not self._agent:
-            return
-        self._agent.event_bus.subscribe(
-            ui_events.EventType.WATCHER_EVENT, self._on_bus_watcher_event
-        )
-        self._agent.event_bus.subscribe(
-            ui_events.EventType.JUJU_STATUS_CHANGED, self._on_bus_juju_status
-        )
+        watcher_actions.subscribe_events(self)
 
     def _start_watcher(self) -> None:
         """Try to start the event watcher.
 
         If no Juju model is available yet, schedule a periodic retry so
-        the watcher starts as soon as the agent provisions one.  Events
-        are automatically routed to the task queue by the agent's
-        ``start_watcher`` method.
+        the watcher starts as soon as the agent provisions one.
         """
-        if not self._agent or self._agent.watcher_running:
-            return
-        started = self._agent.start_watcher()
-        if started:
-            self._update_status_bar_watcher()
-            if self._watcher_retry_timer is not None:
-                self._watcher_retry_timer.stop()
-                self._watcher_retry_timer = None
-        elif self._watcher_retry_timer is None:
-            self._watcher_retry_timer = self.set_interval(5.0, self._start_watcher)
+        watcher_actions.start_watcher(self)
 
     async def _stop_watcher(self) -> None:
         """Stop the event watcher."""
-        if not self._agent:
-            return
-        await self._agent.stop_watcher()
-        self._update_status_bar_watcher()
+        await watcher_actions.stop_watcher(self)
 
     def _refresh_model_panes(self) -> None:
         """Push the watcher's latest status snapshots into the model widget."""
-        if not (self._agent and self._agent._watcher):
-            return
-        status_widget = self.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
-        latest = self._agent._watcher.latest_status
-        if latest is not None:
-            status_widget.dev_status = latest
-        latest_cos = self._agent._watcher.latest_cos_status
-        if latest_cos is not None:
-            status_widget.cos_status = latest_cos
+        watcher_actions.refresh_model_panes(self)
 
     def _on_bus_watcher_event(self, event: ui_events.Event) -> None:
         """Handle a watcher event from the bus."""
-        chat = self.query_one("#chat", chat_widget.ChatWidget)
-        chat.add_system_message(f"[Watcher] {event.payload.get('summary', '')}")
-        self._refresh_model_panes()
+        watcher_actions.on_watcher_event(self, event)
 
     def _on_bus_juju_status(self, _event: ui_events.Event) -> None:
         """Handle a periodic status-poll tick from the watcher."""
-        self._refresh_model_panes()
+        watcher_actions.on_juju_status(self)
 
     def _update_status_bar_watcher(self) -> None:
         """Update the status bar watcher indicator."""
-        status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
-        if self._agent and self._agent.watcher_running:
-            status_bar.watcher_status = "👁 Watching"
-        else:
-            status_bar.watcher_status = ""
+        watcher_actions.update_status_bar(self)
 
     def _refresh_subagent_status_bar(self) -> None:
-        """Mirror the currently-active subagent phase into the status bar.
-
-        Picks the first ACTIVE task with a live ``subagent_phase`` so
-        research/build activity is visible without having to expand the
-        task pane.  Cleared when no subagent is running.
-        """
-        from textual.css.query import NoMatches
-
-        if not self._agent:
-            return
-        try:
-            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
-        except NoMatches:
-            return
-        for task in self._agent.work_queue.all_tasks():
-            if task.status == TaskStatus.ACTIVE and task.subagent_phase:
-                status_bar.subagent_label = f"⟳ {task.title} · {task.subagent_phase}"
-                return
-        status_bar.subagent_label = ""
+        """Mirror the currently-active subagent phase into the status bar."""
+        watcher_actions.refresh_subagent_status_bar(self)
 
     def action_toggle_watcher(self) -> None:
         """Toggle the event watcher on or off."""
-        if not self._agent:
-            return
-        if self._agent.watcher_running:
-            self.run_worker(self._stop_watcher(), name="stop_watcher", exclusive=False)
-            chat = self.query_one("#chat", chat_widget.ChatWidget)
-            chat.add_system_message("Watcher stopped.")
-        else:
-            self._start_watcher()
+        watcher_actions.toggle_watcher(self)
 
     # -- Chat -----------------------------------------------------------------
 
@@ -1928,90 +1872,39 @@ class CantripApp(App):
 
     def action_help(self) -> None:
         """Show help screen."""
-        from cantrip.tui.screens import help as help_screen
-
-        self.push_screen(help_screen.HelpScreen())
+        screens_actions.show_help(self)
 
     def action_debug(self) -> None:
         """Show trace/debug screen."""
-        from cantrip.agent import cos_endpoints
-        from cantrip.tui.screens import traces as traces_screen
-
-        cos_model = self._agent.state.cos_model if self._agent else None
-        status = (
-            self._agent._watcher.latest_cos_status
-            if self._agent and self._agent._watcher
-            else None
-        )
-        endpoints = cos_endpoints.derive_endpoints(status)
-        self.push_screen(traces_screen.TraceScreen(cos_model=cos_model, endpoints=endpoints))
+        screens_actions.show_debug(self)
 
     def on_relation_line_selected(self, event: status_widgets.RelationLine.Selected) -> None:
         """Open the relation detail screen when a relation line is clicked."""
-        from cantrip.tui.screens import relation as relation_screen
-
-        dev_model = self._agent.state.dev_model if self._agent else None
-        self.push_screen(
-            relation_screen.RelationDetailScreen(
-                unit_name=event.unit_name,
-                endpoint=event.endpoint,
-                related_app=event.related_app,
-                model=dev_model,
-            )
-        )
+        screens_actions.open_relation_detail(self, event)
 
     def on_juju_status_widget_status_available(self) -> None:
         """Show the status panel when status data first arrives."""
-        self.query_one("#right-panel").display = True
+        status_actions.show_status_panel_when_data_arrives(self)
 
     def action_toggle_status(self) -> None:
         """Toggle status panel visibility."""
-        right_panel = self.query_one("#right-panel")
-        right_panel.display = not right_panel.display
+        status_actions.toggle_status(self)
 
     def action_toggle_files(self) -> None:
         """Toggle charm file tree visibility."""
-        tree = self.query_one("#charm-files", filetree_widget.CharmTreeWidget)
-        tree.display = not tree.display
+        status_actions.toggle_files(self)
 
     def action_logs(self) -> None:
         """Show log viewer screen."""
-        from cantrip.tui.screens import logs as logs_screen
-
-        dev_model = self._agent.state.dev_model if self._agent else None
-        cos_model = self._agent.state.cos_model if self._agent else None
-        self.push_screen(logs_screen.LogScreen(dev_model=dev_model, cos_model=cos_model))
+        screens_actions.show_logs(self)
 
     def action_graph(self) -> None:
         """Show integration graph screen."""
-        from cantrip.tui.screens import graph as graph_screen
-
-        status_widget = self.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
-        current_app = self._agent.state.charm_name if self._agent else None
-        dev_model = self._agent.state.dev_model if self._agent else None
-        cos_model = self._agent.state.cos_model if self._agent else None
-        self.push_screen(
-            graph_screen.GraphScreen(
-                status=status_widget.dev_status,
-                current_app=current_app,
-                model=dev_model,
-                cos_status=status_widget.cos_status,
-                cos_model=cos_model,
-            )
-        )
+        screens_actions.show_graph(self)
 
     def action_transcript(self) -> None:
         """Show session transcript screen."""
-        import pathlib
-
-        from cantrip.tui.screens import transcript as transcript_screen
-
-        db_path: pathlib.Path | None = None
-        if self._agent and self._agent.state.charm_path:
-            candidate = self._agent.state.charm_path / ".cantrip"
-            if candidate.exists():
-                db_path = candidate
-        self.push_screen(transcript_screen.TranscriptScreen(db_path=db_path))
+        screens_actions.show_transcript(self)
 
     async def action_quit(self) -> None:
         """Stop background services and quit."""
@@ -2026,28 +1919,16 @@ class CantripApp(App):
 
     def action_clear_chat(self) -> None:
         """Clear chat history."""
-        chat = self.query_one("#chat", chat_widget.ChatWidget)
-        chat.clear()
+        chat_actions.clear_chat(self)
 
     def action_search_chat(self) -> None:
         """Open the chat search bar."""
-        chat = self.query_one("#chat", chat_widget.ChatWidget)
-        chat.open_search()
+        chat_actions.open_search(self)
 
     def on_chat_widget_search_closed(self, event: chat_widget.ChatWidget.SearchClosed) -> None:
         """Return focus to the chat input when the search bar closes."""
-        from textual.css.query import NoMatches
-
-        event.stop()
-        with contextlib.suppress(NoMatches):
-            self.query_one("#chat-input", Input).focus()
+        chat_actions.search_closed(self, event)
 
     def action_cancel_agent(self) -> None:
         """Cancel the running agent response worker."""
-        for worker in self.workers:
-            if worker.name == "agent_response" and worker.is_running:
-                worker.cancel()
-                self.query_one(
-                    "#status-bar", statusbar_widget.StatusBar
-                ).task_label = "⏹ Cancelling..."
-                return
+        chat_actions.cancel_agent(self)
