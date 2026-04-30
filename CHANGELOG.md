@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``identity-platform`` skill (Phase 88.2).**  New
+  ``src/cantrip/skills/identity-platform/SKILL.md`` covers the Canonical
+  Identity Platform's five relation interfaces (``oauth``, ``oauth-cli``,
+  ``oidc-info``, ``hydra-token-introspect``, ``kratos-external-idp``),
+  the bundle-based hybrid default topology, secret-relation wiring for
+  client credentials, and the SaaS-public-Hydra / internal-only-mTLS
+  escape hatches.  Three worked examples — 12-factor + Hydra requirer,
+  custom charm with Kratos-backed sessions, infrastructure charm with
+  ``oauth-cli`` for service-to-service tokens.  System prompt and the
+  ``charmcraft`` skill updated to list ``charms.hydra.*`` /
+  ``charms.kratos.*`` as fetch-libs (not yet on PyPI per
+  ``design/UPSTREAM_AUDIT.md``).  Cross-links added from
+  ``twelve-factor``, ``custom-charm``, and ``infrastructure-charm``.
 - **Shared (team-sync) charm-scope memory directory (Phase 51b.1).**
   Optional ``<charm-root>/.cantrip-shared/memory/`` directory in the
   same Markdown frontmatter format as global memory.  When present, the

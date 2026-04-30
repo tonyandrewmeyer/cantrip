@@ -196,7 +196,8 @@ The 21 skills shipped in `src/cantrip/skills/` cover:
 - **Language & framework** — `twelve-factor`, `custom-charm`,
   `infrastructure-charm`, `charmcraft`
 - **Features** — `adding-config`, `adding-actions`, `ingress`,
-  `observability`, `relation-data-design`, `terraform`
+  `observability`, `relation-data-design`, `terraform`,
+  `identity-platform`
 - **Quality** — `scenario-tests`, `jubilant-tests`,
   `harness-migration`, `find-bugs`, `security-review`
 - **Ops** — `operational-readiness`, `performance`,
@@ -256,7 +257,7 @@ known location and exports `$SKILL_ROOT` when firing the skill.
 
 ### Cantrip's current layout
 
-Every one of Cantrip's 30 bundled skills is a single
+Every one of Cantrip's 32 bundled skills is a single
 `SKILL.md` — the directory shell exists (we already discover
 `<root>/<name>/SKILL.md`) but nothing lives next to it.  Skill
 bodies range from ~100 lines (`iterate-fix`, `bundle`) to ~500
@@ -290,7 +291,7 @@ surfaced to the agent today.
 
 ### Recommendation — keep the shape, defer the plumbing
 
-Cantrip's 30 bundled skills are workflow guides.  None of them
+Cantrip's 32 bundled skills are workflow guides.  None of them
 currently ships template content that would be meaningfully
 cleaner as a separate file, and none has an executable helper.
 The `harness-migration` skill (185 lines) has a Harness→Scenario

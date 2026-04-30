@@ -4157,17 +4157,28 @@ should look like and ships the minimum viable integration.
   Cantrip already prescribes for observability.  SaaS-public-Hydra
   and internal-mTLS exist as prompt-driven escape hatches.
 
-### 88.2 Skill — ``identity-platform`` charm-generation skill
+### 88.2 Skill — ``identity-platform`` charm-generation skill ✓
 
-- [ ] New skill ``src/cantrip/skills/identity-platform/`` with
-  the standard SKILL.md format.  Body covers: relation
-  interfaces, charm libraries to import (preferably PyPI
-  versions per the project rule), secret-relation wiring for
-  client credentials, and the boilerplate observed-charm
-  pattern for an OIDC requirer.
-- [ ] Three worked examples: 12-factor app + Hydra requirer,
-  custom app with Kratos sessions, infrastructure charm with
-  oauth-cli for service-to-service.
+- [x] New skill ``src/cantrip/skills/identity-platform/`` with
+  the standard SKILL.md format.  Body covers: the five relation
+  interfaces (``oauth``, ``oauth-cli``, ``oidc-info``,
+  ``hydra-token-introspect``, ``kratos-external-idp``), the
+  bundle-based hybrid default topology, the
+  ``charmcraft fetch-libs`` route for ``charms.hydra.*`` and
+  ``charms.kratos.*`` (none on PyPI per
+  ``UPSTREAM_AUDIT.md``), secret-relation wiring for client
+  credentials, and topology escape hatches for SaaS-public-
+  Hydra and internal-only-mTLS.  System prompt's fetch-libs
+  list and the ``charmcraft`` skill updated to include the
+  hydra / kratos namespaces; cross-links added from
+  ``twelve-factor`` (OIDC section), ``custom-charm`` (relation
+  data section), and ``infrastructure-charm`` (auth comment in
+  the metadata template).
+- [x] Three worked examples: 12-factor app + Hydra requirer
+  (``oauth`` relation, paas-charm env injection), custom app
+  with Kratos-backed sessions (full ``OAuthRequirer`` wiring),
+  infrastructure charm with ``oauth-cli`` for
+  service-to-service tokens.
 
 ### 88.3 Tooling — agent-side affordances
 

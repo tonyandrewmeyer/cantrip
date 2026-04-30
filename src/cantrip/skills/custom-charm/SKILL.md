@@ -294,7 +294,7 @@ def _on_database_relation_changed(self, event: ops.RelationChangedEvent) -> None
     # Configure the workload with the database connection...
 ```
 
-For detailed relation data patterns, load the `relation-data-design` skill.
+For detailed relation data patterns, load the `relation-data-design` skill.  For OAuth / OIDC / login flows backed by the Canonical Identity Platform, load the `identity-platform` skill — it covers the `oauth`, `oauth-cli`, `oidc-info`, and `hydra-token-introspect` relations and how the secret-backed client credentials flow through to the workload.
 
 #### Storage
 

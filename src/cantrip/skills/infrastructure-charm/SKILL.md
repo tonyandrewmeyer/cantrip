@@ -254,6 +254,9 @@ requires:
   s3-credentials:
     interface: s3
     limit: 1
+  # For service-to-service auth (e.g. talking to a downstream API
+  # behind Hydra), load the `identity-platform` skill and add an
+  # `oauth-cli` requirer here.
 
 # Persistent storage for data.
 storage:

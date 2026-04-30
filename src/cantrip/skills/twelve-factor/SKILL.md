@@ -404,6 +404,8 @@ requires:
 
 Deploy alongside an OIDC provider charm (Hydra, Keycloak, …) and integrate; the paas-charm base populates the env vars on the workload's behalf.
 
+For Canonical Identity Platform integration (Hydra + Kratos + login-ui as a bundle), load the ``identity-platform`` skill — it covers the bundle-based default topology, the four other relation interfaces (``oauth-cli``, ``oidc-info``, ``hydra-token-introspect``, ``kratos-external-idp``), and the worked example for a 12-factor charm.
+
 ## Observability
 
 The ``charmcraft_init`` tool automatically adds the ``tracing`` relation to ``charmcraft.yaml`` for all profiles (including PaaS framework profiles).  Once COS is deployed, wire up tracing:

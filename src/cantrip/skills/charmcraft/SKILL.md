@@ -206,7 +206,9 @@ classic way:
 - `charms.observability_libs.*`
 - `charms.data_platform_libs.*` (Juju data-platform relation interfaces — PyPI namespace `dpcharmlibs` is reserved but not yet populated)
 - `charms.sdcore_nms_k8s.*`
-- most charm-specific interface libraries (e.g. `charms.kratos_info.*`, `charms.vault_kv.*` etc.) — check their host charm before assuming
+- `charms.hydra.*` — Canonical Identity Platform OAuth / OIDC requirer libs (`oauth`, `oauth_cli`, `oidc_info`, `token_introspect`); load the `identity-platform` skill when wiring these
+- `charms.kratos.*` — Kratos identity / external-IdP libs (`kratos_external_idp`, `kratos_info`); load the `identity-platform` skill when wiring these
+- most other charm-specific interface libraries (e.g. `charms.vault_kv.*` etc.) — check their host charm before assuming
 
 ## charmcraft.yaml Reference
 
