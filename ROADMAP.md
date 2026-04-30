@@ -5090,6 +5090,240 @@ a Go binary.
 
 ---
 
+## Phase 95: Canonical Developer Surfaces — Launchpad, Snapcraft, and Charmcraft
+
+**Goal:** Cantrip already showcases the core charm stack well, but
+several high-leverage Canonical developer surfaces still sit outside the
+agent's reach.  This phase turns the strongest first-party catalogue and
+packaging surfaces into things the agent can actually use during charm
+research, provider selection, and packaging flows — rather than just
+mentioning them in docs.
+
+### 95.1 Research and scope ✓
+
+- [x] Broad product / technology survey written up in
+  [`design/CANONICAL_SHOWCASE.md`](design/CANONICAL_SHOWCASE.md).
+  Findings: Launchpad, Snapcraft, and Charmcraft are the
+  highest-leverage first-party developer surfaces beyond the already-
+  shipped charm stack; MAAS belongs to a substrate phase, Chisel to a
+  packaging phase, and Ubuntu Pro / Landscape to an operational-
+  readiness phase.
+
+### 95.2 Marketplace descriptors and discoverability
+
+- [ ] Ship documented marketplace / descriptor examples for
+  **Launchpad**, **Snapcraft**, and **Charmcraft** MCP servers so a
+  user can enable Canonical-native servers without reading design docs
+  or inventing YAML from scratch.
+- [ ] Decide the default exposure / safety story per server.  Search,
+  info, and lint / analyse verbs should be read-only by default;
+  publishing verbs (if exposed at all) require explicit allowlisting
+  and the same confirmation posture as other destructive or external
+  operations.
+- [ ] Update the MCP docs so the Canonical servers are a first-class
+  example alongside the generic Grafana / GitHub-style examples.
+
+### 95.3 Agent-side adoption
+
+- [ ] When a Launchpad server is configured, feed its results into the
+  **Librarian** / `/search-charms` workflow so unpublished or
+  in-progress Launchpad projects become first-class citations rather
+  than a hidden parallel workflow.
+- [ ] When a Snapcraft server is configured, use it in the
+  inference-snap and provider-selection flows: enrich local snap
+  discovery with store metadata, aliases, summaries, and supported
+  channels rather than relying only on local enumeration.
+- [ ] When a Charmcraft server is configured, use it as an optional
+  second-opinion surface for `lint` / `analyse` in build and
+  improvement flows, while keeping the built-in local tooling as the
+  default fallback.
+
+### What this phase is *not*
+
+- Not a generic "marketplace everything Canonical ships" sweep.
+- Not a Charmhub rewrite — Charmhub remains the primary charm-registry
+  surface; Launchpad complements it.
+- Not a publishing-by-default phase.  Read-path discovery comes first.
+
+**Exit criteria:** a user who configures Canonical Launchpad,
+Snapcraft, and/or Charmcraft MCP servers sees them in the docs, can
+discover them via `/mcp marketplace`, and the agent uses them in charm
+research, local-model discovery, and packaging flows without bespoke
+prompting.
+
+---
+
+## Phase 96: Chiselled Rocks — Chisel-Aware Rockcraft Output
+
+**Goal:** Cantrip already generates rocks for OCI-backed charms, but it
+does not yet understand Canonical's chiselled-Ubuntu packaging story.
+This phase teaches the agent when a workload is a good chiselled
+candidate, how to generate that Rockcraft shape safely, and when to stay
+with a fuller Ubuntu base for debugging or runtime reasons.
+
+### 96.1 Eligibility rules
+
+- [ ] Write the deterministic "is chiselled a good fit?" rubric:
+  12-factor or otherwise simple container workloads, no shell-dependent
+  runtime, no apt-at-runtime behaviour, package slices available, and a
+  workable debug / support story.
+- [ ] Record explicit blockers: workloads that expect a shell or
+  ad-hoc OS utilities in production, opaque vendor install scripts,
+  packages without the needed slices, or charm logic that would make the
+  minimised filesystem shape too brittle.
+- [ ] Decide whether the eligibility logic lives purely in skill /
+  prompt guidance or deserves a small deterministic helper next to the
+  existing Rockcraft tooling.
+
+### 96.2 Generation and escape hatches
+
+- [ ] Extend Rockcraft generation guidance so Cantrip can emit
+  chiselled-rock examples when the workload passes the rubric, including
+  a short explanation to the user about *why* the smaller base is safe
+  here.
+- [ ] Preserve a clear escape hatch back to ordinary Ubuntu bases when
+  the workload needs shell tooling, the user prioritises operability
+  over footprint, or the chiselled build fails for a slice-availability
+  reason.
+- [ ] Ensure the generated charm and rock wiring still compose cleanly
+  with Pebble plans, health checks, and the existing 12-factor /
+  custom-app flows.
+
+### 96.3 Validation and user-facing docs
+
+- [ ] Add tests / fixtures proving Cantrip's chiselled output still
+  launches correctly and keeps the expected runtime files, entrypoints,
+  and libraries.
+- [ ] Update the relevant user-facing docs and examples so
+  "Cantrip can build smaller, tighter rocks when appropriate" is a
+  visible feature rather than an invisible prompt tweak.
+
+### What this phase is *not*
+
+- Not a blanket switch making every rock chiselled by default.
+- Not a replacement for quickpack or charmcraft packaging paths.
+- Not a packaging-minification contest detached from charm operability.
+
+**Exit criteria:** for workloads that fit the rubric, Cantrip can
+generate and explain a chiselled-Rockcraft path; for workloads that do
+not, it cleanly falls back to the existing fuller-base path.
+
+---
+
+## Phase 97: Canonical Cloud Targets — MAAS, OpenStack, and MicroCloud
+
+**Goal:** Cantrip's current environment story is strongest on local LXD
+and Canonical K8s.  Canonical also ships substrate products that are a
+natural fit for machine and infrastructure charm stories: MAAS for
+bare-metal labs, OpenStack / Sunbeam for private-cloud targets, and
+MicroCloud for compact local/private-cloud deployments.  This phase
+decides what first-class support means for each and ships the
+lowest-friction high-value pieces first.
+
+### 97.1 Substrate-role design
+
+- [ ] Write the design note that decides the role of each surface:
+  **MAAS** as machine inventory / provisioning, **OpenStack / Sunbeam**
+  as a target cloud for infra charms and demos, and **MicroCloud** as a
+  compact private-cloud / edge lab.
+- [ ] Decide how these surfaces relate to **Concierge** rather than
+  bypassing it ad hoc.  The outcome may be extra presets, extra profile
+  data, or documented MCP / tool integration — but not a second,
+  conflicting environment abstraction.
+
+### 97.2 MAAS path
+
+- [ ] Decide whether the first MAAS surface is a built-in tool family,
+  an MCP-first story, or a hybrid.  Start with safe read / prepare
+  flows: list machines, inspect availability, and acquire / release
+  capacity with explicit confirmation on any destructive step.
+- [ ] Teach machine-charm workflows when MAAS is a better fit than local
+  LXD and how to say so in design proposals, test plans, and runbooks.
+
+### 97.3 OpenStack and MicroCloud profiles
+
+- [ ] Add substrate-aware profiles or guidance for "target OpenStack"
+  and "target MicroCloud" so infrastructure-charm work can tailor
+  assumptions, companion charms, and acceptance guidance to those
+  Canonical environments.
+- [ ] Extend topology / bundle-style outputs so these substrates appear
+  as first-class deployment contexts in generated design notes when
+  relevant.
+
+### 97.4 Examples and docs
+
+- [ ] Ship at least one worked example for a MAAS-backed machine-charm
+  workflow and one for an OpenStack- or MicroCloud-oriented
+  infrastructure workflow.
+- [ ] Document the boundaries clearly: when the phase gives actual agent
+  automation vs when it gives substrate-aware guidance and runbooks.
+
+### What this phase is *not*
+
+- Not a promise that Cantrip itself bootstraps a private cloud from
+  nothing.
+- Not a replacement for the existing local LXD / k8s dev loop.
+- Not an excuse to scatter substrate-specific one-offs through the
+  prompt without a design note.
+
+**Exit criteria:** a user asking for MAAS-, OpenStack-, or
+MicroCloud-aware work gets substrate-specific guidance or automation
+that fits Cantrip's existing environment story rather than a generic
+"bring your own cloud" answer.
+
+---
+
+## Phase 98: Canonical Estate Operations — Ubuntu Pro and Landscape
+
+**Goal:** Some Canonical products are best used not in the build loop,
+but in Cantrip's **day-2** and **production-readiness** stories.
+Ubuntu Pro and Landscape are the strongest examples: they matter when
+Cantrip is auditing, improving, or operationalising charms for real
+Ubuntu estates, not when it is merely scaffolding a demo.
+
+### 98.1 Operational-readiness rubric
+
+- [ ] Expand the operational-readiness guidance so the agent can ask
+  whether a workload or deployment story should mention **Ubuntu Pro**
+  (security maintenance, compliance posture, long-term patching) and/or
+  **Landscape** (fleet management, patching, access management) when
+  those are actually relevant.
+- [ ] Keep the recommendations evidence-driven.  They should show up
+  where the workload, substrate, or operator environment makes them a
+  sensible Canonical recommendation — not as generic upsell text.
+
+### 98.2 Improvement-mode outputs
+
+- [ ] Add "Ubuntu Pro / Landscape opportunities" to the audit /
+  improvement output alongside existing observability, backup, HA, and
+  security findings when those Canonical products would materially
+  improve the charm's production story.
+- [ ] Provide consistent wording that distinguishes **recommended for a
+  supported production estate** from **required for the charm to work**.
+
+### 98.3 Detection and templates
+
+- [ ] Where safe and cheap, detect hints that the operator already lives
+  in a Pro / Landscape world (repo docs, deployment notes, packaging
+  assumptions, estate-management references) and use that context in the
+  generated runbooks.
+- [ ] Add reusable templates or guidance snippets for charms that need
+  production-hardening recommendations but no direct integration code.
+
+### What this phase is *not*
+
+- Not a commercial workflow or subscription-purchase flow.
+- Not a mandate that every Cantrip-generated charm mention Pro or
+  Landscape.
+- Not a replacement for the existing security / observability /
+  operational-readiness work.
+
+**Exit criteria:** Cantrip's improvement and operational-readiness flows
+can recommend Ubuntu Pro and Landscape in the right contexts with clear,
+useful guidance and without making them feel bolted on.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
