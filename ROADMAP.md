@@ -2782,6 +2782,138 @@ against before it edits.
 
 ---
 
+## Phase 72b: Read-Only Code Intelligence - Exact Symbols, Definitions, and References
+
+**Goal:** Phase 71.1's repo-map gives the agent a bird's-eye view of a
+repository, but BUILD/DEBUG work still drops to grep when the question
+is exact: "where is ``Foo.bar`` defined?", "who calls
+``_render_layer``?", "what symbols exist under ``src/charm.py``?".
+This phase copies the useful *read-only* LSP affordances - workspace
+symbols, go-to-definition, and find-references - without assuming an
+IDE surface, a long-lived editor session, or any write-capable
+refactors.
+
+### 72b.1 High - Shared code-intelligence index and query API
+
+- [ ] New subsystem under ``src/cantrip/codeintel/`` that *reuses* the
+  Phase 71.1 parser outputs rather than growing a second parser stack.
+  ``repomap`` stays the bird's-eye renderer; ``codeintel`` owns exact
+  query operations and compact result rendering.
+- [ ] Extend the parsed-symbol model with stable symbol identifiers
+  (qualified name + kind + file + line), reference locations, import
+  aliases where recoverable, and a small snippet window around each
+  definition/reference.  Persist in ``.cantrip/codeintel.json`` keyed
+  by ``mtime_ns`` so incremental rebuilds stay cheap.
+- [ ] Language coverage starts deliberately narrow: Python source plus
+  charm metadata YAML (``charmcraft.yaml``, ``metadata.yaml``,
+  ``config.yaml``, ``actions.yaml``).  Rust, Go, shell, Terraform,
+  and Markdown stay literal-search territory until a concrete need
+  appears.
+- [ ] Query primitives:
+  - ``workspace_symbols(query, path_scope=None, kinds=None)``
+  - ``go_to_definition(symbol, from_path=None)``
+  - ``find_references(symbol, from_path=None, include_definition=False)``
+- [ ] Match policy is deterministic: exact qualified-name match first,
+  then unqualified exact, then prefix/fuzzy fallback.  Ambiguous hits
+  are surfaced explicitly with candidates; the tool never silently
+  guesses.
+
+### 72b.2 High - Read-only tools, slash commands, and ``@`` providers
+
+- [ ] Three explicit read-only tools:
+  ``code_symbols``, ``code_definition``, and ``code_references``.
+  Keep them separate rather than a single ``code_intel`` tool with a
+  mode string so tool selection stays legible to the model.
+- [ ] Slash-command surface:
+  ``/symbols <query>``, ``/definition <symbol>``, and
+  ``/references <symbol>``.  Output format mirrors the tool results so
+  print mode, TUI, and Web all see the same content.
+- [ ] ``@``-provider surface layered on Phase 72.2's parser:
+  ``@symbol <query>``, ``@definition <symbol>``, and
+  ``@references <symbol>`` as ``REST_OF_LINE`` providers.  Each
+  expansion uses the existing fenced-block convention so the typed
+  mention and substituted content both remain visible in the
+  transcript.
+- [ ] Result shapes stay compact and audit-friendly:
+  ``code_symbols`` returns kind / file / line / signature;
+  ``code_definition`` returns the defining path + line plus a bounded
+  snippet; ``code_references`` returns sorted callsites/import sites
+  with honest truncation and ambiguity notes.
+- [ ] Every surface states whether the answer came from the semantic
+  index or from a literal-search fallback so misses do not masquerade
+  as precise code intelligence.
+
+### 72b.3 Medium - Agent and planner adoption
+
+- [ ] Primary-agent guidance and subagent prompts updated so the search
+  order becomes: repo-map for orientation, code-intelligence for exact
+  symbol questions, grep/glob for literal text or unsupported
+  languages.
+- [ ] Safe read-only access added to the BUILD, DEBUG, RESEARCH, and
+  LIBRARIAN tool allowlists.  This is deliberately *not* a new write
+  path and should inherit the existing "safe by default" governance
+  treatment for read-only tools.
+- [ ] When a task title or user message contains symbol-shaped tokens
+  (dotted names, ``snake_case`` helpers, ``CamelCase`` classes), the
+  planner may prefetch one compact definition or symbol-match block so
+  a BUILD/DEBUG subagent starts from the right file instead of
+  burning a turn on navigation.
+- [ ] ``/map`` and repo-map remain unchanged in purpose: they answer
+  "what matters in this repo?".  Code-intelligence answers "where is
+  this symbol?" and "who references it?".  Prompt text should state
+  that distinction plainly so the two systems complement rather than
+  duplicate each other.
+
+### 72b.4 Medium - Validation, limits, and future adapter seam
+
+- [ ] ``tests/unit/test_codeintel.py`` plus provider/slash-command
+  coverage for: exact match, ambiguous match, moved files, stale-cache
+  invalidation, syntax-error tolerance, YAML-derived symbols,
+  path-scoped lookups, truncated reference lists, and transcript-safe
+  mention expansion.
+- [ ] Hard scope boundary: no rename-symbol, no code actions, no
+  format-on-save, no workspace edits, no hover UI, no always-on
+  background daemon.  Read-only lookup only.
+- [ ] Design the query layer so a future optional adapter can sit
+  behind it if Cantrip later wants one-shot ``pyright`` or
+  ``yaml-language-server`` enrichment for tricky cases.  That adapter
+  is *not* in scope here; the seam is.
+- [ ] Failure mode must be plain and non-magical: "no semantic match"
+  or "multiple candidates" is a valid result.  The caller can then
+  fall back to ``grep``/``glob`` explicitly.
+
+### What this phase is *not*
+
+- Not an IDE extension.  No autocomplete, cursor tracking, editor
+  buffers, inline hovers, or live-LSP session.
+- Not a refactoring engine.  Rename, extract, organise-imports, and
+  code actions stay out of scope.
+- Not a replacement for repo-map or grep.  Repo-map stays the
+  repository overview; grep stays the universal text search; this
+  phase fills the exact-symbol gap in between.
+- Not a multi-language promise.  Python + charm YAML earn first-class
+  support because that is where Cantrip already has parser knowledge.
+
+**Exit criteria:** (a) ``/definition RepoMap.render_for_prompt``
+returns the defining file, line, and a bounded snippet from the
+current repo; (b) ``/references SubagentContext`` returns ranked
+reference sites with honest ambiguity / truncation notes; (c) typing
+``@definition RepoMap.render_for_prompt`` or
+``@references SubagentContext`` expands inline in the TUI/Web input
+path using the existing fenced-block transcript format; (d) when a
+symbol cannot be resolved semantically, the result says so plainly
+instead of inventing a target.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Shared index/query layer (72b.1) | 71.1 repo-map | Reuse the parser/cache work; do not fork a second symbol-extraction stack |
+| Slash commands + ``@`` providers (72b.2) | 72.2 provider registry, Phase 61 autocomplete, Phase 67.3 print-mode parity | Same parser / suggestion / transcript path |
+| Agent adoption (72b.3) | Phase 32 planner, Phase 80 policy stack | Safe read-only tool allowlisting plus selective prefetch |
+| Optional future adapter seam (72b.4) | none | Keep the abstraction ready without committing this phase to live LSP |
+
+---
+
 ## Phase 73: Goose-Inspired Workflow Packaging — Recipes, MCP Apps, Retry, Structured Output
 
 **Goal:** Goose (Block's open-source agent, part of the Agentic
@@ -5393,6 +5525,7 @@ useful guidance and without making them feel bolted on.
 | M70: Amp-Inspired Depth | 70 | Librarian subagent that searches Charmhub and Launchpad, Oracle tool for on-demand second-opinion reasoning, glob-conditional guidance in AGENTS.md / skills, prompt-based review Checks that layer on top of charmlint, and a Painter tool that generates a Charmhub-style ``icon.svg`` |
 | M71: Aider Engineering Hygiene | 71 ✓ | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |
 | M72: Continue Context Providers | 72 | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
+| M72b: Read-Only Code Intelligence | 72b | Exact workspace-symbol, go-to-definition, and find-references queries layered on repo-map and ``@``-providers, giving Cantrip precise code navigation without an IDE surface or write-capable refactors |
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
 | M74: Populated Charm Docs | 74 ✓ | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
 | M75: Inline Tool Blocks | 75 ✓ | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
