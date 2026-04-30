@@ -10,11 +10,11 @@ import stat
 
 from cantrip.agent import design as design_mod
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
-from cantrip.agent.state import AgentState, Decision
+from cantrip.agent.state import AgentState, Decision, load_shared_decisions
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -62,7 +62,12 @@ CREATE TABLE IF NOT EXISTS decisions (
     type TEXT NOT NULL,
     choice TEXT NOT NULL,
     reason TEXT,
-    timestamp TEXT NOT NULL
+    timestamp TEXT NOT NULL,
+    -- Phase 51b.2: distinguishes locally-recorded decisions ('local')
+    -- from decisions that arrived via the shared team-sync log
+    -- ('shared').  Nullable for back-compat — pre-v14 rows read as
+    -- 'local' in load_session.
+    source TEXT
 );
 
 CREATE TABLE IF NOT EXISTS token_usage (
@@ -465,6 +470,16 @@ class SessionStore:
             if "role" not in cols:
                 self._conn.execute("ALTER TABLE token_usage ADD COLUMN role TEXT")
 
+        if current < 14:
+            # v14: source provenance on decisions (Phase 51b.2).  Existing
+            # rows get NULL — load_session treats NULL as ``"local"`` so
+            # pre-shared-log decisions keep their original meaning.  The
+            # column is nullable so the migration can be additive on a
+            # populated decisions table without a backfill pass.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(decisions)").fetchall()}
+            if "source" not in cols:
+                self._conn.execute("ALTER TABLE decisions ADD COLUMN source TEXT")
+
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             self._conn.commit()
@@ -526,12 +541,17 @@ class SessionStore:
             ),
         )
 
-        # Replace decisions: clear then re-insert.
+        # Replace decisions: clear then re-insert.  Shared-source rows
+        # are skipped — they live in the team-sync JSONL file and would
+        # otherwise duplicate every load.
         db.execute("DELETE FROM decisions")
         for d in state.decisions:
+            if d.source == "shared":
+                continue
             db.execute(
-                "INSERT INTO decisions (type, choice, reason, timestamp) VALUES (?, ?, ?, ?)",
-                (d.type, d.choice, d.reason, d.timestamp.isoformat()),
+                "INSERT INTO decisions (type, choice, reason, timestamp, source) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (d.type, d.choice, d.reason, d.timestamp.isoformat(), d.source),
             )
         db.commit()
 
@@ -559,7 +579,7 @@ class SessionStore:
             state.design_proposal = design_mod.parse_design_from_result(raw_design)
 
         decision_rows = self._db.execute(
-            "SELECT type, choice, reason, timestamp FROM decisions ORDER BY id"
+            "SELECT type, choice, reason, timestamp, source FROM decisions ORDER BY id"
         ).fetchall()
         for dr in decision_rows:
             ts = dr["timestamp"]
@@ -573,8 +593,17 @@ class SessionStore:
                     choice=dr["choice"],
                     reason=dr["reason"],
                     timestamp=timestamp,
+                    source=dr["source"] or "local",
                 )
             )
+        # Phase 51b.2: append decisions from the shared team-sync log so
+        # teammates' choices show up in /decisions alongside the local
+        # ones.  Shared rows are flagged so the UI can render them
+        # differently and so save_session won't write them back to
+        # SQLite — the JSONL file is the source of truth.
+        if state.charm_path is not None:
+            for shared in load_shared_decisions(state.charm_path):
+                state.decisions.append(shared)
 
         return state
 

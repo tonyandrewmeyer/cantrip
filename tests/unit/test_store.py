@@ -6,7 +6,12 @@ from collections.abc import Iterator
 
 import pytest
 
-from cantrip.agent.state import AgentState
+from cantrip.agent.state import (
+    AgentState,
+    Decision,
+    append_shared_decision,
+    shared_decisions_path,
+)
 from cantrip.agent.store import SessionStore
 
 
@@ -239,6 +244,66 @@ class TestTokenUsage:
 class TestSchemaMigrations:
     """Tests for incremental ``_apply_migrations`` paths (Phase 31.4 etc.)."""
 
+    def test_v14_adds_source_column_to_existing_decisions(self, tmp_path: pathlib.Path) -> None:
+        """A pre-v14 database gains the decisions ``source`` column on open.
+
+        Legacy rows have NULL source — ``load_session`` reads them as
+        ``"local"`` so existing decisions retain their original meaning
+        (Phase 51b.2).
+        """
+        import sqlite3
+
+        db_path = tmp_path / ".cantrip"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript("""\
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO schema_version (version) VALUES (13);
+            CREATE TABLE session (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                charm_name TEXT,
+                charm_path TEXT,
+                charm_type TEXT,
+                framework TEXT,
+                dev_model TEXT,
+                cos_model TEXT,
+                design_proposal TEXT,
+                message_count INTEGER DEFAULT 0,
+                compactions_attempted INTEGER NOT NULL DEFAULT 0,
+                emergencies_attempted INTEGER NOT NULL DEFAULT 0,
+                cycle_detected INTEGER NOT NULL DEFAULT 0,
+                budget_exhausted INTEGER NOT NULL DEFAULT 0,
+                active_head_message_id INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL,
+                choice TEXT NOT NULL,
+                reason TEXT,
+                timestamp TEXT NOT NULL
+            );
+            INSERT INTO session (id, charm_name) VALUES (1, 'legacy');
+            INSERT INTO decisions (type, choice, reason, timestamp)
+            VALUES ('substrate', 'K8s', 'old', '2025-01-01T00:00:00');
+        """)
+        conn.commit()
+        conn.close()
+
+        store = SessionStore(db_path)
+        store.open()
+        try:
+            cols = {r[1] for r in store._db.execute("PRAGMA table_info(decisions)").fetchall()}
+            assert "source" in cols
+            loaded = store.load_session()
+            assert loaded is not None
+            assert len(loaded.decisions) == 1
+            # Pre-v14 row had NULL source — surfaces as "local".
+            assert loaded.decisions[0].source == "local"
+            assert loaded.decisions[0].choice == "K8s"
+        finally:
+            store.close()
+
     def test_v9_adds_category_column_to_existing_token_usage(self, tmp_path: pathlib.Path) -> None:
         """A pre-v9 database gains the ``category`` column on open.
 
@@ -429,3 +494,77 @@ class TestCorruptDataResilience:
         msgs = store.load_subagent_messages("t1")
         assert len(msgs) == 1
         assert msgs[0]["tool_calls"] is None
+
+
+class TestSharedDecisionsMerge:
+    """Phase 51b.2: load_session merges the shared JSONL log; save skips shared rows."""
+
+    def test_save_persists_decision_source(
+        self, store: SessionStore, tmp_path: pathlib.Path
+    ) -> None:
+        state = AgentState(charm_path=tmp_path)
+        state.decisions.append(Decision(type="t", choice="c", source="local"))
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert len(loaded.decisions) == 1
+        assert loaded.decisions[0].source == "local"
+
+    def test_save_skips_shared_rows(self, store: SessionStore, tmp_path: pathlib.Path) -> None:
+        """A shared decision in state must not get written into SQLite.
+
+        Shared decisions live in the JSONL file; persisting them to SQLite
+        too would duplicate them on every load.
+        """
+        state = AgentState(charm_path=tmp_path)
+        state.decisions.append(Decision(type="local", choice="L"))
+        state.decisions.append(Decision(type="shared", choice="S", source="shared"))
+        store.save_session(state)
+        rows = store._db.execute("SELECT type FROM decisions").fetchall()
+        assert [r[0] for r in rows] == ["local"]
+
+    def test_load_merges_shared_log(self, store: SessionStore, tmp_path: pathlib.Path) -> None:
+        # Seed both stores: one local SQLite decision and one shared JSONL.
+        state = AgentState(charm_path=tmp_path)
+        state.decisions.append(Decision(type="t1", choice="local-choice"))
+        store.save_session(state)
+        append_shared_decision(
+            tmp_path, Decision(type="t2", choice="team-choice", reason="from teammate")
+        )
+        loaded = store.load_session()
+        assert loaded is not None
+        sources = [(d.type, d.choice, d.source) for d in loaded.decisions]
+        assert ("t1", "local-choice", "local") in sources
+        assert ("t2", "team-choice", "shared") in sources
+
+    def test_load_with_no_charm_path_skips_shared_log(
+        self, store: SessionStore, tmp_path: pathlib.Path
+    ) -> None:
+        # charm_path stays None — the shared JSONL is not consulted.
+        state = AgentState(charm_name="no-path", charm_path=None)
+        state.decisions.append(Decision(type="t", choice="local"))
+        store.save_session(state)
+        # Even if a JSONL exists at some path, no charm_path means no merge.
+        append_shared_decision(tmp_path, Decision(type="ignored", choice="x"))
+        loaded = store.load_session()
+        assert loaded is not None
+        assert [d.type for d in loaded.decisions] == ["t"]
+
+    def test_round_trip_does_not_duplicate_shared(
+        self, store: SessionStore, tmp_path: pathlib.Path
+    ) -> None:
+        """save → load → save → load must leave the shared log alone."""
+        append_shared_decision(tmp_path, Decision(type="t", choice="s"))
+        state = AgentState(charm_path=tmp_path)
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        # First load picks up the shared row.
+        assert any(d.source == "shared" for d in loaded.decisions)
+        # Second save must NOT write that shared row to SQLite.
+        store.save_session(loaded)
+        sql_count = store._db.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+        assert sql_count == 0
+        # And the JSONL file is still the canonical record (one entry).
+        jsonl_lines = shared_decisions_path(tmp_path).read_text(encoding="utf-8").splitlines()
+        assert len(jsonl_lines) == 1

@@ -23,6 +23,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``<charm>/.cantrip`` is currently the SQLite session file, so the
   shared layer lives at a sibling path; teammates commit
   ``.cantrip-shared/`` to git the same way.
+- **Shared (team-sync) decisions log (Phase 51b.2).**  Optional
+  ``<charm-root>/.cantrip-shared/decisions.jsonl`` append-only file
+  mirroring the per-session SQLite ``decisions`` table.  When
+  ``CANTRIP_TEAM_DECISIONS_WRITES=shared``, every ``add_decision`` on
+  ``AgentState`` also writes a JSON line to the shared log so
+  teammates pick it up on the next pull.  ``SessionStore.load_session``
+  always merges the shared log when ``charm_path`` is set, regardless
+  of the write setting, so an operator who flipped to ``shared`` last
+  week still sees teammates' decisions today even after toggling back
+  to ``local``.  ``Decision`` gains a ``source`` field
+  (``"local"``/``"shared"``); a new schema-v14 migration adds the
+  matching nullable column to the ``decisions`` table — pre-v14 rows
+  load as ``"local"`` so existing decisions retain their meaning.
+  Shared rows are skipped on ``save_session`` so the JSONL file stays
+  the canonical record.
 - **Human co-author trailer on auto-commits (Phase 51b.3).**  The
   agent commit (``src/cantrip/agent/auto_commit.py``) now appends a
   second ``Co-Authored-By:`` line built from the local

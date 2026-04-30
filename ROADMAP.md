@@ -620,16 +620,34 @@ See [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
 
 ### 51b.2 Shared decisions log
 
-- [ ] Optional ``<charm-root>/.cantrip/shared/decisions.jsonl``
+- [x] Optional ``<charm-root>/.cantrip-shared/decisions.jsonl``
   append-only log mirroring the per-session ``decisions`` table.
-- [ ] ``SessionStore.load_session()`` (``src/cantrip/agent/store.py``)
+  Sibling-path convention matches 51b.1's ``.cantrip-shared/``
+  layout to avoid the ``.cantrip``-as-SQLite-file collision.
+  Helpers in ``src/cantrip/agent/state.py``:
+  ``shared_decisions_path``, ``append_shared_decision`` (best-
+  effort write that swallows OSError so a failed shared write
+  never unwinds the in-memory record), and
+  ``load_shared_decisions`` (skips malformed lines at DEBUG,
+  flags every returned ``Decision`` with ``source="shared"``).
+- [x] ``SessionStore.load_session()`` (``src/cantrip/agent/store.py``)
   reads decisions from SQLite and appends shared-log entries
-  marked ``source="shared"``.
-- [ ] ``add_decision()`` (``src/cantrip/agent/state.py``)
-  optionally appends to the shared file when sharing is enabled,
-  behind setting ``team_decisions_writes``.
-- [ ] ``Decision.source`` field added (``src/cantrip/agent/state.py``);
-  schema migration is additive (nullable column).
+  marked ``source="shared"`` whenever ``state.charm_path`` is
+  set.  ``save_session`` skips shared-source rows so the JSONL
+  file stays the canonical record and a save → load → save
+  loop never duplicates a teammate's decision into local SQLite.
+- [x] ``AgentState.add_decision()`` (``src/cantrip/agent/state.py``)
+  appends to the shared file when
+  ``CANTRIP_TEAM_DECISIONS_WRITES=shared`` and ``charm_path``
+  is set; otherwise behaves exactly as before.  Reads always
+  merge the shared log regardless of the write setting, so an
+  operator who flipped to ``shared`` last week still sees
+  teammates' decisions after toggling back to ``local``.
+- [x] ``Decision.source`` field added
+  (``src/cantrip/agent/state.py``); schema migration v14 adds
+  the matching nullable column to the ``decisions`` table
+  (``src/cantrip/agent/store.py``).  Pre-v14 rows load as
+  ``"local"`` so existing decisions retain their meaning.
 
 ### 51b.3 Human co-author trailer
 

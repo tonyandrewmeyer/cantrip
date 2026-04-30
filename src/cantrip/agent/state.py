@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import json
+import logging
+import os
 import pathlib
 from typing import TYPE_CHECKING, Any
 
@@ -12,15 +15,76 @@ from cantrip.llm.base import Message
 if TYPE_CHECKING:
     from cantrip.agent.goal_budget import GoalBudget
 
+log = logging.getLogger(__name__)
+
+
+# Phase 51b.2: shared decisions log — settings.
+#
+# - ``local`` (default): decisions live only in the per-charm SQLite
+#   store, matching pre-51b behaviour.
+# - ``shared``: every ``add_decision`` also appends a JSON line to
+#   ``<charm-root>/.cantrip/shared/decisions.jsonl`` so teammates pick
+#   it up on the next pull.  Reads always merge the shared log
+#   regardless of this setting — so an operator who flipped to
+#   ``shared`` last week still sees their teammates' decisions today
+#   even after toggling back to ``local``.
+TEAM_DECISIONS_WRITES_LOCAL = "local"
+TEAM_DECISIONS_WRITES_SHARED = "shared"
+VALID_TEAM_DECISIONS_WRITES = frozenset(
+    {TEAM_DECISIONS_WRITES_LOCAL, TEAM_DECISIONS_WRITES_SHARED}
+)
+
+
+def shared_decisions_path(charm_path: pathlib.Path) -> pathlib.Path:
+    """Return the conventional shared-decisions log path under *charm_path*.
+
+    Lives at ``<charm-root>/.cantrip-shared/decisions.jsonl``.  The
+    team-sync spec originally proposed ``.cantrip/shared/decisions.jsonl``,
+    but ``<charm-root>/.cantrip`` is currently the per-charm SQLite
+    session file — a single path cannot be both a file and a directory —
+    so the shared layer lives at a sibling path.  Teammates commit
+    ``.cantrip-shared/`` to git the same way; the rename has no other
+    behavioural consequence.
+    """
+    return charm_path / ".cantrip-shared" / "decisions.jsonl"
+
+
+def _resolve_team_decisions_writes(default: str = TEAM_DECISIONS_WRITES_LOCAL) -> str:
+    """Read ``CANTRIP_TEAM_DECISIONS_WRITES`` from the env, falling back to *default*.
+
+    An unset or unrecognised value falls back to the default rather than
+    raising, so a typo never silently disables decision capture.
+    """
+    raw = os.environ.get("CANTRIP_TEAM_DECISIONS_WRITES")
+    if not raw:
+        return default
+    value = raw.strip().lower()
+    if value not in VALID_TEAM_DECISIONS_WRITES:
+        log.warning(
+            "Ignoring unknown CANTRIP_TEAM_DECISIONS_WRITES=%r (expected one of %s)",
+            raw,
+            ", ".join(sorted(VALID_TEAM_DECISIONS_WRITES)),
+        )
+        return default
+    return value
+
 
 @dataclasses.dataclass
 class Decision:
-    """A decision made during the session."""
+    """A decision made during the session.
+
+    ``source`` distinguishes locally-recorded decisions (``"local"``) from
+    decisions that arrived via the shared team-sync log (``"shared"``).
+    Phase 51b.2 introduced the field; pre-51b session databases default
+    to ``"local"`` after the v14 migration so existing decisions keep
+    their original meaning.
+    """
 
     type: str
     choice: str
     reason: str | None = None
     timestamp: datetime.datetime = dataclasses.field(default_factory=datetime.datetime.now)
+    source: str = "local"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -29,7 +93,90 @@ class Decision:
             "choice": self.choice,
             "reason": self.reason,
             "timestamp": self.timestamp.isoformat(),
+            "source": self.source,
         }
+
+
+def append_shared_decision(charm_path: pathlib.Path, decision: Decision) -> None:
+    """Append *decision* to the shared decisions JSONL file under *charm_path*.
+
+    Creates the parent directory on first write.  Best-effort: a
+    filesystem error (read-only mount, permission, full disk) is logged
+    and swallowed so a local SQLite write that has already succeeded is
+    not unwound.
+    """
+    target = shared_decisions_path(charm_path)
+    payload = {
+        "type": decision.type,
+        "choice": decision.choice,
+        "reason": decision.reason,
+        "timestamp": decision.timestamp.isoformat(),
+    }
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        log.warning("Could not append to shared decisions log %s: %s", target, exc)
+
+
+def load_shared_decisions(charm_path: pathlib.Path) -> list[Decision]:
+    """Read the shared decisions log under *charm_path* and return parsed entries.
+
+    Returns an empty list when the file is absent or unreadable.
+    Malformed lines (non-JSON, missing required fields) are logged at
+    DEBUG level and skipped — a single corrupt line never blocks the
+    rest of the log from loading.  Every returned :class:`Decision` is
+    flagged with ``source="shared"`` so the UI can render it
+    distinctly and ``save_session`` knows not to write it back to
+    SQLite.
+    """
+    target = shared_decisions_path(charm_path)
+    if not target.is_file():
+        return []
+    try:
+        raw = target.read_text(encoding="utf-8")
+    except OSError as exc:
+        log.warning("Could not read shared decisions log %s: %s", target, exc)
+        return []
+    decisions: list[Decision] = []
+    for line_no, line in enumerate(raw.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            log.debug("Skipping malformed line %d in %s: %s", line_no, target, exc)
+            continue
+        if not isinstance(payload, dict):
+            log.debug("Skipping non-object line %d in %s", line_no, target)
+            continue
+        type_ = payload.get("type")
+        choice = payload.get("choice")
+        if not isinstance(type_, str) or not isinstance(choice, str):
+            log.debug("Skipping line %d in %s: missing type/choice", line_no, target)
+            continue
+        ts_raw = payload.get("timestamp")
+        try:
+            timestamp = (
+                datetime.datetime.fromisoformat(ts_raw)
+                if isinstance(ts_raw, str)
+                else datetime.datetime.now()
+            )
+        except ValueError:
+            timestamp = datetime.datetime.now()
+        reason_raw = payload.get("reason")
+        reason = reason_raw if isinstance(reason_raw, str) else None
+        decisions.append(
+            Decision(
+                type=type_,
+                choice=choice,
+                reason=reason,
+                timestamp=timestamp,
+                source="shared",
+            )
+        )
+    return decisions
 
 
 @dataclasses.dataclass
@@ -217,5 +364,20 @@ class AgentState:
     decisions: list[Decision] = dataclasses.field(default_factory=list)
 
     def add_decision(self, type: str, choice: str, reason: str | None = None) -> None:
-        """Record a decision."""
-        self.decisions.append(Decision(type=type, choice=choice, reason=reason))
+        """Record a decision.
+
+        Phase 51b.2: when ``CANTRIP_TEAM_DECISIONS_WRITES=shared`` and a
+        ``charm_path`` is set, the decision is also appended to
+        ``<charm-root>/.cantrip/shared/decisions.jsonl`` so teammates
+        pick it up on the next pull.  The shared write is best-effort
+        — an I/O failure is logged but does not unwind the in-memory
+        record, since the next ``save_session`` will still persist it
+        locally.
+        """
+        decision = Decision(type=type, choice=choice, reason=reason)
+        self.decisions.append(decision)
+        if (
+            self.charm_path is not None
+            and _resolve_team_decisions_writes() == TEAM_DECISIONS_WRITES_SHARED
+        ):
+            append_shared_decision(self.charm_path, decision)
