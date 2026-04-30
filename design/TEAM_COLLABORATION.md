@@ -73,7 +73,7 @@ The relevant dataclasses and tables:
 | ``messages`` table | ``agent/store.py:96-110`` | role only |
 | ``decisions`` table | ``agent/store.py:60-66`` | none |
 | ``session`` table | ``agent/store.py:32-58`` | timestamps only |
-| Auto-commit trailer | ``agent/auto_commit.py:48`` | fixed ``Cantrip <noreply@canonical.com>`` — same for every operator |
+| Auto-commit trailer | ``agent/auto_commit.py`` | fixed ``Cantrip <noreply@aotearoa.dev>`` — same for every operator |
 
 What this means for any team feature: adding "who" is a
 schema migration plus a write-path touch on every code path
@@ -217,8 +217,8 @@ team-wide policy ("no pushes after 5pm Friday" via a hook with
 extension.
 
 Auto-commit attribution is a single fixed string:
-``"Co-Authored-By: Cantrip <noreply@canonical.com>"``
-(``auto_commit.py:48``, appended at line 321).  Every commit
+``"Co-Authored-By: Cantrip <noreply@aotearoa.dev>"``
+(``auto_commit.py``).  Every commit
 Cantrip lands looks identical regardless of who was at the
 keyboard.
 
@@ -338,12 +338,14 @@ charm-authoring-team gaps without a server:
    ``source="shared"``.  ``add_decision()`` optionally
    appends to the shared file when sharing is enabled.
 3. **Attribution.**  The auto-commit trailer
-   (``auto_commit.py:48``) keeps ``Co-Authored-By: Cantrip
-   <noreply@canonical.com>`` and *adds* a second
+   (``auto_commit.py``) keeps ``Co-Authored-By: Cantrip
+   <noreply@aotearoa.dev>`` and *adds* a second
    ``Co-Authored-By:`` line built from ``git config user.name``
    and ``git config user.email``.  The ``Cantrip`` line stays
    as a marker that the agent steered the commit; the second
-   line records which human did the steering.
+   line records which human did the steering.  Skipped silently
+   when git config is unset or matches Cantrip's canonical, so
+   single-operator setups see no change.
 
 **Cost.**
 

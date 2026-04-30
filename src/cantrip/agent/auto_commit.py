@@ -45,7 +45,9 @@ log = logging.getLogger(__name__)
 
 # Co-author trailer.  Matches the convention already used in
 # ``CHANGELOG.md`` entries authored by Cantrip.
-_CANTRIP_TRAILER = "Co-Authored-By: Cantrip <noreply@canonical.com>"
+_CANTRIP_NAME = "Cantrip"
+_CANTRIP_EMAIL = "noreply@aotearoa.dev"
+_CANTRIP_TRAILER = f"Co-Authored-By: {_CANTRIP_NAME} <{_CANTRIP_EMAIL}>"
 
 # Tool names whose successful invocation indicates the agent
 # touched a file we should include in the auto-commit.  Mirrors
@@ -268,6 +270,47 @@ def collect_touched_files(turn_messages: Iterable[Message]) -> list[str]:
     return seen
 
 
+def _human_coauthor_trailer(path: pathlib.Path) -> str | None:
+    """Return a ``Co-Authored-By:`` line for the local git user, or ``None``.
+
+    Reads ``git config user.name`` / ``user.email`` resolved at *path*
+    (so a per-repo identity overrides the global one).  Returns
+    ``None`` when git is missing, either field is unset, or the
+    configured identity matches Cantrip's canonical — in that case
+    the existing :data:`_CANTRIP_TRAILER` already covers it and a
+    second line would be a duplicate.
+
+    The comparison is case-insensitive to mirror how Git and GitHub
+    treat author emails.
+    """
+    if not _have_git():
+        return None
+    try:
+        name_proc = subprocess.run(
+            ["git", "config", "--get", "user.name"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+        email_proc = subprocess.run(
+            ["git", "config", "--get", "user.email"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+    name = name_proc.stdout.strip() if name_proc.returncode == 0 else ""
+    email = email_proc.stdout.strip() if email_proc.returncode == 0 else ""
+    if not name or not email:
+        return None
+    if name.lower() == _CANTRIP_NAME.lower() or email.lower() == _CANTRIP_EMAIL.lower():
+        return None
+    return f"Co-Authored-By: {name} <{email}>"
+
+
 def _summarise_user_message(user_message: str) -> str:
     """Build the fallback commit subject from the user's request.
 
@@ -289,6 +332,7 @@ def build_commit_message(
     *,
     summary: str | None = None,
     files: list[str] | None = None,
+    human_trailer: str | None = None,
 ) -> str:
     """Compose the agent's commit message body.
 
@@ -296,7 +340,9 @@ def build_commit_message(
     provider; fallback derives one from *user_message*.  *files*
     is a non-binding list of touched paths mentioned in the body
     so reviewers see the scope at a glance without running
-    ``git show --stat``.
+    ``git show --stat``.  *human_trailer* is an optional second
+    ``Co-Authored-By:`` line attributing the human operator who
+    drove the session — see :func:`_human_coauthor_trailer`.
     """
     subject = (summary or "").strip().splitlines()[0] if summary else ""
     if not subject:
@@ -319,6 +365,8 @@ def build_commit_message(
             body_lines.append(f"  - … and {len(files) - 20} more")
         body_lines.append("")
     body_lines.append(_CANTRIP_TRAILER)
+    if human_trailer:
+        body_lines.append(human_trailer)
     return "\n".join(body_lines)
 
 
@@ -376,7 +424,10 @@ def post_turn_commit_agent_edits(
     if _staged_diff_empty(charm_path):
         log.debug("auto_commit: staged diff empty; skipping agent commit")
         return None
-    message = build_commit_message(user_message, summary=summary, files=paths)
+    human_trailer = _human_coauthor_trailer(charm_path)
+    message = build_commit_message(
+        user_message, summary=summary, files=paths, human_trailer=human_trailer
+    )
     sha = _commit(charm_path, message)
     if sha:
         log.info("auto_commit: agent commit %s (%d file(s))", sha[:8], len(paths))

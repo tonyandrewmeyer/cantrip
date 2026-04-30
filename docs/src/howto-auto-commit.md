@@ -68,7 +68,7 @@ Touched:
   - src/charm.py
   - charmcraft.yaml
 
-Co-Authored-By: Cantrip &lt;noreply@canonical.com&gt;</code></pre>
+Co-Authored-By: Cantrip &lt;noreply@aotearoa.dev&gt;</code></pre>
 
 <p>Subject line is capped at 72 characters, prompt is capped at
 ~280 characters, the touched-file list truncates after 20

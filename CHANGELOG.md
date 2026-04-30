@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Human co-author trailer on auto-commits (Phase 51b.3).**  The
+  agent commit (``src/cantrip/agent/auto_commit.py``) now appends a
+  second ``Co-Authored-By:`` line built from the local
+  ``git config user.name`` / ``user.email``, so a teammate browsing
+  ``git log`` sees both that the agent steered the commit and which
+  human was at the keyboard.  Skipped silently when git config is
+  unset or matches Cantrip's canonical, so single-operator setups
+  see no change.  The trailer email also moved from
+  ``noreply@canonical.com`` to ``noreply@aotearoa.dev`` — Cantrip
+  isn't an official Canonical project.
 - **``charmlint`` ``ACT006`` and ``ACT007`` (Phase 92.1).**  Two new
   deterministic rules cover the action-handler contract that the
   ``adding-actions`` skill used to recite at the agent every turn.

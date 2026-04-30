@@ -248,6 +248,138 @@ class TestBuildCommitMessage:
         # Truncation marker present.
         assert "and 20 more" in msg
 
+    def test_human_trailer_appended_after_cantrip(self):
+        msg = auto_commit.build_commit_message(
+            "do x",
+            human_trailer="Co-Authored-By: Alice <alice@example.com>",
+        )
+        lines = msg.splitlines()
+        # Cantrip trailer comes first, then the human trailer.
+        cantrip_idx = next(
+            i for i, line in enumerate(lines) if line.startswith("Co-Authored-By: Cantrip")
+        )
+        human_idx = next(
+            i for i, line in enumerate(lines) if line.startswith("Co-Authored-By: Alice")
+        )
+        assert cantrip_idx < human_idx
+        assert lines[human_idx] == "Co-Authored-By: Alice <alice@example.com>"
+
+    def test_no_human_trailer_when_none(self):
+        msg = auto_commit.build_commit_message("do x")
+        coauthor_lines = [line for line in msg.splitlines() if line.startswith("Co-Authored-By:")]
+        assert len(coauthor_lines) == 1
+        assert "Cantrip" in coauthor_lines[0]
+
+
+class TestHumanCoauthorTrailer:
+    """Phase 51b.3 — human co-author trailer derivation from git config."""
+
+    def test_returns_trailer_when_git_config_set(self, tmp_git_repo: pathlib.Path):
+        # The fixture sets user.name=Cantrip Test, user.email=test@cantrip.local —
+        # neither matches Cantrip's canonical, so we expect a trailer.
+        trailer = auto_commit._human_coauthor_trailer(tmp_git_repo)
+        assert trailer == "Co-Authored-By: Cantrip Test <test@cantrip.local>"
+
+    def test_returns_none_when_git_config_unset(
+        self,
+        tmp_git_repo: pathlib.Path,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        # Unset the local repo identity, then isolate from any global / system
+        # config so the helper genuinely sees "no user configured anywhere".
+        subprocess.run(["git", "config", "--unset", "user.name"], cwd=tmp_git_repo, check=True)
+        subprocess.run(["git", "config", "--unset", "user.email"], cwd=tmp_git_repo, check=True)
+        empty_global = tmp_path / "empty_gitconfig"
+        empty_global.write_text("")
+        monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_global))
+        monkeypatch.setenv("HOME", str(tmp_path / "isolated_home"))
+        assert auto_commit._human_coauthor_trailer(tmp_git_repo) is None
+
+    def test_returns_none_when_email_matches_cantrip_canonical(self, tmp_git_repo: pathlib.Path):
+        subprocess.run(
+            ["git", "config", "user.email", auto_commit._CANTRIP_EMAIL],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        assert auto_commit._human_coauthor_trailer(tmp_git_repo) is None
+
+    def test_returns_none_when_name_matches_cantrip_canonical(self, tmp_git_repo: pathlib.Path):
+        subprocess.run(
+            ["git", "config", "user.name", auto_commit._CANTRIP_NAME],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        assert auto_commit._human_coauthor_trailer(tmp_git_repo) is None
+
+    def test_email_match_is_case_insensitive(self, tmp_git_repo: pathlib.Path):
+        subprocess.run(
+            ["git", "config", "user.email", auto_commit._CANTRIP_EMAIL.upper()],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        assert auto_commit._human_coauthor_trailer(tmp_git_repo) is None
+
+    def test_post_turn_commit_includes_human_trailer(self, tmp_git_repo: pathlib.Path):
+        """End-to-end: agent commit carries both trailers when git config is set."""
+        (tmp_git_repo / "src").mkdir()
+        (tmp_git_repo / "src" / "charm.py").write_text("# new\n")
+        msgs = [
+            Message(role=Role.USER, content="add a charm"),
+            Message(
+                role=Role.ASSISTANT,
+                content="done",
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="write_file",
+                        arguments={"path": "src/charm.py"},
+                    )
+                ],
+            ),
+        ]
+        sha = auto_commit.post_turn_commit_agent_edits(tmp_git_repo, msgs, "add a charm")
+        assert sha is not None
+        body = _head_message(tmp_git_repo)
+        coauthor_lines = [line for line in body.splitlines() if line.startswith("Co-Authored-By:")]
+        assert len(coauthor_lines) == 2
+        assert any(
+            "Cantrip <" in line and auto_commit._CANTRIP_EMAIL in line for line in coauthor_lines
+        )
+        assert any("Cantrip Test <test@cantrip.local>" in line for line in coauthor_lines)
+
+    def test_post_turn_commit_skips_human_trailer_when_email_matches_cantrip(
+        self, tmp_git_repo: pathlib.Path
+    ):
+        """No duplicate trailer when the local git identity is Cantrip itself."""
+        subprocess.run(
+            ["git", "config", "user.email", auto_commit._CANTRIP_EMAIL],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        (tmp_git_repo / "src").mkdir()
+        (tmp_git_repo / "src" / "charm.py").write_text("# new\n")
+        msgs = [
+            Message(role=Role.USER, content="add a charm"),
+            Message(
+                role=Role.ASSISTANT,
+                content="done",
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="write_file",
+                        arguments={"path": "src/charm.py"},
+                    )
+                ],
+            ),
+        ]
+        sha = auto_commit.post_turn_commit_agent_edits(tmp_git_repo, msgs, "add a charm")
+        assert sha is not None
+        body = _head_message(tmp_git_repo)
+        coauthor_lines = [line for line in body.splitlines() if line.startswith("Co-Authored-By:")]
+        assert len(coauthor_lines) == 1
+
 
 # ---------------------------------------------------------------------------
 # pre/post-turn primitives end-to-end
