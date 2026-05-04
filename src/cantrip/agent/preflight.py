@@ -184,8 +184,11 @@ class PreflightRunner:
             self._emit("snap_install", CheckStatus.FAILED, msg)
             self.result.errors.append(msg)
         finally:
-            if config_path and config_path.exists():
-                config_path.unlink()
+            if config_path is not None:
+                # ``missing_ok=True`` avoids a TOCTOU race where the temp file
+                # disappears between ``exists()`` and ``unlink()`` (e.g. another
+                # tmpreaper sweep on /tmp).
+                config_path.unlink(missing_ok=True)
 
         self._check_juju()
         return self.result

@@ -91,8 +91,8 @@ def _load_charm_metadata(charm_dir: pathlib.Path) -> dict[str, Any] | None:
         if not path.exists():
             return {}
         try:
-            data = yaml.safe_load(path.read_text())
-        except yaml.YAMLError:
+            data = yaml.safe_load(path.read_text(errors="replace"))
+        except (yaml.YAMLError, RecursionError):
             return {}
         return data if isinstance(data, dict) else {}
 

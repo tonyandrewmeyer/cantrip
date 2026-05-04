@@ -211,8 +211,8 @@ def generate_terraform_module(charmcraft_path: pathlib.Path) -> dict[str, str]:
     ``{"main.tf": ..., "variables.tf": ..., "outputs.tf": ..., "terraform.tf": ...}``
     """
     try:
-        raw = yaml.safe_load(charmcraft_path.read_text())
-    except yaml.YAMLError as exc:
+        raw = yaml.safe_load(charmcraft_path.read_text(errors="replace"))
+    except (yaml.YAMLError, RecursionError) as exc:
         raise ValueError(f"Invalid YAML in {charmcraft_path}: {exc}") from exc
     if not raw or not isinstance(raw, dict):
         raise ValueError("charmcraft.yaml is empty or not a mapping")

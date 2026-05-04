@@ -839,14 +839,40 @@ class CantripAgent:
         if old_dir.is_dir():
             json_file = old_dir / "session.json"
             backup = charm_path / ".cantrip.bak"
-            if json_file.exists():
-                temp_db = charm_path / ".cantrip.tmp"
-                SessionStore.migrate_from_json(json_file, temp_db)
-                old_dir.rename(backup)
-                temp_db.rename(db_path)
-                log.info("Migrated .cantrip/ to SQLite (old directory saved as .cantrip.bak)")
-            else:
-                old_dir.rename(backup)
+            try:
+                if json_file.exists():
+                    temp_db = charm_path / ".cantrip.tmp"
+                    try:
+                        SessionStore.migrate_from_json(json_file, temp_db)
+                    except ValueError as exc:
+                        # Corrupt or non-UTF-8 ``session.json`` — preserve the
+                        # original directory under ``.cantrip.corrupt`` so the
+                        # user can inspect it, but don't block startup.
+                        log.warning(
+                            "Skipping .cantrip/ migration (%s); "
+                            "preserving original at .cantrip.corrupt",
+                            exc,
+                        )
+                        temp_db.unlink(missing_ok=True)
+                        old_dir.rename(charm_path / ".cantrip.corrupt")
+                    else:
+                        old_dir.rename(backup)
+                        temp_db.rename(db_path)
+                        log.info(
+                            "Migrated .cantrip/ to SQLite (old directory saved as .cantrip.bak)"
+                        )
+                else:
+                    old_dir.rename(backup)
+            except OSError as exc:
+                # Read-only filesystem or permission error.  Fall back to an
+                # in-memory session rather than crashing the agent at startup.
+                log.warning(
+                    "Cannot migrate .cantrip/ at %s (%s); using a fresh session",
+                    charm_path,
+                    exc,
+                )
+                self._store = None
+                return
 
         self._store = SessionStore(db_path)
 

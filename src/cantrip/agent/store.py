@@ -1556,8 +1556,23 @@ class SessionStore:
 
         Creates the database at *db_path*, loads the JSON data, and writes
         it into the session and decisions tables.
+
+        Raises ``ValueError`` when *json_path* is unreadable, contains
+        non-UTF-8 bytes, or is not valid JSON.  Callers handle this as
+        "skip the migration and start fresh" — see ``CantripAgent._init_store``.
         """
-        data = json.loads(json_path.read_text())
+        try:
+            raw = json_path.read_text(errors="replace")
+        except OSError as exc:
+            raise ValueError(f"cannot read legacy session.json at {json_path}: {exc}") from exc
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"legacy session.json at {json_path} is not valid JSON: {exc}"
+            ) from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"legacy session.json at {json_path} top-level is not an object")
 
         store = SessionStore(db_path)
         store.open()

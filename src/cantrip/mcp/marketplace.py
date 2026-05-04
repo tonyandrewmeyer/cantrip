@@ -270,7 +270,10 @@ class MarketplaceLoader:
         if age > self._cache_ttl:
             return None
         try:
-            raw = path.read_text()
+            # ``errors="replace"`` so a hand-edited cache file with non-UTF-8
+            # bytes degrades to "re-fetch" rather than crashing the listing
+            # — ``UnicodeDecodeError`` is a ``ValueError``, not an ``OSError``.
+            raw = path.read_text(errors="replace")
         except OSError as exc:
             log.debug("Cache read failed for %s: %s", source.label, exc)
             return None
@@ -302,7 +305,10 @@ class MarketplaceLoader:
         path = pathlib.Path(source.location).expanduser() / "marketplace.json"
         if not path.is_file():
             raise OSError(f"no marketplace.json at {path}")
-        return path.read_text()
+        # ``errors="replace"`` so a marketplace.json with stray non-UTF-8 bytes
+        # surfaces as a JSON parse error in ``_parse`` rather than crashing the
+        # caller (``UnicodeDecodeError`` is a ``ValueError``, not an ``OSError``).
+        return path.read_text(errors="replace")
 
     @staticmethod
     async def _http_get(url: str) -> str:

@@ -390,6 +390,65 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   live in ``design/RIGHT_PANEL_AUDIT.md``.
 
 ### Fixed
+- **Subprocess decode no longer crashes on non-UTF-8 stdout/stderr.**
+  Three subprocess sites — concierge in
+  ``src/cantrip/agent/tools/environment.py``, juju ``debug-log`` in
+  ``src/cantrip/agent/tools/observability.py``, and microk8s ``enable
+  registry`` in ``src/cantrip/agent/tools/rockcraft.py`` — decoded
+  bytes with strict UTF-8, so a single non-UTF-8 byte in process
+  output (a smart quote in a help string, a binary marker in a log
+  buffer) raised ``UnicodeDecodeError`` and aborted the tool.  Each
+  ``stdout.decode()`` / ``stderr.decode()`` now uses
+  ``errors="replace"`` to match every other subprocess site in the
+  codebase.
+- **Auto-commit no longer crashes when the light provider returns a
+  whitespace-only summary.**  ``build_commit_message`` in
+  ``src/cantrip/agent/auto_commit.py`` used the idiom
+  ``(summary or "").strip().splitlines()[0] if summary else ""`` —
+  for a literal ``"   "`` summary the ``if summary`` test passes,
+  ``strip()`` returns ``""``, ``splitlines()`` returns ``[]``, and the
+  ``[0]`` index raised ``IndexError``.  The compose path now falls
+  back to the user-message subject in that case.
+- **Session migration tolerates a corrupt or non-UTF-8
+  ``session.json``.**  ``SessionStore.migrate_from_json`` (in
+  ``src/cantrip/agent/store.py``) read the legacy file with strict
+  UTF-8 and called ``json.loads`` without a guard, so a partial-write
+  or hand-edited file took down agent startup.  Both reads are now
+  wrapped: ``read_text`` uses ``errors="replace"`` and ``json.loads``
+  errors are re-raised as ``ValueError``.  ``CantripAgent._init_store``
+  catches that and renames the directory to ``.cantrip.corrupt`` so
+  the next startup proceeds with a fresh session, and any
+  ``OSError`` from the rename itself (read-only filesystem) now logs a
+  warning and falls back to an in-memory session rather than
+  aborting.
+- **MCP marketplace tolerates non-UTF-8 ``marketplace.json``.**
+  ``_read_directory`` and ``_read_cache`` in
+  ``src/cantrip/mcp/marketplace.py`` read user-supplied JSON with
+  strict UTF-8.  ``UnicodeDecodeError`` is a ``ValueError``, not an
+  ``OSError``, so the existing ``(OSError, MCPConfigError)`` catch in
+  ``MarketplaceLoader.load_all`` did not contain it — one bad byte in
+  one source took down the entire ``/mcp marketplace`` listing.  Both
+  reads now use ``errors="replace"`` so a malformed file degrades to
+  a JSON parse error that ``load_all`` already skips cleanly.
+- **Charm tools tolerate non-UTF-8 ``charmcraft.yaml``.**  Seven YAML
+  read sites — ``charm._charm_uses_paas_extension``,
+  ``tools.acceptance._safe_load``, ``tools.testing``,
+  ``tools.loadtest``, ``tools.icon``, ``tools.publishing`` (×3), and
+  ``charm.terraform`` — caught only ``yaml.YAMLError``.  A
+  ``charmcraft.yaml`` containing legacy-encoded bytes (a latin-1
+  ``é`` in a description, a smart quote pasted from a docs page)
+  raised ``UnicodeDecodeError`` past the catch and aborted the tool.
+  Each read now uses ``errors="replace"`` and the ``except`` clause
+  also covers ``RecursionError`` (deeply-nested mappings),
+  matching the hardening already applied to the agent's startup
+  loaders in earlier rounds.
+- **Concierge cleanup no longer crashes on a TOCTOU race.**  The
+  ``finally`` block in ``preflight._snap_install`` used
+  ``if config_path.exists(): config_path.unlink()`` to tidy the
+  temporary concierge config, which raises ``FileNotFoundError``
+  when an external sweep (tmpreaper, another agent run) removes
+  the file between the check and the unlink.  Switched to
+  ``unlink(missing_ok=True)``.
 - **``cantrip compare`` no longer crashes on legacy ``bases:`` with an
   empty ``build-on`` list.**  ``_extract_base`` in
   ``src/cantrip/compare.py`` used the

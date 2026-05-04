@@ -212,10 +212,13 @@ class JujuDebugLogTool(Tool):
             return ToolResult(
                 success=False,
                 output="",
-                error=f"juju debug-log failed (exit {proc.returncode}): {stderr.decode().strip()}",
+                error=(
+                    f"juju debug-log failed (exit {proc.returncode}): "
+                    f"{stderr.decode('utf-8', errors='replace').strip()}"
+                ),
             )
 
-        output = stdout.decode()
+        output = stdout.decode("utf-8", errors="replace")
         if not output.strip():
             return ToolResult(
                 success=True,

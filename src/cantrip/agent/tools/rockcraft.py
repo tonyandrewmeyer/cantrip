@@ -982,10 +982,10 @@ class SetupLocalRegistryTool(Tool):
         if proc.returncode != 0:
             return ToolResult(
                 success=False,
-                output=stdout.decode(),
+                output=stdout.decode("utf-8", errors="replace"),
                 error=(
                     "microk8s enable registry failed: "
-                    + (stderr.decode().strip() or "(no stderr)")
+                    + (stderr.decode("utf-8", errors="replace").strip() or "(no stderr)")
                 ),
                 caption="microk8s enable registry failed",
             )

@@ -270,6 +270,17 @@ class TestBuildCommitMessage:
         assert len(coauthor_lines) == 1
         assert "Cantrip" in coauthor_lines[0]
 
+    def test_whitespace_only_summary_does_not_crash(self):
+        """A summary that strips to empty must fall back, not raise IndexError.
+
+        Regression: ``(summary or "").strip().splitlines()[0]`` on the literal
+        ``"   "`` strips to ``""`` and ``splitlines`` returns ``[]``, so the
+        ``[0]`` indexing crashed when the light provider returned a blank
+        line.  The compose path now falls back to the user-message subject.
+        """
+        msg = auto_commit.build_commit_message("fix the auth bug", summary="   ")
+        assert msg.startswith("agent: fix the auth bug\n")
+
 
 class TestHumanCoauthorTrailer:
     """Phase 51b.3 — human co-author trailer derivation from git config."""

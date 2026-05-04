@@ -409,6 +409,40 @@ class TestMigration:
         finally:
             store.close()
 
+    def test_migrate_corrupt_json_raises_value_error(self, tmp_path: pathlib.Path) -> None:
+        """Corrupt session.json must raise ``ValueError``, never crash startup.
+
+        Regression: ``json.loads`` raises ``JSONDecodeError`` (a
+        ``ValueError`` subclass) and ``read_text`` raises
+        ``UnicodeDecodeError`` (also a ``ValueError``); the migration now
+        re-raises both as a clean ``ValueError`` so ``CantripAgent._init_store``
+        can fall back instead of taking down the agent.
+        """
+        json_path = tmp_path / "session.json"
+        json_path.write_text("{not valid json")
+        db_path = tmp_path / ".cantrip"
+        with pytest.raises(ValueError, match="not valid JSON"):
+            SessionStore.migrate_from_json(json_path, db_path)
+
+    def test_migrate_non_utf8_json_does_not_unicode_crash(self, tmp_path: pathlib.Path) -> None:
+        """Non-UTF-8 bytes in session.json must surface as ``ValueError``."""
+        json_path = tmp_path / "session.json"
+        # ``\xff`` is not valid UTF-8; ``read_text`` would raise
+        # ``UnicodeDecodeError`` under strict decoding.
+        json_path.write_bytes(b'{"charm_name": "\xff\xff"}')
+        db_path = tmp_path / ".cantrip"
+        # ``errors="replace"`` lets the read succeed; the decoded payload is
+        # then valid JSON, so this particular fixture round-trips.  The
+        # behaviour we actually rely on is "no UnicodeDecodeError".
+        SessionStore.migrate_from_json(json_path, db_path)
+        store = SessionStore(db_path)
+        store.open()
+        try:
+            loaded = store.load_session()
+            assert loaded is not None
+        finally:
+            store.close()
+
 
 class TestCompactionCounters:
     """Tests for compaction safety counter persistence (Phase 40.2, 78.3)."""

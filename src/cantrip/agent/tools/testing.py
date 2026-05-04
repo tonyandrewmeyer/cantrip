@@ -505,10 +505,10 @@ class GenerateTestsTool(Tool):
             )
 
         try:
-            metadata = yaml.safe_load(charmcraft_yaml.read_text())
+            metadata = yaml.safe_load(charmcraft_yaml.read_text(errors="replace"))
             if not isinstance(metadata, dict):
                 metadata = {}
-        except yaml.YAMLError as exc:
+        except (yaml.YAMLError, RecursionError) as exc:
             return ToolResult(
                 success=False,
                 output="",

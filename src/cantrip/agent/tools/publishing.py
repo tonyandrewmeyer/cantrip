@@ -282,8 +282,8 @@ class GenerateReadmeTool(Tool):
             )
 
         try:
-            metadata = yaml.safe_load(charmcraft_yaml.read_text())
-        except yaml.YAMLError as exc:
+            metadata = yaml.safe_load(charmcraft_yaml.read_text(errors="replace"))
+        except (yaml.YAMLError, RecursionError) as exc:
             return ToolResult(
                 success=False,
                 output="",
@@ -556,10 +556,10 @@ class GenerateIconTool(Tool):
             charmcraft_yaml = charm_dir / "charmcraft.yaml"
             if charmcraft_yaml.exists():
                 try:
-                    metadata = yaml.safe_load(charmcraft_yaml.read_text())
+                    metadata = yaml.safe_load(charmcraft_yaml.read_text(errors="replace"))
                     if isinstance(metadata, dict):
                         charm_name = metadata.get("name")
-                except yaml.YAMLError:
+                except (yaml.YAMLError, RecursionError):
                     pass
             if not charm_name:
                 charm_name = charm_dir.name
@@ -755,9 +755,9 @@ def _read_charm_metadata(charm_dir: pathlib.Path) -> dict[str, Any]:
     if not charmcraft_yaml.exists():
         return {}
     try:
-        data = yaml.safe_load(charmcraft_yaml.read_text())
+        data = yaml.safe_load(charmcraft_yaml.read_text(errors="replace"))
         return data if isinstance(data, dict) else {}
-    except yaml.YAMLError:
+    except (yaml.YAMLError, RecursionError):
         return {}
 
 

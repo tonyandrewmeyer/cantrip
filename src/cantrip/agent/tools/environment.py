@@ -65,7 +65,11 @@ async def _run_concierge(*args: str, timeout: int = 600) -> tuple[int, str, str]
         proc.kill()
         await proc.wait()
         raise
-    return proc.returncode or 0, stdout.decode(), stderr.decode()
+    return (
+        proc.returncode or 0,
+        stdout.decode("utf-8", errors="replace"),
+        stderr.decode("utf-8", errors="replace"),
+    )
 
 
 def _list_healthy_controllers() -> list[dict]:

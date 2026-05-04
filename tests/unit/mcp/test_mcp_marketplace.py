@@ -250,6 +250,27 @@ class TestMarketplaceLoader:
         assert markets[0].name == "sample"
 
     @pytest.mark.asyncio
+    async def test_directory_with_non_utf8_bytes_does_not_crash(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """A marketplace.json with stray non-UTF-8 bytes must surface as a
+        clean ``MCPConfigError`` (caught by ``load_all``), not a raw
+        ``UnicodeDecodeError`` that would take down the whole listing.
+        """
+        catalog = tmp_path / "catalog"
+        catalog.mkdir()
+        # ``\xff`` is not valid UTF-8.  Combined with otherwise-junk content,
+        # the parse step will reject it as malformed JSON — what we care
+        # about is that no ``UnicodeDecodeError`` escapes ``read_text``.
+        (catalog / "marketplace.json").write_bytes(b"\xff\xfe garbage \xff")
+        sources = [MarketplaceSource(kind=SourceKind.DIRECTORY, location=str(catalog))]
+        loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
+        markets = await loader.load_all(sources)
+        # ``load_all`` swallows ``MCPConfigError`` and continues; the bad
+        # marketplace produces no entry, but the call returns cleanly.
+        assert markets == []
+
+    @pytest.mark.asyncio
     async def test_http_get_wraps_aiohttp_error_as_oserror(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

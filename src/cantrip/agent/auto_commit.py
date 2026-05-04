@@ -344,7 +344,10 @@ def build_commit_message(
     ``Co-Authored-By:`` line attributing the human operator who
     drove the session — see :func:`_human_coauthor_trailer`.
     """
-    subject = (summary or "").strip().splitlines()[0] if summary else ""
+    # ``splitlines()`` on a whitespace-only string returns ``[]``, so guard the
+    # ``[0]`` index after stripping.
+    summary_lines = (summary or "").strip().splitlines()
+    subject = summary_lines[0] if summary_lines else ""
     if not subject:
         subject = _summarise_user_message(user_message)
     if len(subject) > 72:

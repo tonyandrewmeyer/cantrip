@@ -52,8 +52,10 @@ def _charm_uses_paas_extension(charm_path: pathlib.Path) -> bool:
     if not charmcraft_yaml.exists():
         return False
     try:
-        parsed = yaml.safe_load(charmcraft_yaml.read_text()) or {}
-    except yaml.YAMLError:
+        # ``errors="replace"`` keeps a charmcraft.yaml with stray non-UTF-8 bytes
+        # from raising ``UnicodeDecodeError`` (a ``ValueError``) past the catch.
+        parsed = yaml.safe_load(charmcraft_yaml.read_text(errors="replace")) or {}
+    except (yaml.YAMLError, RecursionError):
         return False
     extensions = parsed.get("extensions") or []
     if not isinstance(extensions, list):

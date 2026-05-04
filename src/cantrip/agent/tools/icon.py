@@ -87,8 +87,8 @@ def _read_charm_name(charm_dir: pathlib.Path) -> str | None:
     if not charmcraft_yaml.is_file():
         return None
     try:
-        metadata = yaml.safe_load(charmcraft_yaml.read_text())
-    except (OSError, yaml.YAMLError):
+        metadata = yaml.safe_load(charmcraft_yaml.read_text(errors="replace"))
+    except (OSError, yaml.YAMLError, RecursionError):
         return None
     if isinstance(metadata, dict):
         name = metadata.get("name")
