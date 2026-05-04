@@ -225,6 +225,43 @@ class TestSnapshotCharm:
         snap = compare.snapshot_charm(charm)
         assert snap.base == "ubuntu@22.04"
 
+    def test_legacy_bases_with_empty_build_on_list(self, tmp_path: pathlib.Path) -> None:
+        """``bases: [{build-on: []}]`` must not crash the snapshot.
+
+        Regression: an explicit but empty ``build-on`` list used to make
+        ``_extract_base`` index past the end of the list and raise
+        ``IndexError``, killing ``cantrip compare`` outright.
+        """
+        charm = _write_charm(
+            tmp_path / "empty_build_on",
+            charmcraft=textwrap.dedent(
+                """\
+                name: empty-build-on
+                bases:
+                  - build-on: []
+                """
+            ),
+        )
+        snap = compare.snapshot_charm(charm)
+        assert snap.base == ""
+
+    def test_legacy_bases_with_build_on_entries(self, tmp_path: pathlib.Path) -> None:
+        """When ``build-on`` is populated, surface the first entry's name/channel."""
+        charm = _write_charm(
+            tmp_path / "build_on_pop",
+            charmcraft=textwrap.dedent(
+                """\
+                name: build-on-pop
+                bases:
+                  - build-on:
+                      - name: ubuntu
+                        channel: "22.04"
+                """
+            ),
+        )
+        snap = compare.snapshot_charm(charm)
+        assert snap.base == "ubuntu@22.04"
+
 
 # ── compare_charms + diff primitives ─────────────────────────────────
 

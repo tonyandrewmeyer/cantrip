@@ -367,7 +367,12 @@ class OpenAICompatBase(LLMProvider):
             raise ProviderError(
                 f"{self._error_label} returned non-JSON response: {resp.text[:200]}"
             ) from exc
-        choice = data.get("choices", [{}])[0]
+        # ``choices`` may be absent, ``[]`` (some providers return an empty
+        # list alongside ``usage`` only) or a populated list; ``or [{}]``
+        # collapses the first two into a safe single-entry default so the
+        # `[0]` access never raises.  Mirrors the streaming path below.
+        choices = data.get("choices") or [{}]
+        choice = choices[0]
         message = choice.get("message", {})
 
         content = message.get("content") or ""

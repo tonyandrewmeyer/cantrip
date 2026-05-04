@@ -237,8 +237,15 @@ def _extract_base(merged: dict[str, Any]) -> str:
     if isinstance(bases, list) and bases:
         first = bases[0]
         if isinstance(first, dict):
-            name = first.get("name") or first.get("build-on", [{}])[0].get("name", "")
-            channel = first.get("channel") or first.get("build-on", [{}])[0].get("channel", "")
+            # ``build-on`` may be missing, ``[]``, or a list of dicts; the
+            # ``or [{}]`` lets us index unconditionally only after we've
+            # confirmed there is at least one entry to look at.
+            build_on = first.get("build-on") or [{}]
+            inner = build_on[0] if isinstance(build_on, list) else {}
+            if not isinstance(inner, dict):
+                inner = {}
+            name = first.get("name") or inner.get("name", "")
+            channel = first.get("channel") or inner.get("channel", "")
             if name and channel:
                 return f"{name}@{channel}"
     return ""

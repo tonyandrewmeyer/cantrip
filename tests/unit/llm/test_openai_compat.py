@@ -423,6 +423,32 @@ class TestReasoningContent:
         assert response.metadata == {}
 
     @pytest.mark.asyncio
+    async def test_complete_handles_empty_choices_list(self):
+        """A response with ``"choices": []`` must yield an empty Response.
+
+        Regression: the non-streaming path used to do
+        ``data.get("choices", [{}])[0]``, which raises ``IndexError`` when
+        the key is present but empty.  The streaming path already coped via
+        ``data.get("choices") or [{}]`` — this test pins the matching fix
+        for ``complete``.
+        """
+        provider = _DummyProvider()
+        mock_response = httpx.Response(
+            200,
+            request=httpx.Request("POST", "http://dummy/v1/chat/completions"),
+            json={
+                "choices": [],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 0},
+            },
+        )
+        provider.client.post = AsyncMock(return_value=mock_response)
+
+        response = await provider.complete([Message(role=Role.USER, content="Hi")])
+        assert response.content == ""
+        assert list(response.tool_calls) == []
+        assert response.usage == {"prompt_tokens": 7, "completion_tokens": 0}
+
+    @pytest.mark.asyncio
     async def test_stream_accumulates_reasoning_onto_final_chunk(self):
         provider = _DummyProvider()
 

@@ -389,6 +389,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   used to ground it (``tmp/audit_phase65/drive_right_panel.py``)
   live in ``design/RIGHT_PANEL_AUDIT.md``.
 
+### Fixed
+- **``cantrip compare`` no longer crashes on legacy ``bases:`` with an
+  empty ``build-on`` list.**  ``_extract_base`` in
+  ``src/cantrip/compare.py`` used the
+  ``first.get("build-on", [{}])[0]`` idiom, which raises ``IndexError``
+  when ``build-on`` is present but ``[]`` (rather than missing).  A
+  charm with ``bases: [{build-on: []}]`` now snapshots cleanly with
+  an empty ``base`` rather than aborting the diff.
+- **OpenAI-compatible ``complete()`` no longer crashes on empty
+  ``choices``.**  ``data.get("choices", [{}])[0]`` in
+  ``src/cantrip/llm/_openai_compat.py`` raised ``IndexError`` when a
+  provider returned ``{"choices": [], "usage": {...}}``.  The
+  streaming path already handled this; the non-streaming path now
+  matches.  Affects every provider that subclasses ``OpenAICompatBase``
+  (``inference-snap``, ``fireworks``, ``openrouter``,
+  ``openai-compatible``).
+
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness
   sweep ported from canonical/skills PR #4 (Apache-2.0).  Probes
