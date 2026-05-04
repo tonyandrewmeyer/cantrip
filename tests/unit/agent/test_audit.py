@@ -255,6 +255,30 @@ class TestReadEntries:
         entries = list(read_entries(path))
         assert [e.tool for e in entries] == ["only"]
 
+    def test_invalid_utf8_does_not_abort_iteration(self, tmp_path: pathlib.Path, caplog) -> None:
+        """A line with invalid UTF-8 bytes is skipped, not raised.
+
+        Regression: ``read_entries`` opened the file with strict UTF-8
+        decoding, so a single bad byte (the audit file is meant to be
+        cantrip-written but the user can pass any path via
+        ``cantrip audit --path``) crashed iteration with
+        ``UnicodeDecodeError`` and dumped a traceback to the CLI.
+        """
+        import logging
+
+        path = tmp_path / AUDIT_FILENAME
+        writer = AuditWriter(path)
+        writer.write(make_entry(tool="a", action=AuditAction.ALLOWED, policy_name="p", reason=""))
+        # Append a line with raw bytes that are not valid UTF-8.
+        with path.open("ab") as handle:
+            handle.write(b"\xd8\xff garbage\n")
+        writer.write(make_entry(tool="b", action=AuditAction.ALLOWED, policy_name="p", reason=""))
+
+        with caplog.at_level(logging.WARNING, logger="cantrip.agent.audit"):
+            entries = list(read_entries(path))
+
+        assert [e.tool for e in entries] == ["a", "b"]
+
 
 class TestFilterEntries:
     """CLI filter chain: task, action, tool."""

@@ -211,7 +211,13 @@ def read_entries(path: pathlib.Path) -> Iterator[AuditEntry]:
     """
     if not path.is_file():
         return
-    with path.open("r", encoding="utf-8") as handle:
+    # ``errors="replace"`` turns invalid UTF-8 sequences into U+FFFD
+    # rather than aborting the iterator with ``UnicodeDecodeError``.
+    # The replacement bytes will fail JSON parsing and the line is
+    # logged-and-skipped just like any other malformed entry — we
+    # never want a single corrupt byte to hide an otherwise readable
+    # audit trail.
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
         for lineno, line in enumerate(handle, start=1):
             stripped = line.strip()
             if not stripped:

@@ -405,6 +405,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   matches.  Affects every provider that subclasses ``OpenAICompatBase``
   (``inference-snap``, ``fireworks``, ``openrouter``,
   ``openai-compatible``).
+- **``cantrip export-transcript`` and ``cantrip checkpoints`` print a
+  friendly error for a corrupt ``.cantrip`` file.**  Both commands used
+  to leak ``sqlite3.DatabaseError: file is not a database`` as a raw
+  traceback when the user pointed them at a truncated or hand-edited
+  session file.  They now exit cleanly with
+  ``Error: <path> is not a valid Cantrip session file``.
+- **``cantrip audit`` no longer crashes on non-UTF-8 audit files.**
+  ``read_entries`` in ``src/cantrip/agent/audit.py`` decoded the JSONL
+  file with strict UTF-8, so a single corrupt byte aborted the
+  iterator with ``UnicodeDecodeError``.  The reader now uses
+  ``errors="replace"`` so each malformed line is logged and skipped
+  individually, matching the existing handling for malformed JSON.
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness

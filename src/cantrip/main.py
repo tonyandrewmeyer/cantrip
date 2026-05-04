@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import pathlib
+import sqlite3
 import sys
 from typing import TYPE_CHECKING
 
@@ -826,13 +827,20 @@ def _export_transcript(args: argparse.Namespace) -> int:
 
     from cantrip.transcript.export import load_transcript
 
-    data = load_transcript(
-        db_path,
-        task_id=getattr(args, "filter_task", None),
-        phase=getattr(args, "filter_phase", None),
-        since=getattr(args, "filter_since", None),
-        branch=getattr(args, "filter_branch", None),
-    )
+    try:
+        data = load_transcript(
+            db_path,
+            task_id=getattr(args, "filter_task", None),
+            phase=getattr(args, "filter_phase", None),
+            since=getattr(args, "filter_since", None),
+            branch=getattr(args, "filter_branch", None),
+        )
+    except sqlite3.DatabaseError as exc:
+        print(
+            f"Error: {db_path} is not a valid Cantrip session file ({exc}).",
+            file=sys.stderr,
+        )
+        return 1
 
     fmt = args.fmt
     page_size: int | None = getattr(args, "page_size", None)
@@ -1208,7 +1216,14 @@ def _checkpoints(args: argparse.Namespace) -> int:
         return 2
 
     session_store = store_mod.SessionStore(db_path)
-    session_store.open()
+    try:
+        session_store.open()
+    except sqlite3.DatabaseError as exc:
+        print(
+            f"Error: {db_path} is not a valid Cantrip session file ({exc}).",
+            file=sys.stderr,
+        )
+        return 2
     cps = durability_mod.CheckpointStore(session_store)
     try:
         if args.checkpoints_command == "list":

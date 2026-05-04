@@ -495,6 +495,30 @@ class TestExportTranscript:
         assert rc == 1
         assert "unknown format" in out
 
+    def test_corrupt_cantrip_file_yields_friendly_error(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A non-SQLite ``.cantrip`` file must error cleanly, not traceback.
+
+        Regression: ``load_transcript`` propagated ``sqlite3.DatabaseError``
+        out of the CLI, dumping a stack trace at users who pointed at a
+        truncated or hand-edited session file.
+        """
+        (tmp_path / ".cantrip").write_text("not a sqlite database\n")
+        args = SimpleNamespace(
+            path=tmp_path,
+            fmt="html",
+            output=None,
+            filter_task=None,
+            filter_phase=None,
+            filter_since=None,
+            filter_branch=None,
+        )
+        rc = cantrip_main._export_transcript(args)
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "not a valid Cantrip session file" in captured.err
+
     @pytest.mark.parametrize(
         "fmt, expected_suffix, renderer",
         [
@@ -614,6 +638,31 @@ class TestExportTranscript:
 
         assert captured["stem"] == "my-session"
         assert captured["page_size"] == 2
+
+
+class TestCheckpointsCli:
+    """Behaviour of ``cantrip checkpoints`` for malformed session files."""
+
+    def test_corrupt_cantrip_file_yields_friendly_error(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A non-SQLite ``.cantrip`` must error cleanly, not traceback.
+
+        Regression: ``SessionStore.open()`` raised ``sqlite3.DatabaseError``
+        out of ``_checkpoints``, dumping a stack trace at users who pointed
+        the CLI at a truncated or hand-edited session file.
+        """
+        db = tmp_path / ".cantrip"
+        db.write_text("not a sqlite database\n")
+        args = SimpleNamespace(
+            db=db,
+            checkpoints_command="list",
+            task_id=None,
+        )
+        rc = cantrip_main._checkpoints(args)
+        captured = capsys.readouterr()
+        assert rc == 2
+        assert "not a valid Cantrip session file" in captured.err
 
 
 class TestMain:
