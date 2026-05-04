@@ -417,6 +417,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   iterator with ``UnicodeDecodeError``.  The reader now uses
   ``errors="replace"`` so each malformed line is logged and skipped
   individually, matching the existing handling for malformed JSON.
+- **``cantrip skill export`` prints a friendly error when the target
+  path is a regular file.**  Pointing at e.g. ``/dev/null`` or
+  ``/etc/passwd`` used to leak ``NotADirectoryError`` from
+  ``Path.mkdir`` because the exporter synthesised
+  ``<path>/<name>/SKILL.md`` and tried to create the parent.  The
+  ``parent.mkdir`` call is now wrapped and the error becomes a
+  ``SkillExportError`` saying "not a directory".
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness

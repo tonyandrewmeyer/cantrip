@@ -958,6 +958,35 @@ class TestExportSkill:
         assert "nonexistent" in message
         assert "alpha" in message
 
+    def test_target_under_regular_file_raises_friendly(self, tmp_path: pathlib.Path) -> None:
+        """A non-directory target (e.g. ``/dev/null``) yields a clean error.
+
+        Regression: when the user passed an output path that points at a
+        regular file, ``_resolve_target`` synthesised
+        ``<output_path>/<name>/SKILL.md`` and the subsequent
+        ``parent.mkdir(parents=True)`` raised ``NotADirectoryError`` —
+        leaking a Python traceback to the CLI.
+        """
+        from cantrip.agent.skill_export import SkillExportError, export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        # Create a regular file and ask the exporter to use it as a parent.
+        regular_file = tmp_path / "not-a-dir"
+        regular_file.write_text("placeholder\n")
+
+        with pytest.raises(SkillExportError) as exc_info:
+            export_skill("alpha", regular_file, index=index)
+        message = str(exc_info.value)
+        assert "not a directory" in message.lower()
+
     def test_charm_path_scrubbed_to_placeholder(self, tmp_path: pathlib.Path) -> None:
         """The current charm path becomes ``<CHARM_PATH>`` in the exported body."""
         from cantrip.agent.memory.export import CHARM_PATH_PLACEHOLDER

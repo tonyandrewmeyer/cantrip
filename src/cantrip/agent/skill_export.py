@@ -82,7 +82,17 @@ def export_skill(
         raise SkillExportError(
             f"Refusing to overwrite existing file {target} (pass --force to overwrite)."
         )
-    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except (NotADirectoryError, FileExistsError) as exc:
+        # ``output_path`` was a regular file (or a non-directory like
+        # ``/dev/null``) so the synthesised ``<output_path>/<name>``
+        # parent cannot be created.  Surface a friendly error rather
+        # than dumping ``NotADirectoryError`` at the user.
+        raise SkillExportError(
+            f"Cannot write under {output_path}: not a directory. "
+            f"Pass an existing directory, or an explicit ``.md`` file path."
+        ) from exc
 
     frontmatter: dict[str, object] = {
         "name": metadata.name,
