@@ -1,0 +1,17 @@
+name: qp-demo
+type: charm
+title: Quickpack Demo
+summary: A minimal charm for demonstrating quickpack.
+description: |
+  A minimal charm for demonstrating quickpack speed on a small but real
+  Juju charm. Generated for the cantrip marketing recordings.
+
+base: ubuntu@24.04
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+parts:
+  charm:
+    plugin: uv
+    source: .

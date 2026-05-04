@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cantrip — marketing recordings</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/asciinema-player@3.7.0/dist/bundle/asciinema-player.min.css" />
+  <style>
+    :root {
+      --fg: #1f1f1f;
+      --bg: #fafafa;
+      --muted: #6c6c6c;
+      --accent: #e95420;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font: 16px/1.5 -apple-system, "Segoe UI", Inter, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+      padding: 32px 24px 64px;
+    }
+    main { max-width: 920px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h1 small { color: var(--muted); font-weight: normal; font-size: 16px; }
+    nav {
+      margin: 16px 0 32px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+    }
+    nav a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    nav a:hover { text-decoration: underline; }
+    section {
+      margin: 48px 0;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+    }
+    section h2 {
+      font-size: 22px;
+      margin: 0 0 4px;
+    }
+    section p.meta {
+      color: var(--muted);
+      margin: 0 0 16px;
+    }
+    .player {
+      background: #000;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    img.frame {
+      max-width: 100%;
+      border-radius: 4px;
+      display: block;
+    }
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.9em;
+      background: #ececec;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .footnote {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 32px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Cantrip recordings <small>marketing-clip preview</small></h1>
+  <p>
+    Eight clips covering Cantrip's modes of operation and tools. Asciicasts
+    embed via <a href="https://github.com/asciinema/asciinema-player">asciinema-player</a>
+    (CDN-loaded); GIFs render inline.
+  </p>
+
+  <nav>
+    <a href="#hero">hero — ntfy build</a>
+    <a href="#tui">TUI</a>
+    <a href="#web">Web UI</a>
+    <a href="#cli">CLI / print</a>
+    <a href="#improve">--improve audit</a>
+    <a href="#charmlint">charmlint</a>
+    <a href="#quickpack">quickpack</a>
+    <a href="#transcript">transcript-export</a>
+  </nav>
+
+  <section id="hero">
+    <h2>Hero — building ntfy from scratch</h2>
+    <p class="meta">
+      <code>--no-tui --yolo</code> · ~3 min 10 s (sped up 2× from a 6 min 20 s
+      raw capture) · research → synthesis → design proposal
+    </p>
+    <div id="player-hero" class="player"></div>
+  </section>
+
+  <section id="tui">
+    <h2>TUI</h2>
+    <p class="meta">
+      <code>cantrip run --theme cantrip</code> · ~12 s · slash commands
+      <code>/memory</code>, <code>/cost</code>, <code>/diagnostics</code>,
+      <code>/map</code>
+    </p>
+    <img class="frame" src="tui.gif" alt="Cantrip TUI walkthrough" />
+  </section>
+
+  <section id="web">
+    <h2>Web UI</h2>
+    <p class="meta">
+      <code>cantrip run --web</code> · ~28 s · agent reads two files,
+      streams the answer back into the chat pane
+    </p>
+    <img class="frame" src="web.gif" alt="Cantrip Web UI walkthrough" />
+  </section>
+
+  <section id="cli">
+    <h2>CLI · headless print mode</h2>
+    <p class="meta">
+      <code>cantrip run --print</code> + <code>--json</code> · ~73 s · plain
+      output then NDJSON event stream
+    </p>
+    <div id="player-cli" class="player"></div>
+  </section>
+
+  <section id="improve">
+    <h2>--improve audit</h2>
+    <p class="meta">
+      <code>cantrip run --improve --max-iterations 1 --print</code> · ~51 s
+      · Gemini auditing a deliberately incomplete charm
+    </p>
+    <div id="player-improve" class="player"></div>
+  </section>
+
+  <section id="charmlint">
+    <h2>charmlint</h2>
+    <p class="meta">
+      Standalone Juju charm linter · ~30 s · 12 categories, JSON output,
+      strict CI mode
+    </p>
+    <div id="player-charmlint" class="player"></div>
+  </section>
+
+  <section id="quickpack">
+    <h2>quickpack</h2>
+    <p class="meta">
+      Drop-in <code>charmcraft pack</code> replacement · ~39 s · Python and
+      Rust backends, 50 ms cold packs
+    </p>
+    <div id="player-quickpack" class="player"></div>
+  </section>
+
+  <section id="transcript">
+    <h2>transcript-export</h2>
+    <p class="meta">
+      <code>cantrip export-transcript</code> · ~53 s · markdown / JSONL /
+      paginated HTML, phase &amp; task filters
+    </p>
+    <div id="player-transcript" class="player"></div>
+  </section>
+
+  <p class="footnote">
+    Embeds load casts via <code>fetch()</code>, which most browsers block
+    over <code>file://</code>. Serve this directory over HTTP first:
+    <br />
+    <code>python3 -m http.server -d demos/recordings 8000</code>
+    <br />
+    then open <a href="http://localhost:8000/index.html">http://localhost:8000/index.html</a>.
+  </p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.7.0/dist/bundle/asciinema-player.min.js"></script>
+<script>
+  const opts = { fit: 'width', speed: 1.0, theme: 'asciinema' };
+  AsciinemaPlayer.create('hero-ntfy.cast',       document.getElementById('player-hero'),       opts);
+  AsciinemaPlayer.create('cli.cast',             document.getElementById('player-cli'),        opts);
+  AsciinemaPlayer.create('improve.cast',         document.getElementById('player-improve'),    opts);
+  AsciinemaPlayer.create('charmlint.cast',       document.getElementById('player-charmlint'),  opts);
+  AsciinemaPlayer.create('quickpack.cast',       document.getElementById('player-quickpack'),  opts);
+  AsciinemaPlayer.create('transcript-export.cast', document.getElementById('player-transcript'), opts);
+</script>
+</body>
+</html>
