@@ -217,7 +217,7 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
             return SlashResult(text="Loading MCP marketplaces...", followup=followup)
         return SlashResult(text=mcp_commands.handle_mcp(agent.mcp_registry, args))
     if verb == "/cost":
-        return SlashResult(text=format_cost(agent))
+        return SlashResult(text=format_cost(agent), markdown=True)
     if verb == "/budget":
         return SlashResult(text=handle_budget(agent, args))
     if verb == "/arena":

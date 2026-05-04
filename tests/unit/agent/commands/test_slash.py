@@ -206,6 +206,9 @@ class TestCost:
         assert "1,200" in result.text
         # With zero savings, the cached-from-checkpoint line is omitted.
         assert "Cached from checkpoint" not in result.text
+        # Output uses Markdown (``**Token usage**`` etc.) so surfaces
+        # must render it as Markdown, not literal text.
+        assert result.markdown is True
 
     def test_cost_renders_cached_from_checkpoint_when_nonzero(
         self, memory_manager: MemoryManager
