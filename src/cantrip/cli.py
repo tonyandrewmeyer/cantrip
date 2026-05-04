@@ -384,6 +384,10 @@ async def _repl(agent: CantripAgent) -> None:
     # Eagerly prepare the full environment in the background.
     prepare_task = asyncio.create_task(_prepare_cli(agent))
     bootstrap_started = False
+    # Hold strong references to fire-and-forget background tasks (the
+    # bootstrap re-run below) so the event loop's weak-only task list
+    # cannot garbage-collect them mid-execution.
+    background_tasks: set[asyncio.Task] = set()
 
     # Mutable label for the spinner — updated by task events.
     spinner_label = ["Thinking"]
@@ -492,7 +496,9 @@ async def _repl(agent: CantripAgent) -> None:
                 from cantrip.agent.tools.environment import _juju_controller_healthy
 
                 if agent.state.charm_type != DEFAULT_PRESET and not _juju_controller_healthy():
-                    asyncio.create_task(_bootstrap_cli(agent))
+                    bootstrap_task = asyncio.create_task(_bootstrap_cli(agent))
+                    background_tasks.add(bootstrap_task)
+                    bootstrap_task.add_done_callback(background_tasks.discard)
 
         except KeyboardInterrupt:
             spinner_task.cancel()

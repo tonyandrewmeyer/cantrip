@@ -509,6 +509,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   remaining sites; ``search`` prints a friendly "index is corrupt
   — re-run ``cantrip docs index --site``" message.
   (``src/cantrip/docs_index/cli.py``)
+- **Web UI background tasks pinned against GC.**  Five
+  ``asyncio.create_task`` / ``asyncio.ensure_future`` calls in
+  ``src/cantrip/web/server.py`` (the chat-broadcast follow-up, the
+  startup update / preflight / MCP triggers, and every WebSocket
+  send fan-out) discarded their returned ``Task``.  Python's event
+  loop only keeps weak references to tasks, so these were eligible
+  for GC mid-execution and would emit "Task was destroyed but it is
+  pending" under memory pressure.  A module-level ``_BACKGROUND_TASKS``
+  set + ``_spawn_background`` helper now holds a strong reference
+  for each, with a done callback that removes the entry on
+  completion.  ``cli._repl`` got the same treatment for its
+  bootstrap re-run task.
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness

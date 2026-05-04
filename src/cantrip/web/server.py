@@ -8,6 +8,8 @@ import json
 import logging
 import pathlib
 import weakref
+from collections.abc import Coroutine
+from typing import Any
 
 import aiohttp.web as web
 import jinja2
@@ -30,6 +32,23 @@ _STATIC_DIR = pathlib.Path(__file__).parent / "static"
 
 _VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _MAX_LOG_LINES = 5000
+
+# Strong references to fire-and-forget background tasks so the asyncio
+# event loop's weak-only task list cannot garbage-collect them
+# mid-execution.  The done-callback removes the entry once the task
+# finishes; ``asyncio.create_task`` with a discarded return value would
+# otherwise risk a "Task was destroyed but it is pending" warning under
+# memory pressure.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro: Coroutine[Any, Any, Any]) -> asyncio.Task:
+    """Create a Task and pin it to ``_BACKGROUND_TASKS`` until it completes."""
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
 
 # Typed keys for ``web.Application`` shared state.  aiohttp emits
 # ``NotAppKeyWarning`` for raw string keys; these provide the same
@@ -115,7 +134,7 @@ def _broadcast(app: web.Application, event_type: str, data: dict) -> None:
         if ws.closed:
             stale.append(ws)
             continue
-        asyncio.ensure_future(_safe_ws_send(ws, payload))
+        _spawn_background(_safe_ws_send(ws, payload))
     for ws in stale:
         clients.discard(ws)
 
@@ -201,7 +220,7 @@ def _handle_shared_slash_command(app: web.Application, agent: CantripAgent, cont
         )
     _broadcast_chat(app, "system", body)
     if result.followup is not None:
-        asyncio.create_task(_broadcast_followup(app, result.followup))
+        _spawn_background(_broadcast_followup(app, result.followup))
     return True
 
 
@@ -918,17 +937,17 @@ async def _run_web_async(agent: CantripAgent, port: int) -> None:
     # background.  Clients pick up the verdict via GET
     # ``/api/update-status`` on load and via the ``update_available``
     # WebSocket event on completion.
-    asyncio.create_task(_run_update_check(app))
+    _spawn_background(_run_update_check(app))
 
     # Phase 31.13: run environment preflight so the browser gets the
     # same eager-prepare visibility the TUI has.  Events flow out over
     # the WebSocket as ``preflight_updated`` messages.
-    asyncio.create_task(_run_preflight(app, agent))
+    _spawn_background(_run_preflight(app, agent))
 
     # Connect any configured MCP servers in the background.  Failures
     # land in the registry's per-server status; ``/mcp`` shows them.
     if agent.mcp_registry.configured:
-        asyncio.create_task(agent.start_mcp())
+        _spawn_background(agent.start_mcp())
 
     runner = web.AppRunner(app)
     await runner.setup()
