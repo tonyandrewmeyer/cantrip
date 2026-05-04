@@ -438,7 +438,7 @@ class GlobalMemoryStore:
                 continue
             try:
                 entry = self._read_file(path)
-            except (OSError, ValueError, yaml.YAMLError) as exc:
+            except (OSError, ValueError, yaml.YAMLError, RecursionError) as exc:
                 log.warning("Skipping malformed global memory %s: %s", path, exc)
                 continue
             if kind is not None and entry.kind != kind:
@@ -457,7 +457,7 @@ class GlobalMemoryStore:
             return None
         try:
             return self._read_file(path)
-        except (OSError, ValueError, yaml.YAMLError) as exc:
+        except (OSError, ValueError, yaml.YAMLError, RecursionError) as exc:
             log.warning("Cannot read global memory %s: %s", path, exc)
             return None
 
@@ -507,7 +507,7 @@ class GlobalMemoryStore:
                 existing = self._read_file(path)
                 if existing.created_at:
                     frontmatter["created"] = existing.created_at
-            except (OSError, ValueError, yaml.YAMLError):
+            except (OSError, ValueError, yaml.YAMLError, RecursionError):
                 log.debug("Ignoring existing malformed memory at %s on overwrite", path)
         rendered = _render_markdown(frontmatter, body)
         path.write_text(rendered)

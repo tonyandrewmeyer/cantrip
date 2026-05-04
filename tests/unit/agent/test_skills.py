@@ -57,6 +57,33 @@ class TestSkillsIndex:
         index.discover()
         assert [s.name for s in index.list_skills()] == ["good"]
 
+    def test_discover_skips_deeply_nested_frontmatter(self, tmp_path: pathlib.Path) -> None:
+        """A SKILL.md with frontmatter past Python's recursion limit is skipped.
+
+        Regression: ``SkillsIndex.discover`` caught
+        ``(yaml.YAMLError, ValueError)`` only.  PyYAML's tokeniser
+        raises ``RecursionError`` (a ``RuntimeError``, not a YAMLError)
+        on heavily nested input, so a malicious or accidentally-deep
+        SKILL.md crashed ``cantrip skill export`` and any agent flow
+        that triggered skills discovery.
+        """
+        deep = tmp_path / "deep"
+        deep.mkdir()
+        body = "---\nname: deep\ndescription: nested\n"
+        for i in range(800):
+            body += "  " * i + f"k{i}:\n"
+        body += "  " * 800 + "leaf: x\n"
+        body += "---\n\nbody\n"
+        (deep / "SKILL.md").write_text(body)
+
+        good = tmp_path / "good"
+        good.mkdir()
+        (good / "SKILL.md").write_text("---\nname: good\ndescription: A good skill\n---\nBody.\n")
+
+        index = SkillsIndex(tmp_path)
+        index.discover()
+        assert [s.name for s in index.list_skills()] == ["good"]
+
     def test_discover_skips_missing_fields(self, tmp_path: pathlib.Path) -> None:
         """A SKILL.md with frontmatter but no name/description is skipped."""
         skill = tmp_path / "incomplete"
@@ -986,6 +1013,36 @@ class TestExportSkill:
             export_skill("alpha", regular_file, index=index)
         message = str(exc_info.value)
         assert "not a directory" in message.lower()
+
+    def test_target_under_unwritable_parent_raises_friendly(self, tmp_path: pathlib.Path) -> None:
+        """Permission denied on the synthesised parent yields a clean error.
+
+        Regression: pointing the exporter at an unwritable directory
+        (``cantrip skill export find-bugs /`` for an unprivileged user)
+        leaked ``PermissionError`` past the previous
+        ``except (NotADirectoryError, FileExistsError)`` catch.  The
+        export now wraps ``OSError`` more broadly.
+        """
+        from cantrip.agent.skill_export import SkillExportError, export_skill
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "alpha").mkdir()
+        (source / "alpha" / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: desc\n---\nBody.\n"
+        )
+        index = SkillsIndex(source)
+        index.discover()
+
+        # Create a read-only directory and aim under it.
+        ro_parent = tmp_path / "ro"
+        ro_parent.mkdir(mode=0o500)
+        try:
+            target = ro_parent / "child"
+            with pytest.raises(SkillExportError, match="Cannot create"):
+                export_skill("alpha", target, index=index)
+        finally:
+            ro_parent.chmod(0o700)
 
     def test_charm_path_scrubbed_to_placeholder(self, tmp_path: pathlib.Path) -> None:
         """The current charm path becomes ``<CHARM_PATH>`` in the exported body."""

@@ -245,7 +245,7 @@ class CheckIndex:
             for path in sorted(root.glob("*.md")):
                 try:
                     check = _parse_check_file(path, source=source)
-                except (yaml.YAMLError, ValueError) as exc:
+                except (yaml.YAMLError, ValueError, RecursionError) as exc:
                     log.warning("Skipping malformed check %s: %s", path, exc)
                     continue
                 if check.name in self._checks:

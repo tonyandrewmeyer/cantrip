@@ -93,6 +93,11 @@ def export_skill(
             f"Cannot write under {output_path}: not a directory. "
             f"Pass an existing directory, or an explicit ``.md`` file path."
         ) from exc
+    except OSError as exc:
+        # Permission denied (e.g. ``cantrip skill export find-bugs /``)
+        # or read-only filesystem.  Surface as a friendly export error
+        # instead of leaking the raw ``OSError``.
+        raise SkillExportError(f"Cannot create {target.parent}: {exc}") from exc
 
     frontmatter: dict[str, object] = {
         "name": metadata.name,

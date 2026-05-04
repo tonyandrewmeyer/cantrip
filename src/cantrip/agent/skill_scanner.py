@@ -132,7 +132,7 @@ def _strip_frontmatter(raw: str) -> tuple[str, dict[str, object] | None, int]:
     frontmatter_text = "\n".join(lines[1:end])
     try:
         data = yaml.safe_load(frontmatter_text)
-    except yaml.YAMLError:
+    except (yaml.YAMLError, RecursionError):
         data = None
     body = "\n".join(lines[end + 1 :])
     return body, data if isinstance(data, dict) else None, end + 1

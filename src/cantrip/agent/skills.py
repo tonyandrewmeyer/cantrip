@@ -336,7 +336,11 @@ class SkillsIndex:
 
             try:
                 metadata = self._parse_frontmatter(skill_file, source=source)
-            except (yaml.YAMLError, ValueError):
+            except (yaml.YAMLError, ValueError, RecursionError):
+                # ``RecursionError`` covers a SKILL.md whose frontmatter is
+                # nested past Python's recursion limit (PyYAML blows the
+                # stack while tokenising it).  Treat it like any other
+                # unparseable file — skip and keep loading the rest.
                 log.warning("Skipping malformed skill file: %s", skill_file)
                 continue
 

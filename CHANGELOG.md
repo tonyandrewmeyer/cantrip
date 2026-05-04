@@ -479,6 +479,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``src/cantrip/mcp/config.py``, ``src/cantrip/agent/policy.py``,
   ``src/cantrip/workspace.py`` (the workspace loader also gained the
   same ``UnicodeDecodeError`` guard the others got earlier).
+- **Skills / checks / memory discovery survives deeply nested
+  frontmatter.**  ``SkillsIndex.discover``,
+  ``CheckRegistry.discover``, and ``GlobalMemoryStore`` (read /
+  write paths) caught ``(yaml.YAMLError, ValueError)`` only, so a
+  malicious or accidentally-deep ``SKILL.md`` / check / memory file
+  crashed ``cantrip skill export`` and any agent flow that
+  triggered discovery with ``RecursionError``.  Each catch now
+  includes ``RecursionError`` so the entry is logged-and-skipped
+  exactly like a malformed YAML.  ``skill_scanner._split_frontmatter``
+  picked up the same guard for completeness.
+  (``src/cantrip/agent/skills.py``, ``src/cantrip/agent/checks.py``,
+  ``src/cantrip/agent/memory/core.py``,
+  ``src/cantrip/agent/skill_scanner.py``)
+- **``cantrip skill export`` surfaces permission errors as a clean
+  CLI message.**  Aiming the exporter at a path under an unwritable
+  parent (``cantrip skill export find-bugs /`` for an unprivileged
+  user) used to leak ``PermissionError`` past the
+  ``except (NotADirectoryError, FileExistsError)`` catch.  The
+  ``mkdir`` is now wrapped in a broader ``except OSError`` that
+  re-raises as ``SkillExportError`` with the original errno text.
+  (``src/cantrip/agent/skill_export.py``)
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness
