@@ -255,6 +255,47 @@ class TestRun:
         assert rc == 1
         assert "is not a directory" in out
 
+    def test_target_is_a_regular_file_yields_friendly_error(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Pointing the run path at a regular file errors cleanly.
+
+        Regression: ``charm_path.mkdir(parents=True, exist_ok=True)``
+        does not suppress ``FileExistsError`` when the path is a
+        non-directory, so a typo like ``cantrip my-charm.yaml`` used
+        to traceback instead of failing with a sensible message.
+        """
+        target = tmp_path / "i-am-a-file.txt"
+        target.write_text("placeholder\n")
+        rc = cantrip_main._run(_run_args(tmp_path, path=target))
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "not a directory" in captured.err
+
+    def test_unwritable_parent_yields_friendly_error(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Pointing the run path under an unwritable parent errors cleanly.
+
+        Regression: ``mkdir(parents=True)`` raised ``PermissionError``
+        when an intermediate parent could not be created, dumping a
+        traceback at the user.
+        """
+        unwritable = tmp_path / "ro-parent"
+        unwritable.mkdir(mode=0o500)
+        try:
+            target = unwritable / "child" / "deeper"
+            rc = cantrip_main._run(_run_args(tmp_path, path=target))
+            captured = capsys.readouterr()
+            assert rc == 1
+            assert "cannot create charm directory" in captured.err
+        finally:
+            unwritable.chmod(0o700)
+
     def test_missing_gemini_api_key(
         self,
         tmp_path: pathlib.Path,

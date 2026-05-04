@@ -424,6 +424,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``<path>/<name>/SKILL.md`` and tried to create the parent.  The
   ``parent.mkdir`` call is now wrapped and the error becomes a
   ``SkillExportError`` saying "not a directory".
+- **``cantrip <path>`` validates the charm path before mkdir.**  Running
+  ``cantrip my-charm.yaml`` (typo aimed at a regular file) used to
+  leak ``FileExistsError``; running ``cantrip /nonexistent/x`` under
+  an unwritable parent leaked ``PermissionError``.  ``_run`` now
+  rejects regular-file targets with "exists but is not a directory"
+  and wraps ``mkdir`` so any other ``OSError`` (permission denied,
+  read-only filesystem) becomes a one-line CLI error.
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness

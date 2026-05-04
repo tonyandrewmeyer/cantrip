@@ -925,8 +925,18 @@ def _run(args: argparse.Namespace) -> int:
 
     # Ensure the charm directory exists and switch to it so that all tool
     # defaults (path=".") resolve relative to the charm project, not the
-    # directory cantrip was launched from.
-    charm_path.mkdir(parents=True, exist_ok=True)
+    # directory cantrip was launched from.  ``mkdir`` raises if the path
+    # already exists *as a regular file* (``FileExistsError``) or if a
+    # parent is unwritable (``PermissionError``); turn either into a
+    # friendly CLI error rather than a Python traceback.
+    if charm_path.exists() and not charm_path.is_dir():
+        print(f"Error: {charm_path} exists but is not a directory.", file=sys.stderr)
+        return 1
+    try:
+        charm_path.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError) as exc:
+        print(f"Error: cannot create charm directory {charm_path}: {exc}", file=sys.stderr)
+        return 1
     os.chdir(charm_path)
 
     if args.provider == "gemini" and not os.environ.get("GEMINI_API_KEY"):
