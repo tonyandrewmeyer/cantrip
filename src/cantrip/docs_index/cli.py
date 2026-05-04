@@ -45,6 +45,8 @@ def dispatch(args: argparse.Namespace) -> int:
 
 def _cmd_list(args: argparse.Namespace) -> int:
     """Print the registered sites and which ones have an index on disk."""
+    import sqlite3
+
     root = getattr(args, "root", None) or index.cache_root()
     print(f"Cache root: {root}\n")
     print(f"{'Site':<12} {'Indexed':<8} {'Chunks':<8} {'Description'}")
@@ -52,11 +54,22 @@ def _cmd_list(args: argparse.Namespace) -> int:
     for site in sites.SITES:
         path = index.store_path_for(site.name, root=root)
         if path.exists():
-            store = DocsStore(site.name, path)
-            count = store.count()
-            store.close()
-            indexed = "yes"
-            chunk_str = str(count)
+            try:
+                store = DocsStore(site.name, path)
+                try:
+                    count = store.count()
+                finally:
+                    store.close()
+            except sqlite3.DatabaseError:
+                # Treat a corrupt or hand-edited index.db like a
+                # missing index — the user's other sites should still
+                # render in the table rather than the whole listing
+                # crashing on one bad file.
+                indexed = "corrupt"
+                chunk_str = "-"
+            else:
+                indexed = "yes"
+                chunk_str = str(count)
         else:
             indexed = "no"
             chunk_str = "-"
@@ -168,7 +181,17 @@ def _cmd_search(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    hits = asyncio.run(_run_search(site, args.query, embed, path, args.top_k))
+    import sqlite3
+
+    try:
+        hits = asyncio.run(_run_search(site, args.query, embed, path, args.top_k))
+    except sqlite3.DatabaseError as exc:
+        print(
+            f"Error: index for {site.name!r} is corrupt ({exc}). "
+            f"Run: cantrip docs index --site {site.name}",
+            file=sys.stderr,
+        )
+        return 1
     if not hits:
         print("(no hits)")
         return 0

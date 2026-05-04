@@ -93,6 +93,31 @@ class TestList:
         ops_line = next(line for line in captured.out.splitlines() if line.startswith("ops"))
         assert "3" in ops_line
 
+    def test_corrupt_index_db_does_not_crash_listing(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A corrupt per-site ``index.db`` shows ``corrupt`` and keeps going.
+
+        Regression: ``_cmd_list`` opened every existing index.db
+        unconditionally; ``DocsStore.__init__`` ran
+        ``executescript(_SCHEMA_SQL)`` against the file, raising
+        ``sqlite3.DatabaseError: file is not a database`` and
+        crashing the whole listing on one bad file.
+        """
+        path = index.store_path_for("juju", root=tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("not a sqlite database\n")
+
+        rc = docs_cli.dispatch(_make_args(docs_command="list", root=tmp_path))
+        captured = capsys.readouterr()
+        assert rc == 0
+        # The bad row is flagged as ``corrupt`` and the remaining sites
+        # still render in the table.
+        juju_line = next(line for line in captured.out.splitlines() if line.startswith("juju"))
+        assert "corrupt" in juju_line
+        for other in ("ops", "charmcraft", "rockcraft", "jubilant", "charmhub"):
+            assert other in captured.out
+
 
 # ---------------------------------------------------------------------------
 # `cantrip docs index`

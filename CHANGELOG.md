@@ -500,6 +500,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``mkdir`` is now wrapped in a broader ``except OSError`` that
   re-raises as ``SkillExportError`` with the original errno text.
   (``src/cantrip/agent/skill_export.py``)
+- **``cantrip docs list`` and ``cantrip docs search`` survive a
+  corrupt index database.**  ``DocsStore`` runs ``executescript``
+  in ``__init__``, raising ``sqlite3.DatabaseError`` against a
+  truncated or hand-edited per-site ``index.db``; ``cantrip docs
+  list`` would crash mid-table on the first bad file.  The listing
+  now flags the bad site as ``corrupt`` and keeps walking the
+  remaining sites; ``search`` prints a friendly "index is corrupt
+  — re-run ``cantrip docs index --site``" message.
+  (``src/cantrip/docs_index/cli.py``)
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness
