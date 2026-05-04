@@ -18,6 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: getsentry/warden@v0
+      - uses: getsentry/warden@v0.20.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
