@@ -390,6 +390,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   live in ``design/RIGHT_PANEL_AUDIT.md``.
 
 ### Fixed
+- **Shared (team-sync) decisions merge in chronological order.**
+  ``SessionStore.load_session`` previously read every local decision from
+  SQLite in insertion order, then *appended* shared decisions from the
+  ``.cantrip-shared/decisions.jsonl`` log.  A teammate's earlier decision
+  (recorded yesterday, pulled into your tree this morning) ended up
+  *after* your own newer decisions in ``state.decisions`` — so
+  ``/decisions``, the resume preview, and the prompt-injected
+  decisions block all rendered the audit trail time-shuffled.  The
+  merge now sorts by ``Decision.timestamp``; ``sort`` is stable, so
+  entries that share a timestamp keep their existing local-then-shared
+  ordering.  Touches ``src/cantrip/agent/store.py``.
+- **``read_file`` line-count caption no longer under-reports for files
+  without a trailing newline.**  ``ReadFileTool`` used
+  ``content.count("\n")`` to format ``Read N lines from path``, which
+  misses the final element from ``splitlines(keepends=True)`` when the
+  last line carries no ``\n``.  A 3-line file ending without a newline
+  rendered as ``Read 2 lines`` even though the output and ``data.lines``
+  range showed all three.  Now uses the slice length, which is the real
+  number of lines returned.  Touches ``src/cantrip/agent/tools/files.py``.
 - **Subprocess decode no longer crashes on non-UTF-8 stdout/stderr.**
   Three subprocess sites — concierge in
   ``src/cantrip/agent/tools/environment.py``, juju ``debug-log`` in

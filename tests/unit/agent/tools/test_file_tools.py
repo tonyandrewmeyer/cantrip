@@ -175,6 +175,28 @@ class TestReadFileTool:
         assert result.success is True
         assert result.output == "deep content"
 
+    @pytest.mark.asyncio
+    async def test_read_range_caption_counts_lines_without_trailing_newline(
+        self, tmp_path
+    ) -> None:
+        """The "Read N lines" caption must count slice length, not ``\\n`` runs.
+
+        Regression: a partial read used ``content.count("\\n")``, which
+        under-reports by one for any file whose last line lacks a trailing
+        newline (common in legacy text and most code files) — the final
+        element from ``splitlines(keepends=True)`` carries no ``\\n``.
+        """
+        target = tmp_path / "no_trailing_nl.txt"
+        # Three lines, last one has no trailing newline.
+        target.write_text("alpha\nbeta\ngamma")
+        tool = ReadFileTool(base_path=tmp_path)
+
+        result = await tool.execute(path="no_trailing_nl.txt", start_line=1, end_line=3)
+
+        assert result.success is True
+        assert result.output == "alpha\nbeta\ngamma"
+        assert result.caption == "Read 3 lines from no_trailing_nl.txt"
+
 
 class TestWriteFileTool:
     """Tests for WriteFileTool."""

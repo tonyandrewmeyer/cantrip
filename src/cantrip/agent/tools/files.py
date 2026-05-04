@@ -106,7 +106,13 @@ class ReadFileTool(PathAwareTool):
                         data={"path": str(resolved), "total_lines": total},
                     )
                 content = "".join(lines[start:end])
-                shown = content.count("\n")
+                # ``content.count("\n")`` under-reports by one for any file
+                # whose last line lacks a trailing newline (common in legacy
+                # text and many code files): the final element returned by
+                # ``splitlines(keepends=True)`` then carries no ``\n`` of its
+                # own.  Use the slice length, which is the real number of
+                # lines we returned to the caller.
+                shown = len(lines[start:end])
                 return ToolResult(
                     success=True,
                     output=content,

@@ -602,3 +602,46 @@ class TestSharedDecisionsMerge:
         # And the JSONL file is still the canonical record (one entry).
         jsonl_lines = shared_decisions_path(tmp_path).read_text(encoding="utf-8").splitlines()
         assert len(jsonl_lines) == 1
+
+    def test_load_merges_shared_and_local_in_chronological_order(
+        self, store: SessionStore, tmp_path: pathlib.Path
+    ) -> None:
+        """``load_session`` must order merged decisions by ``timestamp``.
+
+        Regression: ``load_session`` previously read every local decision
+        from SQLite, then *appended* shared decisions from the JSONL log.
+        A teammate's earlier decision (e.g. recorded at 10:00 and pulled
+        into your tree at 11:00) ended up *after* your own later
+        decisions in ``state.decisions``.  ``/decisions``, the resume
+        preview, and the prompt-injected decisions block all render the
+        list in order, so the audit trail looked time-shuffled.  The fix
+        merges by ``Decision.timestamp`` before returning.
+        """
+        import datetime as dt
+
+        # A teammate recorded a decision yesterday and you pulled it
+        # into ``.cantrip-shared/decisions.jsonl``.
+        teammate_old = Decision(
+            type="path",
+            choice="12-factor",
+            reason="teammate's call",
+            timestamp=dt.datetime(2026, 1, 1, 10, 0, 0),
+        )
+        append_shared_decision(tmp_path, teammate_old)
+
+        # You then record a local decision today, after the pull.
+        state = AgentState(charm_path=tmp_path)
+        local_new = Decision(
+            type="model",
+            choice="claude-sonnet",
+            reason="my call",
+            timestamp=dt.datetime(2026, 1, 2, 10, 0, 0),
+        )
+        state.decisions.append(local_new)
+        store.save_session(state)
+
+        loaded = store.load_session()
+        assert loaded is not None
+        ordered = [(d.type, d.source) for d in loaded.decisions]
+        # Older shared decision must precede the newer local one.
+        assert ordered == [("path", "shared"), ("model", "local")]

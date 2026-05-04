@@ -581,13 +581,14 @@ class SessionStore:
         decision_rows = self._db.execute(
             "SELECT type, choice, reason, timestamp, source FROM decisions ORDER BY id"
         ).fetchall()
+        merged: list[Decision] = []
         for dr in decision_rows:
             ts = dr["timestamp"]
             try:
                 timestamp = datetime.datetime.fromisoformat(ts) if ts else datetime.datetime.now()
             except (ValueError, TypeError):
                 timestamp = datetime.datetime.now()
-            state.decisions.append(
+            merged.append(
                 Decision(
                     type=dr["type"],
                     choice=dr["choice"],
@@ -596,14 +597,22 @@ class SessionStore:
                     source=dr["source"] or "local",
                 )
             )
-        # Phase 51b.2: append decisions from the shared team-sync log so
+        # Phase 51b.2: pull in decisions from the shared team-sync log so
         # teammates' choices show up in /decisions alongside the local
         # ones.  Shared rows are flagged so the UI can render them
         # differently and so save_session won't write them back to
         # SQLite — the JSONL file is the source of truth.
         if state.charm_path is not None:
-            for shared in load_shared_decisions(state.charm_path):
-                state.decisions.append(shared)
+            merged.extend(load_shared_decisions(state.charm_path))
+        # Merge by timestamp so a teammate's earlier decision sorts before
+        # a later local one in /decisions, the resume preview, and the
+        # prompt-injected decisions block.  ``sort`` is stable, so two
+        # entries with identical timestamps keep their relative
+        # local-then-shared ordering — useful when ``Decision.timestamp``
+        # falls back to ``datetime.now`` because a row was missing the
+        # field.
+        merged.sort(key=lambda d: d.timestamp)
+        state.decisions.extend(merged)
 
         return state
 
