@@ -262,6 +262,21 @@ class TestSnapshotCharm:
         snap = compare.snapshot_charm(charm)
         assert snap.base == "ubuntu@22.04"
 
+    def test_non_utf8_yaml_does_not_crash(self, tmp_path: pathlib.Path) -> None:
+        """A latin-1 charmcraft.yaml must not abort the snapshot.
+
+        Regression: ``_load_yaml`` called ``path.read_text()`` with
+        strict UTF-8, so a file containing legacy bytes (e.g. a
+        latin-1 ``é``) raised ``UnicodeDecodeError`` and crashed
+        ``cantrip compare`` before the diff could run.
+        """
+        charm = tmp_path / "latin1"
+        charm.mkdir()
+        # ``é`` (0xe9) in latin-1 — invalid as utf-8.
+        (charm / "charmcraft.yaml").write_bytes(b"name: latin1\nsummary: caf\xe9\n")
+        snap = compare.snapshot_charm(charm)
+        assert snap.charm_name == "latin1"
+
 
 # ── compare_charms + diff primitives ─────────────────────────────────
 

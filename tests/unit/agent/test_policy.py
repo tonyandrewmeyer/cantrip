@@ -294,6 +294,13 @@ class TestLoadPolicyFile:
         with pytest.raises(PolicyParseError):
             load_policy_file(path)
 
+    def test_non_utf8_yaml_raises_policy_parse_error(self, tmp_path: pathlib.Path) -> None:
+        """Latin-1 policy file raises PolicyParseError, not UnicodeDecodeError."""
+        path = tmp_path / "weird.yaml"
+        path.write_bytes(b'name: weird\nblocked_tools: ["caf\xe9"]\n')
+        with pytest.raises(PolicyParseError, match="not valid UTF-8"):
+            load_policy_file(path)
+
     def test_filename_stem_becomes_default_name(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "custom.yaml"
         path.write_text("blocked_tools: [x]\n")

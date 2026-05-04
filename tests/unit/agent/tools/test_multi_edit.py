@@ -138,6 +138,24 @@ class TestMultiEditExecution:
         assert "def greet():" in (tmp_path / "a.py").read_text()
 
     @pytest.mark.anyio
+    async def test_non_utf8_file_returns_friendly_error(self, tool, tmp_path):
+        """A binary / mis-encoded file errors cleanly instead of UnicodeDecodeError.
+
+        Regression: ``read_text()`` on a non-UTF-8 file used to leak
+        ``UnicodeDecodeError`` past the tool's narrow ``except OSError``.
+        """
+        (tmp_path / "binary.txt").write_bytes(b"hello \xff\xfe binary")
+        result = await tool.execute(
+            edits=[
+                {"file": "binary.txt", "old": "hello", "new": "goodbye"},
+            ]
+        )
+        assert not result.success
+        assert "cannot read" in result.error.lower()
+        # File was not modified.
+        assert (tmp_path / "binary.txt").read_bytes().startswith(b"hello \xff\xfe")
+
+    @pytest.mark.anyio
     async def test_path_traversal_blocked(self, tool):
         result = await tool.execute(
             edits=[

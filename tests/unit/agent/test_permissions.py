@@ -229,6 +229,20 @@ class TestYAMLLoader:
         assert ruleset.bash == ()
         assert ruleset.paths == ()
 
+    def test_non_utf8_file_raises_parse_error(self, tmp_path: pathlib.Path):
+        """A latin-1 permissions.yaml raises a parse error, not UnicodeDecodeError.
+
+        Regression: the loader read with strict UTF-8, so a single
+        legacy-encoded byte would crash the CLI with a traceback.  It
+        now wraps the decode in a :class:`PermissionParseError` so the
+        outer dispatcher can ``Skipping malformed`` and continue.
+        """
+        path = tmp_path / "permissions.yaml"
+        path.write_bytes(b'bash:\n  "echo caf\xe9": deny\n')
+        with pytest.raises(PermissionParseError) as exc_info:
+            load_permissions_file(path)
+        assert "not valid UTF-8" in str(exc_info.value)
+
     def test_inline_dict_parses(self):
         ruleset = ruleset_from_dict(
             {"bash_tools": ["run_command", "shell"]},

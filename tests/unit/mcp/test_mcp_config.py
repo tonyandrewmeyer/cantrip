@@ -144,6 +144,19 @@ servers:
         with pytest.raises(MCPConfigError, match="could not parse"):
             _parse_yaml(f)
 
+    def test_non_utf8_yaml_raises_friendly_error(self, tmp_path: pathlib.Path) -> None:
+        """A latin-1 mcp config raises MCPConfigError, not UnicodeDecodeError.
+
+        Regression: cantrip startup loaded ``cantrip.mcp.yaml`` with
+        strict UTF-8 decoding, so a stray legacy-encoded byte would
+        crash the agent at startup before the loader could log
+        "Ignoring malformed".
+        """
+        f = tmp_path / "mcp.yaml"
+        f.write_bytes(b'servers:\n  bad:\n    command: "echo caf\xe9"\n')
+        with pytest.raises(MCPConfigError, match="not valid UTF-8"):
+            _parse_yaml(f)
+
 
 # ── Multi-source merge precedence ──────────────────────────────────────
 

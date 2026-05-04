@@ -142,12 +142,22 @@ def snapshot_charm(path: pathlib.Path) -> CharmSnapshot:
 
 
 def _load_yaml(path: pathlib.Path) -> dict[str, Any]:
-    """Parse *path* as YAML, returning an empty dict on any failure."""
+    """Parse *path* as YAML, returning an empty dict on any failure.
+
+    The diff is best-effort by design: a charm with a malformed (or
+    non-UTF-8) YAML file should still surface in the report as "missing
+    structure" rather than crashing the whole compare invocation.
+    ``errors="replace"`` lets a stray legacy-encoded byte (latin-1
+    ``é`` etc.) become U+FFFD instead of raising — the YAML parser
+    will usually still understand the rest of the file, and if it
+    cannot, ``yaml.YAMLError`` falls through to the empty-dict path.
+    """
     if not path.is_file():
         return {}
     try:
-        data = yaml.safe_load(path.read_text())
-    except yaml.YAMLError:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        data = yaml.safe_load(text)
+    except (OSError, yaml.YAMLError):
         return {}
     return data if isinstance(data, dict) else {}
 

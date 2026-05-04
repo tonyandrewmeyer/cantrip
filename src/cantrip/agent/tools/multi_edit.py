@@ -100,7 +100,11 @@ class MultiEditTool(PathAwareTool):
 
             try:
                 content = resolved.read_text()
-            except OSError as exc:
+            except (OSError, UnicodeDecodeError) as exc:
+                # ``UnicodeDecodeError`` fires on binary or mis-encoded
+                # files (latin-1, UTF-16, etc.); surface it as a friendly
+                # partial result rather than letting the tool dispatch
+                # see an uncaught exception.
                 return _partial_result(
                     applied, results, f"Edit {i + 1}: cannot read {file_path}: {exc}"
                 )

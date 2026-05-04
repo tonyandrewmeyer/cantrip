@@ -259,7 +259,11 @@ def load_policy_file(path: pathlib.Path) -> GovernancePolicy:
     usable composition.
     """
     try:
-        raw = yaml.safe_load(path.read_text())
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise PolicyParseError(f"{path} is not valid UTF-8: {exc}") from exc
+    try:
+        raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise PolicyParseError(f"{path}: {exc}") from exc
     if raw is None:

@@ -79,7 +79,11 @@ def load_hooks(repo_root: pathlib.Path | str | None = None) -> list[HookConfig]:
 def _parse_yaml(path: pathlib.Path) -> list[HookConfig]:
     """Parse one hooks YAML file into :class:`HookConfig` instances."""
     try:
-        raw = yaml.safe_load(path.read_text())
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise HookConfigError(f"{path} is not valid UTF-8: {exc}") from exc
+    try:
+        raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise HookConfigError(f"could not parse {path}: {exc}") from exc
     if raw is None:

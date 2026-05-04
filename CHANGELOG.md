@@ -431,6 +431,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   rejects regular-file targets with "exists but is not a directory"
   and wraps ``mkdir`` so any other ``OSError`` (permission denied,
   read-only filesystem) becomes a one-line CLI error.
+- **YAML loaders no longer crash on non-UTF-8 input.**  ``cantrip
+  compare``, ``cantrip permissions``, ``cantrip hooks test``, and the
+  agent's startup MCP / governance-policy loaders all read user-edited
+  YAML files via ``Path.read_text()`` with strict UTF-8 decoding, so a
+  single legacy-encoded byte (e.g. a latin-1 ``é``) raised
+  ``UnicodeDecodeError`` and dumped a traceback at the user.  Each
+  loader now either falls back to ``errors="replace"`` (compare,
+  audit) or surfaces a ``not valid UTF-8`` ``*ParseError`` that the
+  outer dispatcher already logs and skips (``permissions.yaml``,
+  ``cantrip.hooks.yaml``, ``cantrip.mcp.yaml``, governance policies).
+  Affects: ``src/cantrip/compare.py``,
+  ``src/cantrip/agent/permissions.py``,
+  ``src/cantrip/hooks/config.py``, ``src/cantrip/mcp/config.py``,
+  ``src/cantrip/agent/policy.py``.
+- **``multi_edit`` tool no longer crashes on non-UTF-8 files.**  The
+  tool's ``except OSError`` did not match ``UnicodeDecodeError``, so
+  pointing the agent at a binary or latin-1 file raised an uncaught
+  exception.  The catch now covers both and returns a
+  ``cannot read <file>: …`` partial result.
+  (``src/cantrip/agent/tools/multi_edit.py``)
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness

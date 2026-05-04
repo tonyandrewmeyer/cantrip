@@ -445,6 +445,8 @@ def load_permissions_file(path: pathlib.Path) -> PermissionRuleset:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise PermissionParseError(f"{path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise PermissionParseError(f"{path}: not valid UTF-8: {exc}") from exc
     try:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:

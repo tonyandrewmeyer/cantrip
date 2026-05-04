@@ -102,7 +102,11 @@ def load_marketplace_sources(
 def _parse_marketplaces_from_path(path: pathlib.Path) -> list[MarketplaceSource]:
     """Pull the ``marketplaces:`` block from one YAML file."""
     try:
-        raw = yaml.safe_load(path.read_text())
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise MCPConfigError(f"{path} is not valid UTF-8: {exc}") from exc
+    try:
+        raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise MCPConfigError(f"could not parse {path}: {exc}") from exc
     if not isinstance(raw, dict):
@@ -142,7 +146,11 @@ def _parse_yaml(path: pathlib.Path) -> list[ServerConfig]:
     crashing the agent at startup.
     """
     try:
-        raw = yaml.safe_load(path.read_text())
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise MCPConfigError(f"{path} is not valid UTF-8: {exc}") from exc
+    try:
+        raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise MCPConfigError(f"could not parse {path}: {exc}") from exc
     if raw is None:

@@ -95,6 +95,21 @@ class TestParseYaml:
         [hook] = _parse_yaml(path)
         assert hook.name == "jq"
 
+    def test_non_utf8_raises_friendly_config_error(self, tmp_path: pathlib.Path):
+        """A latin-1 hooks file raises HookConfigError, not UnicodeDecodeError.
+
+        Regression: ``cantrip hooks test`` used to traceback when a
+        user's hooks file contained a stray legacy-encoded byte
+        (e.g. ``é`` written as latin-1).  The parser now wraps the
+        decode failure as a :class:`HookConfigError` so the outer
+        loader logs ``Ignoring malformed hooks config`` and the CLI
+        exits cleanly.
+        """
+        path = tmp_path / "hooks.yaml"
+        path.write_bytes(b'hooks:\n  - event: pre_tool_call\n    run: "echo caf\xe9"\n')
+        with pytest.raises(HookConfigError, match="not valid UTF-8"):
+            _parse_yaml(path)
+
     def test_explicit_name_honoured(self, tmp_path: pathlib.Path):
         path = tmp_path / "hooks.yaml"
         path.write_text("hooks:\n  - name: my-hook\n    event: pre_tool_call\n    run: echo\n")
