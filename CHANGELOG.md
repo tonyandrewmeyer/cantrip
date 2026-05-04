@@ -451,6 +451,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   exception.  The catch now covers both and returns a
   ``cannot read <file>: …`` partial result.
   (``src/cantrip/agent/tools/multi_edit.py``)
+- **Agent startup tolerates a non-UTF-8 shared-decisions log.**
+  ``load_shared_decisions`` (``src/cantrip/agent/state.py``) read
+  ``.cantrip-shared/decisions.jsonl`` with strict UTF-8, so a single
+  legacy-encoded byte committed by one teammate crashed every other
+  teammate's ``cantrip`` startup with ``UnicodeDecodeError`` (the
+  loader runs inside ``load_session``).  The reader now uses
+  ``errors="replace"`` so each malformed line falls through to the
+  existing JSON-decode skip path.
+- **``MEMORY.md`` index injection survives non-UTF-8 input.**
+  ``GlobalMemoryStore.read_index`` (``src/cantrip/agent/memory/core.py``)
+  caught ``OSError`` only; a hand-edited index with a stray
+  legacy-encoded byte raised ``UnicodeDecodeError`` and dumped a
+  traceback before the system prompt was even built.  The read now
+  uses ``errors="replace"`` so the affected glyph becomes U+FFFD and
+  the agent boots normally.
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness

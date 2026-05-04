@@ -576,7 +576,12 @@ class GlobalMemoryStore:
         if not self.index_path.exists():
             return ""
         try:
-            raw = self.index_path.read_text()
+            # ``errors="replace"`` keeps a hand-edited MEMORY.md with
+            # a stray legacy-encoded byte from crashing the system-prompt
+            # injection at startup; the replacement glyphs render fine
+            # downstream and the user sees the index they asked for
+            # rather than a traceback.
+            raw = self.index_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return ""
         lines = raw.splitlines()

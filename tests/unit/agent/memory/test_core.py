@@ -273,6 +273,22 @@ class TestGlobalMemoryStore:
         # Cap + truncation marker.
         assert len(kept_lines) == MEMORY_INDEX_MAX_LINES + 1
 
+    def test_read_index_handles_non_utf8(self, global_store: GlobalMemoryStore) -> None:
+        """A non-UTF-8 MEMORY.md must not crash the system-prompt injection.
+
+        Regression: ``read_index`` decoded with strict UTF-8, so a stray
+        legacy-encoded byte in a hand-edited ``MEMORY.md`` raised
+        ``UnicodeDecodeError`` and dumped a traceback at startup.  The
+        replacement chars are fine to ship into the prompt — losing one
+        glyph is much better than crashing the agent.
+        """
+        global_store._ensure_dir()
+        global_store.index_path.write_bytes(b"# Memory Index\n- caf\xe9\n")
+        rendered = global_store.read_index()
+        assert "# Memory Index" in rendered
+        # The bad byte became U+FFFD; the surrounding text survived.
+        assert "�" in rendered
+
     def test_path_traversal_sanitised(self, global_store: GlobalMemoryStore) -> None:
         """A title with path separators cannot escape the memory directory."""
         entry = global_store.write("../evil/name", "fact", "x")

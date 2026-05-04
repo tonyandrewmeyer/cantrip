@@ -135,7 +135,11 @@ def load_shared_decisions(charm_path: pathlib.Path) -> list[Decision]:
     if not target.is_file():
         return []
     try:
-        raw = target.read_text(encoding="utf-8")
+        # ``errors="replace"`` lets a teammate's mis-encoded entry
+        # become U+FFFD instead of aborting startup with
+        # ``UnicodeDecodeError`` — the bad line will fail ``json.loads``
+        # below and be logged-and-skipped like any other malformed row.
+        raw = target.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         log.warning("Could not read shared decisions log %s: %s", target, exc)
         return []

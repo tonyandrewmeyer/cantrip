@@ -196,6 +196,28 @@ class TestSharedDecisionsLog:
         # Timestamp falls back to "now" — just check it's a real datetime.
         assert isinstance(loaded[0].timestamp, datetime.datetime)
 
+    def test_load_handles_non_utf8_lines(self, tmp_path: pathlib.Path) -> None:
+        """A teammate's mis-encoded entry must not crash agent startup.
+
+        Regression: ``load_shared_decisions`` opened the JSONL file with
+        strict UTF-8, so a single legacy-encoded byte committed by one
+        teammate raised ``UnicodeDecodeError`` at every other teammate's
+        ``cantrip`` startup (the loader runs inside ``load_session``).
+        """
+        target = shared_decisions_path(tmp_path)
+        target.parent.mkdir(parents=True)
+        # Good line, then a latin-1 line, then another good line.
+        target.write_bytes(
+            b'{"type": "ok", "choice": "yes"}\n'
+            b"caf\xe9 not valid utf-8\n"
+            b'{"type": "also", "choice": "fine"}\n'
+        )
+        loaded = load_shared_decisions(tmp_path)
+        assert [(d.type, d.choice) for d in loaded] == [
+            ("ok", "yes"),
+            ("also", "fine"),
+        ]
+
 
 class TestTeamDecisionsWritesEnv:
     """``CANTRIP_TEAM_DECISIONS_WRITES`` is honoured with safe fallbacks."""
