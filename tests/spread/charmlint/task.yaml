@@ -189,7 +189,7 @@ execute: |
   uv run charmlint --help | grep -q "\-\-ignore"
   uv run charmlint --help | grep -q "\-\-severity"
   uv run charmlint --help | grep -q "\-\-strict"
-  uv run charmlint --help | grep -q "\-\-no-color"
+  uv run charmlint --help | grep -q "\-\-no-colour"
   uv run charmlint --help | grep -q "\-\-config"
   echo "PASS: CLI help"
 
@@ -215,7 +215,7 @@ execute: |
   # ===================================================================
   echo "=== Test: missing metadata ==="
   EMPTY_DIR=$(mktemp -d)
-  OUTPUT=$(uv run charmlint "$EMPTY_DIR" --no-color 2>&1)
+  OUTPUT=$(uv run charmlint "$EMPTY_DIR" --no-colour 2>&1)
   RC=$?
   test "$RC" -ne 0 || { echo "FAIL: should fail with exit 1"; exit 1; }
   echo "$OUTPUT" | grep -q "FATAL" || { echo "FAIL: should show FATAL"; exit 1; }
@@ -229,8 +229,8 @@ execute: |
   echo "=== Test: well-formed charm ==="
   create_good_charm "$CHARM_DIR"
   RC=0
-  uv run charmlint "$CHARM_DIR" --no-color --severity error || RC=$?
-  test "$RC" -eq 0 || { echo "FAIL: well-formed charm should have no errors (exit $RC)"; uv run charmlint "$CHARM_DIR" --no-color --severity error; exit 1; }
+  uv run charmlint "$CHARM_DIR" --no-colour --severity error || RC=$?
+  test "$RC" -eq 0 || { echo "FAIL: well-formed charm should have no errors (exit $RC)"; uv run charmlint "$CHARM_DIR" --no-colour --severity error; exit 1; }
   echo "PASS: well-formed charm"
 
   # ===================================================================
@@ -857,7 +857,7 @@ execute: |
 
   # Without strict, warnings should not cause non-zero exit (if no errors).
   RC=0
-  uv run charmlint "$CHARM_DIR" --no-color --severity warning --ignore TEST,STS,CC || RC=$?
+  uv run charmlint "$CHARM_DIR" --no-colour --severity warning --ignore TEST,STS,CC || RC=$?
   # (May still be 1 if errors exist; tested more precisely below.)
 
   # With strict, warnings cause exit 2 (when no errors).
@@ -865,7 +865,7 @@ execute: |
   create_bare_charm "$CHARM_DIR"
 
   RC=0
-  uv run charmlint "$CHARM_DIR" --no-color --strict --severity warning --select META || RC=$?
+  uv run charmlint "$CHARM_DIR" --no-colour --strict --severity warning --select META || RC=$?
   test "$RC" -eq 2 || { echo "FAIL: --strict should exit 2 for warnings (got $RC)"; exit 1; }
   echo "PASS: --strict flag"
 
@@ -876,7 +876,7 @@ execute: |
   create_bare_charm "$CHARM_DIR"
   # TEST001 is an error — no unit tests.
   RC=0
-  uv run charmlint "$CHARM_DIR" --no-color --select TEST --severity error || RC=$?
+  uv run charmlint "$CHARM_DIR" --no-colour --select TEST --severity error || RC=$?
   test "$RC" -eq 1 || { echo "FAIL: should exit 1 for errors (got $RC)"; exit 1; }
   echo "PASS: exit code 1"
 
@@ -886,21 +886,21 @@ execute: |
   echo "=== Test: exit code 0 ==="
   create_good_charm "$CHARM_DIR"
   RC=0
-  uv run charmlint "$CHARM_DIR" --no-color --severity error || RC=$?
+  uv run charmlint "$CHARM_DIR" --no-colour --severity error || RC=$?
   test "$RC" -eq 0 || { echo "FAIL: well-formed charm should exit 0 (got $RC)"; exit 1; }
   echo "PASS: exit code 0"
 
   # ===================================================================
-  # 35. --no-color flag suppresses ANSI codes
+  # 35. --no-colour flag suppresses ANSI codes
   # ===================================================================
-  echo "=== Test: --no-color flag ==="
+  echo "=== Test: --no-colour flag ==="
   create_bare_charm "$CHARM_DIR"
-  OUTPUT=$(uv run charmlint "$CHARM_DIR" --no-color --select META 2>&1)
+  OUTPUT=$(uv run charmlint "$CHARM_DIR" --no-colour --select META 2>&1)
   if echo "$OUTPUT" | grep -qP '\033\['; then
-    echo "FAIL: --no-color should suppress ANSI escape codes"
+    echo "FAIL: --no-colour should suppress ANSI escape codes"
     exit 1
   fi
-  echo "PASS: --no-color flag"
+  echo "PASS: --no-colour flag"
 
   # ===================================================================
   # 36. Config file (.charmlint.yaml)
@@ -1062,7 +1062,7 @@ execute: |
   # ===================================================================
   echo "=== Test: text output summary ==="
   create_bare_charm "$CHARM_DIR"
-  OUTPUT=$(uv run charmlint "$CHARM_DIR" --no-color --select META 2>&1)
+  OUTPUT=$(uv run charmlint "$CHARM_DIR" --no-colour --select META 2>&1)
   echo "$OUTPUT" | grep -q "Found.*issue" || { echo "FAIL: should show summary"; exit 1; }
   echo "PASS: text output summary"
 
@@ -1071,7 +1071,7 @@ execute: |
   # ===================================================================
   echo "=== Test: no issues message ==="
   create_good_charm "$CHARM_DIR"
-  OUTPUT=$(uv run charmlint "$CHARM_DIR" --no-color --severity error 2>&1)
+  OUTPUT=$(uv run charmlint "$CHARM_DIR" --no-colour --severity error 2>&1)
   echo "$OUTPUT" | grep -q "No issues found" || { echo "FAIL: should show 'No issues found'"; exit 1; }
   echo "PASS: no issues message"
 

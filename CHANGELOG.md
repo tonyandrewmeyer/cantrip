@@ -28,6 +28,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   `/yolo` where `getattr(agent, "executor")` never resolved, so toggling
   yolo mid-session had no effect on in-flight subagents.
 
+### Fixed
+- **``/cost`` rendered as raw Markdown in the TUI.**  The handler
+  emits Markdown (``**Token usage**``, ``_Estimated total: …_``,
+  bullet lists) but returned a ``SlashResult`` without
+  ``markdown=True``, so surfaces showed the asterisks and
+  underscores literally.  Now flagged like ``/tree`` and ``/map``.
+
 ### Added
 - **OpenCode Zen as an LLM provider.**  New ``--provider opencode-zen``
   fronts OpenCode's curated gateway at ``https://opencode.ai/zen/v1`` —
@@ -192,6 +199,11 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   them.
 
 ### Changed
+- **``charmlint`` ``--no-color`` renamed to ``--no-colour``.**  Both the
+  Python and Rust CLIs now spell the flag in UK English, matching the
+  rest of the Cantrip CLI surface.  Demos, spread tests, and the
+  ``explanation-charmlint-rs`` doc are updated.  No alias is kept —
+  pre-1.0, callers should update directly.
 - **MCP lifecycle extracted from ``CantripAgent`` (Phase 85.4 cohort 1).**
   The MCP registry, marketplace state, and elicitation bridge moved
   to a new ``src/cantrip/agent/mcp_controller.py`` (``MCPController``),

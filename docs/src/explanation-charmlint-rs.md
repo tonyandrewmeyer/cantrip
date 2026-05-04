@@ -48,7 +48,7 @@ Both implementations share the same command-line interface:
 
 ```
 charmlint [path] [--format text|json] [--select CATS] [--ignore RULES]
-         [--severity LEVEL] [--config PATH] [--strict] [--no-color]
+         [--severity LEVEL] [--config PATH] [--strict] [--no-colour]
 ```
 
 The Rust version produces identical JSON output structure, identical

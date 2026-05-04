@@ -37,7 +37,7 @@ unknown_fields.py
 Cantrip's test suite ships several reference charms. Let's lint the Miniflux gold reference:
 
 ```bash
-uv run charmlint --no-color tests/eval/charms/miniflux/gold-claude | head -40
+uv run charmlint --no-colour tests/eval/charms/miniflux/gold-claude | head -40
 ```
 
 ```output
@@ -69,7 +69,7 @@ Found 19 issues (10 warnings, 9 info)
 Use `--select` to focus on one area — here, only observability/COS rules:
 
 ```bash
-uv run charmlint --no-color --select COS tests/eval/charms/miniflux/gold-claude
+uv run charmlint --no-colour --select COS tests/eval/charms/miniflux/gold-claude
 ```
 
 ```output
@@ -127,7 +127,7 @@ uv run charmlint --format=json --select META tests/eval/charms/miniflux/gold-cla
 Without flags, `charmlint` exits non-zero only on errors. With `--strict`, warnings also fail the run — ideal for a CI gate:
 
 ```bash
-uv run charmlint --no-color --strict --select COS tests/eval/charms/miniflux/gold-claude; echo "exit=$?"
+uv run charmlint --no-colour --strict --select COS tests/eval/charms/miniflux/gold-claude; echo "exit=$?"
 ```
 
 ```output

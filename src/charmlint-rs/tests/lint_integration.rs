@@ -133,7 +133,7 @@ fn strict_flag_produces_exit_code_two_for_warnings() {
     let output = Command::new(charmlint_bin())
         .arg(dir.path())
         .arg("--strict")
-        .arg("--no-color")
+        .arg("--no-colour")
         .output()
         .expect("run charmlint");
     assert_eq!(

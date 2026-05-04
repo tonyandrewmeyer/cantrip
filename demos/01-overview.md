@@ -105,7 +105,7 @@ uv run charmlint --help | head -20
 ```output
 usage: charmlint [-h] [--format {text,json}] [--select SELECT]
                  [--ignore IGNORE] [--severity {error,warning,info}]
-                 [--config CONFIG] [--strict] [--no-color]
+                 [--config CONFIG] [--strict] [--no-colour]
                  [path]
 
 Lint a Juju charm for best practices, observability, testing, and more.

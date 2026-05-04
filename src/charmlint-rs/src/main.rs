@@ -41,8 +41,8 @@ struct Cli {
     strict: bool,
 
     /// Disable coloured output.
-    #[arg(long = "no-color")]
-    no_color: bool,
+    #[arg(long = "no-colour")]
+    no_colour: bool,
 }
 
 // ANSI helpers.
@@ -152,7 +152,7 @@ fn main() {
 
     // Determine colour mode.
     let use_colour =
-        !cli.no_color && atty_stdout() && cli.output_format != "json";
+        !cli.no_colour && atty_stdout() && cli.output_format != "json";
 
     // Load config.
     let mut lint_config =

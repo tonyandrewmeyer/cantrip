@@ -11,7 +11,7 @@ from . import linter as _linter
 from . import models
 
 # ---------------------------------------------------------------------------
-# ANSI colour helpers — disabled when stdout is not a terminal or --no-color
+# ANSI colour helpers — disabled when stdout is not a terminal or --no-colour
 # ---------------------------------------------------------------------------
 
 _RESET = "\033[0m"
@@ -121,7 +121,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Exit with code 2 if warnings are found (default: only errors cause non-zero exit)",
     )
     parser.add_argument(
-        "--no-color",
+        "--no-colour",
         action="store_true",
         help="Disable coloured output",
     )
@@ -135,8 +135,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    # Determine colour mode: off if --no-color, not a TTY, or JSON output.
-    _use_colour = not args.no_color and sys.stdout.isatty() and args.output_format != "json"
+    # Determine colour mode: off if --no-colour, not a TTY, or JSON output.
+    _use_colour = not args.no_colour and sys.stdout.isatty() and args.output_format != "json"
 
     charm_dir = pathlib.Path(args.path).resolve()
     if not charm_dir.is_dir():
