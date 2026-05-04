@@ -2,6 +2,24 @@
 
 *A small spell for building Juju charms*
 
+> **⚠ Experimental, pre-1.0 software — run inside a VM only.**
+>
+> Cantrip is early, exploratory work. Interfaces, on-disk layouts, slash
+> commands, tool surfaces, and defaults will change without notice, and
+> there is no API or behavioural stability guarantee until 1.0. Treat it
+> accordingly.
+>
+> Cantrip is an autonomous agent: it executes shell commands, edits
+> files, packs and deploys charms, and talks to Juju controllers and
+> Kubernetes substrates on your behalf. Steps have been taken to keep
+> it well-behaved — sandboxed tool execution, an allow-listed command
+> surface, confirmation prompts for risky actions, scoped file access —
+> but **you should only run Cantrip inside a disposable virtual machine
+> or dedicated test environment**, never against production systems,
+> personal home directories, or controllers you cannot afford to lose.
+> Use a fresh VM, point it at a throwaway Juju model, and assume any
+> mistake the agent makes can affect the entire machine it runs on.
+
 Cantrip is an AI-powered **autonomous agent** that builds production-quality [Juju charms](https://juju.is/) independently. Describe your workload, and Cantrip researches it, designs the charm, writes the code, deploys it, tests it, and debugs it — with you confirming key decisions and providing domain expertise.
 
 **Quick start**
