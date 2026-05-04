@@ -390,6 +390,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   live in ``design/RIGHT_PANEL_AUDIT.md``.
 
 ### Fixed
+- **Tool dispatch coerces string-typed primitives so ``destructive_mode:
+  "false"`` doesn't silently flip true.**  Both Anthropic's and Google's
+  function-calling formats occasionally surface primitive arguments as
+  strings even when the schema declares ``boolean`` / ``integer`` /
+  ``number`` — most often the OpenAI-compat code path that round-trips
+  ``func.arguments`` through ``json.loads`` against an LLM that emitted
+  ``{"destructive_mode": "false"}``, but Gemini's protobuf and cached /
+  replayed responses can do it too.  The tool then saw
+  ``destructive_mode="false"``, ``bool("false")`` is ``True`` (any
+  non-empty string is truthy in Python), and the destructive flag
+  flipped the wrong way — the ``charmcraft pack`` and ``charm_validate``
+  tools were the most exposed because their boolean flags directly gate
+  ``--destructive-mode`` and ``--skip-tests``.  ``execute_tool`` in
+  ``src/cantrip/agent/tools/base.py`` now walks the tool's JSONSchema
+  ``properties`` block before invoking ``tool.execute`` and coerces
+  string ``"true"``/``"false"``/``"1"``/``"0"``/``"yes"``/``"no"``/
+  ``"on"``/``"off"`` (and the empty string) to the right ``bool``,
+  numeric strings to ``int`` / ``float`` for the matching schema types.
+  Coercion is intentionally narrow: only primitive types declared in
+  the schema, only when the value is a string, only the obvious
+  literals — anything else passes through unchanged so the tool can
+  produce its own clear error.  Schemas without a ``type`` field are
+  left alone — the guard never *invents* a type.  The path runs once
+  at the dispatch boundary, so every tool benefits without per-tool
+  changes; subagent runs (which share ``execute_tool``) pick it up
+  too.
 - **Shared (team-sync) decisions merge in chronological order.**
   ``SessionStore.load_session`` previously read every local decision from
   SQLite in insertion order, then *appended* shared decisions from the

@@ -221,6 +221,73 @@ def tool_to_schema(tool: Tool) -> dict[str, Any]:
     }
 
 
+_BOOL_TRUE_LITERALS: frozenset[str] = frozenset({"true", "1", "yes", "on"})
+_BOOL_FALSE_LITERALS: frozenset[str] = frozenset({"false", "0", "no", "off", ""})
+
+
+def _coerce_argument(value: Any, schema: dict[str, Any]) -> Any:
+    """Coerce *value* to the JSONSchema type when the LLM emitted a string.
+
+    Both Anthropic's and Google's function-calling formats sometimes
+    surface primitive arguments as strings even when the schema declares
+    ``boolean`` / ``integer`` / ``number`` — typically the OpenAI-compat
+    arguments-as-JSON-string code path, but Gemini's protobuf and
+    misformed cached responses occasionally do it too.  Without coercion
+    the tool sees ``destructive_mode="false"`` and ``bool("false")`` is
+    ``True``, silently flipping a destructive flag the wrong way.
+
+    Coercion is intentionally narrow: only primitive types declared in
+    the schema, only when *value* is a string, only the obvious boolean
+    /integer / number literals.  Unknown literals fall through unchanged
+    so the tool still sees the original string and can produce a clear
+    error.  Schemas without a ``type`` field leave the value untouched —
+    this guard never *invents* a type.
+    """
+    if not isinstance(value, str) or not isinstance(schema, dict):
+        return value
+    declared = schema.get("type")
+    if declared == "boolean":
+        lowered = value.strip().lower()
+        if lowered in _BOOL_TRUE_LITERALS:
+            return True
+        if lowered in _BOOL_FALSE_LITERALS:
+            return False
+        return value
+    if declared == "integer":
+        try:
+            return int(value.strip())
+        except ValueError:
+            return value
+    if declared == "number":
+        try:
+            return float(value.strip())
+        except ValueError:
+            return value
+    return value
+
+
+def _coerce_arguments(arguments: dict[str, Any], parameters: Any) -> dict[str, Any]:
+    """Apply :func:`_coerce_argument` to every key declared in *parameters*.
+
+    ``parameters`` is the tool's JSONSchema (the ``properties`` block is
+    where individual argument schemas live).  Arguments not declared in
+    the schema pass through unchanged — the LLM might have emitted an
+    extra key that the tool's ``**kwargs`` capture path expects to swallow.
+    """
+    if not isinstance(parameters, dict):
+        return arguments
+    properties = parameters.get("properties")
+    if not isinstance(properties, dict):
+        return arguments
+    coerced: dict[str, Any] = {}
+    for key, value in arguments.items():
+        sub_schema = properties.get(key)
+        coerced[key] = (
+            _coerce_argument(value, sub_schema) if isinstance(sub_schema, dict) else value
+        )
+    return coerced
+
+
 async def execute_tool(
     tool_map: dict[str, Tool],
     name: str,
@@ -244,6 +311,8 @@ async def execute_tool(
     tool = tool_map.get(name)
     if not tool:
         return ToolResult(success=False, output="", error=f"Unknown tool: {name}")
+
+    arguments = _coerce_arguments(arguments, tool.parameters)
 
     try:
         result = await tool.execute(**arguments)
