@@ -1,0 +1,9 @@
+# Code owners for Cantrip.
+#
+# These owners are requested for review automatically when a pull
+# request modifies the matching paths. Order is significant: later
+# entries override earlier ones, so the catch-all goes first.
+#
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+*       @tonyandrewmeyer

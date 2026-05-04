@@ -6,7 +6,7 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12"
 authors = [
-    { name = "Tony Meyer" },
+    { name = "Tony Meyer", email = "tony@aotearoa.dev" },
 ]
 keywords = ["juju", "charm", "agent", "ai", "llm"]
 classifiers = [

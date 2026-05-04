@@ -253,7 +253,7 @@ def build_pr_body(
         lines.append("</details>\n")
 
     lines.append("---")
-    lines.append("*Created by [Cantrip](https://github.com/canonical/cantrip)*")
+    lines.append("*Created by [Cantrip](https://github.com/tonyandrewmeyer/cantrip)*")
 
     return "\n".join(lines)
 

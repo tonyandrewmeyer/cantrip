@@ -1430,7 +1430,7 @@ Two axes decide whether the gate fires:
 
   ```json
   {
-    "production_controllers": ["prod-aws", "canonical-prod"]
+    "production_controllers": ["prod-aws", "prod-k8s"]
   }
   ```
 

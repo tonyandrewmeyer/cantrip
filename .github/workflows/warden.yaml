@@ -13,6 +13,8 @@ env:
 
 jobs:
   warden:
+    # Skip fork PRs: WARDEN_ANTHROPIC_API_KEY is exposed to the runner.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

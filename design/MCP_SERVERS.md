@@ -19,11 +19,10 @@ Three options, all of which Cantrip understands without changes:
 
 * **Their own repository** — each server is a small package
   (`charmhub-mcp`, `launchpad-mcp`, …) with its own README, tests, and
-  release process.  Canonical ones can live under `canonical/`; community
-  ones anywhere on GitHub or PyPI.
+  release process.  Servers can live anywhere on GitHub or PyPI.
 * **A companion bundle repository** — a single
-  `canonical/cantrip-mcp-servers` (or similar) with multiple servers
-  under sub-directories.  Mirrors the
+  `tonyandrewmeyer/cantrip-mcp-servers` (or similar) with multiple
+  servers under sub-directories.  Mirrors the
   [`microsoft/skills`](https://github.com/microsoft/skills) layout.
   Convenient for monorepo CI but couples release timing.
 * **Within a charm itself** — when a server only makes sense for one

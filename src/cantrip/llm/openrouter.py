@@ -40,7 +40,7 @@ DEFAULT_MODEL = "openai/gpt-4o"
 # App-identification headers OpenRouter uses for their dashboards.  The
 # Referer is a canonical project URL; the Title is what shows up in
 # their ranking tables.
-_APP_REFERER = "https://github.com/canonical/cantrip"
+_APP_REFERER = "https://github.com/tonyandrewmeyer/cantrip"
 _APP_TITLE = "Cantrip"
 
 # Fallback used when ``/models`` probing fails or the selected model

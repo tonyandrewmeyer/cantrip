@@ -84,7 +84,7 @@ for choosing between the TUI, Web UI, CLI REPL, and print mode.
 
 ```bash
 # Clone the repository
-git clone https://github.com/canonical/cantrip
+git clone https://github.com/tonyandrewmeyer/cantrip
 cd cantrip
 
 # Install dev dependencies
