@@ -115,11 +115,19 @@ def load_workspace(path: pathlib.Path | str) -> Workspace:
         raw_text = manifest_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise WorkspaceError(f"Cannot read workspace manifest {manifest_path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise WorkspaceError(
+            f"Workspace manifest {manifest_path} is not valid UTF-8: {exc}"
+        ) from exc
 
     try:
         raw = yaml.safe_load(raw_text) or {}
     except yaml.YAMLError as exc:
         raise WorkspaceError(f"Invalid YAML in {manifest_path}: {exc}") from exc
+    except RecursionError as exc:
+        raise WorkspaceError(
+            f"Workspace manifest {manifest_path} nesting too deep ({exc})"
+        ) from exc
 
     if not isinstance(raw, dict):
         raise WorkspaceError(f"Manifest {manifest_path} must be a YAML mapping")

@@ -157,7 +157,11 @@ def _load_yaml(path: pathlib.Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
         data = yaml.safe_load(text)
-    except (OSError, yaml.YAMLError):
+    except (OSError, yaml.YAMLError, RecursionError):
+        # ``RecursionError`` here means a maliciously- or accidentally-
+        # deeply-nested document blew through Python's stack while
+        # PyYAML was tokenising it.  The diff is best-effort, so treat
+        # an unparseable file as if it were missing.
         return {}
     return data if isinstance(data, dict) else {}
 

@@ -451,6 +451,12 @@ def load_permissions_file(path: pathlib.Path) -> PermissionRuleset:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise PermissionParseError(f"{path}: {exc}") from exc
+    except RecursionError as exc:
+        # PyYAML can blow the Python stack while tokenising a file
+        # with thousands of nested mappings.  Wrap as a parse error so
+        # the dispatcher logs ``Skipping malformed`` and continues
+        # instead of crashing the agent.
+        raise PermissionParseError(f"{path}: nesting too deep ({exc})") from exc
     if raw is None:
         return PermissionRuleset(name=str(path))
     return ruleset_from_dict(raw, source=str(path))

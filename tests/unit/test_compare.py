@@ -277,6 +277,27 @@ class TestSnapshotCharm:
         snap = compare.snapshot_charm(charm)
         assert snap.charm_name == "latin1"
 
+    def test_deeply_nested_yaml_does_not_crash(self, tmp_path: pathlib.Path) -> None:
+        """A YAML doc nested past Python's recursion limit fails soft.
+
+        Regression: PyYAML's tokeniser blew the stack on a charmcraft.yaml
+        with ~500 nested mappings, raising ``RecursionError`` —
+        ``_load_yaml`` only caught ``yaml.YAMLError``, so the diff
+        crashed.  The charm is now treated as if it had no metadata.
+        """
+        charm = tmp_path / "deep"
+        charm.mkdir()
+        body = "name: deep\n"
+        for i in range(800):
+            body += "  " * i + f"k{i}:\n"
+        body += "  " * 800 + "leaf: x\n"
+        (charm / "charmcraft.yaml").write_text(body)
+        # Should return cleanly with default (empty) metadata.
+        snap = compare.snapshot_charm(charm)
+        # The nested doc was unparseable, so charm_name falls back to the
+        # directory name rather than the YAML's ``name:`` field.
+        assert snap.charm_name == "deep"
+
 
 # ── compare_charms + diff primitives ─────────────────────────────────
 

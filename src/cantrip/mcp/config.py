@@ -109,6 +109,8 @@ def _parse_marketplaces_from_path(path: pathlib.Path) -> list[MarketplaceSource]
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise MCPConfigError(f"could not parse {path}: {exc}") from exc
+    except RecursionError as exc:
+        raise MCPConfigError(f"{path} nesting too deep ({exc})") from exc
     if not isinstance(raw, dict):
         return []
     block = raw.get("marketplaces")
@@ -153,6 +155,8 @@ def _parse_yaml(path: pathlib.Path) -> list[ServerConfig]:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise MCPConfigError(f"could not parse {path}: {exc}") from exc
+    except RecursionError as exc:
+        raise MCPConfigError(f"{path} nesting too deep ({exc})") from exc
     if raw is None:
         return []
     if not isinstance(raw, dict):

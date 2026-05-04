@@ -86,6 +86,8 @@ def _parse_yaml(path: pathlib.Path) -> list[HookConfig]:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise HookConfigError(f"could not parse {path}: {exc}") from exc
+    except RecursionError as exc:
+        raise HookConfigError(f"{path} nesting too deep ({exc})") from exc
     if raw is None:
         return []
     if not isinstance(raw, dict):

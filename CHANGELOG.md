@@ -466,6 +466,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   traceback before the system prompt was even built.  The read now
   uses ``errors="replace"`` so the affected glyph becomes U+FFFD and
   the agent boots normally.
+- **YAML loaders survive deeply nested input.**  PyYAML's tokeniser
+  blew Python's call stack with ``RecursionError`` on any document
+  nested past ~500 mappings, and only ``yaml.YAMLError`` was being
+  caught.  ``cantrip compare``, ``cantrip permissions``,
+  ``cantrip hooks test``, the agent's startup MCP / governance-policy /
+  workspace loaders now all catch ``RecursionError`` and either
+  treat the file as missing (compare) or surface the existing
+  ``*ParseError`` so the dispatcher can ``Skipping malformed`` and
+  continue.  Affects: ``src/cantrip/compare.py``,
+  ``src/cantrip/agent/permissions.py``, ``src/cantrip/hooks/config.py``,
+  ``src/cantrip/mcp/config.py``, ``src/cantrip/agent/policy.py``,
+  ``src/cantrip/workspace.py`` (the workspace loader also gained the
+  same ``UnicodeDecodeError`` guard the others got earlier).
 
 ### Added
 - **``preflight_targets`` tool (Phase 91.1).**  Environment-readiness

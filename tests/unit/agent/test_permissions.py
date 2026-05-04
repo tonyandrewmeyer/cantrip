@@ -243,6 +243,23 @@ class TestYAMLLoader:
             load_permissions_file(path)
         assert "not valid UTF-8" in str(exc_info.value)
 
+    def test_deeply_nested_yaml_raises_parse_error(self, tmp_path: pathlib.Path):
+        """A YAML doc nested past Python's recursion limit fails soft.
+
+        Regression: ``PyYAML``'s tokeniser blew the stack on heavily
+        nested input, raising ``RecursionError``, which the loader
+        didn't catch.  The dispatcher now sees ``PermissionParseError``
+        and skips the file.
+        """
+        path = tmp_path / "permissions.yaml"
+        body = "tools:\n"
+        for i in range(800):
+            body += "  " * i + f"  k{i}:\n"
+        body += "  " * 800 + "  leaf: deny\n"
+        path.write_text(body)
+        with pytest.raises(PermissionParseError, match="nesting too deep"):
+            load_permissions_file(path)
+
     def test_inline_dict_parses(self):
         ruleset = ruleset_from_dict(
             {"bash_tools": ["run_command", "shell"]},

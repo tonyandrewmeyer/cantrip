@@ -266,6 +266,8 @@ def load_policy_file(path: pathlib.Path) -> GovernancePolicy:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise PolicyParseError(f"{path}: {exc}") from exc
+    except RecursionError as exc:
+        raise PolicyParseError(f"{path} nesting too deep ({exc})") from exc
     if raw is None:
         # Empty file — treat as zero-policy named after the file.
         return GovernancePolicy(name=path.stem)
