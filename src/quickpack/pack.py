@@ -14,14 +14,28 @@ from quickpack import parts as _parts
 # The modern dispatch template (from charmcraft's dispatch.py).
 # Creates venv/bin/python on first run if missing, sets PYTHONPATH and
 # LD_LIBRARY_PATH, then execs the charm entrypoint.
+#
+# ``set -eu`` makes any failed command (or unset variable) abort with a
+# non-zero exit instead of falling through to ``exec`` with a confusing
+# downstream error.  All command substitutions are double-quoted so the
+# script keeps working when ``dispatch_path`` contains spaces.  The
+# system-Python lookup uses POSIX ``command -v`` and prints an explicit
+# error to stderr when ``python3`` is absent, so the unit log shows the
+# real cause rather than ``ln: missing file operand``.
 _DISPATCH_TEMPLATE = """\
 #!/bin/sh
-dispatch_path="$(dirname $(realpath $0))"
+set -eu
+dispatch_path="$(dirname "$(realpath "$0")")"
 venv_bin_path="${{dispatch_path}}/venv/bin"
 python_path="${{venv_bin_path}}/python"
 if [ ! -e "${{python_path}}" ]; then
+    system_python="$(command -v python3 || true)"
+    if [ -z "${{system_python}}" ]; then
+        echo "dispatch: python3 not found on PATH" >&2
+        exit 1
+    fi
     mkdir -p "${{venv_bin_path}}"
-    ln -s $(which python3) "${{python_path}}"
+    ln -s "${{system_python}}" "${{python_path}}"
 fi
 
 export PYTHONPATH="${{dispatch_path}}/lib:${{dispatch_path}}/src"
@@ -114,6 +128,7 @@ def quick_pack(
     output_dir = charm_dir if output_dir is None else pathlib.Path(output_dir).resolve()
 
     project = _metadata.parse_charmcraft_yaml(charm_dir)
+    _metadata.validate_project(project, charm_dir)
     entrypoint = _metadata.resolve_entrypoint(project)
     arch = _metadata.local_arch()
 

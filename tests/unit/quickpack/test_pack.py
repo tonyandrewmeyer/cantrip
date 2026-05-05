@@ -50,6 +50,56 @@ class TestPack:
         content = (tmp_path / "dispatch").read_text()
         assert "src/app.py" in content
 
+    def test_write_dispatch_fails_fast_and_quotes_paths(self, tmp_path: pathlib.Path) -> None:
+        """The dispatch script must abort on errors and quote command
+        substitutions so paths with spaces survive."""
+        pack._write_dispatch(tmp_path, "src/charm.py")
+        content = (tmp_path / "dispatch").read_text()
+
+        # set -eu makes failures fail fast instead of cascading.
+        assert "set -eu" in content
+
+        # Command substitutions are double-quoted.
+        assert '"$(realpath "$0")"' in content
+        assert '"$(command -v python3 || true)"' in content
+
+        # The unquoted ``which`` form (the old shape) must be gone.
+        assert "$(which python3)" not in content
+
+        # Missing python3 surfaces as an explicit error rather than an
+        # opaque ``ln: missing file operand``.
+        assert "python3 not found on PATH" in content
+
+    def test_write_dispatch_passes_shellcheck(self, tmp_path: pathlib.Path) -> None:
+        """If shellcheck is available, the generated dispatch must pass."""
+        import shutil
+        import subprocess
+
+        if shutil.which("shellcheck") is None:
+            pytest.skip("shellcheck not installed")
+
+        pack._write_dispatch(tmp_path, "src/charm.py")
+        result = subprocess.run(
+            ["shellcheck", "-s", "sh", str(tmp_path / "dispatch")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"shellcheck failed:\n{result.stdout}\n{result.stderr}"
+
+    def test_write_dispatch_runs_under_sh_dry_run(self, tmp_path: pathlib.Path) -> None:
+        """``sh -n`` must accept the dispatch script (syntax-only check)."""
+        import subprocess
+
+        pack._write_dispatch(tmp_path, "src/charm.py")
+        result = subprocess.run(
+            ["sh", "-n", str(tmp_path / "dispatch")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"sh -n rejected dispatch:\n{result.stderr}"
+
     def test_build_zip(self, tmp_path: pathlib.Path) -> None:
         prime = tmp_path / "prime"
         prime.mkdir()

@@ -4853,11 +4853,11 @@ identified rather than opening a new product line.
   ``src/charmlint/linter.py`` in favour of an explicit, import-at-module-
   top registration path that keeps the rule set deterministic and
   easier to reason about under tests and future concurrency.
-- [ ] Harden ``quickpack``'s generated dispatch script: fail fast on
+- [x] Harden ``quickpack``'s generated dispatch script: fail fast on
   missing interpreters, tighten shell quoting / error handling, and
   surface launcher problems as clear pack-time failures instead of
   delayed deploy-time breakage.
-- [ ] Validate ``quickpack`` metadata inputs earlier: reject invalid or
+- [x] Validate ``quickpack`` metadata inputs earlier: reject invalid or
   out-of-tree entrypoints, validate ``charmcraft.yaml`` fields that the
   pack path depends on, and add tests covering malformed metadata so the
   failures stay crisp.

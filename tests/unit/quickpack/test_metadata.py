@@ -226,3 +226,67 @@ class TestMetadata:
 
         metadata.write_optional_yaml({}, "config", "config.yaml", charm_dir, prime_dir)
         assert not (prime_dir / "config.yaml").exists()
+
+
+class TestValidateProject:
+    """Pack-time validation of charmcraft.yaml fields."""
+
+    def _project(self, **overrides: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "name": "mycharm",
+            "parts": {"charm": {"plugin": "uv", "source": "."}},
+        }
+        base.update(overrides)
+        return base
+
+    def test_accepts_default_layout(self, charm_project: pathlib.Path) -> None:
+        project = metadata.parse_charmcraft_yaml(charm_project)
+        # Default-resolved entrypoint (``src/charm.py``) exists; no raise.
+        metadata.validate_project(project, charm_project)
+
+    def test_rejects_missing_name(self, tmp_path: pathlib.Path) -> None:
+        with pytest.raises(ValueError, match="'name' must be a non-empty string"):
+            metadata.validate_project({"parts": {}}, tmp_path)
+
+    def test_rejects_blank_name(self, tmp_path: pathlib.Path) -> None:
+        with pytest.raises(ValueError, match="'name' must be a non-empty string"):
+            metadata.validate_project({"name": "   "}, tmp_path)
+
+    def test_rejects_non_dict_parts(self, tmp_path: pathlib.Path) -> None:
+        with pytest.raises(ValueError, match="'parts' must be a mapping"):
+            metadata.validate_project(self._project(parts=["charm"]), tmp_path)
+
+    def test_rejects_absolute_entrypoint(self, tmp_path: pathlib.Path) -> None:
+        project = self._project(parts={"charm": {"charm-entrypoint": "/etc/passwd"}})
+        with pytest.raises(ValueError, match="must be relative"):
+            metadata.validate_project(project, tmp_path)
+
+    def test_rejects_parent_traversal_entrypoint(self, tmp_path: pathlib.Path) -> None:
+        project = self._project(parts={"charm": {"charm-entrypoint": "../escape.py"}})
+        with pytest.raises(ValueError, match="stay inside"):
+            metadata.validate_project(project, tmp_path)
+
+    @pytest.mark.parametrize("bad_char", ["\n", "\r", '"', "'", "`", "$", "\\"])
+    def test_rejects_shell_hostile_entrypoint(self, tmp_path: pathlib.Path, bad_char: str) -> None:
+        project = self._project(parts={"charm": {"charm-entrypoint": f"src/foo{bad_char}.py"}})
+        with pytest.raises(ValueError, match="forbidden characters"):
+            metadata.validate_project(project, tmp_path)
+
+    def test_rejects_missing_entrypoint_file(self, tmp_path: pathlib.Path) -> None:
+        # No ``src/charm.py`` on disk → fail fast at pack time instead
+        # of triggering a hook-time NoSuchFile error.
+        project = self._project()
+        with pytest.raises(FileNotFoundError, match="missing file"):
+            metadata.validate_project(project, tmp_path)
+
+    def test_rejects_symlink_escape(self, tmp_path: pathlib.Path) -> None:
+        outside = tmp_path / "outside.py"
+        outside.write_text("import ops\n")
+        charm_dir = tmp_path / "charm"
+        charm_dir.mkdir()
+        (charm_dir / "src").mkdir()
+        # Symlink that physically resolves outside the charm tree.
+        (charm_dir / "src" / "charm.py").symlink_to(outside)
+        project = self._project()
+        with pytest.raises(ValueError, match="resolves outside"):
+            metadata.validate_project(project, charm_dir)

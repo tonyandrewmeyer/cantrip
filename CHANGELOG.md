@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **`quickpack` dispatch and metadata validation hardened (Phase 92.2).**
+  The generated `dispatch` script now runs under `set -eu`, double-quotes
+  every command substitution, and uses `command -v python3` with an
+  explicit "python3 not found on PATH" error when the system Python is
+  missing — broken launches surface as a crisp error in the unit log
+  instead of a downstream `ln` or `exec` cascade.  Pack-time validation
+  now rejects malformed `charmcraft.yaml`: missing/blank `name`,
+  non-mapping `parts`, absolute or `..`-traversing `charm-entrypoint`,
+  shell-hostile entrypoint characters, entrypoints that resolve outside
+  the charm tree (including via symlink), and entrypoints that point at
+  a missing file.  Tests in `tests/unit/quickpack/test_pack.py` and
+  `test_metadata.py` cover the new failure shapes.
 - **`charmlint` rule-loading and category parsing hardened (Phase 92.2).**
   Replaced the lazy `_ensure_rules_loaded` bootstrap with an explicit
   package-level import block in `src/charmlint/rules/__init__.py`, so the

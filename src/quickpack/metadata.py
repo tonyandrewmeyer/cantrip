@@ -86,6 +86,66 @@ def resolve_entrypoint(project: dict[str, Any]) -> str:
     return "src/charm.py"
 
 
+def _validate_entrypoint(entrypoint: str, charm_dir: pathlib.Path) -> None:
+    """Reject entrypoints the dispatch script could not safely launch.
+
+    The entrypoint is interpolated into a generated POSIX shell script
+    and is also the path the charm's process actually executes — so it
+    must be a relative file that lives inside the charm tree, with no
+    parent traversal and no shell-hostile characters.  Catching these
+    cases at pack time turns a delayed deploy-time hook failure into a
+    crisp build error.
+    """
+    if not isinstance(entrypoint, str):
+        raise ValueError(f"charm-entrypoint must be a string, got {type(entrypoint).__name__}")
+    if not entrypoint:
+        raise ValueError("charm-entrypoint must not be empty")
+
+    # Reject characters that would break the dispatch script's exec
+    # line or smuggle additional commands.  Newlines, NULs, and quotes
+    # are all immediate hazards; backslashes get rejected because we
+    # do not want to reason about shell quoting at runtime.
+    forbidden = set("\n\r\0\"'`\\$")
+    bad = sorted(forbidden.intersection(entrypoint))
+    if bad:
+        raise ValueError(f"charm-entrypoint contains forbidden characters: {bad}")
+
+    candidate = pathlib.PurePosixPath(entrypoint)
+    if candidate.is_absolute():
+        raise ValueError(f"charm-entrypoint must be relative, got {entrypoint!r}")
+    if any(part == ".." for part in candidate.parts):
+        raise ValueError(f"charm-entrypoint must stay inside the charm tree, got {entrypoint!r}")
+
+    full = (charm_dir / entrypoint).resolve()
+    try:
+        full.relative_to(charm_dir.resolve())
+    except ValueError as exc:
+        raise ValueError(
+            f"charm-entrypoint resolves outside the charm directory: {entrypoint!r}"
+        ) from exc
+
+    if not full.is_file():
+        raise FileNotFoundError(f"charm-entrypoint points to a missing file: {entrypoint!r}")
+
+
+def validate_project(project: dict[str, Any], charm_dir: pathlib.Path) -> None:
+    """Validate the charmcraft.yaml fields the pack path depends on.
+
+    Run before any heavy work so malformed metadata fails fast with a
+    targeted message instead of triggering a confusing failure deep in
+    parts processing or zip assembly.
+    """
+    name = project.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("charmcraft.yaml: 'name' must be a non-empty string")
+
+    parts = project.get("parts")
+    if parts is not None and not isinstance(parts, dict):
+        raise ValueError("charmcraft.yaml: 'parts' must be a mapping when set")
+
+    _validate_entrypoint(resolve_entrypoint(project), charm_dir)
+
+
 # Maps the Ubuntu series to the system-supplied CPython on that LTS.
 # Used to pick the build venv's Python version so the resulting
 # ``venv/lib/pythonX.Y`` directory matches what the unit's ``python3``
