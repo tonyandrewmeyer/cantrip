@@ -4861,7 +4861,7 @@ identified rather than opening a new product line.
   out-of-tree entrypoints, validate ``charmcraft.yaml`` fields that the
   pack path depends on, and add tests covering malformed metadata so the
   failures stay crisp.
-- [ ] Audit the remaining broad ``except Exception`` sites touched by
+- [x] Audit the remaining broad ``except Exception`` sites touched by
   the review and either narrow them or document the boundary in the
   established ``# noqa: BLE001 — <reason>`` style where the broad catch
   is intentional.

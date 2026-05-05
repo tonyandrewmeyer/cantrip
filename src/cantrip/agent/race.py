@@ -772,17 +772,7 @@ class RaceCoordinator:
             if handle is not None:
                 await self._safe_release(handle, keep_branch=False)
             raise
-        except Exception as exc:  # noqa: BLE001
-            # Catch every non-cancel exception type so an unexpected
-            # crash (``TypeError``, ``KeyError``, anything else outside
-            # the ``OSError``/``RuntimeError``/``ValueError`` set we
-            # used to enumerate) becomes a recorded failed outcome
-            # instead of propagating through ``asyncio.gather`` and
-            # cancelling every other candidate's run.  The race's
-            # whole point is "even if one candidate explodes, the
-            # others should still produce useful results"; the prior
-            # narrow catch silently lost that property for any
-            # exception type the author hadn't thought to list.
+        except Exception as exc:  # noqa: BLE001 — race must record every non-cancel crash as a failed outcome so one candidate's blow-up does not cancel the others through asyncio.gather.
             log.exception(
                 "Race candidate %s/%s: subagent.run() raised",
                 task_id,

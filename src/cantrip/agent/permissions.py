@@ -805,7 +805,7 @@ class PermissionManager:
                 )
                 try:
                     self._on_auto_approve(payload)
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 — callback is user code; a broken UI hook must not block tool dispatch.
                     log.debug(
                         "permission auto-approve callback failed for %s",
                         tool_name,
@@ -833,7 +833,7 @@ class PermissionManager:
             )
             try:
                 self._on_request(payload)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — callback is user code; a broken UI hook must not block the prompt.
                 log.debug("permission ask callback failed for %s", tool_name, exc_info=True)
 
         try:
