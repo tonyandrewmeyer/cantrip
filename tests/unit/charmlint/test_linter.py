@@ -2,8 +2,10 @@
 
 import pathlib
 
+import pytest
+
 from charmlint.config import LintConfig
-from charmlint.linter import build_context, lint
+from charmlint.linter import _category_of, build_context, lint
 from charmlint.models import Severity
 from tests.unit.charmlint.conftest import (
     make_full_charm,
@@ -93,6 +95,22 @@ class TestLintFiltering:
         assert report.diagnostics[0].rule_id == "FATAL"
         assert "No charmcraft.yaml" in report.diagnostics[0].message
 
+    def test_select_unknown_category_returns_no_diagnostics(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        # A category that no rule produces should mute everything rather
+        # than silently match a rule whose ID happens to share a prefix.
+        config = LintConfig(select=["NOSUCH"])
+        report = lint(tmp_charm, config)
+        assert report.diagnostics == []
+
+    def test_ignore_long_category_does_not_match_short_prefix(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        # ``COS`` is a real category; ``COSS`` must not match it.
+        # Confirms exact-string category matching, not prefix matching.
+        config = LintConfig(ignore=["COSS"])
+        report = lint(tmp_charm, config)
+        assert any(d.rule_id.startswith("COS") for d in report.diagnostics)
+
     def test_malformed_charmcraft_yaml_returns_parse_error(self, tmp_path: pathlib.Path):
         charm_dir = tmp_path / "broken"
         charm_dir.mkdir()
@@ -106,3 +124,57 @@ class TestLintFiltering:
         # the file is right there but malformed.
         assert "No charmcraft.yaml" not in diag.message
         assert "Could not parse charmcraft.yaml" in diag.message
+
+
+class TestCategoryOf:
+    """Tests for the rule-ID category parser."""
+
+    @pytest.mark.parametrize(
+        ("rule_id", "expected"),
+        [
+            ("COS001", "COS"),
+            ("CC005", "CC"),
+            ("TEST003", "TEST"),
+            ("ATT001", "ATT"),
+            ("ACT007", "ACT"),
+        ],
+    )
+    def test_well_formed_ids(self, rule_id: str, expected: str):
+        assert _category_of(rule_id) == expected
+
+    @pytest.mark.parametrize(
+        "rule_id",
+        [
+            # No trailing digits.
+            "FOO",
+            # Embedded digit followed by trailing letter — would have
+            # been mishandled by the old rstrip-based parser, which
+            # stripped only the trailing digits and produced a category
+            # that depended on what happened to be at the end.
+            "COS5G",
+            # Mixed digits and letters — same hazard.
+            "COS01A",
+            # Digit prefix.
+            "123",
+            # Empty string.
+            "",
+            # Lowercase prefix — ID convention is uppercase only.
+            "cos001",
+        ],
+    )
+    def test_unrecognised_ids_round_trip(self, rule_id: str):
+        # An unrecognised ID returns itself so it cannot accidentally
+        # match a real category in select / ignore.
+        assert _category_of(rule_id) == rule_id
+
+    def test_real_registered_rules_round_trip(self):
+        # Every registered rule's ID must extract to a non-empty
+        # category string — guard against future IDs that drift from
+        # the convention.
+        from charmlint.rules import get_all_rules
+
+        for rule_id in get_all_rules():
+            category = _category_of(rule_id)
+            assert category
+            assert category != rule_id, f"{rule_id} did not produce a category"
+            assert rule_id.startswith(category)

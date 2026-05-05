@@ -4844,12 +4844,12 @@ identified rather than opening a new product line.
 
 ### 92.2 High — Validation hardening in ``charmlint`` and ``quickpack``
 
-- [ ] Replace the current ``charmlint`` category extraction
+- [x] Replace the current ``charmlint`` category extraction
   (``rule_id.rstrip("0123456789")``) with an explicit parser so
   category-level ``select`` / ``ignore`` / severity overrides cannot
   mis-handle edge-case rule IDs.  Add regression tests for category
   matching rather than relying on naming convention alone.
-- [ ] Remove the lazy rule-registration bootstrap in
+- [x] Remove the lazy rule-registration bootstrap in
   ``src/charmlint/linter.py`` in favour of an explicit, import-at-module-
   top registration path that keeps the rule set deterministic and
   easier to reason about under tests and future concurrency.

@@ -2,6 +2,7 @@
 
 import contextlib
 import pathlib
+import re
 from typing import Any
 
 import yaml
@@ -9,6 +10,23 @@ import yaml
 from . import config as _config
 from . import models
 from . import rules as _rules
+
+# Rule IDs follow ``<UPPERCASE LETTERS><DIGITS>`` (e.g. ``COS001``,
+# ``TEST003``).  The category prefix is the leading letter run.
+_RULE_ID_PATTERN = re.compile(r"^([A-Z]+)([0-9]+)$")
+
+
+def _category_of(rule_id: str) -> str:
+    """Return the category prefix for a rule ID.
+
+    Falls back to *rule_id* itself when the ID does not match the
+    ``<LETTERS><DIGITS>`` convention so an unrecognised ID never
+    accidentally matches a category in ``select`` / ``ignore``.
+    """
+    match = _RULE_ID_PATTERN.match(rule_id)
+    if match is None:
+        return rule_id
+    return match.group(1)
 
 
 class _YamlParseError(Exception):
@@ -131,7 +149,7 @@ def build_context(charm_dir: pathlib.Path) -> models.CharmContext:
 def _should_run_rule(rule: _rules.Rule, config: _config.LintConfig) -> bool:
     """Determine whether a rule should run given the config."""
     rule_id = rule.id
-    category = rule_id.rstrip("0123456789")
+    category = _category_of(rule_id)
 
     # Explicit disable via severity override.
     if config.severity_overrides.get(rule_id) == "off":
@@ -171,9 +189,6 @@ def lint(
     """
     if config is None:
         config = _config.LintConfig()
-
-    # Ensure all rule modules are imported so rules register themselves.
-    _ensure_rules_loaded()
 
     try:
         context = build_context(charm_dir)
@@ -244,34 +259,3 @@ def lint(
         all_diagnostics.extend(diagnostics)
 
     return models.LintReport(charm_dir=charm_dir, diagnostics=all_diagnostics)
-
-
-_rules_loaded = False
-
-
-def _ensure_rules_loaded() -> None:
-    """Import all rule modules so their Rule subclasses register."""
-    global _rules_loaded  # noqa: PLW0603
-    if _rules_loaded:
-        return
-    _rules_loaded = True
-
-    from .rules import (
-        actions,  # noqa: F401
-        attestations,  # noqa: F401
-        charmcraft_compat,  # noqa: F401
-        config_quality,  # noqa: F401
-        deprecated,  # noqa: F401
-        documentation,  # noqa: F401
-        libraries,  # noqa: F401
-        library_versions,  # noqa: F401
-        metadata,  # noqa: F401
-        observability,  # noqa: F401
-        pebble,  # noqa: F401
-        relation_data,  # noqa: F401
-        security,  # noqa: F401
-        status,  # noqa: F401
-        structure,  # noqa: F401
-        testing,  # noqa: F401
-        unknown_fields,  # noqa: F401
-    )

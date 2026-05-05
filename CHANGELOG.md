@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **`charmlint` rule-loading and category parsing hardened (Phase 92.2).**
+  Replaced the lazy `_ensure_rules_loaded` bootstrap with an explicit
+  package-level import block in `src/charmlint/rules/__init__.py`, so the
+  rule set is deterministic on import without a global "loaded" flag.
+  Replaced the `rule_id.rstrip("0123456789")` category extractor with an
+  explicit `[A-Z]+\d+` parser; an unrecognised ID now returns itself as
+  its category so it cannot accidentally match a real category in
+  `select` / `ignore`.  Added regression tests in
+  `tests/unit/charmlint/test_linter.py`.
 - **Deterministic repo scan now backs ``analyse_framework`` (Phase 92.1).**
   ``src/cantrip/agent/tools/_scan.py`` is no longer a stub: it now does
   a bounded, excluded-directory-pruned repo walk that collects manifests,
