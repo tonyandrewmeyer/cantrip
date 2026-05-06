@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Environment-variable guidance consolidated (Phase 92.4).**
+  `howto-provider.md` gained an `{#env-vars}` section that owns the
+  setup walk-through — per-provider `export` examples, how to persist
+  keys via the shell profile, and a pointer to the embed / rerank role
+  variables.  `reference-cli.md#env-vars` keeps the comprehensive table
+  and now leads with a one-paragraph cross-reference to the how-to so
+  the two surfaces complement rather than duplicate.  README and the
+  tutorial collapse the duplicated `export GEMINI_API_KEY` step into a
+  single example each, with explicit links to the consolidated env-var
+  page so first-time setup is no longer scattered.
 - **`quickpack` dispatch and metadata validation hardened (Phase 92.2).**
   The generated `dispatch` script now runs under `set -eu`, double-quotes
   every command substitution, and uses `command -v python3` with an

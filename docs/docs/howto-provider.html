@@ -136,6 +136,22 @@
 </tr>
 </tbody>
 </table>
+<h2 id="env-vars">Set up environment variables</h2>
+<p>Each cloud provider needs its API key in an environment variable. The
+sections below show the one-line <code>export</code> for each provider; pick one
+and you are set.</p>
+<p>For a key to survive new shells, add the export to your shell profile
+(<code>~/.bashrc</code>, <code>~/.zshrc</code>, <code>~/.config/fish/config.fish</code>):</p>
+<pre><code><span class="prompt">$</span> echo 'export GEMINI_API_KEY="your-key-here"' &gt;&gt; ~/.bashrc
+<span class="prompt">$</span> source ~/.bashrc</code></pre>
+<p>A one-shot <code>export</code> in the current shell is enough for testing &mdash; it
+just disappears when the terminal closes.</p>
+<p>This page is the setup walk-through for <strong>provider keys</strong> and the
+<strong>embed / rerank role</strong> keys. Operational tunables &mdash; memory directory
+overrides, MCP token storage, snapshot toggles, the self-update
+opt-out, and the rest &mdash; live in the
+<a href="reference-cli.html#env-vars">CLI reference</a>. Reach for that page when
+you want a single table of every variable Cantrip reads.</p>
 <h2 id="inference-snap">Use local inference snaps</h2>
 <p>Ubuntu inference snaps are the Canonical-native path: a production-grade
 OpenAI-compatible server, installed from the Snap Store, running models

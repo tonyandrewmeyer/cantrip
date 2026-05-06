@@ -4919,13 +4919,21 @@ identified rather than opening a new product line.
   install, choose TUI/Web/CLI, build a new charm vs improve an existing
   one, then link to the relevant how-tos.  The current card grid is rich
   but gives new users no ordering signal.
-- [ ] Consolidate environment-variable guidance so setup is not repeated
+- [x] Consolidate environment-variable guidance so setup is not repeated
   piecemeal across README, tutorial, provider how-to, and CLI reference.
-  One authoritative how-to page should own the env-var story, with the
-  other docs linking to it.
-- [ ] Sweep user-facing docs for stray internal phase-language
-  references and remove them.  Roadmap/phase numbering belongs in the
-  roadmap, archive, changelog, and design notes — not in the user docs.
+  ``howto-provider.md`` gained an ``{#env-vars}`` section that owns the
+  setup walk-through (per-provider exports, persistence guidance, embed
+  / rerank keys); ``reference-cli.md#env-vars`` keeps the comprehensive
+  table and now leads with a one-paragraph cross-reference to the
+  how-to; README and ``tutorial.md`` collapse the duplicated
+  ``export GEMINI_API_KEY`` step into a single example with explicit
+  links to the consolidated env-var page.
+- [x] Sweep user-facing docs for stray internal phase-language
+  references and remove them.  ``grep -rn "Phase [0-9]"`` against
+  ``docs/src/`` and ``docs/docs/`` returned zero matches; remaining
+  ``phase`` mentions are the four user-facing workflow phases
+  (research / build / deploy / test) which CLAUDE.md explicitly keeps.
+  Nothing to remove — bullet closed by audit.
 
 ### What this phase is *not*
 

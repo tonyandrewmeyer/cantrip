@@ -25,6 +25,29 @@ see_also:
 | **OpenCode Zen** | Yes (`OPENCODE_ZEN_API_KEY`) | OpenCode's curated gateway to Claude, GPT-5, Gemini 3, GLM, Kimi, Qwen behind one key | Paid (free tier) |
 | **OpenAI-compatible** | Yes (`OPENAI_COMPATIBLE_API_KEY`) | Any other OpenAI-compatible endpoint (Together, Groq, vLLM, …) | Depends |
 
+{#env-vars}
+## Set up environment variables
+
+Each cloud provider needs its API key in an environment variable. The
+sections below show the one-line `export` for each provider; pick one
+and you are set.
+
+For a key to survive new shells, add the export to your shell profile
+(`~/.bashrc`, `~/.zshrc`, `~/.config/fish/config.fish`):
+
+<pre><code><span class="prompt">$</span> echo 'export GEMINI_API_KEY="your-key-here"' &gt;&gt; ~/.bashrc
+<span class="prompt">$</span> source ~/.bashrc</code></pre>
+
+A one-shot `export` in the current shell is enough for testing — it
+just disappears when the terminal closes.
+
+This page is the setup walk-through for **provider keys** and the
+**embed / rerank role** keys. Operational tunables — memory directory
+overrides, MCP token storage, snapshot toggles, the self-update
+opt-out, and the rest — live in the
+[CLI reference](reference-cli.html#env-vars). Reach for that page when
+you want a single table of every variable Cantrip reads.
+
 {#inference-snap}
 ## Use local inference snaps
 

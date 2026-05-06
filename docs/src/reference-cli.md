@@ -1290,6 +1290,14 @@ protocol and conventions are in `design/CONTEXT_PROVIDERS.md`.
 {#env-vars}
 ## Environment variables
 
+This is the complete reference table.  For a task-oriented walk-through
+of the *provider* keys (Gemini, Claude, Fireworks, OpenRouter, OpenCode
+Zen, OpenAI-compatible) and the *embed / rerank* role keys, see
+[Choose an LLM provider — environment variables](howto-provider.html#env-vars).
+The operational tunables below (memory paths, MCP storage, snapshot
+toggles, self-update opt-outs, checkpoint debugging) are reference-only
+and not duplicated elsewhere.
+
 | Variable | Required for | Description |
 |---|---|---|
 | `GEMINI_API_KEY` | `--provider gemini` | Google Gemini API key |

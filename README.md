@@ -77,7 +77,10 @@ cantrip
 ```
 
 See [`docs/docs/howto-provider.html`](docs/docs/howto-provider.html) for
-other provider setups and [`docs/docs/howto-interface.html`](docs/docs/howto-interface.html)
+other provider setups (and how to make the env var persistent),
+[`docs/docs/reference-cli.html#env-vars`](docs/docs/reference-cli.html#env-vars)
+for the full table of environment variables Cantrip reads, and
+[`docs/docs/howto-interface.html`](docs/docs/howto-interface.html)
 for choosing between the TUI, Web UI, CLI REPL, and print mode.
 
 ## Contributor checkout
@@ -90,7 +93,7 @@ cd cantrip
 # Install dev dependencies
 uv sync --dev
 
-# Set your API key
+# Set your API key (see install section above, or howto-provider.html for other providers)
 export GEMINI_API_KEY='your-key-here'
 
 # Run

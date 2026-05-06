@@ -83,6 +83,13 @@ Export your Gemini API key so Cantrip can access the model:
 Add this to your shell profile (`~/.bashrc` or
 `~/.zshrc`) so it persists across sessions.
 
+For Claude, Fireworks, OpenRouter, OpenCode Zen, an OpenAI-compatible
+endpoint, or a local inference snap, see
+[Choose an LLM provider — environment variables](howto-provider.html#env-vars)
+for the matching `export` command. The
+[CLI reference](reference-cli.html#env-vars) lists every operational
+variable Cantrip reads.
+
 {#create-project}
 ## 3. Create a project directory
 
