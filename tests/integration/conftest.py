@@ -6,10 +6,14 @@ from collections.abc import Callable
 
 import pytest
 
-from cantrip.agent.queue import TaskStatus, WorkQueue
 from cantrip.agent.tools import base as tools_base
 from cantrip.llm import base as llm
 from tests.conftest import FakeProvider
+from tests.support.wait import wait_for_queue_state as wait_for_queue_state
+
+# Re-exported above so existing integration tests keep importing from
+# ``tests.integration.conftest``.  New tests should import directly from
+# ``tests.support.wait``.
 
 # ---------------------------------------------------------------------------
 # Provider variants
@@ -128,43 +132,6 @@ def make_stub_tool(name: str, result: str | None = None) -> tools_base.Tool:
     _name = name
     _result_text = result_text
     return _Stub()
-
-
-# ---------------------------------------------------------------------------
-# Async helpers
-# ---------------------------------------------------------------------------
-
-
-async def wait_for_queue_state(
-    queue: WorkQueue,
-    *,
-    done_count: int | None = None,
-    failed_count: int | None = None,
-    timeout: float = 5.0,
-) -> None:
-    """Poll the queue until the expected state is reached or timeout.
-
-    Polls every 20ms rather than using fixed sleeps.
-    """
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
-        if done_count is not None:
-            actual_done = sum(1 for t in queue.all_tasks() if t.status == TaskStatus.DONE)
-            if actual_done >= done_count:
-                if failed_count is None:
-                    return
-                actual_failed = sum(1 for t in queue.all_tasks() if t.status == TaskStatus.FAILED)
-                if actual_failed >= failed_count:
-                    return
-        elif failed_count is not None:
-            actual_failed = sum(1 for t in queue.all_tasks() if t.status == TaskStatus.FAILED)
-            if actual_failed >= failed_count:
-                return
-        await asyncio.sleep(0.02)
-    raise TimeoutError(
-        f"Queue did not reach expected state within {timeout}s. "
-        f"Tasks: {[(t.id, t.title, t.status.value) for t in queue.all_tasks()]}"
-    )
 
 
 # ---------------------------------------------------------------------------

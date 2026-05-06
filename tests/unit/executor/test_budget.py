@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import pathlib
 
 import pytest
@@ -14,6 +13,7 @@ from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+from tests.support.wait import wait_for_task_status
 from tests.unit.executor.conftest import _make_tool
 
 
@@ -108,9 +108,10 @@ class TestBudgetBlocksSpawn:
         )
         executor.start()
 
-        # Give the loop enough time to pick up the task and trip the gate.
-        await asyncio.sleep(0.2)
-        await executor.stop()
+        try:
+            await wait_for_task_status(task, TaskStatus.BLOCKED)
+        finally:
+            await executor.stop()
 
         assert task.status == TaskStatus.BLOCKED
         assert task.blocked_reason is not None
@@ -143,18 +144,23 @@ class TestBudgetBlocksSpawn:
             store=store,
         )
         executor.start()
-        await asyncio.sleep(0.2)
-        assert task.status == TaskStatus.BLOCKED
+        try:
+            await wait_for_task_status(task, TaskStatus.BLOCKED)
+        except TimeoutError:
+            await executor.stop()
+            raise
 
         # Operator raises the cap and unblocks the task (the
         # ``/budget`` handler does both).
         state.goal_budget.max_iterations = 100  # type: ignore[union-attr]
         queue.set_pending(task.id)
 
-        # Wait for the executor's next poll to pick the task up and
-        # for the subagent to finish.  The poll interval is 1s so we
-        # have to be patient here — a shorter sleep is flaky.
-        await asyncio.sleep(2.0)
-        await executor.stop()
+        # The poll interval is 1s, so the executor needs at least one
+        # full tick before it picks the task up; ``wait_for_task_status``
+        # polls until DONE rather than guessing a sleep duration.
+        try:
+            await wait_for_task_status(task, TaskStatus.DONE, timeout=5.0)
+        finally:
+            await executor.stop()
 
         assert task.status == TaskStatus.DONE

@@ -5,7 +5,6 @@ BackgroundExecutor picks them up via subagents, and results are
 recorded on the work queue (and optionally persisted).
 """
 
-import asyncio
 import pathlib
 
 import pytest
@@ -21,8 +20,8 @@ from tests.integration.conftest import (
     RESEARCH_PLAN_JSON,
     MultiRoleProvider,
     make_stub_tool,
-    wait_for_queue_state,
 )
+from tests.support.wait import wait_for_queue_state
 
 
 @pytest.mark.integration
@@ -68,10 +67,11 @@ class TestPlanAndExecute:
         )
         executor.start()
         try:
-            await wait_for_queue_state(queue, done_count=3)
-            # Give the executor one more poll cycle to pick up and block the
-            # confirm task (it becomes ready after operational-discovery is done).
-            await asyncio.sleep(0.2)
+            # Wait for the 3 research tasks to finish AND the confirm task to
+            # be blocked.  Mixing both bounds in one wait avoids the race
+            # where the confirm task is still PENDING when ``done_count``
+            # first ticks up to 3.
+            await wait_for_queue_state(queue, done_count=3, blocked_count=1)
         finally:
             await executor.stop()
 

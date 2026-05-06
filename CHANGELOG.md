@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Replaced fixed-sleep waits in executor tests with polling helpers
+  (Phase 92.3).**  ``tests/support/wait.py`` exposes a shared
+  ``wait_until`` predicate poller plus ``wait_for_task_status``,
+  ``wait_for_queue_state``, and ``wait_for_value`` helpers.  Migrated
+  the ``tests/unit/executor/`` suite (``test_run_loop.py``,
+  ``test_budget.py``, ``test_rate_limit.py``) and
+  ``tests/integration/test_work_loop.py`` off the previous
+  ``asyncio.sleep(0.05–0.2)`` / fixed 2 s waits, replacing them with
+  explicit task-state transitions.  Tests now wait on the condition
+  they actually care about rather than guessing how long the
+  executor's poll cycle will take, removing a class of CI-runner
+  flakiness.
 - **Environment-variable guidance consolidated (Phase 92.4).**
   `howto-provider.md` gained an `{#env-vars}` section that owns the
   setup walk-through — per-provider `export` examples, how to persist

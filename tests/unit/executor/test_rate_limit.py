@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import pathlib
 
 import pytest
@@ -14,6 +13,7 @@ from cantrip.agent.store import SessionStore
 from cantrip.agent.tools.base import ToolResult
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+from tests.support.wait import wait_for_task_status
 from tests.unit.executor.conftest import _make_tool
 
 
@@ -209,8 +209,10 @@ class TestRateLimitBlocksSpawn:
         executor._tool_calls_made = 2
 
         executor.start()
-        await asyncio.sleep(0.2)
-        await executor.stop()
+        try:
+            await wait_for_task_status(task, TaskStatus.BLOCKED)
+        finally:
+            await executor.stop()
 
         assert task.status == TaskStatus.BLOCKED
         assert task.blocked_reason is not None
@@ -243,8 +245,11 @@ class TestRateLimitBlocksSpawn:
         executor._tool_calls_made = 5  # At cap.
 
         executor.start()
-        await asyncio.sleep(0.2)
-        assert task.status == TaskStatus.BLOCKED
+        try:
+            await wait_for_task_status(task, TaskStatus.BLOCKED)
+        except TimeoutError:
+            await executor.stop()
+            raise
 
         # Clear the counter (simulating operator-initiated "reset
         # the rate window" — the /budget --clear analogue for rate
@@ -253,7 +258,9 @@ class TestRateLimitBlocksSpawn:
         executor._tool_calls_made = 0
         queue.set_pending(task.id)
 
-        await asyncio.sleep(2.0)
-        await executor.stop()
+        try:
+            await wait_for_task_status(task, TaskStatus.DONE, timeout=5.0)
+        finally:
+            await executor.stop()
 
         assert task.status == TaskStatus.DONE

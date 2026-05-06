@@ -13,6 +13,7 @@ from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+from tests.support.wait import wait_for_queue_state, wait_for_task_status, wait_for_value
 from tests.unit.executor.conftest import _make_executor, _make_tool
 
 # ===================================================================
@@ -33,9 +34,10 @@ class TestRunLoop:
         executor = _make_executor(queue=queue, provider=provider)
         executor.start()
 
-        # Give the loop time to pick up the task.
-        await asyncio.sleep(0.1)
-        await executor.stop()
+        try:
+            await wait_for_task_status(task, TaskStatus.DONE)
+        finally:
+            await executor.stop()
 
         assert task.status == TaskStatus.DONE
 
@@ -44,8 +46,6 @@ class TestRunLoop:
         queue = WorkQueue()
         executor = _make_executor(queue=queue)
         executor.start()
-
-        await asyncio.sleep(0.05)
         await executor.stop()
 
         # No tasks in the queue — loop should have just slept.
@@ -60,8 +60,10 @@ class TestRunLoop:
         executor = _make_executor(queue=queue)
         executor.start()
 
-        await asyncio.sleep(0.1)
-        await executor.stop()
+        try:
+            await wait_for_task_status(confirm, TaskStatus.BLOCKED)
+        finally:
+            await executor.stop()
 
         assert confirm.status == TaskStatus.BLOCKED
 
@@ -75,8 +77,10 @@ class TestRunLoop:
         executor = _make_executor(queue=queue, provider=provider)
         executor.start()
 
-        await asyncio.sleep(0.1)
-        await executor.stop()
+        try:
+            await wait_for_task_status(task, TaskStatus.DONE)
+        finally:
+            await executor.stop()
 
         assert task.status == TaskStatus.DONE
         assert task.result == "Researched."
@@ -108,8 +112,10 @@ class TestRunLoop:
         executor._execute_task = _patched_execute  # type: ignore[assignment]
         executor.start()
 
-        await asyncio.sleep(0.2)
-        await executor.stop()
+        try:
+            await wait_for_value(lambda: call_count, at_least=2, name="call_count")
+        finally:
+            await executor.stop()
 
         # The loop should have attempted both tasks.
         assert call_count >= 2
@@ -302,13 +308,10 @@ class TestConcurrency:
         executor._execute_task = _tracking_execute  # type: ignore[assignment]
         executor.start()
 
-        # Wait for both to complete.
-        for _ in range(100):
-            await asyncio.sleep(0.05)
-            if queue.done_count >= 2:
-                break
-
-        await executor.stop()
+        try:
+            await wait_for_queue_state(queue, done_count=2)
+        finally:
+            await executor.stop()
 
         assert queue.done_count == 2
         # With max_concurrency=1, at most one task ran at a time.
@@ -337,12 +340,10 @@ class TestConcurrency:
         executor = _make_executor(queue=queue, provider=provider)
         executor.start()
 
-        for _ in range(100):
-            await asyncio.sleep(0.05)
-            if queue.done_count >= 2:
-                break
-
-        await executor.stop()
+        try:
+            await wait_for_queue_state(queue, done_count=2)
+        finally:
+            await executor.stop()
 
         assert t1.status == TaskStatus.DONE
         assert t2.status == TaskStatus.DONE

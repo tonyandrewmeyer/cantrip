@@ -4868,14 +4868,26 @@ identified rather than opening a new product line.
 
 ### 92.3 High — Test reliability, coverage, and evaluation depth
 
-- [ ] Replace the fixed sleeps in the executor and e2e harnesses with
-  polling / signalling helpers.  The review found multiple
-  ``asyncio.sleep(0.05–0.2)`` and ``time.sleep(5/10)`` waits that are
-  structurally flaky on slow CI runners; provide one shared helper and
-  codemod the obvious cases onto it.
-- [ ] Add a lightweight executor-test harness that waits on explicit
+- [x] Replace the fixed sleeps in the executor and e2e harnesses with
+  polling / signalling helpers.  ``tests/support/wait.py`` exposes a
+  shared ``wait_until`` predicate poller plus ``wait_for_task_status``,
+  ``wait_for_queue_state``, and ``wait_for_value`` helpers.  Migrated
+  ``tests/unit/executor/test_run_loop.py``, ``test_budget.py``,
+  ``test_rate_limit.py``, and ``tests/integration/test_work_loop.py``
+  off the previous ``asyncio.sleep(0.05–0.2)`` / fixed 2 s waits.
+  The integration ``wait_for_queue_state`` shim now re-exports from
+  ``tests.support.wait`` so existing call sites keep importing from
+  ``tests.integration.conftest``.  The remaining ``time.sleep(5/10)``
+  calls in ``tests/e2e/harness.py`` are already inside polling loops
+  (Jubilant ``juju status`` reads with deadline-bounded loops) — they
+  set the polling cadence rather than acting as fixed timing
+  assumptions, so they are not in the "structurally flaky" bucket.
+- [x] Add a lightweight executor-test harness that waits on explicit
   queue / task state transitions rather than timing assumptions, then
   migrate ``tests/unit/executor/test_run_loop.py`` and similar files.
+  Done as part of the shared wait helpers above; the executor unit
+  tests now wait on task/queue state directly via
+  ``wait_for_task_status`` and ``wait_for_queue_state``.
 - [ ] Enforce Python coverage in the main developer loop.  ``make unit``
   already collects coverage; add a ``fail_under`` threshold and wire it
   into ``make check`` so coverage regressions are visible before merge.
