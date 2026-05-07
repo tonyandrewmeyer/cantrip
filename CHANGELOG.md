@@ -8,8 +8,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 - **`gemma4` inference snap recognised out of the box.**  The
   `gemma4` snap (Gemma 3n E4B, multimodal, served at
   `http://localhost:8336/v1`) is now in the default port table,
-  the static vision allowlist, and the pricing registry.  Use it
-  with `cantrip --provider inference-snap --snap gemma4`.
+  the static vision allowlist, the tool-capable allowlist, and the
+  pricing registry.  Use it with
+  `cantrip --provider inference-snap --snap gemma4`.
+
+### Fixed
+- **Context-window and capability detection now covers llama.cpp's
+  nested ``meta`` shape and the parallel ``models`` array.**
+  Previously the inference-snap provider only inspected
+  ``data[0]`` for ``n_ctx_train`` / ``context_length`` /
+  ``max_model_len`` and for ``capabilities``.  llama.cpp-backed
+  snaps (gemma4 today, presumably more in future) report
+  ``n_ctx_train`` under ``data[0].meta`` and emit a parallel
+  top-level ``models`` array carrying the capability list, so the
+  provider was silently falling back to the 8 KiB default and
+  missing capability flags.  Detection now reads both shapes —
+  gemma4 surfaces its full 131 072-token context window and its
+  ``multimodal`` capability (treated as vision) at startup.
 
 ### Changed
 - **Backfilled exception-path regression tests for high-value modules

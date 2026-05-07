@@ -48,7 +48,7 @@ _VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3", "gemma4"})
 # ``_apply_model_metadata`` would otherwise wrongly disable tools for
 # every llama.cpp-backed snap.  Add a snap here once you've confirmed
 # tool-call round-tripping works against it.
-_TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset({"qwen3-coder"})
+_TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset({"qwen3-coder", "gemma4"})
 
 
 def discover_snap_endpoint(snap_name: str) -> str:
@@ -213,16 +213,44 @@ class InferenceSnapProvider(OpenAICompatBase):
         models = models_response.get("data", [])
         if not models:
             return
-        meta = models[0]
+        entry = models[0]
+        # llama.cpp nests model parameters under ``data[0].meta``;
+        # vLLM/OVMS put them at the top level of ``data[0]``.  Read both
+        # so the same snap layer covers both backends.
+        nested = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
 
         # Context window: try n_ctx_train (llama.cpp), context_length
-        # (vLLM/OVMS), or max_model_len as fallbacks.
-        for key in ("n_ctx_train", "context_length", "max_model_len"):
-            ctx = meta.get(key)
-            if isinstance(ctx, int) and ctx > 0:
-                self._context_window = ctx
-                log.debug("Detected context window: %d tokens (%s)", ctx, key)
-                break
+        # (vLLM/OVMS), or max_model_len as fallbacks.  Check the nested
+        # llama.cpp shape before the flat one — llama.cpp servers report
+        # the trained context only under ``meta``.
+        for source in (nested, entry):
+            for key in ("n_ctx_train", "context_length", "max_model_len"):
+                ctx = source.get(key)
+                if isinstance(ctx, int) and ctx > 0:
+                    self._context_window = ctx
+                    log.debug("Detected context window: %d tokens (%s)", ctx, key)
+                    break
+            else:
+                continue
+            break
+
+        # Capabilities can live in three places: ``data[0].capabilities``
+        # (most backends), ``data[0].meta.capabilities`` (rare), and the
+        # parallel top-level ``models`` array some llama.cpp builds emit
+        # alongside ``data`` (gemma4 reports ``["completion","multimodal"]``
+        # there).  Merge them so the checks below see one combined list.
+        capabilities: list[str] = []
+        for source in (entry, nested):
+            caps = source.get("capabilities")
+            if isinstance(caps, list):
+                capabilities.extend(caps)
+        parallel = models_response.get("models")
+        if isinstance(parallel, list) and parallel:
+            head = parallel[0]
+            if isinstance(head, dict):
+                caps = head.get("capabilities")
+                if isinstance(caps, list):
+                    capabilities.extend(caps)
 
         # Tool support: some backends (e.g. OVMS) don't support function
         # calling.  Check for an explicit capability flag if present.
@@ -230,7 +258,6 @@ class InferenceSnapProvider(OpenAICompatBase):
         # (the task type), so allowlisted snaps skip the negative
         # inference — tool-calling is enabled there by ``--jinja``, not
         # by this metadata.
-        capabilities = meta.get("capabilities", [])
         if (
             capabilities
             and "tool_use" not in capabilities
@@ -241,14 +268,16 @@ class InferenceSnapProvider(OpenAICompatBase):
             log.info(
                 "Model %s does not advertise tool support; "
                 "tool calls will be omitted from requests.",
-                meta.get("id", self.snap_name),
+                entry.get("id", self.snap_name),
             )
 
         # Vision support: a runtime-advertised capability upgrades the
         # seed from the static allowlist.  Never downgrade — a snap in
         # the allowlist stays vision-capable even if the server omits
         # the flag (not every backend populates ``capabilities`` fully).
-        if capabilities and ("vision" in capabilities or "image" in capabilities):
+        # ``multimodal`` is llama.cpp's umbrella term for image-capable
+        # models (gemma4 reports it in lieu of ``vision``).
+        if any(c in capabilities for c in ("vision", "image", "multimodal")):
             self._supports_vision = True
 
     # count_tokens inherited from LLMProvider (character-based heuristic).

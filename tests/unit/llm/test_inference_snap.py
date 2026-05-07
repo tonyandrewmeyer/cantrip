@@ -329,6 +329,41 @@ class TestInferenceSnapVision:
         )
         assert provider.supports_vision is True
 
+    def test_multimodal_capability_upgrades_vision(self):
+        """``multimodal`` is llama.cpp's image-capable advertisement.
+
+        gemma4 reports ``capabilities: ["completion", "multimodal"]``
+        rather than the OpenAI-style ``vision`` flag, so the upgrade
+        path has to recognise it.
+        """
+        provider = self._make_provider("some-new-snap")
+        assert provider.supports_vision is False
+        provider._apply_model_metadata(
+            {
+                "models": [{"name": "x", "capabilities": ["completion", "multimodal"]}],
+                "data": [{"id": "x"}],
+            }
+        )
+        assert provider.supports_vision is True
+
+    def test_capabilities_picked_up_from_parallel_models_array(self):
+        """llama.cpp emits a parallel ``models`` array alongside ``data``.
+
+        Capabilities surface on the ``models`` entries rather than on
+        ``data``; both should be merged before the negative-inference
+        and vision-upgrade branches run.
+        """
+        provider = self._make_provider("qwen3-coder")
+        provider._apply_model_metadata(
+            {
+                "models": [{"name": "x", "capabilities": ["completion"]}],
+                "data": [{"id": "x"}],
+            }
+        )
+        # qwen3-coder is on the tool-capable allowlist, so the parallel
+        # capability list does not disable tools.
+        assert provider._supports_tools is True
+
     def test_allowlist_snap_stays_vision_without_capability(self):
         """A snap on the allowlist keeps vision=True even if metadata omits it.
 
@@ -812,6 +847,57 @@ class TestContextWindowTuning:
             )
         provider._apply_model_metadata({"data": [{"id": "test", "n_ctx_train": 0}]})
         assert provider.context_window_tokens == 8_192
+
+    def test_detects_nested_n_ctx_train_for_llamacpp(self):
+        """llama.cpp nests model parameters under ``data[0].meta``.
+
+        gemma4's ``/models`` reports ``n_ctx_train: 131_072`` inside
+        ``meta`` rather than at the top of the model entry; the
+        previous flat-only lookup missed it and fell back to the
+        8 KiB default.
+        """
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma4", model="test-model", base_url="http://test:8336/v1"
+            )
+        provider._apply_model_metadata(
+            {"data": [{"id": "test", "meta": {"n_ctx_train": 131_072}}]}
+        )
+        assert provider.context_window_tokens == 131_072
+
+    def test_nested_meta_takes_precedence_over_flat(self):
+        """When both shapes are present, nested meta wins.
+
+        That matches llama.cpp's behaviour — the nested value is the
+        trained context, while any flat key would be a coarser hint.
+        """
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma4", model="test-model", base_url="http://test:8336/v1"
+            )
+        provider._apply_model_metadata(
+            {
+                "data": [
+                    {
+                        "id": "test",
+                        "context_length": 4_096,
+                        "meta": {"n_ctx_train": 131_072},
+                    }
+                ]
+            }
+        )
+        assert provider.context_window_tokens == 131_072
+
+    def test_non_dict_meta_falls_back_to_flat(self):
+        """A malformed ``meta`` field doesn't crash detection."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="gemma4", model="test-model", base_url="http://test:8336/v1"
+            )
+        provider._apply_model_metadata(
+            {"data": [{"id": "test", "meta": "garbage", "context_length": 16_384}]}
+        )
+        assert provider.context_window_tokens == 16_384
 
 
 class TestConnectionHealth:
