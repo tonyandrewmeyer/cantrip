@@ -347,3 +347,51 @@ class TestUsageRecordingProviderIdentity:
         executor._record_usage(response)
 
         assert store.record_usage.call_args.kwargs["category"] is None
+
+
+class TestPermissionCallbackErrorSwallowing:
+    """``_on_permission_decided`` must never let a UI-callback bug crash the loop.
+
+    The contract is documented on the method itself: a broken hook can
+    never propagate, only log.  Without this regression test, narrowing
+    the catch (or removing it altogether) would silently re-introduce
+    the crash.
+    """
+
+    def _decision(self):
+        from cantrip.agent.permissions import PermissionDecision, PermissionOutcome
+
+        return PermissionDecision(outcome=PermissionOutcome.ALLOW, reason="test")
+
+    def test_no_callback_is_a_noop(self) -> None:
+        executor = _make_executor()
+        # Default is no callback; method must not raise.
+        executor._on_permission_decided("read_file", self._decision(), {"path": "x"})
+
+    def test_callback_typeerror_is_swallowed(self, caplog) -> None:
+        import logging
+
+        executor = _make_executor()
+
+        def _broken(_tool, _decision, _args):
+            raise TypeError("bad signature")
+
+        executor.set_permission_callback(_broken)
+        with caplog.at_level(logging.ERROR, logger="cantrip.agent.executor.core"):
+            executor._on_permission_decided("read_file", self._decision(), {"path": "x"})
+
+        assert any("permission_callback raised" in r.getMessage() for r in caplog.records)
+
+    def test_callback_runtimeerror_is_swallowed(self, caplog) -> None:
+        import logging
+
+        executor = _make_executor()
+
+        def _broken(_tool, _decision, _args):
+            raise RuntimeError("hook lost its mind")
+
+        executor.set_permission_callback(_broken)
+        with caplog.at_level(logging.ERROR, logger="cantrip.agent.executor.core"):
+            executor._on_permission_decided("read_file", self._decision(), {"path": "x"})
+
+        assert any("permission_callback raised" in r.getMessage() for r in caplog.records)

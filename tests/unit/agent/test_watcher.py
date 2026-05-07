@@ -10,12 +10,14 @@ import pytest
 
 from cantrip.agent.watcher import (
     AppSnapshot,
+    DatabagSnapshot,
     EventWatcher,
     OfferSnapshot,
     StatusSnapshot,
     UnitSnapshot,
     WatcherConfig,
     WatcherEvent,
+    capture_databag_snapshot,
     capture_snapshot,
     diff_snapshots,
     format_event_for_agent,
@@ -443,6 +445,45 @@ class TestCaptureSnapshot:
         assert len(snapshot.apps[0].units) == 1
         assert snapshot.apps[0].units[0].name == "myapp/0"
         assert snapshot.apps[0].units[0].workload_status == "active"
+
+
+class TestCaptureDatabagSnapshotErrors:
+    """``capture_databag_snapshot`` must degrade gracefully when ``juju`` shells out fail.
+
+    A missing CLI, a hung command, or a malformed JSON response all
+    flow through subprocess + json — and the watcher's whole point is
+    to keep running even when the controller is misbehaving.  Without
+    these regression tests, narrowing the catch (or removing it) would
+    silently re-introduce a watcher crash on hostile-environment Juju.
+    """
+
+    def test_juju_binary_missing_returns_empty_snapshot(self):
+        """``juju status`` raising ``FileNotFoundError`` (no juju on PATH) yields empty."""
+        with mock.patch("subprocess.run", side_effect=FileNotFoundError("juju not found")):
+            snapshot = capture_databag_snapshot("dev")
+
+        assert snapshot == DatabagSnapshot()
+        assert snapshot.entries == ()
+
+    def test_juju_status_timeout_returns_empty_snapshot(self):
+        """A hung ``juju status`` (TimeoutExpired) yields empty rather than propagating."""
+        import subprocess as _subprocess
+
+        with mock.patch(
+            "subprocess.run",
+            side_effect=_subprocess.TimeoutExpired(cmd="juju", timeout=15),
+        ):
+            snapshot = capture_databag_snapshot("dev")
+
+        assert snapshot == DatabagSnapshot()
+
+    def test_juju_status_malformed_json_returns_empty_snapshot(self):
+        """Malformed JSON from ``juju status`` falls through cleanly."""
+        result = mock.MagicMock(returncode=0, stdout="not valid json {")
+        with mock.patch("subprocess.run", return_value=result):
+            snapshot = capture_databag_snapshot("dev")
+
+        assert snapshot == DatabagSnapshot()
 
 
 # ---------------------------------------------------------------------------

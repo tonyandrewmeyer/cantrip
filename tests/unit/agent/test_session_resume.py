@@ -312,6 +312,44 @@ class TestPreviewSession:
         assert reader.state.charm_name is None
         assert reader.state.messages == []
 
+    def test_corrupt_cantrip_file_returns_empty_preview(self, tmp_path: pathlib.Path):
+        """A corrupt .cantrip file degrades to ``exists=False`` rather than raising.
+
+        Without this, a damaged session file would crash every launch.
+        The contract documented on ``preview_session`` is that callers
+        can branch on ``preview.exists`` without catching, so the
+        sqlite3.Error fallback at persistence.py:86 must hold.
+        """
+        cantrip_db = tmp_path / ".cantrip"
+        cantrip_db.write_bytes(b"not a sqlite database, just garbage bytes\n")
+
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        preview = agent.preview_session()
+
+        assert preview.exists is False
+        assert preview.charm_name is None
+
+    def test_peek_session_failure_returns_empty_preview(self, tmp_path: pathlib.Path):
+        """A sqlite error during ``peek_session`` falls through to empty preview.
+
+        Covers the second except in ``preview_session`` (persistence.py:101)
+        — the store opens cleanly but a query fails (e.g. schema drift,
+        truncated row), and we must not let that crash the launch path.
+        """
+        writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        writer.state.charm_name = "demo"
+        writer.save_state()
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        with patch(
+            "cantrip.agent.store.SessionStore.peek_session",
+            side_effect=sqlite3.Error("schema mismatch"),
+        ):
+            preview = reader.preview_session()
+
+        assert preview.exists is False
+        assert preview.charm_name is None
+
     def test_summary_includes_charm_and_counts(self, tmp_path: pathlib.Path):
         """Summary string includes the charm name and a task count breakdown."""
         writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)

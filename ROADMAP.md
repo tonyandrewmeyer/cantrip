@@ -4920,10 +4920,21 @@ identified rather than opening a new product line.
   - [ ] Centralise reusable fakes/builders so unit / integration / e2e
     layers stop growing parallel infrastructure by accident.
   - [ ] Document the fixture hierarchy.
-- [ ] Add a small audit of exception-path coverage in high-value modules
+- [x] Add a small audit of exception-path coverage in high-value modules
   (provider adapters, executor loop, juju/log plumbing, structured
   output, persistence) and backfill the missing regression tests the
-  review called out.
+  review called out.  Audit drove from the annotated coverage report
+  (``cov_annotate/``) and landed seventeen focused regression tests:
+  ``ClaudeProvider.complete()`` rate-limit / 5xx / generic-API-error
+  mappings (and the matching ``stream()`` paths), ``GeminiProvider``
+  ``ServerError`` / generic ``APIError`` mappings on both ``complete()``
+  and ``stream()``, ``BackgroundExecutor._on_permission_decided``
+  swallowing ``TypeError`` and ``RuntimeError`` from a broken UI hook
+  without crashing the loop, ``preview_session`` falling through to an
+  empty preview when the ``.cantrip`` file is corrupt or
+  ``peek_session`` raises, and ``capture_databag_snapshot`` degrading
+  to an empty ``DatabagSnapshot()`` when the ``juju`` CLI is missing,
+  hangs, or returns malformed JSON.  Total coverage moved 88.76 → 88.88%.
 
 ### 92.4 Medium — Docs and discoverability sweep
 

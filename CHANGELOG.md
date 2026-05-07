@@ -5,6 +5,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Backfilled exception-path regression tests for high-value modules
+  (Phase 92.3).**  Seventeen focused tests cover the previously
+  uncovered error mappings the review called out: Anthropic
+  ``RateLimitError`` / ``InternalServerError`` / ``APIError`` from
+  ``ClaudeProvider.complete()`` (and the matching ``stream()`` paths)
+  now surface as ``ProviderRateLimitError`` / ``ProviderOverloadedError``
+  / ``ProviderError`` under test; the same shape is verified for
+  Gemini's ``ServerError`` and generic ``APIError`` on both
+  ``complete()`` and ``stream()``; ``BackgroundExecutor._on_permission_decided``
+  is asserted to log-and-swallow ``TypeError`` and ``RuntimeError`` from
+  a broken UI hook so a misbehaving renderer can never crash the
+  subagent loop; ``preview_session`` is asserted to fall through to an
+  empty preview when the ``.cantrip`` file is corrupt or
+  ``peek_session`` raises ``sqlite3.Error``; and
+  ``capture_databag_snapshot`` is asserted to degrade to an empty
+  ``DatabagSnapshot()`` when the ``juju`` CLI is missing, hangs, or
+  returns malformed JSON.  Total Python coverage moved 88.76% →
+  88.88% — these were paths the unit suite had previously trusted on
+  inspection.
 - **Split the monolithic ``test_agent.py`` into feature-scoped modules
   (Phase 92.3).**  ``tests/unit/agent/test_agent.py`` (~1.5 kloc, 13 test
   classes) is gone.  The classes live in eight feature-scoped siblings —

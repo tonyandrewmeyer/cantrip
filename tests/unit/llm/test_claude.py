@@ -9,6 +9,7 @@ from cantrip.llm.base import (
     Image,
     Message,
     ProviderError,
+    ProviderOverloadedError,
     ProviderRateLimitError,
     Role,
     ToolCall,
@@ -908,3 +909,138 @@ class TestClaudeProviderThinkingBudgetWire:
 
         assert "thinking" not in captured
         assert captured["temperature"] == 0.7
+
+
+class TestClaudeProviderCompleteErrors:
+    """Anthropic SDK errors raised inside ``complete()`` map to typed exceptions."""
+
+    def _make_provider(self):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            import anthropic as real_anthropic
+
+            mock_anthropic.RateLimitError = real_anthropic.RateLimitError
+            mock_anthropic.InternalServerError = real_anthropic.InternalServerError
+            mock_anthropic.APIError = real_anthropic.APIError
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key")
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_maps_to_provider_rate_limit_error(self):
+        """``RateLimitError`` from ``messages.create`` becomes ``ProviderRateLimitError``."""
+        import anthropic as real_anthropic
+
+        provider = self._make_provider()
+        provider.client.messages.create = MagicMock(
+            side_effect=real_anthropic.RateLimitError(
+                message="rate limited",
+                response=MagicMock(status_code=429),
+                body=None,
+            )
+        )
+
+        with pytest.raises(ProviderRateLimitError, match="rate limit"):
+            await provider.complete([Message(role=Role.USER, content="Hi")])
+
+    @pytest.mark.asyncio
+    async def test_internal_server_error_maps_to_overloaded(self):
+        """``InternalServerError`` becomes ``ProviderOverloadedError``."""
+        import anthropic as real_anthropic
+
+        provider = self._make_provider()
+        provider.client.messages.create = MagicMock(
+            side_effect=real_anthropic.InternalServerError(
+                message="overloaded",
+                response=MagicMock(status_code=503),
+                body=None,
+            )
+        )
+
+        with pytest.raises(ProviderOverloadedError, match="temporarily unavailable"):
+            await provider.complete([Message(role=Role.USER, content="Hi")])
+
+    @pytest.mark.asyncio
+    async def test_generic_api_error_maps_to_provider_error(self):
+        """A generic ``APIError`` becomes ``ProviderError``."""
+        import anthropic as real_anthropic
+
+        provider = self._make_provider()
+        provider.client.messages.create = MagicMock(
+            side_effect=real_anthropic.APIError(
+                message="boom",
+                request=MagicMock(),
+                body=None,
+            )
+        )
+
+        with pytest.raises(ProviderError, match="Claude API error"):
+            await provider.complete([Message(role=Role.USER, content="Hi")])
+
+
+class TestClaudeProviderStreamErrors:
+    """Server-side errors during ``stream()`` map to the same typed exceptions."""
+
+    def _make_provider(self):
+        with patch("cantrip.llm.claude.anthropic") as mock_anthropic:
+            mock_anthropic.AsyncAnthropic.return_value = MagicMock()
+            import anthropic as real_anthropic
+
+            mock_anthropic.RateLimitError = real_anthropic.RateLimitError
+            mock_anthropic.InternalServerError = real_anthropic.InternalServerError
+            mock_anthropic.APIError = real_anthropic.APIError
+            from cantrip.llm.claude import ClaudeProvider
+
+            return ClaudeProvider(api_key="test-key")
+
+    def _stream_cm_raising(self, error: Exception):
+        """Build an async context manager whose iterator raises ``error``."""
+
+        class _CM:
+            async def __aenter__(self_inner):
+                return self_inner
+
+            async def __aexit__(self_inner, *args):
+                pass
+
+            def __aiter__(self_inner):
+                return self_inner
+
+            async def __anext__(self_inner):
+                raise error
+
+        return _CM()
+
+    @pytest.mark.asyncio
+    async def test_stream_internal_server_error_maps_to_overloaded(self):
+        """A 5xx during stream iteration surfaces as ``ProviderOverloadedError``."""
+        import anthropic as real_anthropic
+
+        provider = self._make_provider()
+        error = real_anthropic.InternalServerError(
+            message="overloaded",
+            response=MagicMock(status_code=503),
+            body=None,
+        )
+        provider.client.messages.stream = MagicMock(return_value=self._stream_cm_raising(error))
+
+        with pytest.raises(ProviderOverloadedError, match="temporarily unavailable"):
+            async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_generic_api_error_maps_to_provider_error(self):
+        """A generic ``APIError`` during stream iteration surfaces as ``ProviderError``."""
+        import anthropic as real_anthropic
+
+        provider = self._make_provider()
+        error = real_anthropic.APIError(
+            message="boom",
+            request=MagicMock(),
+            body=None,
+        )
+        provider.client.messages.stream = MagicMock(return_value=self._stream_cm_raising(error))
+
+        with pytest.raises(ProviderError, match="Claude API error"):
+            async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+                pass

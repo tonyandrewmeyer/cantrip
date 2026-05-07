@@ -9,6 +9,7 @@ from cantrip.llm.base import (
     Image,
     Message,
     ProviderError,
+    ProviderOverloadedError,
     ProviderRateLimitError,
     Role,
     ToolCall,
@@ -1346,3 +1347,81 @@ class TestThoughtSignatureRoundTrip:
             base64.b64decode(final.metadata["_gemini_thought_parts"][0]["thought_signature"])
             == sig
         )
+
+
+class TestGeminiProviderCompleteServerErrors:
+    """5xx and generic API errors during ``complete()`` map to typed exceptions."""
+
+    @pytest.mark.asyncio
+    async def test_server_error_maps_to_overloaded(self):
+        """A 5xx ``ServerError`` becomes ``ProviderOverloadedError``."""
+        from google.genai import errors as genai_errors
+
+        provider, _ = _make_provider()
+        error = genai_errors.ServerError(code=503, response_json={})
+        provider._client.aio.models.generate_content = AsyncMock(side_effect=error)
+
+        with pytest.raises(ProviderOverloadedError, match="temporarily unavailable"):
+            await provider.complete([Message(role=Role.USER, content="Hi")])
+
+    @pytest.mark.asyncio
+    async def test_generic_api_error_maps_to_provider_error(self):
+        """A generic ``APIError`` (not ClientError, not ServerError) becomes ``ProviderError``.
+
+        The code path is the trailing ``except genai_errors.APIError`` —
+        ``ClientError`` and ``ServerError`` are subclasses, so we need an
+        ``APIError`` instance that is *neither* of them to exercise this
+        branch.
+        """
+        from google.genai import errors as genai_errors
+
+        provider, _ = _make_provider()
+        error = genai_errors.APIError(code=418, response_json={"message": "teapot"})
+        provider._client.aio.models.generate_content = AsyncMock(side_effect=error)
+
+        with pytest.raises(ProviderError, match="Gemini API error"):
+            await provider.complete([Message(role=Role.USER, content="Hi")])
+
+
+class TestGeminiProviderStreamServerErrors:
+    """5xx and generic API errors during ``stream()`` map to typed exceptions."""
+
+    @pytest.mark.asyncio
+    async def test_stream_server_error_maps_to_overloaded(self):
+        """A 5xx during stream iteration surfaces as ``ProviderOverloadedError``."""
+        from google.genai import errors as genai_errors
+
+        provider, _ = _make_provider()
+        error = genai_errors.ServerError(code=503, response_json={})
+
+        async def _raising_stream():
+            raise error
+            yield  # Never reached, makes this an async generator.
+
+        provider._client.aio.models.generate_content_stream = AsyncMock(
+            return_value=_raising_stream()
+        )
+
+        with pytest.raises(ProviderOverloadedError, match="temporarily unavailable"):
+            async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_generic_api_error_maps_to_provider_error(self):
+        """A generic ``APIError`` during stream iteration surfaces as ``ProviderError``."""
+        from google.genai import errors as genai_errors
+
+        provider, _ = _make_provider()
+        error = genai_errors.APIError(code=418, response_json={"message": "teapot"})
+
+        async def _raising_stream():
+            raise error
+            yield
+
+        provider._client.aio.models.generate_content_stream = AsyncMock(
+            return_value=_raising_stream()
+        )
+
+        with pytest.raises(ProviderError, match="Gemini API error"):
+            async for _ in provider.stream([Message(role=Role.USER, content="Hi")]):
+                pass
