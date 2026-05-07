@@ -80,6 +80,24 @@ _GIT_TIMEOUT = 60
 _SNAPSHOT_AUTHOR_NAME = "Cantrip Snapshot"
 _SNAPSHOT_AUTHOR_EMAIL = "cantrip@localhost"
 
+# Identity is injected per-invocation via ``-c`` flags rather than
+# written into the snapshot repo's ``.git/config``.  Persisting it
+# was a footgun: a stray ``git config`` call running in the wrong
+# directory could land the snapshot identity in a *user* repo's
+# config and silently rewrite the author on subsequent commits.
+# Per-invocation ``-c`` keeps the identity scoped to the single
+# subprocess and writes nothing to disk.  ``commit.gpgsign=false``
+# rides along so users with a global ``commit.gpgsign = true`` don't
+# hit a passphrase prompt every snapshot.
+_IDENTITY_CONFIG = (
+    "-c",
+    f"user.name={_SNAPSHOT_AUTHOR_NAME}",
+    "-c",
+    f"user.email={_SNAPSHOT_AUTHOR_EMAIL}",
+    "-c",
+    "commit.gpgsign=false",
+)
+
 # Files inside the charm root that must never be snapshotted: the
 # session store (``.cantrip/`` SQLite + JSONL) and Phase 44 worktrees
 # (``.cantrip-worktrees/`` git worktrees for parallel subagents).
@@ -181,11 +199,11 @@ class SnapshotManager:
                         init.stderr.strip(),
                     )
                     return False
-                # Identity must be set before the first commit, and the
-                # info/exclude file is the right place for "always skip
-                # these paths" since the user's own .gitignore should
-                # also be honoured (which git does automatically).
-                self._configure_repo()
+                # Identity rides on every git invocation via ``-c``
+                # (see ``_IDENTITY_CONFIG``) so no ``git config`` call
+                # can leak into the surrounding repo.  The exclude
+                # file still lives in ``info/exclude`` because the
+                # user's own .gitignore is honoured automatically.
                 self._write_exclude()
                 # Empty initial commit guarantees HEAD exists so every
                 # subsequent ``reset --hard`` has something to anchor
@@ -198,20 +216,6 @@ class SnapshotManager:
         except OSError as exc:
             log.warning("Snapshot repo init failed: %s", exc)
             return False
-
-    def _configure_repo(self) -> None:
-        """Stamp author identity and signing config onto the snapshot repo.
-
-        Targets the snapshot repo via ``--git-dir`` so the calls don't
-        depend on the host having a global git identity (CI runners
-        often don't) and don't accidentally write into whichever
-        repo happens to wrap our cwd.
-        """
-        self._run_repo(["config", "user.name", _SNAPSHOT_AUTHOR_NAME])
-        self._run_repo(["config", "user.email", _SNAPSHOT_AUTHOR_EMAIL])
-        # Snapshots never sign — a missing GPG key would otherwise
-        # break every turn for users with ``commit.gpgsign = true``.
-        self._run_repo(["config", "commit.gpgsign", "false"])
 
     def _write_exclude(self) -> None:
         """Seed the snapshot repo's ``info/exclude`` with cantrip-internal paths.
@@ -381,28 +385,22 @@ class SnapshotManager:
         Both ``--git-dir`` and ``--work-tree`` are passed so the
         operation targets the snapshot repo's history but reads /
         writes the user's charm tree.  Used for commit, add, reset,
-        diff, rev-parse and friends.
+        diff, rev-parse and friends.  Identity is injected via
+        ``_IDENTITY_CONFIG`` so commits never depend on (or write
+        to) any persistent ``user.name`` / ``user.email`` config.
         """
         cmd = [
             "git",
+            *_IDENTITY_CONFIG,
             f"--git-dir={self._git_dir}",
             f"--work-tree={self._charm_path}",
             *args,
         ]
         return self._invoke(cmd)
 
-    def _run_repo(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-        """Run a repo-administrative git command (no working tree).
-
-        Used for ``config`` so the value lands in the snapshot repo
-        regardless of whether the host has a global git identity.
-        """
-        cmd = ["git", f"--git-dir={self._git_dir}", *args]
-        return self._invoke(cmd)
-
     def _run_raw(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-        """Run git with no automatic flags (used for ``init``)."""
-        return self._invoke(["git", *args])
+        """Run git with only the identity flags pre-pended (used for ``init``)."""
+        return self._invoke(["git", *_IDENTITY_CONFIG, *args])
 
     def _invoke(self, cmd: list[str]) -> subprocess.CompletedProcess[str]:
         """Shared subprocess invocation envelope."""
