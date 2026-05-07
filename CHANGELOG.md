@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Multipass-VM-with-host-GPU-inference how-to and helper script.**
+  ``scripts/setup-vm-inference-proxy.sh`` installs ``socat``, drops a
+  ``cantrip-inference-proxy@.service`` systemd template, and (when
+  ``ufw`` is active) restricts ingress to the Multipass bridge subnet.
+  Exposes host-side inference snaps (defaults: ``qwen3-coder`` on 8332
+  and ``gemma4`` on 8336) to a Multipass VM running Cantrip without
+  requiring GPU passthrough.  ``docs/src/howto-vm-inference-proxy.md``
+  documents the architecture, security trade-offs, and the matching
+  ``cantrip --provider inference-snap --base-url
+  http://10.42.160.1:<port>/v1`` invocation inside the VM.
 - **Per-provider system-prompt smoke test and cheap-model CI gate
   (Phase 79.2 / 79.3).**  ``tests/eval/test_system_prompt_smoke.py``
   renders ``cantrip.agent.prompts.system.build_system_prompt()``,

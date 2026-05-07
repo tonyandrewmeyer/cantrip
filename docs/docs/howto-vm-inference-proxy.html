@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to run Cantrip in a Multipass VM with host GPU inference &mdash; Cantrip</title>
+<meta name="description" content="Sandbox Cantrip in a Multipass VM while still using host inference snaps that need the GPU.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-interface.html">Choose an interface</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+      <li><a href="howto-vm-inference-proxy.html" class="current">Run in a VM with host GPU inference</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>VM with host GPU inference
+    </div>
+
+    <h1>Run Cantrip in a VM with host GPU inference</h1>
+    <p class="subtitle">
+      Sandbox Cantrip in a Multipass VM and let it reach inference snaps running on the host's GPU, without GPU passthrough.
+    </p>
+
+<p>Cantrip works well sandboxed in a Multipass VM, but inference snaps such as
+<code>qwen3-coder</code> and <code>gemma4</code> are happiest using the host's GPU directly.
+Multipass on Linux does not support PCI passthrough, and full VFIO
+passthrough on a hybrid-graphics laptop typically means the host loses its
+GPU while the VM runs. The pragmatic answer is to <strong>keep inference on the
+host where the GPU lives, and let the VM reach those snaps over the
+Multipass bridge.</strong></p>
+<p>This guide walks through the setup. A helper script
+(<code>scripts/setup-vm-inference-proxy.sh</code>) automates the host side.</p>
+<h2>How it works</h2>
+<p>Each inference snap binds <code>127.0.0.1:&lt;port&gt;</code> on the host. The Multipass VM
+sees the host as <code>10.42.160.1</code> (the <code>mpqemubr0</code> bridge gateway) and cannot
+reach the host's loopback. A small <code>socat</code> forwarder per port listens on
+the bridge IP only, forwarding to host loopback:</p>
+<pre><code>cantrip VM (10.42.160.198)
+   │  http://10.42.160.1:8332/v1/...
+   ▼
+mpqemubr0 (10.42.160.1)  ← socat listener
+   │
+   ▼
+127.0.0.1:8332 (qwen3-coder snap, GPU)
+</code></pre>
+<p>The forwarder never binds on <code>0.0.0.0</code>, and <code>ufw</code> is locked down so only
+traffic arriving on <code>mpqemubr0</code> from the VM subnet can reach it. The
+inference snaps have no auth, so this matters.</p>
+<h2>Prerequisites</h2>
+<ul>
+<li>
+<p>A Multipass VM (named <code>cantrip</code> in the examples) on the <code>mpqemubr0</code>
+bridge.</p>
+</li>
+<li>
+<p>Inference snaps installed and running on the host. Confirm they're
+listening:</p>
+<pre><code class="language-bash">snap services
+ss -tln | grep -E ':(8324|8326|8328|8330|8332|8336) '
+</code></pre>
+<p>Cantrip's default port map (defined in
+<code>src/cantrip/llm/inference_snap.py</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Snap</th>
+<th>Port</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>deepseek-r1</code></td>
+<td>8324</td>
+</tr>
+<tr>
+<td><code>qwen-vl</code></td>
+<td>8326</td>
+</tr>
+<tr>
+<td><code>gemma3</code></td>
+<td>8328</td>
+</tr>
+<tr>
+<td><code>nemotron-3-nano</code></td>
+<td>8330</td>
+</tr>
+<tr>
+<td><code>qwen3-coder</code></td>
+<td>8332</td>
+</tr>
+<tr>
+<td><code>gemma4</code></td>
+<td>8336</td>
+</tr>
+</tbody>
+</table>
+</li>
+</ul>
+<h2>Set up the host</h2>
+<p>Run the helper script. The defaults expose <code>qwen3-coder</code> (8332) and
+<code>gemma4</code> (8336):</p>
+<pre><code class="language-bash">sudo bash scripts/setup-vm-inference-proxy.sh
+</code></pre>
+<p>Or pass an explicit port list:</p>
+<pre><code class="language-bash">sudo bash scripts/setup-vm-inference-proxy.sh 8328 8332 8336
+</code></pre>
+<p>The script:</p>
+<ol>
+<li>Installs <code>socat</code> if missing.</li>
+<li>Drops a templated systemd unit
+<code>cantrip-inference-proxy@.service</code> and enables one instance per port.</li>
+<li>If <code>ufw</code> is active, adds rules allowing only the VM subnet
+(<code>10.42.160.0/24</code>, ingress on <code>mpqemubr0</code>) to reach those ports.</li>
+</ol>
+<p>If your Multipass install uses a different bridge, override with environment
+variables (check with <code>ip -4 addr show dev mpqemubr0</code>):</p>
+<pre><code class="language-bash">sudo BRIDGE_IFACE=mpqemubr0 BRIDGE_IP=10.42.160.1 BRIDGE_NET=10.42.160.0/24 \
+    bash scripts/setup-vm-inference-proxy.sh
+</code></pre>
+<p>Verify from the VM:</p>
+<pre><code class="language-bash">multipass exec cantrip -- curl -s http://10.42.160.1:8332/v1/models
+multipass exec cantrip -- curl -s http://10.42.160.1:8336/v1/models
+</code></pre>
+<h2>Point Cantrip at the host snaps</h2>
+<p>Inside the VM, Cantrip's <code>inference-snap</code> provider auto-discovery runs
+<code>&lt;snap-name&gt; status</code>, which won't work because the snap isn't installed in
+the VM. Use <code>--base-url</code> to bypass discovery:</p>
+<pre><code class="language-bash"># Inside the cantrip VM
+cantrip --provider inference-snap \
+        --snap-name qwen3-coder \
+        --base-url http://10.42.160.1:8332/v1
+</code></pre>
+<p>Or use the generic provider:</p>
+<pre><code class="language-bash">cantrip --provider openai-compatible \
+        --base-url http://10.42.160.1:8332/v1 \
+        --model Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+</code></pre>
+<p>For <code>gemma4</code> swap the port to <code>8336</code> and the snap name accordingly.</p>
+<h2>Security notes</h2>
+<ul>
+<li>The forwarder listens on the bridge IP only, never on <code>0.0.0.0</code> or your
+LAN interface. The inference snaps have no auth, so the bind address is
+load-bearing.</li>
+<li>If <code>ufw</code> is inactive, anything able to route to <code>10.42.160.1</code> can reach
+the proxy. Enable <code>ufw</code> (<code>sudo ufw enable</code>) or add an equivalent
+<code>nftables</code> rule before relying on isolation.</li>
+<li>The VM still has full NAT egress to the internet by default. Cantrip
+inside the VM is sandboxed from your host filesystem (apart from the
+explicit Multipass mounts), but not from the rest of the world.</li>
+</ul>
+<h2>Remove the proxy</h2>
+<pre><code class="language-bash">for port in 8332 8336; do
+  sudo systemctl disable --now &quot;cantrip-inference-proxy@${port}.service&quot;
+done
+sudo rm /etc/systemd/system/cantrip-inference-proxy@.service
+sudo systemctl daemon-reload
+
+# Optional: revoke ufw rules
+sudo ufw status numbered
+sudo ufw delete &lt;number&gt;  # for each rule mentioning cantrip
+</code></pre>
+<h2>Why not other approaches</h2>
+<ul>
+<li><strong>Multipass GPU passthrough</strong> &mdash; not implemented upstream.</li>
+<li><strong>LXD/Incus VM with a <code>gpu</code> device</strong> &mdash; works but requires IOMMU and
+binding the host's discrete GPU to <code>vfio-pci</code>, which on a hybrid-graphics
+laptop means the host loses CUDA while the VM runs.</li>
+<li><strong>Install the inference snap inside the VM</strong> &mdash; the VM has no GPU, so the
+snap falls back to CPU and is unusably slow for 30B-class models.</li>
+<li><strong>LXD container with a <code>gpu</code> device</strong> &mdash; lighter and works, but containers
+share the host kernel so isolation is weaker than a VM. If you'd accept
+that trade-off, run Cantrip <em>and</em> the inference snap together inside one
+LXD container with a <code>gpu</code> device attached, and skip this proxy entirely.</li>
+</ul>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

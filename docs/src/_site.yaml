@@ -34,6 +34,7 @@ sections:
       - { slug: howto-print-mode, label: "Run a single goal non-interactively" }
       - { slug: howto-ralph, label: "Run a Ralph loop" }
       - { slug: howto-feelings, label: "Convene the inner parliament" }
+      - { slug: howto-vm-inference-proxy, label: "Run in a VM with host GPU inference" }
 
   reference:
     heading: "Reference"
