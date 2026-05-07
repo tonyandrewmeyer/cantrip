@@ -900,6 +900,112 @@ class TestContextWindowTuning:
         assert provider.context_window_tokens == 16_384
 
 
+class TestSlotContextProbe:
+    """Tests for the per-slot ``/slots`` context-window probe.
+
+    llama.cpp servers split their KV cache across ``--parallel`` slots,
+    so a model with ``n_ctx_train: 131072`` may only accept 4 KiB per
+    request.  ``/v1/models`` reports the trained value; ``/slots`` is
+    the only authoritative source for the per-request budget.
+    """
+
+    def _make_provider(self, snap_name: str = "gemma4"):
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name=snap_name,
+                model="test-model",
+                base_url=f"http://test-{snap_name}:8336/v1",
+            )
+
+    def _mock_client(self, slots_payload, status: int = 200):
+        mock_resp = MagicMock()
+        mock_resp.status_code = status
+        if status >= 400:
+            mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "not found",
+                request=httpx.Request("GET", "http://t/slots"),
+                response=httpx.Response(status, request=httpx.Request("GET", "http://t/slots")),
+            )
+        else:
+            mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = slots_payload
+        client = MagicMock(spec=httpx.Client)
+        client.get.return_value = mock_resp
+        return client
+
+    def test_smaller_per_slot_downgrades_window(self):
+        """When /slots reports a smaller n_ctx, the window is tightened."""
+        provider = self._make_provider()
+        provider._context_window = 131_072
+        client = self._mock_client(
+            [
+                {"id": 0, "n_ctx": 4096},
+                {"id": 1, "n_ctx": 4096},
+                {"id": 2, "n_ctx": 4096},
+                {"id": 3, "n_ctx": 4096},
+            ]
+        )
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 4096
+
+    def test_takes_minimum_across_slots(self):
+        """Heterogeneous slots use the smallest as the worst-case cap."""
+        provider = self._make_provider()
+        provider._context_window = 131_072
+        client = self._mock_client([{"id": 0, "n_ctx": 8192}, {"id": 1, "n_ctx": 4096}])
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 4096
+
+    def test_larger_per_slot_does_not_upgrade(self):
+        """A per-slot value larger than the current window is left alone.
+
+        ``_apply_model_metadata`` may have already settled on a value
+        from ``n_ctx_train`` that is the model's ceiling; per-slot
+        values should only ever tighten, never widen.
+        """
+        provider = self._make_provider()
+        provider._context_window = 8_192
+        client = self._mock_client([{"id": 0, "n_ctx": 131_072}])
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 8_192
+
+    def test_endpoint_404_leaves_window_untouched(self):
+        """vLLM/OVMS don't expose /slots; the existing value survives."""
+        provider = self._make_provider()
+        provider._context_window = 32_768
+        client = self._mock_client(slots_payload=None, status=404)
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 32_768
+
+    def test_empty_slots_array_leaves_window_untouched(self):
+        """A response with no slots is a no-op rather than a crash."""
+        provider = self._make_provider()
+        provider._context_window = 32_768
+        client = self._mock_client([])
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 32_768
+
+    def test_non_int_n_ctx_ignored(self):
+        """Malformed slot entries are filtered, not propagated."""
+        provider = self._make_provider()
+        provider._context_window = 32_768
+        client = self._mock_client([{"id": 0, "n_ctx": "garbage"}, {"id": 1, "n_ctx": -1}])
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 32_768
+
+    def test_non_json_response_does_not_raise(self):
+        """A snap returning HTML on /slots must not crash provider init."""
+        provider = self._make_provider()
+        provider._context_window = 32_768
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.side_effect = ValueError("not json")
+        client = MagicMock(spec=httpx.Client)
+        client.get.return_value = mock_resp
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 32_768
+
+
 class TestConnectionHealth:
     """Tests for connection health checking."""
 

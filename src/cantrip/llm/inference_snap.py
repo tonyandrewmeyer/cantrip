@@ -167,6 +167,7 @@ class InferenceSnapProvider(OpenAICompatBase):
                 resp.raise_for_status()
                 data = resp.json()
                 self._apply_model_metadata(data)
+                self._probe_slot_context(client)
         except httpx.ConnectError as e:
             raise ProviderError(
                 f"Cannot connect to inference snap '{self.snap_name}' at "
@@ -191,6 +192,7 @@ class InferenceSnapProvider(OpenAICompatBase):
                 resp.raise_for_status()
                 data = resp.json()
                 self._apply_model_metadata(data)
+                self._probe_slot_context(client)
                 models = data.get("data", [])
                 if models:
                     return models[0]["id"]
@@ -207,6 +209,50 @@ class InferenceSnapProvider(OpenAICompatBase):
             # which is the conservative thing for an opaque local server.
             pass
         return self.snap_name
+
+    def _probe_slot_context(self, client: httpx.Client) -> None:
+        """Tighten the context window when llama.cpp slots are smaller than the model.
+
+        ``/v1/models`` advertises the model's *trained* context
+        (``n_ctx_train``), but llama.cpp servers split their KV cache
+        across ``--parallel`` slots, and an admin can also start the
+        server with ``--ctx-size`` smaller than the trained context.
+        Either case caps every individual request at the per-slot
+        ``n_ctx``.  Trusting only ``/v1/models`` is what made gemma4
+        appear to have a 128 KiB window even though each slot was
+        actually 4 KiB, and Cantrip never compacted because the
+        threshold was 80% of 128 KiB.
+        ``/slots`` reports the true per-slot ``n_ctx``; take the
+        minimum across slots and downgrade to it if smaller.
+        ``/slots`` is llama.cpp-specific and 404s on vLLM/OVMS — those
+        backends keep the value already set by ``_apply_model_metadata``.
+        """
+        try:
+            resp = client.get("/slots")
+            resp.raise_for_status()
+            slots = resp.json()
+        except (httpx.HTTPError, ValueError):
+            return
+        if not isinstance(slots, list) or not slots:
+            return
+        slot_ctxs = [
+            slot["n_ctx"]
+            for slot in slots
+            if isinstance(slot, dict) and isinstance(slot.get("n_ctx"), int) and slot["n_ctx"] > 0
+        ]
+        if not slot_ctxs:
+            return
+        per_slot = min(slot_ctxs)
+        if per_slot < self._context_window:
+            log.info(
+                "Snap '%s' reports per-slot n_ctx=%d (was %d from /models); "
+                "downgrading effective context window — restart the snap with a "
+                "larger --ctx-size or fewer --parallel slots to widen it.",
+                self.snap_name,
+                per_slot,
+                self._context_window,
+            )
+            self._context_window = per_slot
 
     def _apply_model_metadata(self, models_response: dict) -> None:
         """Extract context window size and capabilities from /models data."""
