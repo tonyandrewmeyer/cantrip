@@ -2691,6 +2691,143 @@ useful guidance and without making them feel bolted on.
 
 ---
 
+## Phase 99: User-Facing Goal Lifecycle — Pause/Resume, Persistent Budget, Objective String
+
+**Goal:** OpenAI's Codex CLI 0.128.0 added a ``/goal`` slash command
+with a small but useful lifecycle: set an objective, pause and resume
+autonomous work mid-run, persist the budget across restarts.  Cantrip
+already covers ~80% of the value via its always-on autonomous loop, the
+``/budget`` command (Phase 55.3), and the ``/ralph`` bounded
+iterate-until-green loop (Phase 69.1).  What it lacks is *user-facing
+control surfaces* for three small but real gaps:
+
+1. **No ``/pause`` or ``/resume``.**  Internal ``Executor.pause()`` /
+   ``Executor.resume()`` methods exist
+   (``src/cantrip/agent/executor/core.py:424``) but aren't wired to
+   slash dispatch.  Today the user can only ^C an active autonomous
+   run, which loses chat context and forces a session reload.
+2. **``goal_budget`` doesn't survive ``cantrip resume``.**  Phase 55.3
+   ships ``/budget`` (``src/cantrip/agent/commands/budget.py``) but the
+   ``GoalBudget`` instance isn't part of the SQLite session payload —
+   the user re-specifies caps every time even though the rest of the
+   state is restored.
+3. **No first-class user-prose objective.**  Today the user's goal is
+   reduced to ``--charm-name`` + ``--charm-type`` at startup.  Their
+   actual goal sentence ("build a Postgres charm with COS plus Pebble
+   notices") isn't stored, so Ralph's re-feed and any future
+   goal-aware status surfaces work from a paraphrase rather than the
+   user's words.
+
+Three Codex ``/goal`` mechanics are explicitly **out of scope**:
+
+- **A parallel goal-state machine** (``pursuing`` / ``paused`` /
+  ``achieved`` / ``unmet`` / ``budget-limited``) that duplicates the
+  existing ``WorkQueue`` + ``SubagentExitState`` semantics.  The
+  status-bar projection in 99.4 reads from existing fields rather
+  than adding a second source of truth.
+- **LLM-based "is the goal achieved yet?" self-evaluation** at end of
+  each turn.  This is the most-reported Codex ``/goal`` failure mode
+  (overnight token burn).  Cantrip's planner draining a queue is a
+  more tractable stop condition and ``/ralph N`` already gives a
+  hard upper bound.
+- **Auto-injected continuation / budget-limit prompt templates.**
+  Cantrip's planner already drives next-task selection; a Codex-style
+  continuation template would compete with it and fork
+  ``design/PROMPTS.md``.
+
+### 99.1 High — ``/pause`` and ``/resume`` slash commands
+
+- [ ] Add ``/pause`` and ``/resume`` to ``COMMAND_CATALOGUE`` in
+  ``src/cantrip/agent/commands/slash.py`` with help strings that note
+  CONFIRM tasks and chat keep working while the autonomous loop is
+  paused.
+- [ ] Wire dispatch handlers that call the existing
+  ``Executor.pause()`` / ``Executor.resume()`` methods.  Bare
+  ``/pause`` pauses; ``/pause`` while already paused is a noop with a
+  status message; mirror behaviour for ``/resume``.  Follow the
+  ``/yolo`` dispatch pattern at ``src/cantrip/agent/commands/slash.py:1211``
+  for tone, status messages, and `status_bar_changed` publishing.
+- [ ] Publish a ``status_bar_changed`` event so the TUI status
+  indicator shows "paused" / "running" alongside the existing yolo /
+  ralph badges.
+- [ ] Unit tests in ``tests/unit/agent/commands/`` covering: dispatch
+  toggles ``Executor.paused``; redundant invocation is a noop;
+  status-bar publication carries the right label.
+- [ ] Update ``docs/src/reference-cli.md`` (slash-command catalogue)
+  and rebuild the rendered HTML via ``uv run python docs/src/_build.py``.
+
+### 99.2 High — Persist ``goal_budget`` across ``cantrip resume``
+
+- [ ] Audit ``src/cantrip/agent/persistence.py`` save/load to confirm
+  ``goal_budget`` is not in the saved session payload.
+- [ ] Extend the session schema (``src/cantrip/agent/persistence.py``
+  and the SQLite migrations under ``src/cantrip/agent/store/``) to
+  include the active ``GoalBudget``: iteration cap, prompt-token cap,
+  completion-token cap, and the running spend totals.
+- [ ] Backwards-compatible load: a session saved before this change
+  loads cleanly with the cap defaulted to "none" — never crashes,
+  never silently zeroes the budget.  Add a migration test.
+- [ ] Round-trip integration test: ``cantrip run`` with budget caps
+  set, kill the process, ``cantrip resume`` shows the same cap in
+  ``/budget`` output.
+- [ ] CHANGELOG entry under Unreleased noting the persistence change.
+
+### 99.3 Medium — User-prose objective string on the session
+
+- [ ] Add an ``objective: str | None`` field to the persisted session
+  state alongside ``charm_name`` / ``charm_type``.  Pick the
+  CLI-injection shape (positional vs ``--objective`` flag) that fits
+  the existing ``cantrip run`` argument layout without a breaking
+  change.
+- [ ] Slash: ``/goal <text>`` sets or updates the objective; ``/goal``
+  with no args shows the current value plus the projection from
+  99.4; ``/goal clear`` removes it.  Add to ``COMMAND_CATALOGUE``.
+- [ ] Ralph re-feed (``src/cantrip/agent/ralph.py``) prefers the
+  stored objective over the spec-derived paraphrase when present, so
+  iterate-until-green loops use the user's words.
+- [ ] Tests cover: default empty, set/update/clear cycle, Ralph picks
+  up the latest value across iterations, persistence across resume.
+- [ ] Update ``docs/src/reference-cli.md`` with the new flag and the
+  ``/goal`` slash entry; rebuild HTML.
+
+### 99.4 Medium — Status-bar projection of goal lifecycle state
+
+- [ ] Add a small helper (in ``src/cantrip/agent/state.py`` or beside
+  ``goal_budget.py``) that projects current state into a Codex-style
+  label: ``running``, ``paused``, ``done`` (queue empty and no
+  active task), ``blocked`` (only blocked tasks remain), or
+  ``budget-limited`` (latest budget event is
+  ``GOAL_BUDGET_EXCEEDED``).  Read-only over existing fields — no
+  new state, no new persistence.
+- [ ] Surface the label in the TUI status bar and the Web UI status
+  indicator alongside the ``/yolo`` and ``/ralph`` badges.
+- [ ] Unit tests for the projection covering each label and the
+  precedence ordering between them (e.g. ``paused`` beats
+  ``blocked``; ``budget-limited`` beats ``running``).
+
+### What this phase is *not*
+
+- Not a new state machine.  Every label in 99.4 is a read-only view
+  over existing executor / queue / budget fields.
+- Not LLM-based goal-completion self-evaluation.  Cantrip never asks
+  the model "is the goal achieved?" — ``done`` follows from an empty
+  work queue.
+- Not goal-aware continuation-prompt injection.  Cantrip's planner
+  already drives next-task selection; a Codex-style continuation
+  template would compete with it.
+- Not a budget enforcement change.  Phase 55.3's ``GoalBudget`` stays
+  the source of truth for caps; 99.2 only adds persistence.
+
+**Exit criteria:** ``/pause`` and ``/resume`` toggle the autonomous
+loop from chat; ``cantrip resume`` honours the previous ``/budget``
+caps without re-specification; the user's free-text objective is
+stored on the session and surfaces in ``/goal`` queries and Ralph
+re-feeds; the status bar projects a single ``running`` / ``paused`` /
+``done`` / ``blocked`` / ``budget-limited`` label using only the
+existing field set.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -2779,3 +2916,4 @@ useful guidance and without making them feel bolted on.
 | M92: Skill-derived Lint Rules | 92 | Six deterministic helpers — action-handler coverage, config-option coverage, charm-library semver, relation-data missing-guards, Pebble layer validation, harness-call inventory plus scenario-test event-shape coverage — ship as charmlint rule modules or standalone Cantrip tools, derived from existing skill bodies; affected skills shed their rule-recitation passages |
 | M91: Canonical/skills Adoption | 91 ✓ | Four upstream 12-factor scripts (framework detect, rock-contract check, env-key inspect, preflight targets) ship as Cantrip tools with attribution and tests; ``twelve-factor`` skill body adopts the upstream checkpoint workflow and handoff payload; framework-specific contract tables inlined into the charm and rock skill bodies |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
+| M99: Goal Lifecycle | 99 | `/pause` and `/resume` toggle the autonomous loop mid-run; `cantrip resume` preserves `/budget` caps; user-prose objective is a first-class session field surfaced via `/goal`; status bar projects running / paused / done / blocked / budget-limited |
