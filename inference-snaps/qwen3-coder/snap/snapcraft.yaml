@@ -86,6 +86,10 @@ parts:
     organize:
       "llamacpp/component.yaml": (component/llamacpp)/component.yaml
       "llamacpp/server": (component/llamacpp)/server
+      "llamacpp-cuda/component.yaml": (component/llamacpp-cuda)/component.yaml
+      "llamacpp-cuda/server": (component/llamacpp-cuda)/server
+      "llamacpp-rocm/component.yaml": (component/llamacpp-rocm)/component.yaml
+      "llamacpp-rocm/server": (component/llamacpp-rocm)/server
       "model-30b-a3b-q4-k-m-gguf/component.yaml": (component/model-30b-a3b-q4-k-m-gguf)/component.yaml
     prime:
       # Exclude everything not explicitly organised; the support files
@@ -130,6 +134,26 @@ parts:
     organize:
       "*": (component/llamacpp)
 
+  llamacpp-cuda:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64+cuda12.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-arm64+cuda12.tar.gz
+    stage-packages:
+      - libgomp1
+    organize:
+      "*": (component/llamacpp-cuda)
+
+  llamacpp-rocm:
+    plugin: dump
+    source:
+      # ROCm is amd64-only upstream; arm64 falls back to CPU/CUDA.
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64+rocm.tar.gz
+    stage-packages:
+      - libgomp1
+    organize:
+      "*": (component/llamacpp-rocm)
+
   llamacpp-license:
     plugin: dump
     source: https://github.com/ggerganov/llama.cpp.git
@@ -156,6 +180,18 @@ components:
     description: LLM inference in C/C++
     version: b8589
 
+  llamacpp-cuda:
+    type: standard
+    summary: llama.cpp with CUDA backend
+    description: LLM inference in C/C++ — NVIDIA CUDA 12 build.
+    version: b8589
+
+  llamacpp-rocm:
+    type: standard
+    summary: llama.cpp with ROCm backend
+    description: LLM inference in C/C++ — AMD ROCm build (amd64 only).
+    version: b8589
+
   model-30b-a3b-q4-k-m-gguf:
     type: standard
     summary: Qwen3-Coder-30B-A3B-Instruct Q4_K_M GGUF
@@ -174,6 +210,11 @@ apps:
       - hardware-observe
       - opengl
       - network
+    environment:
+      # Enable the inference-snaps-cli `chat` subcommand, mirroring the
+      # Canonical gemma snaps so users can talk to the model directly
+      # from the CLI without an external client.
+      ADDITIONAL_FEATURES: chat
 
   server:
     command: bin/server.sh

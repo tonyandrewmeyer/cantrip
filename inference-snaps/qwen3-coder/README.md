@@ -31,9 +31,11 @@ is what Cantrip drives over the OpenAI-compatible endpoint.
   (~17GB on disk). Q4_K_M is the sweet spot for code generation on
   CPU; Q5_K_M (~21GB) buys marginal quality at meaningful speed and
   RAM cost.
-- **One engine:** `cpu` — runs on any modern amd64 or arm64 CPU.
-  GPU engines aren't bundled because the target user runs this in a
-  Multipass VM without GPU passthrough.
+- **Three engines:** `cpu` (any modern amd64/arm64 CPU),
+  `nvidia-gpu` (CUDA 12, amd64/arm64), and `amd-gpu` (ROCm,
+  amd64-only — ROCm has no upstream arm64 build at the b8589
+  cutoff). `use-engine --auto` picks the best fit for the host;
+  hosts without a discrete GPU get `cpu`.
 - **One runtime:** `llama.cpp` from
   [`canonical/llama.cpp-builds`](https://github.com/canonical/llama.cpp-builds),
   invoked with `--jinja` so the GGUF's embedded Jinja2 chat template
@@ -137,7 +139,10 @@ sudo snap connect qwen3-coder-tonyandrewmeyer:hardware-observe
 sudo qwen3-coder-tonyandrewmeyer use-engine --auto
 sudo snap start qwen3-coder-tonyandrewmeyer
 
-# Smoke-test (chat completion).
+# Smoke-test via the built-in chat REPL (no external client needed).
+qwen3-coder-tonyandrewmeyer chat
+
+# Or hit the OpenAI-compatible endpoint directly.
 curl http://localhost:8332/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
@@ -211,8 +216,9 @@ snapcraft upload qwen3-coder-*.snap \
 
 ## Known gaps in this scaffold
 
-- No GPU engines (CUDA, ROCm, Intel). Add them later if a user with
-  a GPU needs more throughput than CPU-only delivers.
+- No Intel GPU engine (SYCL/IPEX). The CUDA and ROCm engines cover
+  the common discrete-GPU cases; Intel Arc support can be added if a
+  user needs it.
 - No tab-completion script; copy `scripts/completion.bash` from a
   Canonical chat snap when wiring that up.
 - No CI. Snapcraft builds inside LXD/multipass and would need a
