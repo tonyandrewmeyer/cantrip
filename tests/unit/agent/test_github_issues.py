@@ -1,8 +1,11 @@
 """Tests for GitHub issue triage (Phase 42.2)."""
 
+import asyncio
 import json
 import subprocess
 from unittest import mock
+
+import pytest
 
 from cantrip.agent.github_issues import (
     TRIAGE_CONFIRM_PREFIX,
@@ -13,7 +16,7 @@ from cantrip.agent.github_issues import (
     fetch_issues,
     rank_issues,
 )
-from cantrip.agent.queue import TaskCategory
+from cantrip.agent.queue import AgentTask, TaskCategory
 
 # ---------------------------------------------------------------------------
 # fetch_issues
@@ -227,3 +230,145 @@ class TestIssueTriage:
             # but we can check the flag is set.
             triage._running = True
             assert triage.running
+
+    def test_examined_issues_property_starts_empty(self) -> None:
+        triage = IssueTriage(repo="owner/repo")
+        assert triage.examined_issues == set()
+
+    @pytest.mark.asyncio
+    async def test_start_dispatches_run_and_completes(self) -> None:
+        # ``start`` schedules ``_run`` on the event loop; once the
+        # background task completes (no issues), ``_running`` flips back
+        # to False via the ``finally`` block.
+        captured: list[list[AgentTask]] = []
+        with mock.patch("cantrip.agent.github_issues.fetch_issues", return_value=[]):
+            triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
+            triage.start()
+            assert triage.running is True
+            assert triage._task is not None
+            await triage._task
+        assert triage.running is False
+        assert captured == []  # no issues → callback never fires
+
+    @pytest.mark.asyncio
+    async def test_start_is_noop_when_already_running(self) -> None:
+        triage = IssueTriage(repo="owner/repo")
+        triage._running = True
+        triage._task = None
+        triage.start()  # must not crash and must not create a new task
+        assert triage._task is None
+
+    @pytest.mark.asyncio
+    async def test_stop_is_noop_when_not_running(self) -> None:
+        triage = IssueTriage(repo="owner/repo")
+        await triage.stop()  # must not raise
+        assert triage.running is False
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_running_task(self) -> None:
+        # Prime ``_task`` with a slow coroutine that ``stop()`` must
+        # cancel rather than wait out.
+        async def _slow() -> None:
+            await asyncio.sleep(60)
+
+        triage = IssueTriage(repo="owner/repo")
+        triage._running = True
+        triage._task = asyncio.create_task(_slow())
+        await triage.stop()
+        assert triage.running is False
+        assert triage._task is None
+
+    @pytest.mark.asyncio
+    async def test_run_fires_callback_for_actionable_issues(self) -> None:
+        actionable = GitHubIssue(
+            number=42,
+            title="Add feature X",
+            labels=["good first issue"],
+            body="x" * 200,  # long enough to clear _MIN_BODY_LENGTH
+            comment_count=2,
+        )
+        captured: list[list[AgentTask]] = []
+        with mock.patch(
+            "cantrip.agent.github_issues.fetch_issues",
+            return_value=[actionable],
+        ):
+            triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
+            await triage._run()
+
+        assert len(captured) == 1
+        assert len(captured[0]) == 1
+        assert 42 in triage.examined_issues
+        # The task is the CONFIRM-prefixed gate.
+        assert captured[0][0].id.startswith(TRIAGE_CONFIRM_PREFIX)
+
+    @pytest.mark.asyncio
+    async def test_run_skips_already_examined_issues(self) -> None:
+        actionable = GitHubIssue(
+            number=42,
+            title="x",
+            labels=["good first issue"],
+            body="x" * 200,
+        )
+        captured: list[list[AgentTask]] = []
+        with mock.patch(
+            "cantrip.agent.github_issues.fetch_issues",
+            return_value=[actionable],
+        ):
+            triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
+            triage._examined.add(42)  # already seen
+            await triage._run()
+
+        # No new confirm tasks because the only candidate was already seen.
+        assert captured == []
+
+    @pytest.mark.asyncio
+    async def test_run_returns_quietly_when_rank_drops_all(self) -> None:
+        # An issue with a wontfix label ranks to nothing — the worker
+        # logs and returns without firing the callback.
+        skip_issue = GitHubIssue(
+            number=99,
+            title="x",
+            labels=["wontfix"],
+            body="x" * 200,
+        )
+        captured: list[list[AgentTask]] = []
+        with mock.patch(
+            "cantrip.agent.github_issues.fetch_issues",
+            return_value=[skip_issue],
+        ):
+            triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
+            await triage._run()
+        assert captured == []
+
+    @pytest.mark.asyncio
+    async def test_run_swallows_unexpected_errors(self) -> None:
+        # ``fetch_issues`` raising must not abort the watcher — the
+        # blanket-Exception handler logs and the ``finally`` block
+        # clears ``_running``.
+        triage = IssueTriage(repo="owner/repo")
+        triage._running = True
+        with mock.patch(
+            "cantrip.agent.github_issues.fetch_issues",
+            side_effect=RuntimeError("synthetic failure"),
+        ):
+            await triage._run()
+        assert triage._running is False
+
+    @pytest.mark.asyncio
+    async def test_run_propagates_cancellation(self) -> None:
+        # ``asyncio.CancelledError`` must propagate so the cancelling
+        # caller (``stop()``) sees it; the blanket-Exception path must
+        # not swallow it.
+        async def _cancel_in_to_thread(*_args: object, **_kwargs: object) -> None:
+            raise asyncio.CancelledError
+
+        triage = IssueTriage(repo="owner/repo")
+        with (
+            mock.patch(
+                "cantrip.agent.github_issues.asyncio.to_thread",
+                side_effect=_cancel_in_to_thread,
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await triage._run()
+        assert triage._running is False
