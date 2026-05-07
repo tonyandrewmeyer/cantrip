@@ -59,9 +59,11 @@ Install the snap first:
 <pre><code><span class="prompt">$</span> sudo snap install gemma3
 <span class="prompt">$</span> cantrip --provider inference-snap --snap gemma3</code></pre>
 
-Other supported snaps include `nemotron-3-nano` for lighter
-workloads and `qwen-vl` for vision tasks. The quality of output
-depends on your GPU and the model size.
+Other supported snaps include `gemma4` (Gemma 3n E4B, multimodal),
+`nemotron-3-nano` for lighter workloads, `qwen3-coder` for
+code-focused work with native tool calling, and `qwen-vl` for
+vision tasks. The quality of output depends on your GPU and the
+model size.
 
 <div class="callout-warn callout">
   <p>
@@ -309,8 +311,8 @@ Tested shapes:
 - **llama.cpp `llama-server`** &mdash; `http://localhost:8080/v1`
   when launched with `--embedding --pooling mean`.
 - **Canonical inference snaps** &mdash; the chat snaps (gemma3,
-  deepseek-r1, etc.) do not expose `/v1/embeddings`; an embed-only
-  inference snap is in development.
+  gemma4, deepseek-r1, etc.) do not expose `/v1/embeddings`; an
+  embed-only inference snap is in development.
 
 If the local server *does* require authentication, set
 `OPENAI_API_KEY` alongside `OPENAI_EMBED_BASE_URL` and the bearer

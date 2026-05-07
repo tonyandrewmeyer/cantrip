@@ -73,6 +73,7 @@ _PRICES: dict[str, Price] = {
     # "unknown model → $0" branch distinguishable from "known free".
     "inference-snap": Price(prompt=0.0, completion=0.0),
     "gemma3": Price(prompt=0.0, completion=0.0),
+    "gemma4": Price(prompt=0.0, completion=0.0),
     # Phase 72.3: embedding and rerank models.  All are input-only —
     # there is no completion side — so ``completion`` stays at zero
     # and the input rate goes in ``prompt``.  Voyage publishes

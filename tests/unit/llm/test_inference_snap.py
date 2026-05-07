@@ -308,6 +308,10 @@ class TestInferenceSnapVision:
         """gemma3 is on the static vision allowlist."""
         assert self._make_provider("gemma3").supports_vision is True
 
+    def test_gemma4_is_vision_by_default(self):
+        """gemma4 (Gemma 3n E4B) is on the static vision allowlist."""
+        assert self._make_provider("gemma4").supports_vision is True
+
     def test_deepseek_r1_is_not_vision(self):
         """A text-only snap does not advertise vision support."""
         assert self._make_provider("deepseek-r1").supports_vision is False

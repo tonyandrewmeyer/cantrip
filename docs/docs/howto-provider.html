@@ -159,9 +159,11 @@ locally on your GPU with no API key or internet connection required.
 Install the snap first:</p>
 <pre><code><span class="prompt">$</span> sudo snap install gemma3
 <span class="prompt">$</span> cantrip --provider inference-snap --snap gemma3</code></pre>
-<p>Other supported snaps include <code>nemotron-3-nano</code> for lighter
-workloads and <code>qwen-vl</code> for vision tasks. The quality of output
-depends on your GPU and the model size.</p>
+<p>Other supported snaps include <code>gemma4</code> (Gemma 3n E4B, multimodal),
+<code>nemotron-3-nano</code> for lighter workloads, <code>qwen3-coder</code> for
+code-focused work with native tool calling, and <code>qwen-vl</code> for
+vision tasks. The quality of output depends on your GPU and the
+model size.</p>
 <div class="callout-warn callout">
   <p>
     Local models produce lower-quality output than cloud APIs,
@@ -352,8 +354,8 @@ the pulled tag (e.g. <code>nomic-embed-text</code>, <code>mxbai-embed-large</cod
 <li><strong>llama.cpp <code>llama-server</code></strong> &mdash; <code>http://localhost:8080/v1</code>
 when launched with <code>--embedding --pooling mean</code>.</li>
 <li><strong>Canonical inference snaps</strong> &mdash; the chat snaps (gemma3,
-deepseek-r1, etc.) do not expose <code>/v1/embeddings</code>; an embed-only
-inference snap is in development.</li>
+gemma4, deepseek-r1, etc.) do not expose <code>/v1/embeddings</code>; an
+embed-only inference snap is in development.</li>
 </ul>
 <p>If the local server <em>does</em> require authentication, set
 <code>OPENAI_API_KEY</code> alongside <code>OPENAI_EMBED_BASE_URL</code> and the bearer

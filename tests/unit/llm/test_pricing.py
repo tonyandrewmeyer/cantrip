@@ -39,6 +39,11 @@ class TestLookupPrice:
         assert price.prompt == 0.0
         assert price.completion == 0.0
 
+    def test_gemma4_is_free(self):
+        price = pricing.lookup_price("gemma4")
+        assert price.prompt == 0.0
+        assert price.completion == 0.0
+
     def test_case_insensitive(self):
         # Any case variant should match the same entry.
         upper = pricing.lookup_price("CLAUDE-SONNET-4-6")

@@ -4,6 +4,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **`gemma4` inference snap recognised out of the box.**  The
+  `gemma4` snap (Gemma 3n E4B, multimodal, served at
+  `http://localhost:8336/v1`) is now in the default port table,
+  the static vision allowlist, and the pricing registry.  Use it
+  with `cantrip --provider inference-snap --snap gemma4`.
+
 ### Changed
 - **Backfilled exception-path regression tests for high-value modules
   (Phase 92.3).**  Seventeen focused tests cover the previously

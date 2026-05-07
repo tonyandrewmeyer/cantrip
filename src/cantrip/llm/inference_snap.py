@@ -27,6 +27,7 @@ _SNAP_DEFAULTS: dict[str, int] = {
     "qwen-vl": 8326,
     "nemotron-3-nano": 8330,
     "qwen3-coder": 8332,
+    "gemma4": 8336,
 }
 
 # Small local models have limited context windows.  The training context
@@ -35,9 +36,10 @@ _DEFAULT_CONTEXT_WINDOW = 8_192
 
 # Known vision-capable inference snaps.  ``qwen-vl`` is explicitly
 # vision-language; Gemma 3 (4B and larger) accepts images through the
-# snap's OpenAI-compatible endpoint.  The ``/models`` capability probe
-# extends this at runtime when a server advertises a vision flag.
-_VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3"})
+# snap's OpenAI-compatible endpoint; gemma4 (Gemma 3n E4B) advertises
+# ``multimodal`` and accepts image inputs.  The ``/models`` capability
+# probe extends this at runtime when a server advertises a vision flag.
+_VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3", "gemma4"})
 
 # Inference snaps known to support OpenAI-style tool calling once
 # llama.cpp is launched with ``--jinja``.  llama.cpp's ``/v1/models``
