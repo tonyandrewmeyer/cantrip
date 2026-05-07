@@ -20,7 +20,7 @@ uvx <tool>             # Run one-off tools
 make format    # Format with ruff
 make lint      # Ruff check + ty type checker
 make unit      # Run unit tests
-make check     # lint + unit tests
+make check     # lint + unit + rust-test (cargo skipped if absent)
 make all       # format + check
 make coverage  # Unit tests with coverage report
 ```
@@ -84,25 +84,23 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 
 ## Reference Documents
 
+Active-contract docs (always relevant to ongoing work):
+
 - `design/PLAN.md` — Architecture decisions, philosophy, detailed design
 - `design/AGENT.md` — Agent architecture (two-loop design, subagents, work queue, tools)
 - `design/UI.md` — Shared UI design (TUI + Web), event bus contract, layout, shortcuts
 - `design/TOOLS.md` — Tool abstraction, registration pattern, how to add/remove a tool
 - `design/SKILLS.md` — Skill discovery, frontmatter schema, load-on-demand flow
-- `design/CONTEXT_PROVIDERS.md` — Phase 72.2: `@`-mention context-provider registry, parser rules, baseline provider catalogue, how to add a new provider
-- `design/PROVIDER_ROLES.md` — Phase 72.3: embed/rerank provider roles, RoleRouter, env-var/CLI configuration, cost-tracking integration, recipe for adding a provider
-- `design/DOCS_INDEX.md` — Phase 72.1: indexed charm-ecosystem documentation pipeline (crawl + chunk + embed + store + search), the six target sites, and the docs_search / @docs surfaces
 - `design/PROMPTS.md` — Prompt layering, Jinja2 conventions, template-injection guard
-- `design/WEB_UI_ACCESSIBILITY_AUDIT.md` — WCAG 2.1 AA audit of the Web UI with findings and evidence (see ROADMAP Phase 60)
-- `design/UPSTREAM_AUDIT.md` — Bookkeeping for the upstream-ecosystem sweep (cutoff commits per repo, re-run procedure; pairs with ROADMAP Phase 37)
-- `design/ACP_RESEARCH.md` — Phase 39 findings: Agent Client Protocol concepts, Cantrip integration shapes evaluated, verdict and revisit triggers
-- `design/DEFERRED.md` — Phase 84 deferred-item sweep log: every "Deferred:" entry across the roadmap with revisit triggers, audit cadence, and next sweep date
-- `design/K8S_TOOL.md` — Phase 86 findings: should the agent grow first-class `kubectl` diagnostics? Verdict (skill expansion now, typed tool deferred), verb shortlist, sandbox/kubeconfig finding, revisit triggers
-- `design/PAUSE_AND_EDIT.md` — Phase 83 findings: should Cantrip soften its hard-cancel into a pausable, editable mid-turn affordance? Verdict (defer; queue-next-instruction is the smaller follow-up shape if a trigger fires), peer-interrupt survey, message-flow shapes, three revisit triggers for Phase 83b
-- `design/PROFILING.md` — Phase 87.3 findings: Sloth fits as a skill subsection (lands as new sub-phase 87.4), Parca/Pyroscope tooling defers to standalone Phase 89 against four named triggers; mirrors `TempoWaterfallTool` if it ships
-- `design/IDENTITY_PLATFORM.md` — Phase 88.1 findings: Canonical Identity Platform surface, five relation interfaces (`oauth`, `oauth-cli`, `oidc-info`, `hydra-token-introspect`, `kratos-external-idp`), three deployment topologies, and default pick (bundle-based hybrid via `canonical-identity-platform`); unblocks Phase 88.2 skill work
-- `design/TEAM_COLLABORATION.md` — Phase 51 findings: should Cantrip grow team features beyond its single-operator shape? Verdict (ship thin git-tracked sync as Phase 51b, defer shared-server medium shape behind named adoption triggers, declare real-time-collab heavy shape a non-goal), code-grounded single-user mapping, peer survey, three revisit triggers for Phase 51c, and two side-finding phases (Phase 10b charm-improvement production guard, Phase 46b operator field on hook payloads)
+- `design/CONTEXT_PROVIDERS.md` — `@`-mention context-provider registry, parser rules, baseline catalogue, how to add a new provider
+- `design/PROVIDER_ROLES.md` — Embed/rerank provider roles, RoleRouter, env-var/CLI configuration, cost-tracking integration
+- `design/DOCS_INDEX.md` — Indexed charm-ecosystem documentation pipeline (crawl + chunk + embed + store + search) and the docs_search / @docs surfaces
+
+Index / changelog:
+
 - `ROADMAP.md` — Implementation phases (active/open work only)
 - `ROADMAP_ARCHIVE.md` — Completed phases, full detail, historical record
 - `CHANGELOG.md` — Notable changes (keep updated)
 - `docs/docs/` — Published HTML user docs (tutorial, how-to, reference, explanation). Source of truth for user-facing behaviour — update alongside shipped features.
+
+Other `design/*.md` files exist for point-in-time research and audits (deferred-item sweeps, peer-tool comparisons, accessibility audits, per-phase findings). They are discoverable via `ls design/` and should be consulted when their topic is in scope, but are not loaded by default.
