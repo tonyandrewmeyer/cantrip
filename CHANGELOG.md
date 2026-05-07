@@ -5,6 +5,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Coverage regression gate enforced in the developer loop (Phase 92.3).**
+  ``[tool.coverage.report].fail_under = 88`` is now set in
+  ``pyproject.toml``; pytest-cov consumes the threshold during
+  ``make unit`` (and therefore ``make check``), so a drop below 88%
+  total Python coverage now fails the run.  The current baseline sits at
+  ~88.77%, leaving a small margin for xdist noise — bump the floor
+  alongside intentional coverage improvements.
 - **Replaced fixed-sleep waits in executor tests with polling helpers
   (Phase 92.3).**  ``tests/support/wait.py`` exposes a shared
   ``wait_until`` predicate poller plus ``wait_for_task_status``,

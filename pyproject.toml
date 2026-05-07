@@ -132,6 +132,11 @@ concurrency = ["multiprocessing"]
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+# Regression gate: fail when total Python coverage drops below this floor.
+# Current baseline (April 2026) sits at ~89%; the floor leaves a small margin
+# for xdist-induced noise but flags any meaningful decline before merge.
+# Raise this number alongside intentional coverage improvements.
+fail_under = 88
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

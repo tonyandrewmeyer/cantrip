@@ -4888,9 +4888,14 @@ identified rather than opening a new product line.
   Done as part of the shared wait helpers above; the executor unit
   tests now wait on task/queue state directly via
   ``wait_for_task_status`` and ``wait_for_queue_state``.
-- [ ] Enforce Python coverage in the main developer loop.  ``make unit``
+- [x] Enforce Python coverage in the main developer loop.  ``make unit``
   already collects coverage; add a ``fail_under`` threshold and wire it
   into ``make check`` so coverage regressions are visible before merge.
+  ``[tool.coverage.report].fail_under = 88`` is set in ``pyproject.toml``
+  (current baseline ~88.77%, leaves a 1pp margin for xdist noise);
+  pytest-cov consumes the threshold during ``make unit``, which
+  ``make check`` already invokes, so any drop below 88% fails the
+  developer loop and CI.
 - [ ] Expand the eval corpus beyond the current minimal set of gold
   charms: cover more substrates (machine + k8s), at least one custom /
   non-framework application path, and more relation / observability
