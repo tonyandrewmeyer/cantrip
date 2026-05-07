@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Split the monolithic ``test_agent.py`` into feature-scoped modules
+  (Phase 92.3).**  ``tests/unit/agent/test_agent.py`` (~1.5 kloc, 13 test
+  classes) is gone.  The classes live in eight feature-scoped siblings —
+  ``test_agent_core.py`` (basic message loop, tool-call rounds,
+  streaming), ``test_agent_models.py`` (``switch_model``, usage
+  recording), ``test_agent_cache.py`` (cascade detector, cache-metrics
+  events), ``test_agent_persistence.py`` (``save_state`` /
+  ``load_state``), ``test_agent_context.py`` (virtualisation,
+  compaction, context window), ``test_agent_tooling.py`` (test-results
+  capture, image forwarding, ``TOOL_INVOKED`` events),
+  ``test_agent_watcher.py`` (watcher start/stop, event routing), and
+  ``test_agent_improvement.py`` (audit → fix-task confirmation).
+  ``TestInferGapsFromAudit`` was a strict subset of the canonical copy
+  in ``test_audit_gap_inference.py`` and was dropped rather than
+  re-housed.  No behaviour change — same 64 retained tests now navigate
+  by feature.
 - **Coverage regression gate enforced in the developer loop (Phase 92.3).**
   ``[tool.coverage.report].fail_under = 88`` is now set in
   ``pyproject.toml``; pytest-cov consumes the threshold during

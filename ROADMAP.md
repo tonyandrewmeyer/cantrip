@@ -4904,11 +4904,22 @@ identified rather than opening a new product line.
   regularly: keep the full provider-matrix ambition in Phase 79, but
   make the static gold-standard / rubric path and any cheap smoke path
   first-class rather than manual-only.
-- [ ] Reduce test-maintenance drag in the heaviest files and fixtures:
-  split the monolithic ``tests/unit/agent/test_agent.py`` into
-  feature-scoped modules, centralise reusable fakes/builders, and
-  document the fixture hierarchy so unit / integration / e2e layers stop
-  growing parallel infrastructure by accident.
+- [ ] Reduce test-maintenance drag in the heaviest files and fixtures.
+  Three sub-pieces; the file split is complete, the other two remain.
+  - [x] Split the monolithic ``tests/unit/agent/test_agent.py`` into
+    feature-scoped modules.  ~1.5 kloc went into eight new siblings —
+    ``test_agent_core.py``, ``test_agent_models.py``,
+    ``test_agent_cache.py``, ``test_agent_persistence.py``,
+    ``test_agent_context.py``, ``test_agent_tooling.py``,
+    ``test_agent_watcher.py``, and ``test_agent_improvement.py`` —
+    matching the existing ``test_agent_<feature>.py`` convention used by
+    ``test_agent_arena.py`` / ``test_agent_github.py`` /
+    ``test_agent_lifecycle.py``.  The duplicated ``TestInferGapsFromAudit``
+    class (a strict subset of the canonical copy in
+    ``test_audit_gap_inference.py``) was dropped rather than re-housed.
+  - [ ] Centralise reusable fakes/builders so unit / integration / e2e
+    layers stop growing parallel infrastructure by accident.
+  - [ ] Document the fixture hierarchy.
 - [ ] Add a small audit of exception-path coverage in high-value modules
   (provider adapters, executor loop, juju/log plumbing, structured
   output, persistence) and backfill the missing regression tests the
