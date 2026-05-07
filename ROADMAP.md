@@ -613,10 +613,14 @@ See [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
   never silently drops writes).  An invalid env value falls back
   to the default with a warning so a typo never disables
   charm-scope writes.
-- [ ] Conflict policy: textual git merge.  Document in the
-  how-to that conflicts on the same key get resolved at the file
-  level by whoever pulls last; no in-app conflict UI.  Tracked
-  alongside 51b.4 docs.
+- [x] Conflict policy: textual git merge.  Documented in
+  ``docs/src/howto-team-sync.md`` ``{#conflicts}``: memory
+  conflicts surface as standard git markers in the per-key
+  Markdown file (one file per memory name, so "same key"
+  reduces to "same file"); the JSONL decisions log is append-
+  only and usually merges cleanly, with byte-coincident
+  appends getting the standard markers; no in-app conflict UI
+  — git's the reconciler.
 
 ### 51b.2 Shared decisions log
 
@@ -3352,27 +3356,53 @@ system.py`` would pass every existing test.
 Not a full charm generation — a lightweight per-provider
 sanity check that can run on every prompt change.
 
-- [ ] New ``tests/eval/test_system_prompt_smoke.py`` that
-  renders the shipped ``system.py``, sends it as the system
-  role with a fixed test prompt to each configured provider,
-  and asserts basic shape invariants on the response
-  (contains a tool call under expected names, respects
-  non-trivial markdown fences, etc.).
-- [ ] Matrix across Claude + Gemini + at least one
-  open-weights model (Fireworks/Kimi or OpenRouter/Llama).
-- [ ] Skippable when per-provider API keys aren't present in
-  the environment so ``make check`` stays green locally
-  without any keys.
+- [x] New ``tests/eval/test_system_prompt_smoke.py`` renders the
+  shipped ``cantrip.agent.prompts.system.build_system_prompt()``,
+  sends it as the system role with a fixed user prompt to each
+  configured provider, and asserts two shape invariants:
+  (1) given a ``read_file`` tool and a question that obviously
+  needs file content, the response must contain a ``read_file``
+  tool call; (2) given a bare greeting, the response must be non-
+  empty (or include tool calls) — catches the 4xx-eaten-by-the-
+  adapter / template-breakage failure mode that the static gold-
+  standard scorer cannot see.
+- [x] Matrix covers Claude (``ANTHROPIC_API_KEY``), Gemini
+  (``GEMINI_API_KEY``), and two open-weights surfaces — Fireworks
+  with Kimi K2 default (``FIREWORKS_API_KEY``) and OpenRouter with
+  GPT-4o default (``OPENROUTER_API_KEY``).  Each provider runs at
+  its default model so the smoke test exercises what a user
+  actually gets without bespoke configuration.
+- [x] ``pytest.param`` + per-provider ``pytest.mark.skipif`` on the
+  env var means absent keys skip cleanly rather than fail.
+  ``make check`` is unaffected (it runs ``tests/unit`` only); the
+  eval suite under ``make eval`` skips the eight smoke cases
+  without keys, runs them with keys.
 
 ### 79.3 Gate in CI against a cheap model
 
-- [ ] New CI job that runs the 79.2 smoke test on every PR
-  that touches ``src/cantrip/agent/prompts/`` or
-  ``src/cantrip/agent/planner/templates/``.  Scoped to a
-  cheap model (Gemini Flash or OpenRouter
-  ``openai/gpt-4o-mini``) to keep CI cost bounded.
-- [ ] Fails fast on 4xx from the LLM so a broken prompt
-  template surfaces as a red check within a minute.
+- [x] New ``.github/workflows/prompt-smoke.yaml`` job runs the
+  79.2 smoke test on every PR that touches
+  ``src/cantrip/agent/prompts/**`` or the smoke-test file
+  itself.  Scoped to OpenRouter with ``openai/gpt-4o-mini``
+  via ``CANTRIP_SMOKE_OPENROUTER_MODEL`` to keep cost bounded;
+  the other provider keys stay unset so only the OpenRouter
+  slice of the matrix runs in CI.  Fork PRs are skipped (they
+  cannot read repo secrets) rather than show a misleading
+  green check.  ``src/cantrip/agent/planner/`` does not have a
+  ``templates/`` directory in the current layout — the path
+  reference in the original phase note pre-dated the planner
+  refactor; the smoke gate covers the actual planner-prompt
+  surface via ``src/cantrip/agent/prompts/planning/``,
+  ``src/cantrip/agent/prompts/tasks/``, and
+  ``src/cantrip/agent/prompts/subagent/`` under the prompts
+  path.
+- [x] ``timeout-minutes: 5`` bounds wall-clock cost so a hung
+  provider call cannot burn a full job budget; pytest exits
+  non-zero on any test failure or provider 4xx, so a broken
+  prompt template (Jinja2 error → import-time crash; provider
+  rejects system content → ``ProviderError``; model fails the
+  shape invariant → assertion error) surfaces as a red check
+  in well under a minute.
 
 ### 79.4 Per-provider full-eval run (nice-to-have)
 

@@ -1,0 +1,65 @@
+name: Prompt Smoke
+
+# Per-provider system-prompt regression gate (Phase 79.3).
+#
+# Anthropic's April 2026 Claude Code postmortem traced a 3% quality
+# regression to a single sentence in a system prompt that their
+# initial eval missed; the remediation is to run per-model evals on
+# every prompt change.  This workflow is Cantrip's version of that
+# gate — it renders the shipped system prompt against a cheap model
+# and asserts shape invariants on the response, so a tweak to
+# ``system.md.j2`` cannot quietly degrade tool-calling shape.
+#
+# Scoped via ``paths:`` to prompt-template edits only — most PRs do
+# not touch the prompts and should not pay for this job.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/cantrip/agent/prompts/**"
+      - "tests/eval/test_system_prompt_smoke.py"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: System-prompt smoke (cheap model)
+    runs-on: ubuntu-latest
+    # Bound the wall-clock cost of the gate hard.  A broken prompt
+    # template should surface as a red check within a minute or two
+    # rather than burning a full job budget on retries.
+    timeout-minutes: 5
+    # Fork PRs cannot read repository secrets, so the OpenRouter key
+    # is unavailable there — every parametrised case would skip and
+    # the gate would be a no-op.  Skip the job entirely for forks
+    # rather than show a green check that proves nothing.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run system-prompt smoke against a cheap model
+        env:
+          # OpenRouter is the cheap-model surface for this gate.
+          # ``openai/gpt-4o-mini`` is the smallest broadly-capable
+          # model that supports tool use through the OpenAI-compatible
+          # adapter — keeps the per-PR cost under a cent without
+          # sacrificing the tool-calling assertion the smoke test
+          # depends on.  The other provider keys are deliberately
+          # left unset so the matching parametrised cases skip and
+          # only the OpenRouter slice runs in CI.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CANTRIP_SMOKE_OPENROUTER_MODEL: openai/gpt-4o-mini
+        run: uv run pytest tests/eval/test_system_prompt_smoke.py -v

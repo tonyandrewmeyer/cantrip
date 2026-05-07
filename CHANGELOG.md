@@ -5,6 +5,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Per-provider system-prompt smoke test and cheap-model CI gate
+  (Phase 79.2 / 79.3).**  ``tests/eval/test_system_prompt_smoke.py``
+  renders ``cantrip.agent.prompts.system.build_system_prompt()``,
+  sends it as the system role with a fixed user prompt to each
+  configured provider (Claude, Gemini, Fireworks, OpenRouter), and
+  asserts two shape invariants per provider — that a prompt obviously
+  needing file content drives a ``read_file`` tool call, and that a
+  bare greeting produces a non-empty response (or a tool call).
+  Catches the failure mode Anthropic's April 2026 Claude Code
+  postmortem flagged: a single sentence in a system prompt that
+  passes one model's gate while regressing another's.  Skipped per-
+  provider when the matching ``ANTHROPIC_API_KEY`` /
+  ``GEMINI_API_KEY`` / ``FIREWORKS_API_KEY`` / ``OPENROUTER_API_KEY``
+  is absent so ``make eval`` stays green locally without any keys.
+  ``CANTRIP_SMOKE_<PROVIDER>_MODEL`` overrides the default model for
+  any provider — the new ``.github/workflows/prompt-smoke.yaml`` CI
+  gate uses it to pin OpenRouter to ``openai/gpt-4o-mini``, and is
+  scoped via ``paths:`` to PRs that touch
+  ``src/cantrip/agent/prompts/**`` so most PRs do not pay for the
+  job.  ``timeout-minutes: 5`` bounds wall-clock cost; fork PRs
+  skip rather than show a misleading green check (no secret
+  access).
 - **`gemma4` inference snap recognised out of the box.**  The
   `gemma4` snap (Gemma 3n E4B, multimodal, served at
   `http://localhost:8336/v1`) is now in the default port table,
