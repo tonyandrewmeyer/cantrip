@@ -20,6 +20,7 @@ from textual.widgets import RichLog
 
 from cantrip.tui.screens.file_detail import (
     FileDetailScreen,
+    _cantrip_artefact_purpose,
     _fallback_purpose,
     _format_git_log,
     _format_relative_time,
@@ -247,6 +248,108 @@ class TestInferPurpose:
 
     def test_unreadable_file(self, tmp_path: pathlib.Path) -> None:
         assert "Could not read" in _infer_purpose(tmp_path / "missing.py")
+
+
+class TestCantripArtefactPurpose:
+    """Cantrip-owned ``.cantrip*`` files override content-based inference."""
+
+    def test_session_store(self, tmp_path: pathlib.Path) -> None:
+        # The SQLite session is binary so content inference yields the
+        # generic fallback; the artefact rule must fire first.
+        f = tmp_path / ".cantrip"
+        f.write_bytes(b"SQLite format 3\x00more-binary-bytes")
+        result = _infer_purpose(f)
+        assert "Cantrip session store" in result
+
+    def test_audit_log(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / ".cantrip-audit.jsonl"
+        f.write_text('{"event": "tool_call"}\n')
+        assert "Cantrip audit log" in _infer_purpose(f)
+
+    def test_repomap_cache(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / ".cantrip-repomap.json"
+        f.write_text("{}\n")
+        assert "Cantrip repomap cache" in _infer_purpose(f)
+
+    def test_session_backup_with_timestamp(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / ".cantrip.bak-20260101_120000"
+        f.write_bytes(b"\x00")
+        assert "Cantrip session backup" in _infer_purpose(f)
+
+    def test_session_backup_plain(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / ".cantrip.bak"
+        f.write_bytes(b"\x00")
+        assert "Cantrip session backup" in _infer_purpose(f)
+
+    def test_migration_tmp(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / ".cantrip.tmp"
+        f.write_bytes(b"\x00")
+        assert "migration scratch" in _infer_purpose(f)
+
+    def test_corrupt_marker(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / ".cantrip.corrupt"
+        f.write_text("legacy\n")
+        assert "salvaged session" in _infer_purpose(f)
+
+    def test_permissions_yaml(self, tmp_path: pathlib.Path) -> None:
+        cantrip_dir = tmp_path / ".cantrip"
+        cantrip_dir.mkdir()
+        f = cantrip_dir / "permissions.yaml"
+        f.write_text("allow: []\n")
+        assert "permission rules" in _infer_purpose(f)
+
+    def test_team_sync_decisions(self, tmp_path: pathlib.Path) -> None:
+        shared = tmp_path / ".cantrip-shared"
+        shared.mkdir()
+        f = shared / "decisions.jsonl"
+        f.write_text('{"decision": "x"}\n')
+        assert "team-sync decisions" in _infer_purpose(f)
+
+    def test_check_definition(self, tmp_path: pathlib.Path) -> None:
+        checks = tmp_path / ".cantrip" / "checks"
+        checks.mkdir(parents=True)
+        f = checks / "lint.md"
+        f.write_text("# Lint passes\n")
+        # Bucket description wins over the markdown-heading inference
+        # because Cantrip-owned artefacts run first.
+        assert "acceptance check" in _infer_purpose(f)
+
+    def test_custom_command(self, tmp_path: pathlib.Path) -> None:
+        commands = tmp_path / ".cantrip" / "commands"
+        commands.mkdir(parents=True)
+        f = commands / "deploy.md"
+        f.write_text("Deploy the charm.\n")
+        assert "custom slash command" in _infer_purpose(f)
+
+    def test_team_sync_memory(self, tmp_path: pathlib.Path) -> None:
+        memory = tmp_path / ".cantrip-shared" / "memory"
+        memory.mkdir(parents=True)
+        f = memory / "note.md"
+        f.write_text("# Reminder\nbody\n")
+        assert "team-sync memory" in _infer_purpose(f)
+
+    def test_worktree_contents_use_content_inference(self, tmp_path: pathlib.Path) -> None:
+        # A charmcraft.yaml inside a per-subagent worktree is a real
+        # charm file — its own content describes it.  The artefact
+        # override must NOT swallow it with a worktree-shaped message.
+        worktree = tmp_path / ".cantrip-worktrees" / "task-001"
+        worktree.mkdir(parents=True)
+        f = worktree / "charmcraft.yaml"
+        f.write_text("name: my-charm\nsummary: Real summary.\n")
+        assert "Real summary." in _infer_purpose(f)
+
+    def test_unrelated_checks_directory_unaffected(self, tmp_path: pathlib.Path) -> None:
+        # A ``checks/`` directory that isn't nested under a ``.cantrip*``
+        # ancestor should fall through to normal inference.
+        unrelated = tmp_path / "src" / "checks"
+        unrelated.mkdir(parents=True)
+        f = unrelated / "thing.md"
+        f.write_text("# Plain heading\n")
+        assert "Plain heading" in _infer_purpose(f)
+
+    def test_helper_returns_none_for_unknown(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / "regular.py"
+        assert _cantrip_artefact_purpose(f) is None
 
 
 class TestReadTextSafely:

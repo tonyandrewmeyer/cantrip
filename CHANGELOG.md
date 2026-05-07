@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **File detail screen names Cantrip-owned artefacts.**  The TUI's
+  source-viewer modal now hard-codes purpose strings for files Cantrip
+  itself writes inside the charm root — ``.cantrip`` (SQLite session
+  store), ``.cantrip-audit.jsonl``, ``.cantrip-repomap.json``,
+  ``.cantrip.bak[-<ts>]`` / ``.cantrip.tmp`` / ``.cantrip.corrupt``,
+  ``.cantrip/permissions.yaml``, ``.cantrip-shared/decisions.jsonl``,
+  and any file inside a ``checks/`` / ``commands/`` / ``memory/``
+  bucket nested under a ``.cantrip*`` ancestor — so they no longer
+  fall through to the generic "no structured summary available"
+  fallback.  Worktree contents (``.cantrip-worktrees/<id>/...``)
+  remain content-driven so a real ``charmcraft.yaml`` still surfaces
+  its own summary.
 - **Multipass-VM-with-host-GPU-inference how-to and helper script.**
   ``scripts/setup-vm-inference-proxy.sh`` installs ``socat``, drops a
   ``cantrip-inference-proxy@.service`` systemd template, and (when

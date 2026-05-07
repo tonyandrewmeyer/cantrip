@@ -45,6 +45,68 @@ _CHARM_METADATA_NAMES = frozenset(
     {"charmcraft.yaml", "metadata.yaml", "actions.yaml", "config.yaml"}
 )
 
+# Hard-coded purposes for files Cantrip itself writes.  Without these,
+# binary or non-Pythonic artefacts (the SQLite session, the JSONL audit
+# log, the repomap cache) fall through to ``_fallback_purpose`` and
+# render as "no structured summary available" — unhelpful for a file
+# whose meaning Cantrip knows precisely.
+_CANTRIP_FILE_PURPOSES: dict[str, str] = {
+    ".cantrip": (
+        "**Cantrip session store** — per-charm SQLite database holding "
+        "conversation history, agent state, and the durable work queue."
+    ),
+    ".cantrip-audit.jsonl": (
+        "**Cantrip audit log** — append-only JSONL trace; one record per "
+        "permission decision and tool call."
+    ),
+    ".cantrip-repomap.json": (
+        "**Cantrip repomap cache** — parsed symbol map of the charm "
+        "source tree.  Rebuilt on demand via ``/repomap``."
+    ),
+    ".cantrip.bak": (
+        "**Cantrip session backup** — previous ``.cantrip`` session set "
+        "aside when the user started fresh or migrated formats."
+    ),
+    ".cantrip.tmp": (
+        "**Cantrip migration scratch file** — transient SQLite written "
+        "while converting a legacy ``.cantrip/`` directory to the "
+        "single-file format."
+    ),
+    ".cantrip.corrupt": (
+        "**Cantrip salvaged session** — legacy ``.cantrip/`` directory "
+        "preserved when migration could not safely convert it."
+    ),
+}
+
+# Known children of a ``.cantrip*`` parent directory by exact name.
+_CANTRIP_CHILD_PURPOSES: dict[tuple[str, str], str] = {
+    (".cantrip", "permissions.yaml"): (
+        "**Cantrip permission rules** — per-charm allow/deny lists "
+        "evaluated before every tool call."
+    ),
+    (".cantrip-shared", "decisions.jsonl"): (
+        "**Cantrip team-sync decisions** — shared, append-only decision "
+        "log checked in so teammates pick up architectural choices."
+    ),
+}
+
+# Bucket descriptions for files inside a known sub-directory of any
+# ``.cantrip*`` ancestor, keyed by the immediate parent's name.
+_CANTRIP_BUCKET_PURPOSES: dict[str, str] = {
+    "checks": (
+        "**Cantrip acceptance check** — Markdown spec describing one "
+        "must-pass condition before the agent reports a phase complete."
+    ),
+    "commands": (
+        "**Cantrip custom slash command** — Markdown definition of a "
+        "user-supplied ``/<name>`` command."
+    ),
+    "memory": (
+        "**Cantrip team-sync memory** — shared note the agent reads back "
+        "across runs (lives under ``.cantrip-shared/memory/``)."
+    ),
+}
+
 
 class FileDetailScreen(ModalScreen):
     """Modal screen showing metadata and content for a selected file."""
@@ -313,6 +375,8 @@ def _format_relative_time(when: datetime.datetime) -> str:
 def _infer_purpose(path: pathlib.Path) -> str:
     """Return a best-effort purpose summary for a file.
 
+    Cantrip-owned ``.cantrip*`` artefacts win first — their meaning is
+    fixed by the writer, not inferable from content.  Then:
     Python: module docstring.
     Markdown: first H1 plus the first non-heading paragraph.
     YAML (charmcraft / metadata): ``summary`` or ``description`` field.
@@ -324,6 +388,10 @@ def _infer_purpose(path: pathlib.Path) -> str:
 
     if not path.exists():
         return "[dim]Could not read file.[/dim]"
+
+    cantrip = _cantrip_artefact_purpose(path)
+    if cantrip is not None:
+        return cantrip
 
     text = _read_text_safely(path, max_bytes=16_384)
     if text is None:
@@ -347,6 +415,45 @@ def _infer_purpose(path: pathlib.Path) -> str:
             return toml_purpose
 
     return _fallback_purpose(path)
+
+
+def _cantrip_artefact_purpose(path: pathlib.Path) -> str | None:
+    """Return a hard-coded purpose for files Cantrip itself creates.
+
+    Recognises top-level ``.cantrip*`` files in the charm root, files
+    directly under a ``.cantrip*`` parent (``permissions.yaml``,
+    ``decisions.jsonl``), and any file inside a ``checks/``,
+    ``commands/`` or ``memory/`` bucket nested under such a parent.
+
+    Returns ``None`` for paths Cantrip does not own — including the
+    contents of ``.cantrip-worktrees/<task-id>/``, which are real charm
+    files whose own content describes them better than the worktree
+    location ever could.
+    """
+    name = path.name
+    # Backup files include a timestamp suffix (``.cantrip.bak-20260101_120000``);
+    # collapse to the canonical entry.
+    if name.startswith(".cantrip.bak"):
+        return _CANTRIP_FILE_PURPOSES[".cantrip.bak"]
+    if name in _CANTRIP_FILE_PURPOSES:
+        return _CANTRIP_FILE_PURPOSES[name]
+
+    parent_names = [p.name for p in path.parents]
+    for parent_name in parent_names:
+        match = _CANTRIP_CHILD_PURPOSES.get((parent_name, name))
+        if match is not None:
+            return match
+
+    # Bucketed fallback — only fires when an ancestor is a ``.cantrip*``
+    # directory, so unrelated ``checks/`` or ``memory/`` directories
+    # elsewhere in the tree are left alone.
+    immediate_parent = parent_names[0] if parent_names else ""
+    if immediate_parent in _CANTRIP_BUCKET_PURPOSES and any(
+        ancestor.startswith(".cantrip") for ancestor in parent_names[1:]
+    ):
+        return _CANTRIP_BUCKET_PURPOSES[immediate_parent]
+
+    return None
 
 
 def _python_module_docstring(text: str) -> str | None:
