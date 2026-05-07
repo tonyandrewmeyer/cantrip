@@ -5,9 +5,11 @@ from __future__ import annotations
 import pathlib
 import subprocess
 import tempfile
+from unittest import mock
 
 import pytest
 
+from cantrip.agent.tools import _scan
 from cantrip.agent.tools._scan import scan
 
 
@@ -122,3 +124,129 @@ class TestScan:
         result = scan(temp_repo)
 
         assert result.recent_commit_count == 1
+
+
+class TestScanBranches:
+    """Cover the failure / boundary branches in ``_scan``.
+
+    The happy paths in ``TestScan`` exercise the canonical detection
+    passes; this class fills in the branches Phase 93.1 flagged: glob
+    manifests, non-workflow CI configs, git-churn failure modes, the
+    bounded-walk symlink and depth/budget guards, and the input
+    validation errors in :func:`scan`.
+    """
+
+    def test_glob_manifest_pattern_is_matched(self, temp_repo: pathlib.Path) -> None:
+        """A glob entry in ``MANIFESTS`` (e.g. ``*.gemspec``) matches by pattern."""
+        (temp_repo / "demo.gemspec").write_text(
+            "Gem::Specification.new do |s|\n  s.name = 'demo'\nend\n"
+        )
+
+        result = scan(temp_repo)
+
+        assert "demo.gemspec" in result.manifests
+
+    def test_direct_ci_cd_file_is_detected(self, temp_repo: pathlib.Path) -> None:
+        """CI configs that aren't ``.github/workflows`` resolve via direct match."""
+        (temp_repo / ".gitlab-ci.yml").write_text("stages:\n  - test\n")
+
+        result = scan(temp_repo)
+
+        assert "GitLab CI" in result.ci_cd
+
+    def test_recent_commits_returns_none_when_git_missing(self, temp_repo: pathlib.Path) -> None:
+        """``OSError`` from ``subprocess.run`` (e.g. git not on PATH) is swallowed."""
+        (temp_repo / ".git").mkdir()  # The early-out only fires when ``.git`` is absent.
+
+        with mock.patch.object(_scan.subprocess, "run", side_effect=OSError("no git")):
+            assert _scan._count_recent_commits(temp_repo) is None
+
+    def test_recent_commits_returns_none_on_nonzero_exit(self, temp_repo: pathlib.Path) -> None:
+        """A non-zero git exit (broken repo state) yields ``None`` rather than raising."""
+        (temp_repo / ".git").mkdir()
+        fake = subprocess.CompletedProcess(args=["git"], returncode=128, stdout="", stderr="boom")
+
+        with mock.patch.object(_scan.subprocess, "run", return_value=fake):
+            assert _scan._count_recent_commits(temp_repo) is None
+
+    def test_recent_commits_returns_none_when_output_not_a_count(
+        self, temp_repo: pathlib.Path
+    ) -> None:
+        """Non-numeric stdout (unexpected git output) is treated as missing."""
+        (temp_repo / ".git").mkdir()
+        fake = subprocess.CompletedProcess(args=["git"], returncode=0, stdout="abc\n", stderr="")
+
+        with mock.patch.object(_scan.subprocess, "run", return_value=fake):
+            assert _scan._count_recent_commits(temp_repo) is None
+
+    def test_symlinked_directory_is_skipped(self, temp_repo: pathlib.Path) -> None:
+        """Symlinked directories are filtered out of the walk listing.
+
+        A self-referential symlink would loop forever if the walk
+        descended into it; the explicit ``is_symlink()`` guard at the
+        top of ``_walk_filesystem`` is the protection that lets the
+        scan stay bounded.
+        """
+        (temp_repo / "main.py").write_text("print('hi')\n")  # Real entry-point file.
+        (temp_repo / "loop").symlink_to(temp_repo, target_is_directory=True)
+
+        result = scan(temp_repo)
+
+        assert "main.py" in result.entry_points
+        # The symlinked alias is dropped before any of its (looped) contents
+        # can leak into the result.
+        all_paths = [
+            *result.manifests,
+            *result.entry_points,
+            *result.containers,
+            *result.security_configs,
+            *result.lint_configs,
+            *result.env_templates,
+            *result.extras["config_files"],
+            *result.extras["systemd_units"],
+        ]
+        assert not any(path.startswith("loop/") for path in all_paths)
+        assert result.extras["scan_stats"]["truncated"] is False
+
+    def test_depth_limit_prunes_deep_directories(
+        self, temp_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Subdirectories beyond ``_MAX_SCAN_DEPTH`` are dropped from the walk."""
+        monkeypatch.setattr(_scan, "_MAX_SCAN_DEPTH", 2)
+        deep = temp_repo / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        (deep / "leaf.py").write_text("# pruned\n")
+        (temp_repo / "a" / "b" / "kept.py").write_text("# kept\n")
+
+        result = scan(temp_repo)
+
+        assert not any("/c/" in path or path.endswith("leaf.py") for path in result.entry_points)
+
+    def test_file_budget_truncates_walk(
+        self, temp_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When ``_MAX_SCANNED_FILES`` is hit, the walk stops and reports truncated."""
+        monkeypatch.setattr(_scan, "_MAX_SCANNED_FILES", 3)
+        for index in range(10):
+            (temp_repo / f"file_{index}.txt").write_text(str(index))
+
+        result = scan(temp_repo)
+
+        stats = result.extras["scan_stats"]
+        assert stats["truncated"] is True
+        assert stats["files_scanned"] == 3
+
+    def test_scan_rejects_missing_path(self, temp_repo: pathlib.Path) -> None:
+        """A non-existent path produces ``ValueError`` rather than a silent empty scan."""
+        missing = temp_repo / "does-not-exist"
+
+        with pytest.raises(ValueError, match="not found"):
+            scan(missing)
+
+    def test_scan_rejects_non_directory(self, temp_repo: pathlib.Path) -> None:
+        """A path that exists but is a file (not a directory) is rejected."""
+        target = temp_repo / "regular.txt"
+        target.write_text("hello\n")
+
+        with pytest.raises(ValueError, match="not a directory"):
+            scan(target)
