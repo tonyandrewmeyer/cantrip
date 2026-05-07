@@ -15,8 +15,6 @@ from cantrip.llm.base import (
 from cantrip.llm.openai_embeddings import OpenAIEmbedProvider
 from cantrip.llm.roles import (
     EmbeddingResult,
-    EmbedProvider,
-    RerankProvider,
     RerankResult,
     RoleNotConfigured,
     RoleRouter,
@@ -27,52 +25,8 @@ from cantrip.llm.voyage import (
     VoyageEmbedProvider,
     VoyageRerankProvider,
 )
-
-# ---------------------------------------------------------------------------
-# Test doubles
-# ---------------------------------------------------------------------------
-
-
-class _StubEmbed(EmbedProvider):
-    """Returns a canned vector list — no real HTTP."""
-
-    def __init__(self, model: str = "stub-embed") -> None:
-        self._model = model
-        self.calls: list[tuple[list[str], str]] = []
-
-    @property
-    def model_name(self) -> str:
-        return self._model
-
-    async def embed(self, texts: list[str], *, input_type: str = "document") -> EmbeddingResult:
-        self.calls.append((list(texts), input_type))
-        vectors = tuple(tuple(float(i) for i in range(3)) for _ in texts)
-        return EmbeddingResult(vectors=vectors, model=self._model, input_tokens=len(texts))
-
-
-class _StubRerank(RerankProvider):
-    """Returns documents reversed so we can assert ordering changed."""
-
-    def __init__(self, model: str = "stub-rerank") -> None:
-        self._model = model
-        self.calls: list[tuple[str, list[str]]] = []
-
-    @property
-    def model_name(self) -> str:
-        return self._model
-
-    async def rerank(
-        self, query: str, documents: list[str], *, top_k: int | None = None
-    ) -> RerankResult:
-        self.calls.append((query, list(documents)))
-        n = len(documents)
-        order = tuple(range(n - 1, -1, -1))
-        scores = tuple(float(i) / max(n, 1) for i in range(n, 0, -1))
-        if top_k is not None:
-            order = order[:top_k]
-            scores = scores[:top_k]
-        return RerankResult(indices=order, scores=scores, model=self._model, input_tokens=n)
-
+from tests.support.roles import StubEmbed as _StubEmbed
+from tests.support.roles import StubRerank as _StubRerank
 
 # ---------------------------------------------------------------------------
 # RoleRouter

@@ -15,6 +15,7 @@ from cantrip.agent.subagent import (
 from cantrip.agent.tools.base import ToolResult
 from cantrip.llm.base import ProviderRateLimitError, Response, ToolCall
 from tests.conftest import FakeProvider
+from tests.support.providers import RecordingProvider
 from tests.unit.subagent.conftest import _make_context, _make_tool
 
 # ===================================================================
@@ -104,27 +105,13 @@ class TestSubagentRun:
     @pytest.mark.asyncio
     async def test_uses_correct_temperature(self) -> None:
         """Verify the subagent passes temperature=0.5 to the provider."""
-        recorded_temps: list[float] = []
-
-        class RecordingProvider(FakeProvider):
-            async def complete(
-                self,
-                messages,
-                tools=None,
-                temperature=0.7,
-                max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
-            ):
-                recorded_temps.append(temperature)
-                return Response(content="done")
-
-        provider = RecordingProvider()
+        provider = RecordingProvider(response=Response(content="done"))
         ctx = _make_context()
         subagent = Subagent(ctx, tools=[], provider=provider)
 
         await subagent.run()
 
-        assert recorded_temps == [0.5]
+        assert provider.temperatures_seen == [0.5]
 
     @pytest.mark.asyncio
     async def test_research_task_uses_light_provider(self) -> None:

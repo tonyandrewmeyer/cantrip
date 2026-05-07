@@ -18,7 +18,6 @@ from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import ExitState, SubagentResult
-from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm.base import Response
 from tests.conftest import (
     FakeEnvironmentChecker,
@@ -27,45 +26,7 @@ from tests.conftest import (
     FakeProvider,
     FakeStateService,
 )
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_tool(name: str) -> Tool:
-    """Build a minimal Tool stub."""
-
-    class _StubTool(Tool):
-        @property
-        def _name(self) -> str:
-            return name
-
-        @property
-        def _desc(self) -> str:
-            return f"Stub tool {name}"
-
-        @property
-        def _params(self) -> dict[str, Any]:
-            return {"type": "object", "properties": {}}
-
-    class StubTool(_StubTool):
-        @property
-        def name(self) -> str:  # type: ignore[override]
-            return self._name
-
-        @property
-        def description(self) -> str:  # type: ignore[override]
-            return self._desc
-
-        @property
-        def parameters(self) -> dict[str, Any]:  # type: ignore[override]
-            return self._params
-
-        async def execute(self, **kwargs: Any) -> ToolResult:  # noqa: ARG002
-            return ToolResult(success=True, output="ok")
-
-    return StubTool()
+from tests.support.tools import make_stub_tool as _make_tool
 
 
 def _make_executor(

@@ -10,31 +10,11 @@ import pytest
 
 from cantrip.docs_index import crawl, index, sites
 from cantrip.docs_index.store import DocsStore
-from cantrip.llm.roles import EmbeddingResult, EmbedProvider
+from tests.support.roles import StubEmbed as _StubEmbed
 
 # ---------------------------------------------------------------------------
-# Test doubles
+# Test fixtures
 # ---------------------------------------------------------------------------
-
-
-class _StubEmbed(EmbedProvider):
-    """Returns a canned 3-d vector per text — no real network."""
-
-    def __init__(self, model: str = "stub-embed") -> None:
-        self._model = model
-        self.calls: list[list[str]] = []
-
-    @property
-    def model_name(self) -> str:
-        return self._model
-
-    async def embed(self, texts: list[str], *, input_type: str = "document") -> EmbeddingResult:
-        del input_type
-        self.calls.append(list(texts))
-        # Each text gets a stable vector derived from its position
-        # so search behaviour is deterministic in tests.
-        vectors = tuple(tuple(float(i) for i in range(3)) for _ in texts)
-        return EmbeddingResult(vectors=vectors, model=self._model, input_tokens=len(texts) * 4)
 
 
 _TEST_SITE = sites.DocSite(

@@ -18,30 +18,12 @@ from cantrip.agent.context_providers_builtin import (
 from cantrip.agent.tools.docs_search import DocsSearchTool
 from cantrip.docs_index import index
 from cantrip.docs_index.store import Chunk, DocsStore
-from cantrip.llm.roles import EmbeddingResult, EmbedProvider, RoleRouter
+from cantrip.llm.roles import RoleRouter
+from tests.support.roles import StubEmbed as _StubEmbed
 
 # ---------------------------------------------------------------------------
-# Test doubles
+# Helpers
 # ---------------------------------------------------------------------------
-
-
-class _StubEmbed(EmbedProvider):
-    """Returns a fixed query vector — no real network."""
-
-    def __init__(self, vector: tuple[float, ...] = (1.0, 0.0, 0.0)) -> None:
-        self._vector = vector
-
-    @property
-    def model_name(self) -> str:
-        return "stub-embed"
-
-    async def embed(self, texts: list[str], *, input_type: str = "document") -> EmbeddingResult:
-        del input_type
-        return EmbeddingResult(
-            vectors=tuple(self._vector for _ in texts),
-            model="stub-embed",
-            input_tokens=len(texts),
-        )
 
 
 def _seed_store(

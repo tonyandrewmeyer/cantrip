@@ -8,46 +8,14 @@ from cantrip.agent.subagent import (
     SubagentContext,
 )
 from cantrip.agent.tools.base import Tool, ToolResult
+from tests.support.tools import make_stub_tool
 
 
 def _make_tool(name: str, execute_return: ToolResult | None = None) -> Tool:
-    """Build a minimal Tool stub with the given *name*."""
-
-    class _StubTool(Tool):
-        @property
-        def _name(self) -> str:
-            return name
-
-        @property
-        def _desc(self) -> str:
-            return f"Stub tool {name}"
-
-        @property
-        def _params(self) -> dict[str, Any]:
-            return {"type": "object", "properties": {}}
-
-    # We cannot override abstract properties with simple assignments, so
-    # we use a concrete subclass with the right property names.
-    class StubTool(_StubTool):
-        @property
-        def name(self) -> str:  # type: ignore[override]
-            return self._name
-
-        @property
-        def description(self) -> str:  # type: ignore[override]
-            return self._desc
-
-        @property
-        def parameters(self) -> dict[str, Any]:  # type: ignore[override]
-            return self._params
-
-        async def execute(self, **kwargs: Any) -> ToolResult:  # noqa: ARG002
-            return execute_return or ToolResult(success=True, output="ok")
-
-    tool = StubTool()
-    tool.execute = AsyncMock(  # type: ignore[method-assign]
-        return_value=execute_return or ToolResult(success=True, output="ok"),
-    )
+    """Stub tool whose ``execute`` is wrapped in :class:`AsyncMock` for assertion."""
+    result = execute_return or ToolResult(success=True, output="ok")
+    tool = make_stub_tool(name, output=result.output, success=result.success)
+    tool.execute = AsyncMock(return_value=result)  # type: ignore[method-assign]
     return tool
 
 

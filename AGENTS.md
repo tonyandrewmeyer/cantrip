@@ -27,6 +27,8 @@ make coverage  # Unit tests with coverage report
 
 **Always use `make unit` for the full suite.** It runs `pytest -n auto` via `pytest-xdist` for ~4× parallel speedup. Direct `uv run pytest tests/unit/` runs serially and takes 4+ minutes instead of <1 minute. The file/function commands below are only for single-target runs.
 
+For the test layout (unit / integration / e2e), the conftest hierarchy, and the catalogue of shared fakes (`FakeProvider`, `RecordingProvider`, `make_stub_tool`, `FakeAllocator`, `StubEmbed`, …), see [`tests/README.md`](tests/README.md). Reach for a shared fake before defining a new `_StubX` / `_FakeX` inline.
+
 ## File-Scoped Commands
 
 | Task | Command |

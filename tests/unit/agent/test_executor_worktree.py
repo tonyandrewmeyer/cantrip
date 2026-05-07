@@ -8,7 +8,6 @@ exercise with mocks alone.
 
 from __future__ import annotations
 
-import dataclasses
 import pathlib
 import shutil
 import subprocess
@@ -21,10 +20,11 @@ from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import ExitState, SubagentResult
-from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.worktree import WorktreeHandle, _DefaultWorktreeAllocator
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+from tests.support.tools import make_stub_tool as _make_tool
+from tests.support.worktrees import FakeAllocator, ReleaseCall
 
 
 def _git_available() -> bool:
@@ -37,73 +37,6 @@ pytestmark = pytest.mark.skipif(not _git_available(), reason="git CLI not availa
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_tool(name: str) -> Tool:
-    class _Stub(Tool):
-        @property
-        def name(self) -> str:
-            return name
-
-        @property
-        def description(self) -> str:
-            return name
-
-        @property
-        def parameters(self) -> dict[str, Any]:
-            return {"type": "object", "properties": {}}
-
-        async def execute(self, **kwargs: Any) -> ToolResult:  # noqa: ARG002
-            return ToolResult(success=True, output="ok")
-
-    return _Stub()
-
-
-@dataclasses.dataclass
-class _AllocCall:
-    task_id: str
-    base_path: pathlib.Path
-
-
-@dataclasses.dataclass
-class _ReleaseCall:
-    task_id: str
-    keep_branch: bool
-
-
-class FakeAllocator:
-    """In-memory ``WorktreeAllocator`` that records every call."""
-
-    def __init__(self, handle_factory: Any = None) -> None:
-        self.alloc_calls: list[_AllocCall] = []
-        self.release_calls: list[_ReleaseCall] = []
-        self._handles: dict[str, WorktreeHandle] = {}
-        self._handle_factory = handle_factory
-
-    async def allocate(self, task_id: str, base_path: pathlib.Path | str) -> WorktreeHandle | None:
-        self.alloc_calls.append(_AllocCall(task_id, pathlib.Path(base_path)))
-        if self._handle_factory is None:
-            return None
-        handle = self._handle_factory(task_id, base_path)
-        if handle is not None:
-            self._handles[task_id] = handle
-        return handle
-
-    async def release(self, task_id: str, *, keep_branch: bool = False) -> None:
-        self.release_calls.append(_ReleaseCall(task_id, keep_branch))
-        self._handles.pop(task_id, None)
-
-    def get(self, task_id: str) -> WorktreeHandle | None:
-        return self._handles.get(task_id)
-
-    def all_worktrees(self) -> dict[str, WorktreeHandle]:
-        return dict(self._handles)
-
-    async def reap_orphans(self, active_task_ids: set[str]) -> int:
-        stale = [tid for tid in list(self._handles) if tid not in active_task_ids]
-        for tid in stale:
-            await self.release(tid)
-        return len(stale)
 
 
 def _make_executor(
@@ -275,7 +208,7 @@ class TestAllocateAndRelease:
             await executor._execute_task(task)
 
         merge.assert_awaited_once()
-        assert allocator.release_calls == [_ReleaseCall("t1", keep_branch=False)]
+        assert allocator.release_calls == [ReleaseCall("t1", keep_branch=False)]
         assert executor._queue.get_task(task.id).status == TaskStatus.DONE
 
     @pytest.mark.asyncio
@@ -296,7 +229,7 @@ class TestAllocateAndRelease:
             )
             await executor._execute_task(task)
 
-        assert allocator.release_calls == [_ReleaseCall("t1", keep_branch=True)]
+        assert allocator.release_calls == [ReleaseCall("t1", keep_branch=True)]
         blocked = executor._queue.get_task(task.id)
         assert blocked.status == TaskStatus.BLOCKED
         assert blocked.blocked_reason == "Main tree has uncommitted changes"
@@ -318,7 +251,7 @@ class TestAllocateAndRelease:
             await executor._execute_task(task)
 
         merge.assert_not_awaited()
-        assert allocator.release_calls == [_ReleaseCall("t1", keep_branch=False)]
+        assert allocator.release_calls == [ReleaseCall("t1", keep_branch=False)]
         assert executor._queue.get_task(task.id).status == TaskStatus.FAILED
 
     @pytest.mark.asyncio
@@ -342,7 +275,7 @@ class TestAllocateAndRelease:
 
         merge.assert_not_awaited()
         # Still released so the worktree doesn't leak.
-        assert allocator.release_calls == [_ReleaseCall("t1", keep_branch=False)]
+        assert allocator.release_calls == [ReleaseCall("t1", keep_branch=False)]
 
 
 class TestSnapshotInteraction:

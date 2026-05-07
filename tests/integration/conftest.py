@@ -1,106 +1,18 @@
 """Integration test configuration — shared fixtures and helpers."""
 
-import asyncio
 import json
-from collections.abc import Callable
 
 import pytest
 
 from cantrip.agent.tools import base as tools_base
-from cantrip.llm import base as llm
-from tests.conftest import FakeProvider
+from tests.support.providers import CallbackProvider as CallbackProvider
+from tests.support.providers import MultiRoleProvider as MultiRoleProvider
+from tests.support.tools import make_stub_tool as _make_stub_tool
 from tests.support.wait import wait_for_queue_state as wait_for_queue_state
 
 # Re-exported above so existing integration tests keep importing from
 # ``tests.integration.conftest``.  New tests should import directly from
-# ``tests.support.wait``.
-
-# ---------------------------------------------------------------------------
-# Provider variants
-# ---------------------------------------------------------------------------
-
-
-class CallbackProvider(FakeProvider):
-    """Provider that delegates to a callback for dynamic response logic.
-
-    The callback receives the messages and tools and returns a ``Response``.
-    Useful when tests need to inspect message content or vary behaviour.
-    """
-
-    def __init__(
-        self,
-        callback: Callable[[list[llm.Message], list[llm.Tool] | None], llm.Response],
-    ) -> None:
-        super().__init__()
-        self._callback = callback
-
-    async def complete(
-        self,
-        messages: list[llm.Message],
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
-    ) -> llm.Response:
-        self._call_count += 1
-        # Yield to the event loop so executor tests don't starve other coroutines.
-        await asyncio.sleep(0)
-        return self._callback(messages, tools)
-
-
-class MultiRoleProvider(FakeProvider):
-    """Provider with separate response queues for planner vs subagent calls.
-
-    Distinguishes by checking the system prompt for ``task planner`` (planner)
-    or ``autonomous subagent`` (subagent) keywords.
-    """
-
-    def __init__(
-        self,
-        planner_responses: list[llm.Response] | None = None,
-        subagent_responses: list[llm.Response] | None = None,
-    ) -> None:
-        super().__init__()
-        self._planner_responses = list(planner_responses or [])
-        self._subagent_responses = list(subagent_responses or [])
-        self._planner_call_count = 0
-        self._subagent_call_count = 0
-
-    async def complete(
-        self,
-        messages: list[llm.Message],
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
-    ) -> llm.Response:
-        self._call_count += 1
-
-        # Determine role from system prompt content.
-        system_text = ""
-        for msg in messages:
-            if msg.role == llm.Role.SYSTEM:
-                system_text = msg.content.lower()
-                break
-
-        # Yield to the event loop so executor tests don't starve other coroutines.
-        await asyncio.sleep(0)
-
-        if "task planner" in system_text and (
-            self._planner_call_count < len(self._planner_responses)
-        ):
-            resp = self._planner_responses[self._planner_call_count]
-            self._planner_call_count += 1
-            return resp
-
-        if "autonomous subagent" in system_text and (
-            self._subagent_call_count < len(self._subagent_responses)
-        ):
-            resp = self._subagent_responses[self._subagent_call_count]
-            self._subagent_call_count += 1
-            return resp
-
-        return llm.Response(content="default response")
+# ``tests.support.wait`` and ``tests.support.providers``.
 
 
 # ---------------------------------------------------------------------------
@@ -109,29 +21,17 @@ class MultiRoleProvider(FakeProvider):
 
 
 def make_stub_tool(name: str, result: str | None = None) -> tools_base.Tool:
-    """Create a minimal stub tool that returns a fixed result."""
-    result_text = result or f"{name} executed"
+    """Create a minimal stub tool that returns a fixed result.
 
-    class _Stub(tools_base.Tool):
-        @property
-        def name(self) -> str:
-            return _name
-
-        @property
-        def description(self) -> str:
-            return f"Stub tool: {_name}"
-
-        @property
-        def parameters(self) -> dict:
-            return {"type": "object", "properties": {}}
-
-        async def execute(self, **_kwargs) -> tools_base.ToolResult:  # type: ignore[override]
-            return tools_base.ToolResult(success=True, output=_result_text)
-
-    # Bind via closure defaults to avoid late-binding issues.
-    _name = name
-    _result_text = result_text
-    return _Stub()
+    Thin wrapper around :func:`tests.support.tools.make_stub_tool` that
+    keeps the integration-tests-style signature (``result`` defaults to
+    ``"<name> executed"`` rather than ``"ok"``).
+    """
+    return _make_stub_tool(
+        name,
+        description=f"Stub tool: {name}",
+        output=result or f"{name} executed",
+    )
 
 
 # ---------------------------------------------------------------------------

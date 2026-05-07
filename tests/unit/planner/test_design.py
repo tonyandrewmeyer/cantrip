@@ -13,6 +13,7 @@ from cantrip.agent.planner import (
 from cantrip.agent.queue import TaskCategory
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+from tests.support.providers import RecordingProvider
 
 # ===================================================================
 # TestPlanFromDesign
@@ -59,20 +60,6 @@ class TestPlanFromDesign:
     @pytest.mark.asyncio
     async def test_includes_overrides(self) -> None:
         """Verify overrides are passed in the user message."""
-        recorded_messages: list = []
-
-        class RecordingProvider(FakeProvider):
-            async def complete(
-                self,
-                messages,
-                tools=None,
-                temperature=0.7,
-                max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
-            ):
-                recorded_messages.extend(messages)
-                return Response(content="[]")
-
         provider = RecordingProvider()
         planner = TaskPlanner(provider)
         context = PlanningContext(intent="Build")
@@ -83,27 +70,13 @@ class TestPlanFromDesign:
             overrides="Use machine instead of K8s",
         )
 
-        user_msg = recorded_messages[-1].content
+        user_msg = provider.messages_seen[-1].content
         assert "User overrides" in user_msg
         assert "machine instead of K8s" in user_msg
 
     @pytest.mark.asyncio
     async def test_no_overrides_omits_section(self) -> None:
         """When overrides is None, the user message should not contain 'User overrides'."""
-        recorded_messages: list = []
-
-        class RecordingProvider(FakeProvider):
-            async def complete(
-                self,
-                messages,
-                tools=None,
-                temperature=0.7,
-                max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
-            ):
-                recorded_messages.extend(messages)
-                return Response(content="[]")
-
         provider = RecordingProvider()
         planner = TaskPlanner(provider)
         context = PlanningContext(intent="Build")
@@ -114,45 +87,29 @@ class TestPlanFromDesign:
             overrides=None,
         )
 
-        user_msg = recorded_messages[-1].content
+        user_msg = provider.messages_seen[-1].content
         assert "User overrides" not in user_msg
 
     @pytest.mark.asyncio
     async def test_passes_extended_thinking_budget(self) -> None:
         """Planner calls include a non-zero thinking_budget for structured decomposition."""
-        recorded: dict = {}
-
-        class RecordingProvider(FakeProvider):
-            async def complete(
-                self,
-                messages,  # noqa: ARG002
-                tools=None,  # noqa: ARG002
-                temperature=0.7,  # noqa: ARG002
-                max_tokens=None,  # noqa: ARG002
-                thinking_budget=None,
-            ):
-                recorded["thinking_budget"] = thinking_budget
-                return Response(content="[]")
-
         provider = RecordingProvider()
         planner = TaskPlanner(provider)
         context = PlanningContext(intent="Build")
 
         await planner.plan_from_design(design_content="# Design", context=context)
-        assert recorded["thinking_budget"] is not None
-        assert recorded["thinking_budget"] > 0
+        assert provider.thinking_budgets_seen[-1] is not None
+        assert provider.thinking_budgets_seen[-1] > 0
 
         # Same for replan and plan_from_day2_findings.
-        recorded.clear()
         context_with_new = PlanningContext(intent="Build", new_context="updated")
         await planner.replan(context_with_new)
-        assert recorded["thinking_budget"] is not None
-        assert recorded["thinking_budget"] > 0
+        assert provider.thinking_budgets_seen[-1] is not None
+        assert provider.thinking_budgets_seen[-1] > 0
 
-        recorded.clear()
         await planner.plan_from_day2_findings(findings="# Findings", context=context)
-        assert recorded["thinking_budget"] is not None
-        assert recorded["thinking_budget"] > 0
+        assert provider.thinking_budgets_seen[-1] is not None
+        assert provider.thinking_budgets_seen[-1] > 0
 
 
 # ===================================================================

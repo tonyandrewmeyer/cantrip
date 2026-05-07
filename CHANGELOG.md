@@ -46,6 +46,33 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   returns malformed JSON.  Total Python coverage moved 88.76% →
   88.88% — these were paths the unit suite had previously trusted on
   inspection.
+- **Centralised reusable test fakes/builders (Phase 92.3).**  Five new
+  modules under ``tests/support/`` so unit, integration, and e2e layers
+  share one implementation of each protocol fake instead of growing
+  parallel infrastructure.  ``providers.py`` houses ``RecordingProvider``
+  (which captures ``messages_seen`` / ``temperatures_seen`` /
+  ``thinking_budgets_seen`` per call), plus ``CallbackProvider`` and
+  ``MultiRoleProvider`` moved out of ``tests/integration/conftest.py``;
+  ``tools.py`` ships ``make_stub_tool``, replacing five inline
+  ``_StubTool`` / ``_make_tool`` definitions plus the
+  integration-conftest variant; ``worktrees.py`` ships a single
+  configurable ``FakeAllocator`` with ``AllocCall`` / ``ReleaseCall``
+  dataclasses, replacing three near-duplicate ``FakeAllocator`` /
+  ``_FakeAllocator`` classes spread across ``test_executor_worktree.py``,
+  ``test_executor_race.py``, and ``test_race.py``; and ``roles.py``
+  exposes ``StubEmbed`` and ``StubRerank``, replacing three inline
+  ``_StubEmbed`` definitions across the docs-search, docs-index, and
+  provider-roles suites.  Inline ``RecordingProvider`` subclasses in
+  ``test_run.py``, ``test_day2.py``, and ``test_design.py`` (5
+  occurrences across three files) collapsed onto the shared one.
+- **Documented the test-suite layout and shared-fake catalogue (Phase
+  92.3).**  New ``tests/README.md`` lays out the unit / integration /
+  e2e / eval rings, the conftest layering rules, and a table of every
+  shared fake (``FakeProvider``, ``RecordingProvider``,
+  ``make_stub_tool``, ``FakeAllocator``, ``StubEmbed``, …) with the
+  protocol it stands in for.  ``CLAUDE.md`` carries a pointer from the
+  test-suite section so future contributors find the catalogue before
+  reaching for an inline ``_StubX``.
 - **Split the monolithic ``test_agent.py`` into feature-scoped modules
   (Phase 92.3).**  ``tests/unit/agent/test_agent.py`` (~1.5 kloc, 13 test
   classes) is gone.  The classes live in eight feature-scoped siblings —

@@ -21,37 +21,19 @@ from cantrip.agent.executor import BackgroundExecutor, _candidate_id_for
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import ExitState, SubagentResult
-from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.worktree import WorktreeHandle
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+from tests.support.tools import make_stub_tool as _make_tool
+from tests.support.worktrees import FakeAllocator, ReleaseCall
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_tool(name: str) -> Tool:
-    class _Stub(Tool):
-        @property
-        def name(self) -> str:
-            return name
-
-        @property
-        def description(self) -> str:
-            return name
-
-        @property
-        def parameters(self) -> dict[str, Any]:
-            return {"type": "object", "properties": {}}
-
-        async def execute(self, **kwargs: Any) -> ToolResult:  # noqa: ARG002
-            return ToolResult(success=True, output="ok")
-
-    return _Stub()
-
-
 def _handle(task_id: str, base_path: pathlib.Path | str) -> WorktreeHandle:
+    """Build a worktree handle under ``<base_path>/.cantrip-worktrees/<task_id>``."""
     path = pathlib.Path(base_path) / ".cantrip-worktrees" / task_id
     return WorktreeHandle(
         task_id=task_id,
@@ -61,44 +43,9 @@ def _handle(task_id: str, base_path: pathlib.Path | str) -> WorktreeHandle:
     )
 
 
-class FakeAllocator:
-    """In-memory worktree allocator shared by every race test in this module.
-
-    Accepts allocate calls keyed by any string (the coordinator passes
-    composite ``{task_id}__{candidate_id}`` keys), and records every
-    release for assertion.  Returns a handle unless allocation is
-    disabled — non-git scenarios are covered elsewhere.
-    """
-
-    def __init__(self, base_path: pathlib.Path) -> None:
-        self._base = base_path
-        self._handles: dict[str, WorktreeHandle] = {}
-        self.alloc_calls: list[str] = []
-        self.release_calls: list[tuple[str, bool]] = []
-
-    async def allocate(
-        self,
-        task_id: str,
-        base_path: pathlib.Path | str,  # noqa: ARG002
-    ) -> WorktreeHandle | None:
-        self.alloc_calls.append(task_id)
-        handle = _handle(task_id, self._base)
-        handle.path.mkdir(parents=True, exist_ok=True)
-        self._handles[task_id] = handle
-        return handle
-
-    async def release(self, task_id: str, *, keep_branch: bool = False) -> None:
-        self.release_calls.append((task_id, keep_branch))
-        self._handles.pop(task_id, None)
-
-    def get(self, task_id: str) -> WorktreeHandle | None:
-        return self._handles.get(task_id)
-
-    def all_worktrees(self) -> dict[str, WorktreeHandle]:
-        return dict(self._handles)
-
-    async def reap_orphans(self, active_task_ids: set[str]) -> int:  # noqa: ARG002
-        return 0
+def _make_allocator(base_path: pathlib.Path) -> FakeAllocator:
+    """Race-tests allocator: handles land at ``base_path/.cantrip-worktrees/<id>``."""
+    return FakeAllocator(root=base_path / ".cantrip-worktrees")
 
 
 def _make_executor(
@@ -155,14 +102,14 @@ class TestCandidateIdFor:
 
 class TestCandidateSpecs:
     def test_single_provider_yields_one_spec(self, tmp_path: pathlib.Path) -> None:
-        executor = _make_executor(FakeAllocator(tmp_path), charm_path=tmp_path)
+        executor = _make_executor(_make_allocator(tmp_path), charm_path=tmp_path)
         specs = executor._race_candidate_specs()
         assert [s.candidate_id for s in specs] == ["primary-model"]
 
     def test_primary_and_light_yield_two_specs(self, tmp_path: pathlib.Path) -> None:
         light = _named_provider("light-model")
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=light,
         )
@@ -175,7 +122,7 @@ class TestCandidateSpecs:
         """A light provider that shares the primary's model name is dropped."""
         light = _named_provider("primary-model")
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=light,
         )
@@ -185,7 +132,7 @@ class TestCandidateSpecs:
     def test_extra_providers_appended_in_order(self, tmp_path: pathlib.Path) -> None:
         extras = [_named_provider("gemini-pro"), _named_provider("gpt-4o")]
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             extra_providers=extras,
         )
@@ -201,7 +148,7 @@ class TestCandidateSpecs:
 class TestShouldRace:
     def test_disabled_by_default(self, tmp_path: pathlib.Path) -> None:
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light"),
         )
@@ -211,7 +158,7 @@ class TestShouldRace:
     def test_enabled_with_two_candidates(self, tmp_path: pathlib.Path) -> None:
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light"),
             race_config=config,
@@ -222,7 +169,7 @@ class TestShouldRace:
     def test_disabled_without_charm_path(self, tmp_path: pathlib.Path) -> None:
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light"),
             race_config=config,
@@ -236,7 +183,7 @@ class TestShouldRace:
         # A race with one candidate is just a normal subagent run.
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             race_config=config,
         )
@@ -261,7 +208,7 @@ class TestDispatchRaceGate:
             budget_tokens=500_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -285,7 +232,7 @@ class TestDispatchRaceGate:
             budget_tokens=500_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -320,7 +267,7 @@ class TestDispatchRaceGate:
             budget_tokens=500_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -348,7 +295,7 @@ class TestDispatchRaceGate:
             budget_tokens=500_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -372,7 +319,7 @@ class TestDispatchRaceGate:
             budget_tokens=1_000_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -398,7 +345,7 @@ class TestDispatchRaceGate:
             budget_tokens=500_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -435,7 +382,7 @@ class TestExecuteTaskGateIntegration:
             budget_tokens=500_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -464,7 +411,7 @@ class TestExecuteTaskGateIntegration:
             budget_tokens=500_000,
         )
         executor = _make_executor(
-            FakeAllocator(tmp_path),
+            _make_allocator(tmp_path),
             charm_path=tmp_path,
             light_provider=_named_provider("light-model"),
             race_config=config,
@@ -511,7 +458,7 @@ async def _stub_coordinator_run(
 class TestExecuteRaceWinnerMerged:
     @pytest.mark.asyncio
     async def test_winner_merged_and_task_done(self, tmp_path: pathlib.Path) -> None:
-        allocator = FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
             allocator,
@@ -565,14 +512,14 @@ class TestExecuteRaceWinnerMerged:
 
         merge.assert_awaited_once()
         # Winner's composite worktree released, branch dropped (merge ok).
-        assert ("t1__primary-model", False) in allocator.release_calls
+        assert ReleaseCall("t1__primary-model", False) in allocator.release_calls
         final = executor._queue.get_task(task.id)
         assert final.status == TaskStatus.DONE
         assert final.result == "all finished"
 
     @pytest.mark.asyncio
     async def test_merge_error_blocks_and_keeps_branch(self, tmp_path: pathlib.Path) -> None:
-        allocator = FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
             allocator,
@@ -612,7 +559,7 @@ class TestExecuteRaceWinnerMerged:
             await executor._execute_task(task)
 
         # Merge error keeps the branch.
-        assert ("t2__primary-model", True) in allocator.release_calls
+        assert ReleaseCall("t2__primary-model", True) in allocator.release_calls
         final = executor._queue.get_task(task.id)
         assert final.status == TaskStatus.BLOCKED
         assert "uncommitted changes" in (final.blocked_reason or "")
@@ -621,7 +568,7 @@ class TestExecuteRaceWinnerMerged:
 class TestExecuteRaceNoWinner:
     @pytest.mark.asyncio
     async def test_all_candidates_failed_marks_task_failed(self, tmp_path: pathlib.Path) -> None:
-        allocator = FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
             allocator,
@@ -663,7 +610,7 @@ class TestExecuteRaceNoWinner:
 
     @pytest.mark.asyncio
     async def test_coordinator_raise_fails_task(self, tmp_path: pathlib.Path) -> None:
-        allocator = FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
             allocator,
@@ -691,7 +638,7 @@ class TestExecuteRaceBlockedWinner:
     async def test_blocked_winner_preserves_branch_does_not_merge(
         self, tmp_path: pathlib.Path
     ) -> None:
-        allocator = FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         config = race.RaceConfig(enabled_categories=frozenset({TaskCategory.BUILD}))
         executor = _make_executor(
             allocator,
@@ -732,7 +679,7 @@ class TestExecuteRaceBlockedWinner:
 
         merge.assert_not_awaited()
         # Keep the branch so the user can inspect the blocked work.
-        assert ("t5__primary-model", True) in allocator.release_calls
+        assert ReleaseCall("t5__primary-model", True) in allocator.release_calls
         assert executor._queue.get_task(task.id).status == TaskStatus.BLOCKED
 
 
@@ -746,7 +693,7 @@ class TestSubagentFactoryTranscript:
     async def test_factory_gives_candidate_its_own_task_id(self, tmp_path: pathlib.Path) -> None:
         """The shadow task id is ``parent__candidate`` so each candidate's
         subagent_messages land in their own partition of the store."""
-        allocator = FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         executor = _make_executor(allocator, charm_path=tmp_path)
         parent = AgentTask(id="p1", title="Build", category=TaskCategory.BUILD)
 
@@ -770,7 +717,7 @@ class TestSubagentFactoryTranscript:
     @pytest.mark.asyncio
     async def test_factory_does_not_mutate_parent_task(self, tmp_path: pathlib.Path) -> None:
         """``dataclasses.replace`` must not alter the queue's parent task."""
-        executor = _make_executor(FakeAllocator(tmp_path), charm_path=tmp_path)
+        executor = _make_executor(_make_allocator(tmp_path), charm_path=tmp_path)
         parent = AgentTask(id="p2", title="Build", category=TaskCategory.BUILD)
         snapshot = dataclasses.asdict(parent)
 

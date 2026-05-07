@@ -4904,8 +4904,7 @@ identified rather than opening a new product line.
   regularly: keep the full provider-matrix ambition in Phase 79, but
   make the static gold-standard / rubric path and any cheap smoke path
   first-class rather than manual-only.
-- [ ] Reduce test-maintenance drag in the heaviest files and fixtures.
-  Three sub-pieces; the file split is complete, the other two remain.
+- [x] Reduce test-maintenance drag in the heaviest files and fixtures.
   - [x] Split the monolithic ``tests/unit/agent/test_agent.py`` into
     feature-scoped modules.  ~1.5 kloc went into eight new siblings —
     ``test_agent_core.py``, ``test_agent_models.py``,
@@ -4917,9 +4916,26 @@ identified rather than opening a new product line.
     ``test_agent_lifecycle.py``.  The duplicated ``TestInferGapsFromAudit``
     class (a strict subset of the canonical copy in
     ``test_audit_gap_inference.py``) was dropped rather than re-housed.
-  - [ ] Centralise reusable fakes/builders so unit / integration / e2e
-    layers stop growing parallel infrastructure by accident.
-  - [ ] Document the fixture hierarchy.
+  - [x] Centralise reusable fakes/builders so unit / integration / e2e
+    layers stop growing parallel infrastructure by accident.  Five new
+    modules under ``tests/support/``:  ``providers.py`` (``RecordingProvider``,
+    ``CallbackProvider``, ``MultiRoleProvider`` — the latter two moved out
+    of ``tests/integration/conftest.py``), ``tools.py`` (``make_stub_tool``,
+    replacing five inline ``_StubTool`` / ``_make_tool`` definitions plus
+    the integration-conftest variant), ``worktrees.py`` (a single
+    ``FakeAllocator`` + ``AllocCall`` / ``ReleaseCall`` dataclasses,
+    replacing three near-duplicate ``FakeAllocator`` / ``_FakeAllocator``
+    classes across ``test_executor_worktree.py``, ``test_executor_race.py``,
+    and ``test_race.py``), and ``roles.py`` (``StubEmbed`` / ``StubRerank``,
+    replacing three inline ``_StubEmbed`` definitions).  Inline
+    ``RecordingProvider`` subclasses in ``test_run.py``, ``test_day2.py``,
+    and ``test_design.py`` (5 occurrences) collapsed onto the shared one.
+  - [x] Document the fixture hierarchy.  ``tests/README.md`` lays out the
+    unit / integration / e2e / eval rings, the conftest layering rules,
+    and a catalogue of every shared fake plus the protocol it stands in
+    for; ``CLAUDE.md`` carries a pointer to it from the test-suite section
+    so future contributors find the catalogue before reaching for an
+    inline ``_StubX``.
 - [x] Add a small audit of exception-path coverage in high-value modules
   (provider adapters, executor loop, juju/log plumbing, structured
   output, persistence) and backfill the missing regression tests the

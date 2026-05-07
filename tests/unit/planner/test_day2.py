@@ -14,6 +14,7 @@ from cantrip.agent.planner import (
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+from tests.support.providers import RecordingProvider
 
 # ===================================================================
 # TestDay2OpsPhase
@@ -156,20 +157,6 @@ class TestPlanFromDay2Findings:
 
     @pytest.mark.asyncio
     async def test_includes_overrides(self) -> None:
-        recorded_messages: list = []
-
-        class RecordingProvider(FakeProvider):
-            async def complete(
-                self,
-                messages,
-                tools=None,
-                temperature=0.7,
-                max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
-            ):
-                recorded_messages.extend(messages)
-                return Response(content="[]")
-
         provider = RecordingProvider()
         planner = TaskPlanner(provider)
         ctx = PlanningContext(intent="Implement day-2")
@@ -180,26 +167,12 @@ class TestPlanFromDay2Findings:
             overrides="Skip HA, focus on backup only",
         )
 
-        user_msg = recorded_messages[-1].content
+        user_msg = provider.messages_seen[-1].content
         assert "User overrides" in user_msg
         assert "Skip HA" in user_msg
 
     @pytest.mark.asyncio
     async def test_no_overrides_omits_section(self) -> None:
-        recorded_messages: list = []
-
-        class RecordingProvider(FakeProvider):
-            async def complete(
-                self,
-                messages,
-                tools=None,
-                temperature=0.7,
-                max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
-            ):
-                recorded_messages.extend(messages)
-                return Response(content="[]")
-
         provider = RecordingProvider()
         planner = TaskPlanner(provider)
         ctx = PlanningContext(intent="Implement day-2")
@@ -210,5 +183,5 @@ class TestPlanFromDay2Findings:
             overrides=None,
         )
 
-        user_msg = recorded_messages[-1].content
+        user_msg = provider.messages_seen[-1].content
         assert "User overrides" not in user_msg

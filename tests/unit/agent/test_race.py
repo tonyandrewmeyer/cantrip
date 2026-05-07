@@ -19,6 +19,7 @@ from cantrip.agent import race
 from cantrip.agent.queue import TaskCategory
 from cantrip.agent.subagent import ExitState, SubagentResult
 from cantrip.agent.worktree import WorktreeHandle
+from tests.support.worktrees import FakeAllocator
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -506,49 +507,9 @@ def _git(cwd: pathlib.Path, *args: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-class _FakeAllocator:
-    """In-memory worktree allocator for coordinator tests.
-
-    Satisfies the :class:`WorktreeAllocator` protocol shape without
-    touching git or the filesystem — every allocation hands out a
-    unique path under ``tmp_path`` and every release records the key.
-    """
-
-    def __init__(self, tmp_path: pathlib.Path) -> None:
-        self._tmp_path = tmp_path
-        self._handles: dict[str, WorktreeHandle] = {}
-        self.released: list[tuple[str, bool]] = []  # (task_id, keep_branch)
-        self.allocate_fail_for: set[str] = set()
-        self.release_raise = False
-
-    async def allocate(self, task_id: str, base_path: pathlib.Path | str) -> WorktreeHandle | None:
-        if task_id in self.allocate_fail_for:
-            return None
-        path = self._tmp_path / "worktrees" / task_id
-        path.mkdir(parents=True, exist_ok=True)
-        handle = WorktreeHandle(
-            task_id=task_id,
-            path=path,
-            branch=f"cantrip/wt/{task_id}",
-            base_sha="0" * 40,
-        )
-        self._handles[task_id] = handle
-        return handle
-
-    async def release(self, task_id: str, *, keep_branch: bool = False) -> None:
-        if self.release_raise:
-            raise RuntimeError("simulated release failure")
-        self._handles.pop(task_id, None)
-        self.released.append((task_id, keep_branch))
-
-    def get(self, task_id: str) -> WorktreeHandle | None:
-        return self._handles.get(task_id)
-
-    def all_worktrees(self) -> dict[str, WorktreeHandle]:
-        return dict(self._handles)
-
-    async def reap_orphans(self, active_task_ids: set[str]) -> int:
-        return 0
+def _make_allocator(tmp_path: pathlib.Path) -> FakeAllocator:
+    """Coordinator-tests allocator: handles land at ``tmp_path/worktrees/<id>``."""
+    return FakeAllocator(root=tmp_path / "worktrees")
 
 
 class _FakeSubagent:
@@ -588,7 +549,7 @@ class TestRaceCoordinator:
     @pytest.mark.asyncio
     async def test_requires_at_least_one_candidate(self, tmp_path: pathlib.Path) -> None:
         coord = race.RaceCoordinator(
-            allocator=_FakeAllocator(tmp_path),
+            allocator=_make_allocator(tmp_path),
             config=race.RaceConfig(),
         )
         with pytest.raises(ValueError, match="requires at least one"):
@@ -602,7 +563,7 @@ class TestRaceCoordinator:
     @pytest.mark.asyncio
     async def test_picks_best_of_n(self, tmp_path: pathlib.Path) -> None:
         # Two candidates: "good" completes, "bad" fails.  Good wins.
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
         results = {
             "good": SubagentResult(ExitState.COMPLETED, summary="done", detail=""),
@@ -627,7 +588,7 @@ class TestRaceCoordinator:
     async def test_releases_losing_worktrees_and_keeps_winner(
         self, tmp_path: pathlib.Path
     ) -> None:
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
         results = {
             "winner": SubagentResult(ExitState.COMPLETED, summary="yes", detail=""),
@@ -644,7 +605,7 @@ class TestRaceCoordinator:
         )
 
         # Each candidate key is namespaced by (task_id, candidate_id).
-        released_map = dict(allocator.released)
+        released_map = {call.task_id: call.keep_branch for call in allocator.release_calls}
         assert released_map["t2__winner"] is True  # keep_branch
         assert released_map["t2__loser1"] is False
         assert released_map["t2__loser2"] is False
@@ -653,7 +614,7 @@ class TestRaceCoordinator:
 
     @pytest.mark.asyncio
     async def test_all_failed_returns_no_winner(self, tmp_path: pathlib.Path) -> None:
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
         results = {
             "a": SubagentResult(ExitState.FAILED, summary="no", detail=""),
@@ -670,11 +631,11 @@ class TestRaceCoordinator:
 
         assert result.winner is None
         # Both worktrees released with keep_branch=False since nobody won.
-        assert all(keep is False for _, keep in allocator.released)
+        assert all(call.keep_branch is False for call in allocator.release_calls)
 
     @pytest.mark.asyncio
     async def test_candidate_crash_becomes_failed_outcome(self, tmp_path: pathlib.Path) -> None:
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
         results: dict[str, SubagentResult | Exception] = {
             "good": SubagentResult(ExitState.COMPLETED, summary="done", detail=""),
@@ -714,7 +675,7 @@ class TestRaceCoordinator:
         The previous catch enumerated only ``OSError``, ``RuntimeError``,
         ``ValueError``; anything else cancelled every other candidate.
         """
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
         results: dict[str, SubagentResult | Exception] = {
             "good": SubagentResult(ExitState.COMPLETED, summary="done", detail=""),
@@ -740,7 +701,7 @@ class TestRaceCoordinator:
 
     @pytest.mark.asyncio
     async def test_clamps_candidate_pool_to_max(self, tmp_path: pathlib.Path) -> None:
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         config = race.RaceConfig(max_candidates=2)
         coord = race.RaceCoordinator(allocator=allocator, config=config)
         results = {
@@ -762,7 +723,7 @@ class TestRaceCoordinator:
 
     @pytest.mark.asyncio
     async def test_allocation_failure_still_runs_candidate(self, tmp_path: pathlib.Path) -> None:
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         # Force allocation to fail for "a" — coordinator should fall
         # back to running "a" in base_path.
         allocator.allocate_fail_for.add("t6__a")
@@ -790,7 +751,7 @@ class TestRaceCoordinator:
 
     @pytest.mark.asyncio
     async def test_release_failure_does_not_crash_race(self, tmp_path: pathlib.Path) -> None:
-        allocator = _FakeAllocator(tmp_path)
+        allocator = _make_allocator(tmp_path)
         allocator.release_raise = True
         coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
         results = {
