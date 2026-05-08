@@ -9,12 +9,13 @@ import sqlite3
 import stat
 
 from cantrip.agent import design as design_mod
+from cantrip.agent.goal_budget import GoalBudget
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState, Decision, load_shared_decisions
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -53,6 +54,18 @@ CREATE TABLE IF NOT EXISTS session (
     -- record_message (advance) and delete_messages_from (rewind);
     -- /branch overrides it directly.
     active_head_message_id INTEGER,
+    -- Phase 99.2: persisted per-goal budget so ``/budget`` caps survive
+    -- ``cantrip resume``.  ``goal_budget_started_at`` doubles as the
+    -- "is a budget set?" signal — NULL means no budget, non-NULL means
+    -- a budget exists (caps are individually NULL-able for uncapped
+    -- axes).  The ``started_at`` value is the SQLite-format timestamp
+    -- the GoalBudget started counting from; ``measure_usage`` uses it
+    -- to window the ``token_usage`` query, so spend totals reconstruct
+    -- automatically across resume without storing them separately.
+    goal_budget_max_iterations INTEGER,
+    goal_budget_max_prompt_tokens INTEGER,
+    goal_budget_max_completion_tokens INTEGER,
+    goal_budget_started_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -480,6 +493,23 @@ class SessionStore:
             if "source" not in cols:
                 self._conn.execute("ALTER TABLE decisions ADD COLUMN source TEXT")
 
+        if current < 15:
+            # v15: persisted per-goal budget on the session table
+            # (Phase 99.2).  Existing rows get NULL across all four
+            # columns — load_session reads NULL ``goal_budget_started_at``
+            # as "no budget", so pre-99.2 sessions resume uncapped just
+            # as they did before the change.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(session)").fetchall()}
+            for column in (
+                "goal_budget_max_iterations",
+                "goal_budget_max_prompt_tokens",
+                "goal_budget_max_completion_tokens",
+            ):
+                if column not in cols:
+                    self._conn.execute(f"ALTER TABLE session ADD COLUMN {column} INTEGER")
+            if "goal_budget_started_at" not in cols:
+                self._conn.execute("ALTER TABLE session ADD COLUMN goal_budget_started_at TEXT")
+
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             self._conn.commit()
@@ -511,23 +541,41 @@ class SessionStore:
             if callable(to_md):
                 design_md = to_md()
 
+        # Phase 99.2: persist the per-goal budget if one is set.  All four
+        # columns go to NULL when ``goal_budget`` is None so a later
+        # ``/budget --clear`` round-trips back to "no budget" instead of
+        # leaving stale caps in the database.
+        budget = state.goal_budget
+        budget_iterations = budget.max_iterations if budget is not None else None
+        budget_prompt = budget.max_prompt_tokens if budget is not None else None
+        budget_completion = budget.max_completion_tokens if budget is not None else None
+        budget_started_at = budget.started_at if budget is not None else None
+
         db.execute(
             """\
             INSERT INTO session (id, charm_name, charm_path, charm_type,
                                  framework, dev_model, cos_model,
                                  design_proposal, message_count,
+                                 goal_budget_max_iterations,
+                                 goal_budget_max_prompt_tokens,
+                                 goal_budget_max_completion_tokens,
+                                 goal_budget_started_at,
                                  updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(id) DO UPDATE SET
-                charm_name       = excluded.charm_name,
-                charm_path       = excluded.charm_path,
-                charm_type       = excluded.charm_type,
-                framework        = excluded.framework,
-                dev_model        = excluded.dev_model,
-                cos_model        = excluded.cos_model,
-                design_proposal  = excluded.design_proposal,
-                message_count    = excluded.message_count,
-                updated_at       = datetime('now')
+                charm_name                        = excluded.charm_name,
+                charm_path                        = excluded.charm_path,
+                charm_type                        = excluded.charm_type,
+                framework                         = excluded.framework,
+                dev_model                         = excluded.dev_model,
+                cos_model                         = excluded.cos_model,
+                design_proposal                   = excluded.design_proposal,
+                message_count                     = excluded.message_count,
+                goal_budget_max_iterations        = excluded.goal_budget_max_iterations,
+                goal_budget_max_prompt_tokens     = excluded.goal_budget_max_prompt_tokens,
+                goal_budget_max_completion_tokens = excluded.goal_budget_max_completion_tokens,
+                goal_budget_started_at            = excluded.goal_budget_started_at,
+                updated_at                        = datetime('now')
             """,
             (
                 state.charm_name,
@@ -538,6 +586,10 @@ class SessionStore:
                 state.cos_model,
                 design_md,
                 len(state.messages),
+                budget_iterations,
+                budget_prompt,
+                budget_completion,
+                budget_started_at,
             ),
         )
 
@@ -577,6 +629,21 @@ class SessionStore:
         raw_design = row["design_proposal"]
         if raw_design:
             state.design_proposal = design_mod.parse_design_from_result(raw_design)
+
+        # Phase 99.2: restore the per-goal budget if one was persisted.
+        # ``goal_budget_started_at`` doubles as the "is a budget set?"
+        # signal — non-NULL means a budget existed, even if every cap
+        # is NULL (uncapped axes).  Pre-v15 databases gain the columns
+        # at NULL via the v15 migration and resume without a budget,
+        # matching the prior session-scoped behaviour.
+        budget_started_at = row["goal_budget_started_at"]
+        if budget_started_at:
+            state.goal_budget = GoalBudget(
+                max_iterations=row["goal_budget_max_iterations"],
+                max_prompt_tokens=row["goal_budget_max_prompt_tokens"],
+                max_completion_tokens=row["goal_budget_max_completion_tokens"],
+                started_at=str(budget_started_at),
+            )
 
         decision_rows = self._db.execute(
             "SELECT type, choice, reason, timestamp, source FROM decisions ORDER BY id"

@@ -2759,19 +2759,22 @@ Three Codex ``/goal`` mechanics are explicitly **out of scope**:
 
 ### 99.2 High — Persist ``goal_budget`` across ``cantrip resume``
 
-- [ ] Audit ``src/cantrip/agent/persistence.py`` save/load to confirm
+- [x] Audit ``src/cantrip/agent/persistence.py`` save/load to confirm
   ``goal_budget`` is not in the saved session payload.
-- [ ] Extend the session schema (``src/cantrip/agent/persistence.py``
+- [x] Extend the session schema (``src/cantrip/agent/persistence.py``
   and the SQLite migrations under ``src/cantrip/agent/store/``) to
   include the active ``GoalBudget``: iteration cap, prompt-token cap,
-  completion-token cap, and the running spend totals.
-- [ ] Backwards-compatible load: a session saved before this change
+  completion-token cap, and the running spend totals.  (Spend totals
+  reconstruct from the already-persisted ``token_usage`` table windowed
+  by ``GoalBudget.started_at``, so the schema only adds the four cap /
+  start-time fields.)
+- [x] Backwards-compatible load: a session saved before this change
   loads cleanly with the cap defaulted to "none" — never crashes,
   never silently zeroes the budget.  Add a migration test.
-- [ ] Round-trip integration test: ``cantrip run`` with budget caps
+- [x] Round-trip integration test: ``cantrip run`` with budget caps
   set, kill the process, ``cantrip resume`` shows the same cap in
   ``/budget`` output.
-- [ ] CHANGELOG entry under Unreleased noting the persistence change.
+- [x] CHANGELOG entry under Unreleased noting the persistence change.
 
 ### 99.3 Medium — User-prose objective string on the session
 

@@ -67,3 +67,63 @@ class TestAgentStatePersistence:
         assert len(agent2.state.messages) == 2
         assert agent2.state.messages[0].content == "Hello"
         assert agent2.state.messages[1].content == "Reply"
+
+    def test_goal_budget_round_trips_via_slash(self, tmp_path: pathlib.Path):
+        """Phase 99.2: ``/budget`` caps survive ``cantrip resume``.
+
+        Drives the real slash handler so the test catches a regression
+        if a future refactor wires save/load past ``handle_budget`` —
+        e.g. by stamping the budget on a transient field instead of
+        ``state.goal_budget``.
+        """
+        from cantrip.agent.commands.budget import handle_budget
+
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        # Set caps via the same surface the operator uses.
+        handle_budget(agent, "--max-iterations 50")
+        handle_budget(agent, "--max-prompt-tokens 1000")
+        handle_budget(agent, "--max-completion-tokens 500")
+        agent.save_state()
+
+        original_started_at = agent.state.goal_budget.started_at
+
+        # Fresh agent at the same path picks up the caps without the
+        # CLI flags being re-supplied.
+        agent2 = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        loaded = agent2.load_state()
+        assert loaded is True
+        assert agent2.state.goal_budget is not None
+        assert agent2.state.goal_budget.max_iterations == 50
+        assert agent2.state.goal_budget.max_prompt_tokens == 1000
+        assert agent2.state.goal_budget.max_completion_tokens == 500
+        # ``started_at`` must round-trip exactly so spend totals
+        # measured against ``token_usage`` keep the same window.
+        assert agent2.state.goal_budget.started_at == original_started_at
+
+        # The live ``/budget`` (no-arg) summary must reflect the
+        # restored caps, matching the exit criterion from ROADMAP 99.2.
+        summary = handle_budget(agent2, "")
+        assert "iterations 0/50" in summary
+        assert "prompt 0/1,000" in summary
+        assert "completion 0/500" in summary
+
+    def test_goal_budget_clear_round_trips_as_none(self, tmp_path: pathlib.Path):
+        """``/budget --clear`` after a save zeroes the persisted caps.
+
+        Without this the next resume would silently re-establish caps
+        the operator just cleared.
+        """
+        from cantrip.agent.commands.budget import handle_budget
+
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        handle_budget(agent, "--max-iterations 10")
+        agent.save_state()
+        handle_budget(agent, "--clear")
+        agent.save_state()
+
+        agent2 = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent2.load_state()
+        assert agent2.state.goal_budget is None

@@ -202,6 +202,12 @@ class PersistenceController:
         self._state.dev_model = loaded.dev_model
         self._state.cos_model = loaded.cos_model
         self._state.decisions = loaded.decisions
+        # Phase 99.2: restore the persisted ``/budget`` caps so the
+        # operator doesn't re-specify them after every resume.  Matches
+        # the compaction-counters pattern below — persisted state wins
+        # over whatever ``cli.py`` stamped from CLI flags / env vars at
+        # construction time, so resume is "pick up where you left off".
+        self._state.goal_budget = loaded.goal_budget
 
         # Restore compaction safety counters so per-session budgets survive
         # resume and we don't hand a fresh budget to a session that has

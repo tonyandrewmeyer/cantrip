@@ -244,9 +244,12 @@ class AgentState:
     # Phase 55.3: optional per-goal iteration / token budget.  When
     # set, the executor consults it before spawning each task and
     # marks the task BLOCKED once the cap is reached.  Mutable so
-    # ``/budget`` can raise caps in place.  Not persisted — each
-    # session re-opts-in via CLI flags or env vars so a budget stop
-    # doesn't silently cascade across resumes.
+    # ``/budget`` can raise caps in place.  Phase 99.2: persisted to
+    # the session row by ``store.save_session`` and restored by
+    # ``persistence.load_state`` so ``cantrip resume`` honours the
+    # previous caps without the operator re-specifying them.  Spend
+    # totals reconstruct from the (already-persisted) ``token_usage``
+    # table windowed by ``GoalBudget.started_at``.
     goal_budget: GoalBudget | None = None
 
     # Phase 68.1: per-turn working-tree snapshots feed ``/undo`` and

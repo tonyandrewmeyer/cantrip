@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from cantrip.agent.goal_budget import GoalBudget
 from cantrip.agent.state import (
     AgentState,
     Decision,
@@ -497,6 +498,123 @@ class TestCompactionCounters:
         store.save_compaction_counters(4, 2)
         _, _, cycle, exhausted = store.load_compaction_counters()
         assert (cycle, exhausted) == (False, False)
+
+
+class TestGoalBudgetPersistence:
+    """Phase 99.2: ``goal_budget`` round-trips through save / load.
+
+    Without this the ``/budget`` caps the operator set in one session
+    would silently vanish on ``cantrip resume`` and they'd have to
+    re-specify them every time.
+    """
+
+    def test_no_budget_round_trips_as_none(self, store: SessionStore) -> None:
+        """A session without a goal_budget loads back with goal_budget=None."""
+        state = AgentState(charm_name="x")
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.goal_budget is None
+
+    def test_budget_round_trips(self, store: SessionStore) -> None:
+        """Every cap and the started_at timestamp survive save/load."""
+        state = AgentState(charm_name="x")
+        state.goal_budget = GoalBudget(
+            max_iterations=42,
+            max_prompt_tokens=10_000,
+            max_completion_tokens=5_000,
+            started_at="2026-05-08 12:34:56",
+        )
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.goal_budget is not None
+        assert loaded.goal_budget.max_iterations == 42
+        assert loaded.goal_budget.max_prompt_tokens == 10_000
+        assert loaded.goal_budget.max_completion_tokens == 5_000
+        # ``started_at`` must round-trip exactly — ``measure_usage``
+        # uses string comparison against ``token_usage.timestamp`` so
+        # any drift would silently change the spend window.
+        assert loaded.goal_budget.started_at == "2026-05-08 12:34:56"
+
+    def test_uncapped_axes_round_trip_as_none(self, store: SessionStore) -> None:
+        """An "iterations only" budget survives without zeroing the token caps.
+
+        The dataclass exposes ``None`` for "no cap on this axis"; persistence
+        must distinguish that from "cap == 0" so a partially-capped budget
+        doesn't mutate into an everything-capped one across resume.
+        """
+        state = AgentState(charm_name="x")
+        state.goal_budget = GoalBudget(max_iterations=10)
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.goal_budget is not None
+        assert loaded.goal_budget.max_iterations == 10
+        assert loaded.goal_budget.max_prompt_tokens is None
+        assert loaded.goal_budget.max_completion_tokens is None
+
+    def test_clear_after_set_round_trips_as_none(self, store: SessionStore) -> None:
+        """Setting then clearing the budget must zero the persisted columns.
+
+        Without the upsert covering goal_budget on the unset path, a
+        ``/budget --clear`` would leave the previous caps in the database
+        and the next resume would silently re-establish them.
+        """
+        state = AgentState(charm_name="x")
+        state.goal_budget = GoalBudget(max_iterations=5)
+        store.save_session(state)
+        state.goal_budget = None
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.goal_budget is None
+
+    def test_pre_v15_database_loads_with_no_budget(self, db_path: pathlib.Path) -> None:
+        """Sessions persisted before the v15 migration load cleanly.
+
+        Simulates the migration path by stamping schema_version=14 on a
+        store with the v15 columns missing, then re-opening — the v15
+        migration must add the columns, populate them as NULL, and the
+        subsequent ``load_session`` must report ``goal_budget is None``
+        rather than raising.  This is the backwards-compat exit
+        criterion for Phase 99.2.
+        """
+        # Open and seed at v14, dropping the v15 columns to mimic the
+        # on-disk shape of a session written before the migration.
+        first = SessionStore(db_path)
+        first.open()
+        try:
+            state = AgentState(
+                charm_name="legacy",
+                charm_path=pathlib.Path("/tmp/legacy"),
+                charm_type="k8s",
+            )
+            first.save_session(state)
+            # Force the schema back to v14 so the next open replays the
+            # v15 migration against an existing populated row.
+            first._db.execute("UPDATE schema_version SET version = 14")
+            for column in (
+                "goal_budget_max_iterations",
+                "goal_budget_max_prompt_tokens",
+                "goal_budget_max_completion_tokens",
+                "goal_budget_started_at",
+            ):
+                first._db.execute(f"ALTER TABLE session DROP COLUMN {column}")
+            first._db.commit()
+        finally:
+            first.close()
+
+        # Reopen — the v15 migration runs and the row reads cleanly.
+        second = SessionStore(db_path)
+        second.open()
+        try:
+            loaded = second.load_session()
+            assert loaded is not None
+            assert loaded.charm_name == "legacy"
+            assert loaded.goal_budget is None
+        finally:
+            second.close()
 
 
 class TestCorruptDataResilience:

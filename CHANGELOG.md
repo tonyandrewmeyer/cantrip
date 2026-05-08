@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`/budget` caps survive `cantrip resume` (Phase 99.2).**  The
+  per-goal iteration / prompt-token / completion-token caps and the
+  budget's `started_at` timestamp now persist into the SQLite session
+  payload, so resuming a session keeps the previously-set caps without
+  the operator re-supplying CLI flags or re-running ``/budget``.
+  Spend totals reconstruct automatically from the (already-persisted)
+  ``token_usage`` table windowed by ``started_at``.  Schema migration
+  v15 adds the four columns as NULL; pre-99.2 sessions resume
+  uncapped, matching prior behaviour.
 - **`/pause` and `/resume` slash commands (Phase 99.1).**  Stop and
   restart the autonomous loop from chat without losing context.
   Chat and any in-flight CONFIRM tasks keep working while paused —
