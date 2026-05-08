@@ -1,0 +1,276 @@
+---
+title: "How to walk a flow — Cantrip"
+description: "Flows are Mermaid decision diagrams the agent walks step by step. Drop a markdown file with type=flow into .cantrip-flows/ and /flow charm-cos-enable walks the user through it with branch announcements."
+h1: "Walk a flow"
+subtitle: "Mermaid decision trees with per-node instructions &mdash; the agent walks the diagram, you follow along."
+section: howto
+breadcrumb_label: "Walk a flow"
+see_also:
+  - label: "Run a recipe"
+    href: "howto-recipes.html"
+  - label: "Add a custom skill"
+    href: "howto-skills.html"
+  - label: "Define custom slash commands"
+    href: "howto-custom-commands.html"
+---
+
+<h2 id="overview">The idea</h2>
+
+<p>Recipes and skills both encode "how to do X" but in different
+shapes &mdash; a recipe is a parameterised execution
+(<code>/recipe charm-cos-add charm_name=ntfy</code>), a skill is a
+knowledge bundle the agent reads when context demands. Flows fill
+the gap between them: a <strong>visual decision tree</strong> the
+agent walks step by step, with branch announcements you can
+follow as the conversation unfolds.</p>
+
+<p>A flow is a markdown file with <code>type: flow</code>
+frontmatter and a single <code>mermaid</code> fenced block. The
+Mermaid diagram captures the choices; per-node
+<code>%% &lt;id&gt;: &lt;annotation&gt;</code> lines tell the
+agent what to do at each step.  Cantrip validates the diagram up
+front (so a typo never reaches the model) and feeds it to the
+agent's primary conversation loop.  The agent walks the tree and
+emits <code>BRANCH: &lt;label&gt;</code> lines at decision nodes
+so the user can follow its reasoning.</p>
+
+<h2 id="bundled">Bundled flows</h2>
+
+<p>Three built-in flows ship with Cantrip and are available in
+every session:</p>
+
+<dl>
+  <dt><code>/flow charm-cos-enable</code></dt>
+  <dd>Walk through adding COS observability to an existing
+    charm. Decision points: workload exposes metrics? writes
+    logs? upstream dashboards? want tracing? Each branch leads
+    to a concrete charm-library-and-relation step or a refusal
+    that asks for author input.</dd>
+
+  <dt><code>/flow charm-reactive-to-ops</code></dt>
+  <dd>Migrate a reactive charm to the Operator Framework.
+    Decision points: out-of-tree dependency without an ops
+    equivalent? actions to preserve? relation interfaces stay
+    or change? Pebble plan needed? Composes with the recipe of
+    the same name &mdash; flows describe the decision tree,
+    recipes describe the parameterised execution.</dd>
+
+  <dt><code>/flow charm-upgrade-ladder</code></dt>
+  <dd>Walk through the
+    SUPPORTED&nbsp;&rarr;&nbsp;DEPRECATED&nbsp;&rarr;&nbsp;REMOVED
+    ladder for breaking changes. Decision points: high
+    operator impact? already on N-1? operators on N-2?
+    rollback path safe? The flow refuses to ship breaking
+    changes without a documented rollback path.</dd>
+</dl>
+
+<p>Bare <code>/flow</code> lists the catalogue;
+<code>/flow &lt;name&gt; --help</code> shows the per-flow
+detail page (entry node, decision nodes with branches,
+terminal nodes).</p>
+
+<h2 id="discovery">Where Cantrip looks</h2>
+
+<p>Three roots, in precedence order &mdash; later wins on name
+collision so you can override a built-in just by dropping a
+same-named markdown file into one of the writable scopes:</p>
+
+<ol>
+  <li><strong>Bundled.</strong> Ships with Cantrip itself.</li>
+  <li><code>~/.config/cantrip/flows/*.md</code> &mdash; your
+    personal flows, available across every charm.</li>
+  <li><code>&lt;charm&gt;/.cantrip-flows/*.md</code> &mdash;
+    per-charm flows, committed alongside the code so every team
+    member gets them automatically.</li>
+</ol>
+
+<p>The repo path is a sibling of the SQLite session file at
+<code>&lt;charm&gt;/.cantrip</code>. Cantrip cannot use
+<code>&lt;charm&gt;/.cantrip/flows/</code> because a single path
+can't be both a regular file and a directory.</p>
+
+<h2 id="schema">Schema</h2>
+
+<p>A flow file has three parts:</p>
+
+<h3>1. Frontmatter</h3>
+
+<pre><code>---
+type: flow
+description: One-line summary; surfaced in `/flow` and `/help`.
+name: optional &mdash; must match the filename stem
+---</code></pre>
+
+<dl>
+  <dt><code>type</code> &mdash; required, must be the literal
+    <code>flow</code></dt>
+  <dd>The discriminator that distinguishes a flow file from a
+    skill. Mismatch raises on load.</dd>
+  <dt><code>description</code> &mdash; required, non-empty
+    string</dt>
+  <dd>One-line summary; surfaced in <code>/flow</code> and
+    <code>/help</code>.</dd>
+  <dt><code>name</code> &mdash; optional, must match the
+    filename stem when present</dt>
+  <dd>The lowercased filename stem (without
+    <code>.md</code>) is the flow name regardless. Setting
+    <code>name</code> in frontmatter is a redundancy check.</dd>
+</dl>
+
+<p>Unknown frontmatter keys raise &mdash; no silent typo
+absorption.</p>
+
+<h3>2. The Mermaid diagram</h3>
+
+<p>Exactly one fenced <code>mermaid</code> block. The parser
+accepts a deliberately narrow subset of Mermaid:</p>
+
+<pre><code>```mermaid
+flowchart TD
+    survey[Inspect charm]
+    decide{Add metrics?}
+    add[Add prometheus_scrape]
+    finish(Done)
+
+    survey --&gt; decide
+    decide --&gt;|yes| add
+    decide --&gt;|no| finish
+    add --&gt; finish
+```</code></pre>
+
+<p>Three node shapes encode three semantic kinds:</p>
+
+<ul>
+  <li><code>id[label]</code> &mdash; <strong>action</strong>:
+    the agent does something. Single outgoing edge.</li>
+  <li><code>id{label}</code> &mdash; <strong>decision</strong>:
+    the agent picks a branch. Two or more outgoing edges,
+    each with a label.</li>
+  <li><code>id(label)</code> &mdash; <strong>terminal</strong>:
+    the flow ends. Multiple terminals are allowed (e.g.,
+    success / abort).</li>
+</ul>
+
+<p>Edges are <code>id --&gt; id</code> or
+<code>id --&gt;|label| id</code>. Decision-node edges
+<em>must</em> carry labels and labels must be unique within a
+node's outgoing set.</p>
+
+<h3>3. Per-node annotations</h3>
+
+<pre><code>    %% survey: Read charmcraft.yaml + src/charm.py.
+    %% decide: Pick yes if the workload exposes /metrics, no otherwise.
+    %% add: Add the prometheus_scrape provider on metrics-endpoint.
+    %% finish: Done.</code></pre>
+
+<p>Every node referenced by the diagram needs an annotation
+&mdash; the agent reads them as the per-step instructions.
+Annotations live inside the Mermaid block (Mermaid treats
+<code>%%</code> as a comment, so a renderer still draws the
+diagram unchanged).</p>
+
+<h2 id="validation">Validation</h2>
+
+<p>Cantrip refuses to load a flow that violates any of these
+rules:</p>
+
+<ul>
+  <li>Frontmatter must declare <code>type: flow</code>.</li>
+  <li>Filename stem must match
+    <code>[a-z0-9][a-z0-9_-]*</code> (the lowercased stem
+    becomes the flow name).</li>
+  <li>The body must contain exactly one
+    <code>mermaid</code> fenced block.</li>
+  <li>The diagram must start with a <code>flowchart</code>
+    header (TD, LR, RL, TB, or BT).</li>
+  <li>Every node needs a <code>%% &lt;id&gt;: ...</code>
+    annotation.</li>
+  <li>Every edge must name declared nodes.</li>
+  <li>Exactly one entry node &mdash; a graph with multiple
+    roots, or a cycle with no clear start, is refused.</li>
+  <li>Decision nodes must have ≥2 outgoing edges, each with a
+    label, and labels must be unique within the node's
+    outgoing set.</li>
+  <li>Action and terminal nodes can have at most one outgoing
+    edge &mdash; multiple branches require a decision node
+    (<code>id{label}</code>).</li>
+</ul>
+
+<p>Validation errors surface with the path and (where relevant)
+line number, so a typo lands as a clear failure rather than a
+mysterious render. Malformed files in a discovery directory log a
+warning and are skipped &mdash; one bad flow doesn't block the
+rest of the catalogue.</p>
+
+<h2 id="invocation">Invocation</h2>
+
+<p>Two forms reach the same dispatcher:</p>
+
+<pre><code><span class="prompt">&gt;</span> /flow charm-cos-enable
+<span class="prompt">&gt;</span> /flow:charm-cos-enable</code></pre>
+
+<p>Cantrip:</p>
+
+<ol>
+  <li>Looks up the flow in the registry.</li>
+  <li>Renders a structured prompt with the diagram fenced for
+    a Mermaid renderer, the per-node annotations as a numbered
+    list, and walking instructions
+    (&ldquo;Start at <code>survey</code>; emit
+    <code>BRANCH: &lt;label&gt;</code> at decision nodes&rdquo;).</li>
+  <li>Hands the prompt to the agent's primary conversation
+    loop.</li>
+  <li>Returns the agent's reply &mdash; you see the walk in the
+    chat as it unfolds.</li>
+</ol>
+
+<p>Flows take no arguments. <code>/flow charm-cos-enable
+metric=foo</code> refuses with a pointer to <code>/recipe</code>
+&mdash; if you want a parameterised execution, that's the
+neighbouring tool.</p>
+
+<h2 id="composition">Flows vs recipes vs skills</h2>
+
+<p>Three different shapes for "how to do X":</p>
+
+<dl>
+  <dt><strong>Skill</strong></dt>
+  <dd>Knowledge the agent reads when context demands.
+    Authoring a skill writes <em>what the agent should
+    know</em> about a topic. See
+    <a href="howto-skills.html">Add a custom skill</a>.</dd>
+
+  <dt><strong>Flow</strong></dt>
+  <dd>A visual decision tree the agent walks step by step.
+    Authoring a flow describes <em>which branch of a decision
+    tree applies</em> and what to do at each node.</dd>
+
+  <dt><strong>Recipe</strong></dt>
+  <dd>A parameterised, retryable execution. Authoring a recipe
+    captures <em>do this exact thing, with these inputs, until
+    these checks pass</em>. See
+    <a href="howto-recipes.html">Run a recipe</a>.</dd>
+</dl>
+
+<p>The three are complementary, not alternatives. The
+<code>charm-reactive-to-ops</code> migration ships as both a
+flow (the decision tree the user reads before committing) and a
+recipe (the parameterised execution the agent runs). The flow's
+<code>%% port_pebble: Translate the reactive layer's service-
+management code into a Pebble plan</code> annotation tells the
+agent what to do; the recipe's
+<code>parameters: &mdash; name: target_ops_version</code> binds
+the inputs.</p>
+
+<h2 id="related">Related</h2>
+
+<ul>
+  <li><a href="howto-recipes.html">Run a recipe</a> &mdash;
+    parameterised retryable execution alongside flows.</li>
+  <li><a href="howto-skills.html">Add a custom skill</a>
+    &mdash; knowledge bundles the agent reads when context
+    demands it.</li>
+  <li><a href="howto-custom-commands.html">Define custom slash
+    commands</a> &mdash; lighter-weight prompt templates with
+    positional / file / shell expansions.</li>
+</ul>

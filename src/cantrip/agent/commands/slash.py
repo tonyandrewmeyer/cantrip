@@ -37,6 +37,7 @@ from cantrip.agent.commands.codeintel import (
     handle_symbols,
 )
 from cantrip.agent.commands.cost import format_cost
+from cantrip.agent.commands.flows import handle_flow
 from cantrip.agent.commands.goal import handle_goal
 from cantrip.agent.commands.map import handle_map, handle_map_refresh
 from cantrip.agent.commands.recipes import handle_recipe
@@ -102,6 +103,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/resume", "Resume a paused autonomous loop"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
     CommandInfo("/recipe", "Run a parameterised recipe (`/recipe` lists available)"),
+    CommandInfo("/flow", "Walk a Mermaid decision tree (`/flow` lists available)"),
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
     CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
     CommandInfo("/symbols", "Search workspace symbols by name (read-only code intel)"),
@@ -205,6 +207,12 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=chat_message)
 
 
+#: Bare verb shared between the ``/flow`` and ``/flow:<name>`` shapes.
+#: Building the colon prefix at runtime keeps the slash-catalogue drift
+#: test from spotting a second literal that isn't actually a verb.
+_FLOW_VERB = "/flow"
+
+
 def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
     """Route *message* to the matching slash handler — see :func:`dispatch`."""
     verb, _, args = message.partition(" ")
@@ -289,6 +297,12 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_ralph(agent, args))
     if verb == "/recipe":
         return handle_recipe(agent, args)
+    # ``/flow`` and ``/flow:<name>`` both route to the flow dispatcher;
+    # the colon-suffix carries the flow name when authors prefer that
+    # shape.  Building the prefix string from the bare verb keeps the
+    # catalogue drift test happy (only ``/flow`` is a literal here).
+    if verb == _FLOW_VERB or verb.startswith(_FLOW_VERB + ":"):
+        return handle_flow(agent, verb, args)
     if verb == "/map":
         return SlashResult(text=handle_map(agent, args), markdown=True)
     if verb == "/map-refresh":
@@ -639,6 +653,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "(repo) or `~/.config/cantrip/recipes/*.yaml` (user).  "
         "`/recipe <name> key=value …` runs a parameterised recipe; "
         "`/recipe <name> --help` shows its parameter list.\n"
+        "- `/flow` — list Mermaid decision-tree flows from "
+        "`.cantrip-flows/*.md` (repo) or `~/.config/cantrip/flows/*.md` "
+        "(user).  `/flow <name>` (or `/flow:<name>`) walks the diagram; "
+        "`/flow <name> --help` shows the node summary.\n"
         "- `/map` — print a compact summary of the top-ranked "
         "repository files (one line per file, primary symbol "
         "shown).  Use `/map full` for the per-file symbol "

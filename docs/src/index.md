@@ -165,6 +165,19 @@ section: index
     </p>
   </a>
 
+  <a href="howto-flows.html" class="doc-card">
+    <span class="doc-card-label">How-to</span>
+    <h3>Walk a flow</h3>
+    <p>
+      Mermaid decision trees the agent walks step by step:
+      <code>/flow charm-cos-enable</code>,
+      <code>/flow charm-reactive-to-ops</code>, or
+      <code>/flow charm-upgrade-ladder</code>. The agent
+      announces branch decisions inline so you can follow its
+      reasoning.
+    </p>
+  </a>
+
   <a href="howto-mcp.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Configure MCP servers</h3>

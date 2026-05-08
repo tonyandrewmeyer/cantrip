@@ -5,6 +5,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Flow skills (Phase 69.4).**  Markdown files with
+  ``type: flow`` frontmatter and a fenced ``mermaid`` diagram
+  ship under ``cantrip/flows/`` (bundled),
+  ``~/.config/cantrip/flows/`` (user), and
+  ``<charm>/.cantrip-flows/`` (repo).  Per-node
+  ``%% <id>: <annotation>`` lines tell the agent what to do at
+  each step; ``/flow <name>`` (or ``/flow:<name>``) hands the
+  parsed diagram to the agent's primary conversation loop with
+  walking instructions, and the agent announces branch
+  decisions inline as it traverses.  Three built-ins ship in
+  the wheel: ``charm-cos-enable`` (metrics → logs →
+  dashboards → tracing decision tree),
+  ``charm-reactive-to-ops`` (reactive→ops migration choices
+  with the abort-on-out-of-tree-deps branch), and
+  ``charm-upgrade-ladder`` (SUPPORTED→DEPRECATED→REMOVED ladder
+  with rollback gate).  Flows compose with recipes — flows
+  describe the decision tree, recipes describe the
+  parameterised execution; the ``charm-reactive-to-ops`` pair
+  ships in both shapes.  See ``design/SKILLS.md`` (Flow skills
+  section) and ``docs/docs/howto-flows.html`` for the full
+  schema, validation rules, and dispatcher contract.
 - **Parameterised recipes (Phase 73.1).**  YAML recipes under
   ``<charm>/.cantrip-recipes/`` (repo),
   ``~/.config/cantrip/recipes/`` (user), and the bundled

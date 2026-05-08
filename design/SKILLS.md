@@ -340,3 +340,125 @@ Cross-references:
 - Phase 53.5 (prompts/skills design split): when that lands, the
   decision here should remain discoverable in `design/SKILLS.md`
   (this section).  Do not move it to a parallel design doc.
+
+## Flow skills (Phase 69.4)
+
+Flow skills are a typed variant of skill — `type: flow` in the
+frontmatter — that ship a Mermaid decision diagram instead of a
+free-form markdown body.  They live in their own discovery roots
+(`<charm>/.cantrip-flows/`, `~/.config/cantrip/flows/`, and the
+bundled `cantrip/flows/`) so flow loading and skill loading stay
+orthogonal: the implementation lives at
+`src/cantrip/agent/flows.py` with the dispatcher in
+`src/cantrip/agent/commands/flows.py`.
+
+A flow file has three parts:
+
+1. **Frontmatter.**  Required: `type: flow`, `description`.
+   Optional: `name` (must match the filename stem when present).
+   Frontmatter unknown-key checking is strict — a typo raises
+   rather than silently falling back.
+2. **A single ` ```mermaid ` fenced block.**  Zero or multiple
+   blocks raise — the diagram *is* the flow, ambiguity here is
+   never benign.
+3. **`%% <id>: <annotation>`** lines inside the diagram telling
+   the agent what to do at each node.  The Mermaid spec treats
+   `%%` as a comment, so a renderer still draws the diagram
+   unchanged.
+
+### Diagram subset
+
+The parser accepts a deliberately narrow subset of Mermaid:
+
+- `flowchart TD` (or `LR` / `RL` / `TB` / `BT`) header is required.
+- Three node shapes:
+  - `id[label]` — **action** node (the agent does something).
+  - `id{label}` — **decision** node (the agent picks a branch).
+  - `id(label)` — **terminal** node (the flow ends).  Multiple
+    terminals are allowed (e.g., success / abort).
+- Edges: `id --> id` or `id -->|label| id`.  Decision-node edges
+  must carry labels; action / terminal edges may omit them.
+
+Saying yes to the full Mermaid grammar would invite silent
+rendering drift between Cantrip's prompt-time view of the
+diagram and a renderer's view.
+
+### Validation rules
+
+`load_flow_file` enforces:
+
+- Every node has a `%% <id>: ...` annotation.
+- Every edge names declared nodes.
+- Exactly one entry node (no incoming edges).  A graph with
+  multiple roots, or a cycle with no clear start, is refused.
+- Decision nodes have ≥2 outgoing edges, every edge carries a
+  label, and labels are unique within the node's outgoing set.
+- Action / terminal nodes have ≤1 outgoing edge — multiple
+  branches require a decision node (`id{label}`).
+
+A failure surfaces as `FlowError` with the path and (where
+relevant) line number.  Discovery logs and skips malformed
+files so a single bad flow doesn't block the rest.
+
+### Dispatch
+
+Two equivalent forms reach the same dispatcher:
+
+- `/flow <name>` — the canonical shape.
+- `/flow:<name>` — the colon shape, useful when authors paste
+  flow names verbatim.  Internally desugared by treating the
+  suffix after the colon as the first positional token.
+
+Bare `/flow` lists the catalogue.  `/flow help <name>` and
+`/flow <name> --help` both surface the per-flow detail page.
+
+The dispatcher renders the parsed flow into a structured agent
+prompt — diagram + per-node annotations + walking instructions —
+and feeds it through `agent.process_message`.  Flows are
+*agent-walked*, not runtime-walked: the runtime validates the
+diagram up front (so a typo never reaches the model) but does
+not gate the agent's traversal step-by-step.  The agent emits
+`BRANCH: <label>` lines at decision nodes so the user can follow
+its reasoning.
+
+### Composition with recipes
+
+Flows describe the *decision tree*; recipes describe the
+*parameterised execution*.  They compose: `charm-reactive-to-ops`
+ships as both a recipe (parameter binding + retry-driven
+convergence) and a flow (Mermaid decision tree the user can read
+before invoking).  Each addresses a different question:
+
+- "Walk me through the choices" → flow.
+- "Run the migration with these inputs" → recipe.
+
+### Bundled flows
+
+Three ship inside the wheel under `cantrip/flows/`:
+
+- `charm-cos-enable.md` — adds COS observability with
+  metrics → logs → dashboards → tracing branches.
+- `charm-reactive-to-ops.md` — reactive→ops migration with
+  out-of-tree-dep / action / relation / Pebble decision points.
+- `charm-upgrade-ladder.md` — SUPPORTED→DEPRECATED→REMOVED
+  upgrade choices with the rollback branch.
+
+Override any built-in by dropping a same-named markdown file
+into the user or repo scope; the loader's later-wins precedence
+applies (bundled < user < repo), matching the recipe pattern.
+
+### Deferred
+
+- TUI / Web visual rendering of the diagram with the active node
+  highlighted — v1 ships the diagram inline in the chat as the
+  fenced Mermaid block.  Visual rendering is a follow-up tracked
+  alongside Phase 15 Web UI work.
+- D2 support — flows are Mermaid-only in v1; D2 sits behind a
+  named authoring trigger (a real flow that needs D2-only
+  syntax).
+- Runtime-walked flows where the dispatcher prompts the agent
+  one node at a time and gates state transitions on the
+  agent's reply.  v1's agent-walked shape matches the Kimi
+  precedent and keeps the dispatcher simple; revisit if a
+  flow ships that needs runtime enforcement of a particular
+  branch.

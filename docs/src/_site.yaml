@@ -29,6 +29,7 @@ sections:
       - { slug: howto-diagnostics-review, label: "Run diagnostics and review" }
       - { slug: howto-custom-commands, label: "Define custom slash commands" }
       - { slug: howto-recipes, label: "Run a recipe" }
+      - { slug: howto-flows, label: "Walk a flow" }
       - { slug: howto-plan-mode, label: "Use plan mode" }
       - { slug: howto-architect-mode, label: "Use architect mode" }
       - { slug: howto-unattended, label: "Run Cantrip unattended" }

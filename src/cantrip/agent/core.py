@@ -16,6 +16,7 @@ from cantrip.agent import (
     context_providers_builtin,
     sandbox,
 )
+from cantrip.agent import flows as flows_module
 from cantrip.agent import recipes as recipes_module
 from cantrip.agent.arena_controller import ArenaController
 from cantrip.agent.cache_monitor import CacheCascadeDetector
@@ -520,6 +521,15 @@ class CantripAgent:
         # and the per-name lookup; malformed files log + skip.
         self.recipes: recipes_module.RecipeRegistry = recipes_module.RecipeRegistry(
             recipes=tuple(recipes_module.discover_recipes(charm_path=charm_path))
+        )
+
+        # Phase 69.4: load flow skills from the bundled
+        # ``cantrip/flows/`` root, ``~/.config/cantrip/flows/``, and
+        # ``<charm>/.cantrip-flows/``.  Same precedence rules as recipes;
+        # ``/flow`` reads ``agent.flows`` for the catalogue and per-flow
+        # render.  Malformed files log + skip in the loader.
+        self.flows: flows_module.FlowRegistry = flows_module.FlowRegistry(
+            flows=tuple(flows_module.discover_flows(charm_path=charm_path))
         )
 
         # Phase 72.2: ``@``-mention context providers.  Built once at
