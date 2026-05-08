@@ -115,7 +115,7 @@ class TestList:
         # still render in the table.
         juju_line = next(line for line in captured.out.splitlines() if line.startswith("juju"))
         assert "corrupt" in juju_line
-        for other in ("ops", "charmcraft", "rockcraft", "jubilant", "charmhub"):
+        for other in ("ops", "charmcraft", "rockcraft", "jubilant", "charmlibs"):
             assert other in captured.out
 
 

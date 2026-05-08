@@ -244,7 +244,7 @@ and then record in the commit message that this was user-directed.
 
 ## References
 
-- Canonical: [Juju bundle specification](https://canonical-juju.readthedocs-hosted.com/en/latest/user/reference/bundle/)
+- Canonical: [Juju bundle specification](https://documentation.ubuntu.com/juju/latest/user/reference/bundle/)
 - `terraform` skill — the officially recommended replacement for
   bundles in new deployments.
 - `custom-charm`, `twelve-factor`, `infrastructure-charm` skills —

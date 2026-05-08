@@ -1,7 +1,7 @@
 """Phase 72.1: indexed charm-ecosystem documentation (``@docs``).
 
 Crawls the canonical Canonical doc surfaces (Juju, ops, charmcraft,
-rockcraft, jubilant, charmhub guidelines), chunks the HTML, embeds
+rockcraft, jubilant, charmlibs), chunks the HTML, embeds
 each chunk via the Phase 72.3 :class:`~cantrip.llm.roles.RoleRouter`,
 and stores the vectors in a per-site SQLite cache under
 ``~/.cache/cantrip/docs-index/<site-name>/``.

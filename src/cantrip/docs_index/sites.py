@@ -40,39 +40,39 @@ class DocSite:
 SITES: tuple[DocSite, ...] = (
     DocSite(
         name="juju",
-        home_url="https://canonical-juju.readthedocs-hosted.com/",
-        sitemap_url="https://canonical-juju.readthedocs-hosted.com/sitemap.xml",
+        home_url="https://documentation.ubuntu.com/juju/3.6/",
+        sitemap_url="https://documentation.ubuntu.com/juju/3.6/sitemap.xml",
         description="Juju documentation (operator framework + CLI)",
     ),
     DocSite(
         name="ops",
-        home_url="https://ops.readthedocs.io/",
-        sitemap_url="https://ops.readthedocs.io/sitemap.xml",
+        home_url="https://documentation.ubuntu.com/ops/latest/",
+        sitemap_url="https://documentation.ubuntu.com/ops/latest/sitemap.xml",
         description="ops library reference (charm authoring API)",
     ),
     DocSite(
         name="charmcraft",
-        home_url="https://canonical-charmcraft.readthedocs-hosted.com/",
-        sitemap_url="https://canonical-charmcraft.readthedocs-hosted.com/sitemap.xml",
+        home_url="https://documentation.ubuntu.com/charmcraft/stable/",
+        sitemap_url="https://documentation.ubuntu.com/charmcraft/stable/sitemap.xml",
         description="charmcraft reference (charm packaging tooling)",
     ),
     DocSite(
         name="rockcraft",
-        home_url="https://canonical-rockcraft.readthedocs-hosted.com/",
-        sitemap_url="https://canonical-rockcraft.readthedocs-hosted.com/sitemap.xml",
+        home_url="https://documentation.ubuntu.com/rockcraft/stable/",
+        sitemap_url="https://documentation.ubuntu.com/rockcraft/stable/sitemap.xml",
         description="rockcraft reference (OCI image packaging)",
     ),
     DocSite(
         name="jubilant",
-        home_url="https://canonical-jubilant.readthedocs-hosted.com/",
-        sitemap_url="https://canonical-jubilant.readthedocs-hosted.com/sitemap.xml",
+        home_url="https://documentation.ubuntu.com/jubilant/",
+        sitemap_url="https://documentation.ubuntu.com/jubilant/sitemap.xml",
         description="Jubilant (integration-testing helpers)",
     ),
     DocSite(
-        name="charmhub",
-        home_url="https://juju.is/docs/sdk",
-        sitemap_url="https://juju.is/sitemap.xml",
-        description="Charmhub charm-author guidelines",
+        name="charmlibs",
+        home_url="https://documentation.ubuntu.com/charmlibs/",
+        sitemap_url="https://documentation.ubuntu.com/charmlibs/sitemap.xml",
+        description="charm libraries reference (PyPI charm libs)",
     ),
 )
 

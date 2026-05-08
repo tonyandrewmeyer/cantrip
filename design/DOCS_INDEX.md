@@ -41,12 +41,12 @@ Six canonical Canonical surfaces (registered in `sites.py`):
 
 | Site         | Sitemap                                                      |
 |--------------|--------------------------------------------------------------|
-| `juju`       | `canonical-juju.readthedocs-hosted.com/sitemap.xml`          |
-| `ops`        | `ops.readthedocs.io/sitemap.xml`                             |
-| `charmcraft` | `canonical-charmcraft.readthedocs-hosted.com/sitemap.xml`    |
-| `rockcraft`  | `canonical-rockcraft.readthedocs-hosted.com/sitemap.xml`     |
-| `jubilant`   | `canonical-jubilant.readthedocs-hosted.com/sitemap.xml`      |
-| `charmhub`   | `juju.is/sitemap.xml`                                        |
+| `juju`       | `documentation.ubuntu.com/juju/3.6/sitemap.xml`              |
+| `ops`        | `documentation.ubuntu.com/ops/latest/sitemap.xml`            |
+| `charmcraft` | `documentation.ubuntu.com/charmcraft/stable/sitemap.xml`     |
+| `rockcraft`  | `documentation.ubuntu.com/rockcraft/stable/sitemap.xml`      |
+| `jubilant`   | `documentation.ubuntu.com/jubilant/sitemap.xml`              |
+| `charmlibs`  | `documentation.ubuntu.com/charmlibs/sitemap.xml`             |
 
 The registry is *static* — only canonical sources, no arbitrary
 URLs.  A user-extensible config can land later if a need emerges;

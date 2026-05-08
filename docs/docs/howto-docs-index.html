@@ -88,7 +88,7 @@
 <p>
   Cantrip can index the canonical Canonical documentation
   surfaces (Juju, ops, charmcraft, rockcraft, jubilant,
-  Charmhub).  Once indexed, the agent reaches for
+  charmlibs).  Once indexed, the agent reaches for
   <code>docs_search</code> before answering &ldquo;how do
   I&hellip;&rdquo; questions, and you can pull cited passages
   mid-message via <code>@docs &lt;site&gt; &lt;query&gt;</code>.
@@ -113,7 +113,7 @@
 </p>
 <h2 id="index">Index a site</h2>
 <pre><code><span class="prompt">$</span> cantrip docs index --site ops
-Indexing ops (https://ops.readthedocs.io/) &hellip;
+Indexing ops (https://documentation.ubuntu.com/ops/latest/) &hellip;
   pages: 184  chunks: 612  embed-batches: 10  errors: 0</code></pre>
 <p>
   Re-running the same command crawls fresh and replaces stored
@@ -137,17 +137,22 @@ ops          yes      612      ops library reference (charm authoring API)
 charmcraft   no       -        charmcraft reference (charm packaging tooling)
 rockcraft    no       -        rockcraft reference (OCI image packaging)
 jubilant     no       -        Jubilant (integration-testing helpers)
-charmhub     no       -        Charmhub charm-author guidelines</code></pre>
+charmlibs    no       -        charm libraries reference (PyPI charm libs)</code></pre>
 <h2 id="search">Search from a shell</h2>
 <pre><code><span class="prompt">$</span> cantrip docs search ops "how do secrets work"
-[0.842] https://ops.readthedocs.io/en/latest/howto/manage-secrets.html
+[0.842] https://documentation.ubuntu.com/ops/latest/howto/manage-secrets.html
     Manage charm secrets
     Charm secrets are content-addressed values that &hellip;
 
-[0.781] https://ops.readthedocs.io/en/latest/reference/secrets.html
+[0.781] https://documentation.ubuntu.com/ops/latest/reference/secrets.html
     Secret reference
     A secret is created with a label and content via the &hellip;</code></pre>
-<p>Pipe the output into <code>fzf</code> or your editor for quick navigation.</p>
+<p>
+  Pipe the output into a fuzzy finder like
+  <a href="https://github.com/junegunn/fzf" target="_blank" rel="noopener"><code>fzf</code></a>
+  &mdash; or straight into your editor &mdash; for quick
+  navigation.
+</p>
 <h2 id="agent">Use it in chat</h2>
 <p>
   Inside the TUI / Web chat, the agent calls

@@ -43,7 +43,7 @@ class TestSiteRegistry:
         site = sites.by_name("ops")
         assert site is not None
         assert site.name == "ops"
-        assert "ops.readthedocs.io" in site.sitemap_url
+        assert "documentation.ubuntu.com/ops" in site.sitemap_url
 
     def test_by_name_unknown(self) -> None:
         assert sites.by_name("not-a-site") is None

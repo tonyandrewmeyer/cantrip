@@ -219,7 +219,7 @@ def main() -> int:
     parser.add_argument(
         "--site",
         default="ops",
-        help="Doc site to index (one of: juju, ops, charmcraft, rockcraft, jubilant, charmhub).",
+        help="Doc site to index (one of: juju, ops, charmcraft, rockcraft, jubilant, charmlibs).",
     )
     args = parser.parse_args()
     site = args.site
