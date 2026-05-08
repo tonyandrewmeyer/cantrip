@@ -3497,6 +3497,138 @@ tests continue to pass with the long-history strategy unchanged.
 
 ---
 
+## Phase 105: Local Model Refresh — Qwen3-8B as the Default Local Pick
+
+**Goal:** Move Cantrip's documented default local model off
+qwen3-coder (30 B MoE, partial offload, 5–10 tok/s decode) onto an
+8 B-class model that runs fully on the GPU at 40+ tok/s with native
+tool calling and at least 32 K context.  Keep qwen3-coder as an
+explicit opt-in for "best reasoning at any cost" workflows.
+
+### Why now
+
+Two enhancement runs and a hardware re-audit changed the landscape:
+
+- **qwen3-coder is too slow.** Each enhancement round on the ntfy
+  charm takes 5–10 min per ``edit_file``; the snap drops mid-stream
+  on long generations (Phase 102 covers this); resume corrupts
+  ``edit_file`` state (Phase 103).  All three are real bugs but the
+  underlying issue — partial GPU offload — is something we choose
+  every time we default to a 30 B-MoE on a 12 GB GPU.
+- **gemma4 is too small.** 10 K per slot exhausts on the system
+  prompt + tool schemas before a real conversation starts.  Phase
+  104's short-session mode lifts the chained-``-p`` pattern up
+  into the agent, but that isn't free — every cross-edit context
+  loss is a real cost.
+- **The VRAM budget is bigger than we thought.**  The "5 GiB free"
+  capture in ``tmp-hardware-info.md`` was misleading — gemma4
+  itself was holding ~5 GB.  Stopping it leaves ~10–11 GiB, which
+  is enough to run an 8 B model at Q4_K_M with a 32 K KV cache and
+  full GPU offload.
+
+The full comparison and selection rationale lives in
+``design/LOCAL_MODELS.md``.  The short version: **Qwen3-8B**
+(Q4_K_M, ~5 GB, 32 K native, native ``--jinja`` tool calling) is the
+right primary; Mistral Nemo 12B is the long-context alternative;
+Phi-4-Mini is the speed alternative.
+
+### 105.1 P0 — Smoke test on host llama-server
+
+- [ ] Download Qwen3-8B-Instruct Q4_K_M GGUF (~5 GB) and start a
+  fresh host ``llama-server`` on a new port (e.g. 8338) with full
+  GPU offload, ``--jinja`` enabled, and a 32 K context window.
+  Don't touch the existing qwen3-coder / gemma4 services — pick a
+  port that doesn't collide.
+- [ ] Run ``/v1/models`` and ``/v1/chat/completions`` smoke checks
+  with a synthetic tool-call request to confirm the
+  ``tool_calls`` array is populated correctly (the same check
+  Phase 8's ``InferenceSnapProvider`` does, run by hand).
+- [ ] Re-run the ntfy improve-02 scenario against
+  ``--provider inference-snap --base-url http://10.42.160.1:8338/v1``,
+  measure wall clock + decode rate + reconnect count, and capture
+  any new failure modes in ``cantrip-iter-runs/qwen3-8b-improve``.
+- [ ] Compare the captured numbers against improve-02 (qwen3-coder)
+  and gemma-improve (gemma4) and append to
+  ``design/LOCAL_MODELS.md`` §5.1 as a "measured" subsection.
+
+This step is deliberately cheap — a few hours of GPU time plus
+review.  Everything below is contingent on it producing a
+charm at least as complete as improve-02.
+
+### 105.2 P0 — Provider preset for ``--snap qwen3-8b``
+
+- [ ] Extend ``InferenceSnapProvider``'s preset table so
+  ``--snap qwen3-8b --base-url http://10.42.160.1:8338/v1`` is a
+  named shortcut that sets the right defaults
+  (``conversation_temperature=0.2`` already covers the family-wide
+  template-leak quirk; ``max_tools`` stays at the existing 12).
+- [ ] Update ``docs/src/howto-provider.md`` to list the new preset,
+  state the recommended host setup (port, GGUF source, full offload
+  flag), and explain when to pick this over qwen3-coder, gemma4, or
+  the long-context alternative.
+- [ ] Add the preset to ``docs/src/reference-cli.md`` under the
+  ``--snap`` enumeration.
+
+### 105.3 P1 — Package as a Cantrip-managed inference snap
+
+- [ ] Decide between (a) building our own snap that wraps
+  ``llama.cpp`` + a packaged Qwen3-8B GGUF, or (b) contributing an
+  upstream snap recipe to Canonical's inference-snap catalogue.
+  Capture the decision in ``design/LOCAL_MODELS.md`` §6.
+- [ ] If (a): the snap should expose the same OpenAI-compatible
+  endpoint shape on a stable port (e.g. 8338) so the cantrip
+  preset above lights up out of the box; ship the recipe under
+  ``snaps/qwen3-8b/`` (new) and a Makefile target ``make snap-qwen``.
+- [ ] If (b): file the contribution upstream and document the
+  install path (``snap install qwen3-8b --channel=stable``)
+  alongside the existing ``qwen3-coder`` instructions.
+
+### 105.4 P1 — Long-context and speed alternatives as opt-ins
+
+- [ ] Add ``--snap mistral-nemo-12b`` preset for the long-context
+  tier (Q4_K_M, 32 K cache by default, opt-in 128 K via env var
+  ``CANTRIP_LLAMA_CTX``).  Useful if the operator wants to skip
+  short-session mode entirely for a given run.
+- [ ] Add ``--snap phi-4-mini`` preset for the speed tier (60+
+  tok/s, 128 K context).  Useful as a planner companion to a
+  larger executor model.
+- [ ] Both presets remain *secondary* — the documented default in
+  the howto stays Qwen3-8B.
+
+### 105.5 P1 — Tests
+
+- [ ] Unit test that the ``--snap qwen3-8b`` preset resolves to the
+  expected base URL, default temperature, and ``max_tools`` value.
+- [ ] Unit test for the long-context and speed presets.
+- [ ] Add a recorded-trace test (against a captured fixture, not
+  the live snap) confirming Qwen3-8B's tool-call format is parsed
+  correctly by ``InferenceSnapProvider`` — pin the wire format the
+  same way Phase 41 pins frontier-provider streaming.
+
+### What this phase is *not*
+
+- **Not removing qwen3-coder.**  It stays as an opt-in for "best
+  reasoning, decode time doesn't matter" workflows, and Phase 102 /
+  103 still apply to it.
+- **Not making the model decision automatic.**  Operators pick
+  the snap explicitly; cantrip doesn't try to detect "you have a
+  bigger model available, use that".
+- **Not GPU-passthrough work.**  The cantrip VM still talks to
+  the host model server over HTTP on ``10.42.160.1``; nothing here
+  requires the VM to see the GPU directly.
+- **Not a full local-model benchmark suite.**  Phase 105.1 is a
+  single-scenario smoke test, not a generalised eval — that work
+  belongs elsewhere if it ever happens.
+
+**Exit criteria:** Re-running the ntfy improve-02 scenario with
+``--snap qwen3-8b`` produces a packed charm at least as complete as
+improve-02 (COS relations + actions + tracing + ≥ 7 unit tests
+passing) in measurably less wall clock; the howto and reference-CLI
+docs cite Qwen3-8B as the documented default local pick; the unit
+tests in 105.5 pass.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3591,3 +3723,4 @@ tests continue to pass with the long-history strategy unchanged.
 | M102: Long-Generation Resilience | 102 | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
 | M103: Resume Hallucination Repair | 103 | Post-``load_state`` turns carry a "must-read-first" directive until the agent re-reads each file it intends to edit; ``edit_file`` / ``multi_edit`` ``old_string`` mismatches return a "did you mean" diff hint instead of the bare-error preview; an opt-in whitespace-tolerant match handles trivial drift; a session counter surfaces hallucination-rate via ``/cost`` |
 | M104: Short-Session Mode | 104 | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
+| M105: Local Model Refresh | 105 | Cantrip's documented default local model is Qwen3-8B (Q4_K_M, full GPU offload, 32 K native context, native ``--jinja`` tool calling) with a ``--snap qwen3-8b`` preset; Mistral Nemo 12B and Phi-4-Mini ship as long-context and speed alternatives; the ntfy improve scenario completes against the new default in measurably less wall clock than qwen3-coder; ``design/LOCAL_MODELS.md`` captures the comparison |
