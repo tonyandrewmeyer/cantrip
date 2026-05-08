@@ -3095,6 +3095,256 @@ monitoring stays deferred behind two named triggers.
 
 ---
 
+## Phase 101: ops-tracing Recipe Refresh — Stop Teaching the Stale ``setup`` Shorthand
+
+**Goal:** Bring Cantrip's system prompt and skill bodies up to date
+with the modern ``ops-tracing>=4`` API so charms the agent writes
+actually import and run, instead of failing at module load with
+``AttributeError: module 'ops_tracing' has no attribute 'setup'``.
+
+### Why now
+
+Run-final2 + the improve-01/improve-02 enhancement passes both
+emitted ``ops_tracing.setup(self)`` in ``__init__`` because the
+system prompt taught that idiom verbatim:
+
+> ops-tracing (``ops_tracing.setup(self)``) automatically instruments
+> the ops framework.
+
+The current public API in ``ops-tracing>=4`` is the ``Tracing``
+class:
+
+```python
+import ops_tracing
+
+class MyCharm(ops.CharmBase):
+    def __init__(self, framework):
+        super().__init__(framework)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
+```
+
+The shorthand ``setup`` doesn't exist, hasn't existed for several
+``ops-tracing`` releases, and the charm refuses to import.  Every
+charm Cantrip writes today carries a load-time crash on the first
+hook unless the operator manually rewrites the line.
+
+### 101.1 P0 — Update the system prompt
+
+- [ ] Edit ``src/cantrip/agent/prompts/system.md.j2`` (and the
+  ``system_compact.md.j2`` companion) so the tracing recipe quotes
+  the ``Tracing(charm, "<relation_name>")`` constructor, not
+  ``setup(self)``.  Mention that the relation name must match the
+  ``tracing:`` entry under ``requires:`` in ``charmcraft.yaml``.
+- [ ] Audit subagent guidance under
+  ``src/cantrip/agent/prompts/subagent/`` (``build.md``, ``demo.md``,
+  ``infra.md``) for the same stale snippet and fix in place.
+- [ ] Audit ``src/cantrip/agent/prompts/tasks/`` for any sprint /
+  one-shot template that injects ``ops_tracing.setup`` text and fix
+  in the same patch.
+
+### 101.2 P0 — Update the charmcraft injection helpers
+
+- [ ] ``_inject_ops_tracing`` in ``src/cantrip/agent/tools/charm.py``
+  appends ``ops_tracing.setup(self)`` to scaffolded ``src/charm.py``
+  files.  Rewrite to insert
+  ``self._tracing = ops_tracing.Tracing(self, "tracing")`` instead;
+  keep the ``import ops_tracing`` line as-is.
+- [ ] Unit tests in
+  ``tests/unit/charm_tools/test_charmcraft_init.py`` that load the
+  injected module under a real ``ops-tracing>=4`` import to catch a
+  future API drift the same way.
+
+### 101.3 P1 — Pin the API in a regression test
+
+- [ ] One Scenario-based unit test that constructs a minimal charm,
+  imports ``ops_tracing``, instantiates ``Tracing``, and runs a
+  ``pebble_ready`` event — guarantees the recipe in the system prompt
+  matches what ``ops-tracing`` currently exposes on PyPI.  Skip the
+  test gracefully when ``ops-tracing`` isn't installed so it doesn't
+  block the rest of the suite on stripped CI images.
+
+**Exit criteria:** A fresh sprint build under any provider produces
+a charm whose ``src/charm.py`` imports cleanly under the latest
+``ops-tracing`` PyPI release, the regression test in 101.3 fails
+when the system prompt drifts back to ``setup``, and the relevant
+charm and rock skills cite the modern constructor.
+
+---
+
+## Phase 102: Long-Generation Resilience — Streaming Reconnect for Slow Local Snaps
+
+**Goal:** Stop losing 5–10 minutes of work when a single LLM
+generation outlasts the inference snap's HTTP keep-alive.  Today the
+provider raises ``ProviderError("Server disconnected without sending
+a response.")`` mid-edit, the conversation aborts, and the charm
+tree ends up partly-rewritten.
+
+### Why now
+
+Two of three ``improve`` runs against the qwen3-coder snap during the
+same 1-hour window died with this error.  Each death cost ~10 minutes
+of useful tool calls because:
+
+- The model had been actively decoding (``n_decoded`` was climbing)
+  when the connection dropped.
+- ``cantrip`` propagated the error and the conversation loop exited,
+  leaving the work-in-progress edit half-applied.
+- Resume reconstructed the message history but the next round burned
+  multiple turns re-reading files that had been read just before the
+  disconnect.
+
+The pattern is specific to slow local providers (the qwen3-coder snap
+serves ~13 tok/s peak / 2–5 tok/s effective once the conversation is
+several KB long); a 1.5–2 KB ``edit_file`` tool call lands in 10 s on
+a frontier API but takes 8–15 minutes locally and that's where the
+keep-alive trips.
+
+### 102.1 P0 — Bump the provider HTTP timeout
+
+- [ ] ``InferenceSnapProvider`` constructs ``httpx.AsyncClient`` with
+  a 300 s default timeout today.  Raise the read timeout to a value
+  big enough for a worst-case big-file rewrite (15–20 minutes), and
+  expose it as ``--snap-read-timeout`` plus ``CANTRIP_SNAP_READ_TIMEOUT``
+  env var so operators on faster GPUs can keep the existing
+  defaults.
+- [ ] Document the knob in ``docs/src/howto-provider.md``.
+
+### 102.2 P0 — Switch the slow path to streaming with progress writeback
+
+- [ ] When the conversation runs against an inference snap, prefer
+  ``provider.stream`` over ``provider.complete`` so partial token
+  decoding keeps a TCP-level heartbeat going, and (with
+  ``stream_options.include_usage`` already set) the per-chunk events
+  give the executor something to log and persist.  Today
+  ``_complete_with_retry`` only fires ``complete``; route the
+  inference-snap (and any provider with
+  ``conversation_temperature < 0.7``) through streaming
+  automatically.
+- [ ] Persist the partial assistant message to the session store as
+  it streams (every N chunks or every M seconds, whichever first) so
+  a mid-stream disconnect leaves a recoverable transcript instead
+  of an empty assistant turn that the agent has to regenerate from
+  scratch.
+
+### 102.3 P1 — Retry on transient ``Server disconnected`` errors
+
+- [ ] ``_raise_http_error`` already maps 429 → ``ProviderRateLimitError``
+  and 5xx → ``ProviderOverloadedError``.  Extend the
+  ``httpx.RemoteProtocolError`` / ``httpx.ReadTimeout`` paths to a
+  new ``ProviderConnectionError`` and let
+  ``complete_with_retry`` retry it (with exponential backoff capped
+  by an overall budget).  Treat repeated disconnects as a soft fail
+  that surfaces in chat, not a hard exit.
+- [ ] Operator-facing test exercising
+  ``httpx.RemoteProtocolError`` mid-stream and asserting the next
+  turn lands without re-running file-read tool calls.
+
+### 102.4 P1 — Surface the disconnect in the UI
+
+- [ ] When a stream drops, the TUI / Web chat shows a coloured
+  ``[provider reconnect]`` row with the timing context (last
+  ``n_decoded`` if known, retry count, total wall clock spent on the
+  current round).  Users today see only a stack trace and the
+  conversation exiting — they need to know whether to bump the snap's
+  ``--ctx-size`` / ``--parallel`` slot count or just rerun.
+
+**Exit criteria:** A 90-minute soak-test against the qwen3-coder
+snap that intentionally throttles connections never exits the
+conversation loop on a transient disconnect; partial assistant
+messages persist across reconnects; the UI explains what happened
+when a reconnect lands.
+
+---
+
+## Phase 103: Resume Hallucination Repair — Re-Read Before Editing
+
+**Goal:** Stop the post-resume ``edit_file: String not found`` cascade
+that wastes 2–3 rounds re-discovering the file the model just edited
+in the previous (now persisted) session.
+
+### Why now
+
+In the improve-01 resume run, the very first ``edit_file`` after the
+session reload tried to match an ``old_string`` that bore no
+resemblance to what was actually on disk:
+
+```
+edit_file path="charmcraft.yaml"
+old_string="# Charmcraft configuration\nname: ntfy\n..."
+```
+
+The real file starts ``# This file configures Charmcraft.\ntype:
+charm\nname: ntfy\n...``.  The model was synthesising the file
+content from its prior in-conversation knowledge instead of from
+the actual bytes — a classic post-compaction confabulation pattern
+that shows up after the conversation has been compacted *or*
+serialised+rehydrated through the session store.
+
+The cost: ~5 minutes per failed edit (one big tool-call output, one
+``read_file``, one retry).  Two cycles of this and a 30-minute
+budget is gone.
+
+### 103.1 P0 — Mark the first edit after resume as "must-read-first"
+
+- [ ] After ``load_state`` rehydrates the conversation, decorate the
+  next system / user turn with a one-shot directive: "Before any
+  ``edit_file`` / ``write_file`` / ``multi_edit``, you MUST first
+  ``read_file`` to confirm the current bytes — the on-disk state may
+  have drifted since the prior turn that wrote it."  Drop the
+  decoration after the first successful edit so it doesn't bloat
+  every subsequent turn.
+- [ ] Detection hook: ``session.was_resumed`` flag on
+  ``AgentState`` set during ``load_state``, cleared once the agent
+  performs at least one ``read_file`` after the resume.
+
+### 103.2 P0 — Best-effort confirmation before applying the edit
+
+- [ ] In ``EditFileTool.execute`` and ``MultiEditTool.execute``,
+  when the resolved ``old_string`` doesn't match, before returning
+  the error, *also* compute a short character diff between the
+  ``old_string`` and the closest substring actually in the file and
+  surface that in the tool result.  Today the operator gets
+  ``"String not found in file: …"`` with a 200-char preview of the
+  expected text only — no signal at all about what's actually on
+  disk and where the model's understanding diverged.  A couple of
+  lines of context plus "did you mean: …" cuts the next-round retry
+  to a single attempt.
+
+### 103.3 P1 — Auto-fall-back for trivial mismatches
+
+- [ ] Optional whitespace-tolerant match (collapse runs of spaces,
+  ignore trailing newlines) for ``edit_file`` and ``multi_edit`` —
+  off by default, opt-in via tool argument or ``--auto-relax-edit``
+  flag.  Rough edges first, but the obvious win is the case where
+  the model emits ``"\n\n"`` and the file has ``"\n  \n"``.
+
+### 103.4 P1 — Track the post-resume edit-failure rate
+
+- [ ] Add a session-level counter that increments on every
+  ``edit_file`` / ``multi_edit`` that fails the ``old_string`` match,
+  decremented on a subsequent successful edit of the same file.
+  Surface the count via ``/cost`` so operators can spot a session
+  that's burning time on hallucinations without trawling the
+  transcript.
+
+### What this phase is *not*
+
+- **Not a re-architecture of the session-store rehydration.**  The
+  store-roundtrip is fine; the problem is purely about prompting the
+  model to *not* trust its in-conversation memory of file bytes
+  after the rehydration boundary.
+- **Not a wholesale "always read before editing" rule.**  Adds noise
+  in the steady-state mid-conversation case where the model just
+  edited the same file two turns ago.
+
+**Exit criteria:** The first ``edit_file`` after a fresh
+``load_state`` no longer attempts a hallucinated ``old_string``;
+when it would, the tool's error preview includes a "did you mean"
+hint that cuts the recovery to one round; a regression test pins
+the post-resume read-before-edit prompt directive.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -3185,3 +3435,6 @@ monitoring stays deferred behind two named triggers.
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
 | M99: Goal Lifecycle | 99 | `/pause` and `/resume` toggle the autonomous loop mid-run; `cantrip resume` preserves `/budget` caps; user-prose objective is a first-class session field surfaced via `/goal`; status bar projects running / paused / done / blocked / budget-limited |
 | M100: Wait For | 100 | Typed-predicate ``wait_for`` tool with file/process/port/command/juju-app waits, hard timeouts, policy-gated commands, and reference docs; streaming-stream monitoring stays deferred behind named triggers |
+| M101: ops-tracing Refresh | 101 | System prompt, subagent guidance, and the ``_inject_ops_tracing`` injection helper teach the modern ``ops_tracing.Tracing(charm, "<rel>")`` constructor instead of the long-removed ``setup`` shorthand; a regression test exercises the recipe against the live PyPI ``ops-tracing`` API |
+| M102: Long-Generation Resilience | 102 | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
+| M103: Resume Hallucination Repair | 103 | Post-``load_state`` turns carry a "must-read-first" directive until the agent re-reads each file it intends to edit; ``edit_file`` / ``multi_edit`` ``old_string`` mismatches return a "did you mean" diff hint instead of the bare-error preview; an opt-in whitespace-tolerant match handles trivial drift; a session counter surfaces hallucination-rate via ``/cost`` |
