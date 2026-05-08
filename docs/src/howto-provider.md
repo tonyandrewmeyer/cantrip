@@ -74,6 +74,24 @@ model size.
   </p>
 </div>
 
+Cantrip clamps the conversation temperature to 0.2 for the
+inference-snap provider — the local quantised models intermittently
+break out of the OpenAI tool-call envelope at the frontier-default
+0.7 and emit raw chat-template scaffolding inside the assistant
+content, which the conversation loop then mistakes for a final
+reply. The clamp is per-provider; cloud APIs still run at 0.7.
+
+The provider also auto-detects the runtime per-slot context size
+from llama.cpp's <code>/slots</code> and <code>/props</code>
+endpoints. The trained context (often 128 K or 256 K) is usually
+bigger than the per-slot budget the snap actually serves
+(typically 8 K – 32 K depending on <code>--ctx-size</code> and
+<code>--parallel</code>); without the runtime probe Cantrip would
+treat the model as having far more headroom than it does and skip
+compaction entirely. Run <code>&lt;snap-name&gt; status</code> if
+you suspect the wrong context size — Cantrip logs the
+runtime/trained mismatch at INFO when it downgrades.
+
 {#gemini}
 ## Use Gemini (default)
 
