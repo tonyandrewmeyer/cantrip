@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to score Cantrip against an eval spec &mdash; Cantrip</title>
+<meta name="description" content="Generate a charm with a chosen provider and score it against the spec rubric using the eval runner.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-interface.html">Choose an interface</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-eval.html" class="current">Score against an eval spec</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+      <li><a href="howto-vm-inference-proxy.html">Run in a VM with host GPU inference</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-print-mode.html">How to run a single goal non-interactively</a></li>
+      <li><a href="reference-cli.html">CLI reference</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Run an eval
+    </div>
+
+    <h1>Score Cantrip against an eval spec</h1>
+    <p class="subtitle">
+      Use the bundled eval runner to drive Cantrip print-mode against a spec, score the result, and compare providers.
+    </p>
+
+<p>The eval suite under <code>tests/eval/charms/</code> ships YAML specs that describe
+<em>what</em> a charm should do (the prompt) and <em>how to judge</em> the result (the
+rubric).  Each spec sits beside zero or more gold-standard subdirectories
+(<code>gold-claude</code>, <code>gold-gemini</code>, ...) plus any charm directories Cantrip
+itself produced.  The runner has four CLI verbs:</p>
+<ul>
+<li><code>validate</code> &mdash; every gold standard must score 100 %.</li>
+<li><code>score</code> &mdash; score one charm directory against its spec's rubric.</li>
+<li><code>generate</code> &mdash; drive <code>cantrip run --print</code> against the spec and emit a
+fresh charm directory.</li>
+<li><code>run</code> &mdash; <code>generate</code> then <code>score</code> in one invocation.</li>
+</ul>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>A Cantrip checkout with <code>uv sync --dev</code> already run.</li>
+<li>The provider's API key exported in your shell &mdash; <code>ANTHROPIC_API_KEY</code>,
+<code>GEMINI_API_KEY</code>, <code>FIREWORKS_API_KEY</code>, or <code>OPENROUTER_API_KEY</code> &mdash; same
+as for any normal <code>cantrip run</code> invocation.  See <a href="howto-provider.html">How to choose a
+provider</a> for the full env-var catalogue.</li>
+<li>The <code>cantrip</code> command on your <code>PATH</code>.  Inside the project venv this is
+<code>uv run cantrip</code>; outside, install Cantrip first.</li>
+</ul>
+<h2 id="single-run">Score one provider end to end</h2>
+<p><code>run</code> is the shape Phase 79.4 added so a single command produces a
+scored charm:</p>
+<pre><code>uv run python -m tests.eval.runner run \
+    tests/eval/charms/ntfy \
+    --provider claude \
+    --model opus-4.7</code></pre>
+<p>This:</p>
+<ol>
+<li>Picks a fresh subdirectory of <code>tests/eval/charms/ntfy/</code> &mdash; the naming
+convention is <code>cantrip-&lt;provider&gt;-&lt;model-slug&gt;-&lt;YYYYMMDD-HHMMSS&gt;</code> so
+re-runs of the same model land in different directories without
+colliding with the gold standards.</li>
+<li>Shells out to <code>cantrip run --print &quot;&lt;spec.prompt&gt;&quot; &lt;charm-dir&gt; --provider &lt;X&gt; --model &lt;Y&gt; --yolo</code>.  <code>--yolo</code> is the default because
+print-mode refuses to start when there are pending CONFIRM tasks and
+an unattended eval has no way to answer them.  Pass <code>--no-tui</code> is
+implied by <code>--print</code> itself.</li>
+<li>Hands the resulting charm directory to the rubric scorer and prints
+a Markdown report.</li>
+<li>Exits non-zero if the run produced any critical-severity failure, so
+CI invocations fail loudly.</li>
+</ol>
+<p>A failed run that left no artefacts behind exits without scoring; the
+shell command Cantrip attempted is included in the error so you can
+re-run it interactively to see what happened.</p>
+<h2 id="generate-only">Generate without scoring</h2>
+<p><code>generate</code> runs only the print-mode step, which is what you want when
+debugging the agent itself rather than measuring rubric coverage:</p>
+<pre><code>uv run python -m tests.eval.runner generate \
+    tests/eval/charms/ntfy \
+    --provider gemini</code></pre>
+<p>Pair it with <code>score</code> once you've inspected the result:</p>
+<pre><code>uv run python -m tests.eval.runner score \
+    tests/eval/charms/ntfy \
+    tests/eval/charms/ntfy/cantrip-gemini-default-20260509-123045</code></pre>
+<h2 id="compare-providers">Compare providers side by side</h2>
+<p>Once two or more providers have generated charms, the <code>compare</code> verb
+formats their rubric scores in a single table:</p>
+<pre><code>uv run python -m tests.eval.runner compare \
+    tests/eval/charms/ntfy \
+    tests/eval/charms/ntfy/gold-claude \
+    tests/eval/charms/ntfy/cantrip-gemini-default-20260509-123045</code></pre>
+<p><code>compare</code> reads the same rubric file and produces both an overall and
+per-category breakdown plus the failure list per run.  Gold standards
+score 100 % by definition, so a real-provider run sitting next to the
+gold for the same charm is the cleanest way to read regression deltas.</p>
+<h2 id="adding-baselines">Add a baseline directory</h2>
+<p>Phase 79.4 commits to growing <code>gold-gemini</code> / <code>gold-fireworks</code> /
+<code>gold-openrouter</code> baselines over time.  The recipe:</p>
+<ol>
+<li>Run <code>tests/eval/runner.py generate</code> against the spec with the new
+provider.</li>
+<li>Inspect the output, hand-tune any sharp edges, and rename the
+directory to <code>gold-&lt;provider&gt;</code> (e.g. <code>gold-gemini</code>).</li>
+<li>Re-run <code>tests/eval/runner.py validate</code> &mdash; if the new gold scores
+100 %, commit it; otherwise iterate on the rubric or the charm
+until it does.</li>
+<li>Add the resulting directory to the spec's containing folder; the
+runner picks it up automatically (no spec-file edits required).</li>
+</ol>
+<p>Gold standards are checked into the repo so the rubric continues to
+score deterministically without any provider call.</p>
+<h2 id="stub-the-runner">Drive the runner from a script</h2>
+<p><code>tests.eval.runner.generate_and_score</code> is the public entry point if you
+want to integrate the loop into a Python harness:</p>
+<pre><code class="language-python">from tests.eval.runner import generate_and_score
+from tests.eval.spec import EvalSpec
+
+spec = EvalSpec.load(pathlib.Path(&quot;tests/eval/charms/ntfy&quot;))
+generation, result = generate_and_score(
+    spec,
+    pathlib.Path(&quot;tests/eval/charms/ntfy&quot;),
+    provider=&quot;claude&quot;,
+    model=&quot;opus-4.7&quot;,
+)
+
+if result is not None and result.critical_failures:
+    sys.exit(1)
+</code></pre>
+<p>Tests inject a fake <code>runner</code> callable (a stub <code>subprocess.run</code>) so the
+harness exercise itself never burns tokens; see
+<code>tests/eval/test_runner_generate.py</code> for the pattern.</p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

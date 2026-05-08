@@ -54,7 +54,35 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``Path(".").name`` is the empty string, so the previous
   same-name check always failed.
 
+### Changed
+- **Planner LLM calls migrated onto the structured-output
+  primitive (Phase 73.3 follow-up).**  ``TaskPlanner.plan_from_design``,
+  ``TaskPlanner.replan``, and ``TaskPlanner.plan_from_day2_findings``
+  now route through ``cantrip.llm.structured.complete_structured``
+  against the existing ``PLANNER_BRIEFING`` schema, dropping the
+  bespoke regex + ``json.loads`` parser path.  Schema-validation
+  failure triggers one corrective retry with the malformed reply
+  and validation error fed back to the model — providers with native
+  enforcement (Gemini, OpenAI-compat) can constrain the reply
+  up-front, the validator catches the rest.  Planner prompts now
+  ask for the ``{"tasks": [...]}`` shape (was: a raw JSON array)
+  to match the schema.  No user-visible behaviour change beyond
+  more robust handling of fence-wrapped or off-shape replies.
+
 ### Added
+- **Eval runner generates with the chosen provider before scoring
+  (Phase 79.4).**  `tests/eval/runner.py` gains two new verbs —
+  `generate <spec_dir> --provider X [--model Y]` shells out to
+  `cantrip run --print` against the spec's prompt and lays the
+  resulting charm into a fresh `cantrip-<provider>-<model>-<ts>/`
+  subdirectory, and `run` chains generate-then-score for the
+  CI-friendly common case.  The previous `score --provider X` was
+  metadata-only (the flag became a label on the report); the
+  rubric now scores actual provider output.  `generate_charm()`
+  takes an injectable subprocess runner so unit tests exercise the
+  end-to-end CLI path with a fake — no LLM calls in `make eval`.
+  Documented at `docs/docs/howto-eval.html`; the existing
+  `validate`, `score`, and `compare` verbs are unchanged.
 - **Declarative `retry:` blocks on custom slash commands (Phase
   73.4).**  A custom command's frontmatter now accepts a `retry`
   block that declares its own success predicate as an ordered list

@@ -1041,15 +1041,18 @@ deferred**:
   Each schema is a plain ``dict`` matching JSON Schema
   draft 2020-12 — no Pydantic, no DSL, same surface
   every provider already accepts.
-- [ ] **Deferred: migrate existing call sites onto the new
-  primitive.**  The planner (Phase 32) still parses
-  free-form JSON via regex + ``json.loads``; the oracle
-  (Phase 70.2) returns text; the acceptance tool (Phase
-  17) takes pre-assembled markdown rather than synthesising
-  a structured payload.  Each migration is its own commit
-  — call this out when those phases get follow-up work.
-  The primitive is available; consumers adopt at their
-  own pace.
+- [x] **Migrate the planner onto the new primitive.**
+  ``TaskPlanner.plan_from_design`` / ``replan`` /
+  ``plan_from_day2_findings`` now call
+  :func:`cantrip.llm.structured.complete_structured` against
+  ``PLANNER_BRIEFING`` instead of regex-stripping fences and
+  ``json.loads``-ing the body.  Planner prompts moved to the
+  ``{"tasks": [...]}`` shape to match the schema.  Schema-
+  validation failure triggers one corrective retry through the
+  shared structured-output path, so off-shape replies recover
+  without bespoke planner-only fallback.  Oracle (Phase 70.2)
+  and acceptance (Phase 17) migrations stay deferred — each is
+  its own commit when those phases get follow-up work.
 - [x] On validation failure, the
   :func:`complete_structured` helper appends the malformed
   reply as an ASSISTANT turn and a USER turn quoting the
@@ -1264,13 +1267,28 @@ sanity check that can run on every prompt change.
 
 ### 79.4 Per-provider full-eval run (nice-to-have)
 
-- [ ] Extend ``tests/eval/runner.py`` so ``score --provider
+- [x] Extend ``tests/eval/runner.py`` so ``score --provider
   X`` actually uses provider ``X`` to *generate* the charm
   before scoring, rather than scoring a pre-baked directory.
+  Implemented as two new verbs alongside the existing
+  ``score`` (whose meaning of "score this exact directory"
+  is preserved): ``generate <spec_dir> --provider X
+  [--model Y]`` shells out to ``cantrip run --print`` and
+  lays the resulting charm into a fresh
+  ``cantrip-<provider>-<model>-<YYYYMMDD-HHMMSS>/``
+  subdirectory; ``run`` chains generate-then-score in one
+  invocation for the CI-friendly common case.  The
+  ``generate_charm`` helper takes an injectable subprocess
+  runner so ``tests/eval/test_runner_generate.py``
+  exercises the CLI path end-to-end with a fake (no LLM
+  calls under ``make eval``).
 - [ ] Add ``gold-gemini`` and ``gold-fireworks`` baseline
-  directories over time as each provider passes.
-- [ ] Document the end-to-end loop in
-  ``docs/src/howto-eval.md`` (new).
+  directories over time as each provider passes.  The
+  ``run`` verb is the recipe: generate, hand-tune, rename
+  to ``gold-<provider>``, then ``validate``.
+- [x] Document the end-to-end loop in
+  ``docs/src/howto-eval.md`` (new).  Linked from the
+  sidebar nav alongside ``howto-print-mode``.
 
 ### 79.5 Prompt ablation harness (stretch)
 

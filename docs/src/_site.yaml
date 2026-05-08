@@ -32,6 +32,7 @@ sections:
       - { slug: howto-architect-mode, label: "Use architect mode" }
       - { slug: howto-unattended, label: "Run Cantrip unattended" }
       - { slug: howto-print-mode, label: "Run a single goal non-interactively" }
+      - { slug: howto-eval, label: "Score against an eval spec" }
       - { slug: howto-ralph, label: "Run a Ralph loop" }
       - { slug: howto-feelings, label: "Convene the inner parliament" }
       - { slug: howto-vm-inference-proxy, label: "Run in a VM with host GPU inference" }
