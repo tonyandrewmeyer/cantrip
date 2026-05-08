@@ -11,6 +11,7 @@ module only adds the snap-specific discovery bits (``snap status`` /
 """
 
 import logging
+import os
 import subprocess
 
 import httpx
@@ -48,7 +49,7 @@ _VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3", "gemma4"})
 # ``_apply_model_metadata`` would otherwise wrongly disable tools for
 # every llama.cpp-backed snap.  Add a snap here once you've confirmed
 # tool-call round-tripping works against it.
-_TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset({"qwen3-coder", "gemma4"})
+_TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset({"qwen3-coder", "gemma4", "qwen3-8b"})
 
 
 def discover_snap_endpoint(snap_name: str) -> str:
@@ -74,6 +75,36 @@ def discover_snap_endpoint(snap_name: str) -> str:
     # Fallback: use the known default port.
     port = _SNAP_DEFAULTS.get(snap_name, 8328)
     return f"http://localhost:{port}/v1"
+
+
+def _resolve_read_timeout(explicit: float | None) -> float:
+    """Resolve the snap HTTP read timeout from caller / env / default.
+
+    Phase 102.1: precedence order is *explicit argument* → env var
+    ``CANTRIP_SNAP_READ_TIMEOUT`` → :attr:`InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS`.
+    A non-numeric or non-positive env value logs a warning and falls
+    back to the default rather than crashing provider construction —
+    a typo in a long-lived shell rc shouldn't take cantrip down.
+    """
+    if explicit is not None and explicit > 0:
+        return float(explicit)
+    raw = os.environ.get("CANTRIP_SNAP_READ_TIMEOUT")
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            log.warning(
+                "Ignoring CANTRIP_SNAP_READ_TIMEOUT=%r — expected a positive number",
+                raw,
+            )
+        else:
+            if value > 0:
+                return value
+            log.warning(
+                "Ignoring CANTRIP_SNAP_READ_TIMEOUT=%r — must be > 0",
+                raw,
+            )
+    return InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS
 
 
 def list_available_snaps() -> list[str]:
@@ -128,11 +159,26 @@ class InferenceSnapProvider(OpenAICompatBase):
         """
         return 0.2
 
+    #: Default httpx read timeout (seconds) for snap chat completions.
+    #: 20 min is enough headroom for any plausible single-turn
+    #: generation on the slowest local snap (qwen3-coder routinely
+    #: takes 8–15 minutes for a big ``edit_file`` rewrite once the
+    #: conversation is several KB long).  Operators on faster GPUs can
+    #: shrink this via :data:`READ_TIMEOUT_ENV` or ``--snap-read-timeout``.
+    DEFAULT_READ_TIMEOUT_SECONDS: float = 1200.0
+
+    #: Environment variable read by :meth:`__init__` when ``read_timeout``
+    #: isn't passed explicitly.  Lets operators override the default
+    #: timeout without going through CLI flags (handy for the TUI and
+    #: Web entry points which read env directly).
+    READ_TIMEOUT_ENV: str = "CANTRIP_SNAP_READ_TIMEOUT"
+
     def __init__(
         self,
         snap_name: str = "gemma3",
         model: str | None = None,
         base_url: str | None = None,
+        read_timeout: float | None = None,
     ):
         """Initialise the inference snap provider.
 
@@ -143,13 +189,21 @@ class InferenceSnapProvider(OpenAICompatBase):
             base_url: Override the API base URL (e.g.
                 ``http://localhost:8328/v1``).  Discovered automatically
                 if not given.
+            read_timeout: HTTP read timeout for chat completions, in
+                seconds.  When ``None``, falls back to
+                ``CANTRIP_SNAP_READ_TIMEOUT`` and finally
+                :attr:`DEFAULT_READ_TIMEOUT_SECONDS`.  Phase 102.1: a
+                slow GPU on a big rewrite can take longer than the
+                previous 1200 s constant; the knob lets fast hardware
+                shrink it back.
 
         Raises:
             ProviderError: If the snap's server is not reachable.
         """
         self.snap_name = snap_name
         self.base_url = (base_url or discover_snap_endpoint(snap_name)).rstrip("/")
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=300.0)
+        self.read_timeout = _resolve_read_timeout(read_timeout)
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=self.read_timeout)
         self._context_window = _DEFAULT_CONTEXT_WINDOW
         self._supports_tools = True
         # Seed from the static allowlist; ``_apply_model_metadata`` may

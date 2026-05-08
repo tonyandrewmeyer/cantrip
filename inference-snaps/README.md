@@ -43,6 +43,7 @@ take over without a rename.
 |---|---|---|---|
 | [`embeddinggemma/`](embeddinggemma/) | EmbeddingGemma 300M | embed | Scaffold, not built |
 | [`qwen3-coder/`](qwen3-coder/) | Qwen3-Coder 30B-A3B Instruct (Q4_K_M) | chat (code) | Scaffold, not built |
+| [`qwen3-8b/`](qwen3-8b/) | Qwen3-8B Instruct (Q4_K_M) | chat (general, GPU-fit) | Phase 105.1 smoke scaffold (no `snapcraft.yaml` yet) |
 
 ## Building a snap
 

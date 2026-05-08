@@ -3531,113 +3531,163 @@ tests continue to pass with the long-history strategy unchanged.
 
 ---
 
-## Phase 105: Local Model Refresh — Qwen3-8B as the Default Local Pick
+## Phase 105: Local Model Refresh — Find a Replacement for Qwen3-Coder
 
-**Goal:** Move Cantrip's documented default local model off
-qwen3-coder (30 B MoE, partial offload, 5–10 tok/s decode) onto an
-8 B-class model that runs fully on the GPU at 40+ tok/s with native
-tool calling and at least 32 K context.  Keep qwen3-coder as an
-explicit opt-in for "best reasoning at any cost" workflows.
+> **Update 2026-05-08:** the original framing of this phase
+> ("switch the default to Qwen3-8B") was invalidated by 105.1's
+> smoke.  See ``design/LOCAL_MODELS.md`` §5.1.1, §5.1.2 — Qwen3-8B
+> produced ~30 % of the improve-02 feature target and chained-p
+> produced zero successful edits.  Phase reframed below: the goal
+> is now "find *a* candidate that can replace qwen3-coder", not
+> "ship Qwen3-8B as the default".
+
+**Goal:** Identify a locally-runnable model that matches or beats
+qwen3-coder's measured end-to-end completeness on Cantrip's
+ntfy-improve scenario, and ship it as a snap + provider preset.
+qwen3-coder stays the documented default until that target is met.
+The hardware budget is ~12 GiB usable VRAM with no other models
+loaded.
 
 ### Why now
 
-Two enhancement runs and a hardware re-audit changed the landscape:
+Three things make this the right time to invest:
 
-- **qwen3-coder is too slow.** Each enhancement round on the ntfy
-  charm takes 5–10 min per ``edit_file``; the snap drops mid-stream
-  on long generations (Phase 102 covers this); resume corrupts
-  ``edit_file`` state (Phase 103).  All three are real bugs but the
-  underlying issue — partial GPU offload — is something we choose
-  every time we default to a 30 B-MoE on a 12 GB GPU.
+- **qwen3-coder is slow.** Q4_K_M is 18.6 GB, 30 B MoE doesn't fit
+  in 12 GB VRAM, partial offload yields 5–10 tok/s decode.
+  Functionally it works (Unsloth's tool-call fix is integrated into
+  the GGUF the snap uses), but each ``edit_file`` round takes
+  minutes that compound across a full charm build.
 - **gemma4 is too small.** 10 K per slot exhausts on the system
   prompt + tool schemas before a real conversation starts.  Phase
-  104's short-session mode lifts the chained-``-p`` pattern up
-  into the agent, but that isn't free — every cross-edit context
-  loss is a real cost.
-- **The VRAM budget is bigger than we thought.**  The "5 GiB free"
-  capture in ``tmp-hardware-info.md`` was misleading — gemma4
-  itself was holding ~5 GB.  Stopping it leaves ~10–11 GiB, which
-  is enough to run an 8 B model at Q4_K_M with a 32 K KV cache and
-  full GPU offload.
+  104's short-session mode helps but doesn't eliminate the
+  cross-edit context loss.
+- **The actual VRAM budget is ~12 GiB**, not the ~5 GiB the original
+  ``tmp-hardware-info.md`` capture suggested.  That's enough room
+  to fit a 14 B Q4_K_M model + 32 K KV cache fully on the GPU, or
+  a 16 B MoE with comparable headroom — both *bigger* than the 8 B
+  picks the original phase targeted, which the smoke evidence
+  suggests matters more than raw decode speed.
 
 The full comparison and selection rationale lives in
-``design/LOCAL_MODELS.md``.  The short version: **Qwen3-8B**
-(Q4_K_M, ~5 GB, 32 K native, native ``--jinja`` tool calling) is the
-right primary; Mistral Nemo 12B is the long-context alternative;
-Phi-4-Mini is the speed alternative.
+``design/LOCAL_MODELS.md``.  The short version: 105.1 smoked
+**Qwen3-8B** (Q4_K_M, ~5 GB, 32 K) and it underperformed.  Next
+smoke targets in priority order are **Qwen3-14B** (same proven
+family, larger), **DeepSeek-Coder-V2-Lite** (16 B MoE, 2.4 B
+active, code-tuned), and **Mistral Nemo 12B** (long-context
+fallback).
 
 ### 105.1 P0 — Smoke test on host llama-server
 
-- [ ] Download Qwen3-8B-Instruct Q4_K_M GGUF (~5 GB) and start a
-  fresh host ``llama-server`` on a new port (e.g. 8338) with full
-  GPU offload, ``--jinja`` enabled, and a 32 K context window.
-  Don't touch the existing qwen3-coder / gemma4 services — pick a
-  port that doesn't collide.
-- [ ] Run ``/v1/models`` and ``/v1/chat/completions`` smoke checks
-  with a synthetic tool-call request to confirm the
-  ``tool_calls`` array is populated correctly (the same check
-  Phase 8's ``InferenceSnapProvider`` does, run by hand).
-- [ ] Re-run the ntfy improve-02 scenario against
-  ``--provider inference-snap --base-url http://10.42.160.1:8338/v1``,
-  measure wall clock + decode rate + reconnect count, and capture
-  any new failure modes in ``cantrip-iter-runs/qwen3-8b-improve``.
-- [ ] Compare the captured numbers against improve-02 (qwen3-coder)
-  and gemma-improve (gemma4) and append to
-  ``design/LOCAL_MODELS.md`` §5.1 as a "measured" subsection.
+- [x] Download Qwen3-8B-Instruct Q4_K_M GGUF (~5 GB) and run host
+  ``llama-server`` on port 8338 with full GPU offload + ``--jinja``.
+  Scaffolded under ``inference-snaps/qwen3-8b/`` (smoke-only —
+  ``snapcraft.yaml`` deferred to 105.3).
+- [x] Run ``/v1/models`` + ``/v1/chat/completions`` + synthetic
+  tool-call smoke checks.  All passed.
+- [x] Re-run the ntfy improve-02 scenario against
+  ``--provider inference-snap --snap qwen3-8b --base-url
+  http://10.42.160.1:8338/v1``.  **Result negative:** ~30 % feature
+  completeness in 19 min plus a planner deadlock (filed as Phase
+  106).  Chained-p follow-up produced 0 successful edits in 8 min.
+  Full write-up in ``design/LOCAL_MODELS.md`` §5.1.1 + §5.1.2.
 
-This step is deliberately cheap — a few hours of GPU time plus
-review.  Everything below is contingent on it producing a
-charm at least as complete as improve-02.
+### 105.1.5 P0 — Smoke test Qwen3-14B *(next candidate)*
 
-### 105.2 P0 — Provider preset for ``--snap qwen3-8b``
+- [ ] Copy ``inference-snaps/qwen3-8b/`` to ``inference-snaps/qwen3-14b/``;
+  swap ``GGUF_REPO`` / ``GGUF_FILE`` to
+  ``bartowski/Qwen_Qwen3-14B-GGUF`` /
+  ``Qwen_Qwen3-14B-Q4_K_M.gguf``; bump default port to 8340.
+- [ ] Add ``"qwen3-14b"`` to ``_TOOL_CAPABLE_SNAP_NAMES`` in
+  ``src/cantrip/llm/inference_snap.py``.
+- [ ] Run the same smoke + improve sequence as 105.1.  Pass criterion:
+  produce ≥ 80 % of the improve-02 feature target in ≤ 30 min, OR
+  exit with a clear Phase 102 / 103 / 106 failure mode that doesn't
+  imply a model-side limit.
+- [ ] If pass: 105.2 / 105.3 target Qwen3-14B, not Qwen3-8B.  If
+  fail: log measured findings in ``design/LOCAL_MODELS.md`` §5.6
+  and continue to 105.1.6.
+
+### 105.1.6 P1 — Smoke test DeepSeek-Coder-V2-Lite *(MoE candidate)*
+
+- [ ] Same shape as 105.1.5 but pointing at
+  ``lmstudio-community/DeepSeek-Coder-V2-Lite-Instruct-GGUF``,
+  port 8342, and a *prerequisite* check: the synthetic tool-call
+  smoke must round-trip cleanly via ``--jinja`` before any improve
+  attempt.  Tool-call reliability isn't as well-documented for this
+  family as it is for Qwen.
+- [ ] If both 105.1.5 and 105.1.6 fail, default-replacement work
+  pauses; the remaining sub-phases below stay deferred and the
+  documented local default stays qwen3-coder.
+
+### 105.2 P0 — Provider preset for the winning candidate
+
+*Gated on a successful smoke from 105.1.5 or 105.1.6.*  Substitute
+``<winner>`` for the chosen snap name (``qwen3-14b`` /
+``deepseek-coder-v2-lite`` / etc.).
 
 - [ ] Extend ``InferenceSnapProvider``'s preset table so
-  ``--snap qwen3-8b --base-url http://10.42.160.1:8338/v1`` is a
+  ``--snap <winner> --base-url http://10.42.160.1:<port>/v1`` is a
   named shortcut that sets the right defaults
-  (``conversation_temperature=0.2`` already covers the family-wide
-  template-leak quirk; ``max_tools`` stays at the existing 12).
+  (``conversation_temperature=0.2``; ``max_tools`` stays at 12).
 - [ ] Update ``docs/src/howto-provider.md`` to list the new preset,
   state the recommended host setup (port, GGUF source, full offload
-  flag), and explain when to pick this over qwen3-coder, gemma4, or
-  the long-context alternative.
+  flag), and explain when to pick this over qwen3-coder / gemma4.
 - [ ] Add the preset to ``docs/src/reference-cli.md`` under the
   ``--snap`` enumeration.
 
-### 105.3 P1 — Package as a Cantrip-managed inference snap
+### 105.3 P1 — Package the winner as a Cantrip-managed inference snap
+
+*Gated on 105.2.*
 
 - [ ] Decide between (a) building our own snap that wraps
-  ``llama.cpp`` + a packaged Qwen3-8B GGUF, or (b) contributing an
+  ``llama.cpp`` + the packaged GGUF, or (b) contributing an
   upstream snap recipe to Canonical's inference-snap catalogue.
   Capture the decision in ``design/LOCAL_MODELS.md`` §6.
 - [ ] If (a): the snap should expose the same OpenAI-compatible
-  endpoint shape on a stable port (e.g. 8338) so the cantrip
-  preset above lights up out of the box; ship the recipe under
-  ``snaps/qwen3-8b/`` (new) and a Makefile target ``make snap-qwen``.
+  endpoint shape on a stable port so the cantrip preset above
+  lights up out of the box; ship the recipe under
+  ``inference-snaps/<winner>/`` (already scaffolded for the
+  Qwen3-8B smoke; reuse the layout).
 - [ ] If (b): file the contribution upstream and document the
-  install path (``snap install qwen3-8b --channel=stable``)
-  alongside the existing ``qwen3-coder`` instructions.
+  install path alongside the existing ``qwen3-coder`` instructions.
 
 ### 105.4 P1 — Long-context and speed alternatives as opt-ins
 
+*Independent of which model wins as default.*
+
 - [ ] Add ``--snap mistral-nemo-12b`` preset for the long-context
   tier (Q4_K_M, 32 K cache by default, opt-in 128 K via env var
-  ``CANTRIP_LLAMA_CTX``).  Useful if the operator wants to skip
-  short-session mode entirely for a given run.
+  ``CANTRIP_LLAMA_CTX``).
 - [ ] Add ``--snap phi-4-mini`` preset for the speed tier (60+
   tok/s, 128 K context).  Useful as a planner companion to a
   larger executor model.
-- [ ] Both presets remain *secondary* — the documented default in
-  the howto stays Qwen3-8B.
+- [ ] These remain *secondary* — the documented default tracks
+  whatever 105.1.5 / 105.1.6 selected, falling back to qwen3-coder
+  if neither passed.
 
 ### 105.5 P1 — Tests
 
-- [ ] Unit test that the ``--snap qwen3-8b`` preset resolves to the
-  expected base URL, default temperature, and ``max_tools`` value.
-- [ ] Unit test for the long-context and speed presets.
+- [ ] Unit test that each new preset (winner, mistral-nemo-12b,
+  phi-4-mini) resolves to the expected base URL, default
+  temperature, and ``max_tools`` value.
 - [ ] Add a recorded-trace test (against a captured fixture, not
-  the live snap) confirming Qwen3-8B's tool-call format is parsed
-  correctly by ``InferenceSnapProvider`` — pin the wire format the
-  same way Phase 41 pins frontier-provider streaming.
+  the live snap) confirming the winner's tool-call format is
+  parsed correctly by ``InferenceSnapProvider`` — pin the wire
+  format the same way Phase 41 pins frontier-provider streaming.
+
+### 105.6 P0 — In-flight source changes from the 105.1 smoke
+
+The smoke required two small source changes to make the
+``--snap qwen3-8b --base-url …`` invocation work end-to-end:
+
+- [ ] ``_TOOL_CAPABLE_SNAP_NAMES`` += ``"qwen3-8b"`` in
+  ``src/cantrip/llm/inference_snap.py`` — already in place.  Land
+  this on its own commit so the smoke-only allowlist entry is
+  separable from any future preset work.
+- [ ] ``InferenceSnapProvider`` httpx timeout 300 s → 1200 s — also
+  already in place.  This is a stop-gap for Phase 102; revisit when
+  Phase 102's streaming-reconnect work lands so the timeout becomes
+  operator-tunable rather than hard-coded.
 
 ### What this phase is *not*
 
@@ -3654,12 +3704,121 @@ charm at least as complete as improve-02.
   single-scenario smoke test, not a generalised eval — that work
   belongs elsewhere if it ever happens.
 
-**Exit criteria:** Re-running the ntfy improve-02 scenario with
-``--snap qwen3-8b`` produces a packed charm at least as complete as
-improve-02 (COS relations + actions + tracing + ≥ 7 unit tests
-passing) in measurably less wall clock; the howto and reference-CLI
-docs cite Qwen3-8B as the documented default local pick; the unit
-tests in 105.5 pass.
+**Exit criteria:** A 105.1.5 / 105.1.6 / future smoke produces a
+packed charm at least as complete as improve-02 (COS relations +
+actions + tracing + ≥ 7 unit tests passing); the howto and
+reference-CLI docs cite the winning candidate as the documented
+default local pick; the unit tests in 105.5 pass.  *Or:* every
+candidate fails, the phase formally records that, and qwen3-coder
+stays the documented default.
+
+---
+
+## Phase 106: Conversation-Loop Deadlock — Don't Park on a "Blocked" Task
+
+**Goal:** Make ``CantripAgent.process_message`` return when its
+in-flight work-queue task transitions to ``BLOCKED``, so the print-
+mode drain (and its TUI / Web equivalents) can run their existing
+correct exit / escalation paths.  Today the conversation loop sits
+inside ``process_message`` indefinitely — zero CPU, no LLM calls
+in flight — and the operator has to kill the process by hand.
+
+### Why now
+
+Phase 105.1's Qwen3-8B smoke reproduced this cleanly: 6 failed
+``run_charm_tests`` rounds in a row caused the executor to flip the
+sprint-build task from ``ACTIVE`` to ``BLOCKED`` at 21:05:55, after
+which no further events emitted for 10+ minutes until manual SIGKILL.
+The same shape was a near-miss on the qwen3-coder and gemma4 runs
+in the prior session — those un-blocked themselves before the
+operator noticed.  Qwen3-8B's higher tool-call failure rate just
+exposed the deadlock more reliably; the bug is provider-agnostic.
+
+The downstream paths are all already correct:
+
+- ``cantrip/print_mode.py`` line 177 — ``_drain_queue`` treats
+  ``BLOCKED`` as non-flight and returns ``True``.
+- ``cantrip/print_mode.py`` line 195 — ``_final_exit_code`` returns
+  ``1`` when any task is left ``BLOCKED`` or ``FAILED``.
+- ``cantrip/agent/lifecycle.py`` line 103 — the lifecycle projection
+  surfaces ``"blocked"`` correctly to TUI / Web badges.
+
+Each of those waits for ``process_message`` to return.  It never does.
+
+### 106.1 P0 — Reproduce in a unit test
+
+- [ ] Test in ``tests/unit/agent/`` that drives a fake provider
+  through a known-failing tool path so the executor flips the active
+  task to ``BLOCKED`` (mirror the run_charm_tests retry-then-block
+  shape from the Phase 105.1 smoke). Assert that
+  ``process_message`` returns within a small timeout (say 5 s)
+  rather than hanging.  Mark the test ``xfail`` until 106.2 lands —
+  it's the regression pin.
+- [ ] The smoke artefacts at
+  ``cantrip-iter-runs/qwen3-8b-improve/run.ndjson`` are the
+  ground-truth event sequence the test should reproduce.
+
+### 106.2 P0 — Make ``process_message`` return on BLOCKED
+
+- [ ] Audit the conversation loop (``CantripAgent.process_message``
+  and the executor wait points it depends on) for places where the
+  loop awaits on a state that no longer transitions once the active
+  task is ``BLOCKED``.  Most likely culprit: an ``await
+  task.completion`` style wait that fires for ``DONE`` / ``FAILED``
+  but not ``BLOCKED``.  Fix by treating ``BLOCKED`` as a
+  loop-terminating state at the same level as ``DONE`` / ``FAILED``.
+- [ ] When the loop terminates because of ``BLOCKED``, surface a
+  ``ProviderError``-equivalent message (``"task <id> blocked: <reason>"``)
+  to the caller rather than the empty-string return path so the
+  print-mode log / TUI banner explains what happened.
+
+### 106.3 P1 — Diagnostic logging at the BLOCKED transition
+
+- [ ] In ``cantrip/agent/executor/core.py``, every call to
+  ``_record_status_change(task, "blocked", ...)`` already passes an
+  ``error=`` reason.  Bump the log level for that call site from
+  ``info`` (or wherever it currently sits) to ``warning`` so the
+  reason lands in stderr without ``--verbose``.  At Phase 105.1
+  debug we couldn't tell from the NDJSON which of the six failed
+  ``run_charm_tests`` rounds tipped the threshold.
+- [ ] Include the ``blocked_reason`` in the
+  ``status_bar_changed`` / ``task_updated`` event payload so the
+  Web UI and TUI can show it inline rather than just rendering the
+  badge.
+
+### 106.4 P1 — Watchdog heartbeat
+
+- [ ] Optional second-line defence: a heartbeat that detects long
+  zero-CPU periods (no events emitted, no LLM calls in flight) and
+  forces a state-machine tick to confirm there's actually work.
+  Lower-priority than 106.2 because the right fix is to make the
+  loop terminate properly, not paper over a hang with a
+  watchdog — but the watchdog is a useful belt-and-braces against
+  *unknown* future deadlock shapes.
+
+### What this phase is *not*
+
+- **Not a model-side fix.**  Bigger / better-tuned models will
+  block less often, but the deadlock is independent of why a task
+  transitions to ``BLOCKED``.  Even a 100 %-reliable model will
+  occasionally hit a genuinely blocked situation (a missing
+  dependency, an external tool that needs operator attention) and
+  the loop must terminate cleanly in that case too.
+- **Not a change to ``BLOCKED`` semantics.**  The
+  ``lifecycle_label`` rules, the print-mode exit code, and the
+  ``_drain_queue`` non-flight treatment of ``BLOCKED`` are all
+  already correct.  This phase doesn't touch those.
+- **Not a Phase 102 dependency.**  Phase 102's streaming reconnect
+  fixes the *generation-timeout* failure mode where cantrip is
+  stuck in an LLM call.  This phase fixes a different shape — the
+  agent is stuck *not* in an LLM call.
+
+**Exit criteria:** The 106.1 regression test passes (no longer
+``xfail``) — ``process_message`` returns within 5 s of the active
+task hitting ``BLOCKED``; print-mode runs in a "all retries failed"
+scenario exit with code 1 and a clear stderr message instead of
+hanging; the Phase 105.1 smoke can be re-run and either succeeds or
+exits cleanly within ~20 minutes regardless of model behaviour.
 
 ---
 
@@ -3757,4 +3916,5 @@ tests in 105.5 pass.
 | M102: Long-Generation Resilience | 102 | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
 | M103: Resume Hallucination Repair | 103 | Post-``load_state`` turns carry a "must-read-first" directive until the agent re-reads each file it intends to edit; ``edit_file`` / ``multi_edit`` ``old_string`` mismatches return a "did you mean" diff hint instead of the bare-error preview; an opt-in whitespace-tolerant match handles trivial drift; a session counter surfaces hallucination-rate via ``/cost`` |
 | M104: Short-Session Mode | 104 | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
-| M105: Local Model Refresh | 105 | Cantrip's documented default local model is Qwen3-8B (Q4_K_M, full GPU offload, 32 K native context, native ``--jinja`` tool calling) with a ``--snap qwen3-8b`` preset; Mistral Nemo 12B and Phi-4-Mini ship as long-context and speed alternatives; the ntfy improve scenario completes against the new default in measurably less wall clock than qwen3-coder; ``design/LOCAL_MODELS.md`` captures the comparison |
+| M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
+| M106: Loop Deadlock Fixed | 106 | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
