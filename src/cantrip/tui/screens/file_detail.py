@@ -55,6 +55,16 @@ _CANTRIP_FILE_PURPOSES: dict[str, str] = {
         "**Cantrip session store** — per-charm SQLite database holding "
         "conversation history, agent state, and the durable work queue."
     ),
+    ".cantrip-wal": (
+        "**SQLite write-ahead log** — companion file for the ``.cantrip`` "
+        "session store; holds pending writes until they're checkpointed "
+        "back into the main database.  Safe to leave alone."
+    ),
+    ".cantrip-shm": (
+        "**SQLite shared-memory index** — companion file for the "
+        "``.cantrip`` session store; coordinates concurrent readers with "
+        "the write-ahead log.  Safe to leave alone."
+    ),
     ".cantrip-audit.jsonl": (
         "**Cantrip audit log** — append-only JSONL trace; one record per "
         "permission decision and tool call."

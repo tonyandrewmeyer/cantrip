@@ -261,6 +261,18 @@ class TestCantripArtefactPurpose:
         result = _infer_purpose(f)
         assert "Cantrip session store" in result
 
+    def test_wal_companion(self, tmp_path: pathlib.Path) -> None:
+        # The SQLite WAL is binary; the artefact rule must fire so the
+        # file viewer doesn't fall through to "no structured summary".
+        f = tmp_path / ".cantrip-wal"
+        f.write_bytes(b"\x00\x01\x02")
+        assert "write-ahead log" in _infer_purpose(f)
+
+    def test_shm_companion(self, tmp_path: pathlib.Path) -> None:
+        f = tmp_path / ".cantrip-shm"
+        f.write_bytes(b"\x00")
+        assert "shared-memory index" in _infer_purpose(f)
+
     def test_audit_log(self, tmp_path: pathlib.Path) -> None:
         f = tmp_path / ".cantrip-audit.jsonl"
         f.write_text('{"event": "tool_call"}\n')
