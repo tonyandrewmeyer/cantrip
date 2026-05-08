@@ -4,6 +4,40 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **Inference-snap context probe hits `/v1/slots`, never auto-detects
+  the runtime KV cache.**  llama.cpp surfaces per-slot ``n_ctx`` at
+  `<root>/slots`, not `<root>/v1/slots` — the OpenAI-compat client
+  was anchored at the latter and 404'd, leaving the trained
+  ``n_ctx_train`` (often 256 K) as the effective context window
+  while the actual per-slot budget was 8 K – 32 K.  Compaction
+  never fired, requests silently truncated.  The provider now
+  spawns a sibling client at the snap root and falls back to
+  `/props` when `/slots` is gated behind a startup flag.
+- **Sprint mode reroots `state.charm_path` but file tools kept the
+  old base.**  After ``plan_tasks`` triggered the sprint path, the
+  next ``edit_file("charmcraft.yaml")`` resolved against the parent
+  directory and 404'd until the model retried with an explicit
+  ``<charm_name>/`` prefix — wasted rounds on small models.
+  ``PlanTasksTool`` now invalidates the agent's tool cache when it
+  rewrites ``charm_path``.
+- **Inference-snap conversation temperature locked to 0.2.**  At
+  the frontier-default 0.7, qwen3-coder (and the gemma family)
+  intermittently emits raw ``<function=…>`` chat-template
+  scaffolding inside ``content`` instead of the OpenAI tool-call
+  envelope, which the conversation loop then interprets as a final
+  reply and exits.  Providers expose
+  ``conversation_temperature`` as an override knob; cloud APIs
+  keep the 0.7 default.
+- **Plan summary leaks subagent directives into the conversation.**
+  ``_format_plan_summary`` previously inlined every task's full
+  description; sprint and improvement task descriptions carry
+  imperative ``Do NOT…`` lines aimed at the subagent, and small
+  models read them in the conversation transcript and start racing
+  the executor on the same files.  Now only the title plus the
+  first sentence of the description, followed by an explicit
+  hand-off line to the work queue.
+
 ### Added
 - **TUI shell mode — `Ctrl+X` runs subprocess commands without
   spending tokens (Phase 69.3).**  Pressing <kbd>Ctrl+X</kbd> on
