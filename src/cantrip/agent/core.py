@@ -16,6 +16,7 @@ from cantrip.agent import (
     context_providers_builtin,
     sandbox,
 )
+from cantrip.agent import recipes as recipes_module
 from cantrip.agent.arena_controller import ArenaController
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
@@ -509,6 +510,16 @@ class CantripAgent:
             custom_commands.CustomCommandRegistry(
                 commands=tuple(custom_commands.discover_custom_commands(charm_path=charm_path))
             )
+        )
+
+        # Phase 73.1: load parameterised recipes from
+        # ``.cantrip-recipes/*.yaml`` (repo) and
+        # ``~/.config/cantrip/recipes/*.yaml`` (user).  Sibling-of-SQLite
+        # path matches Phase 51b's ``.cantrip-shared/`` precedent.  The
+        # ``/recipe`` dispatcher reads ``agent.recipes`` for the catalogue
+        # and the per-name lookup; malformed files log + skip.
+        self.recipes: recipes_module.RecipeRegistry = recipes_module.RecipeRegistry(
+            recipes=tuple(recipes_module.discover_recipes(charm_path=charm_path))
         )
 
         # Phase 72.2: ``@``-mention context providers.  Built once at

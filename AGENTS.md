@@ -95,6 +95,7 @@ Active-contract docs (always relevant to ongoing work):
 - `design/CONTEXT_PROVIDERS.md` — `@`-mention context-provider registry, parser rules, baseline catalogue, how to add a new provider
 - `design/PROVIDER_ROLES.md` — Embed/rerank provider roles, RoleRouter, env-var/CLI configuration, cost-tracking integration
 - `design/DOCS_INDEX.md` — Indexed charm-ecosystem documentation pipeline (crawl + chunk + embed + store + search) and the docs_search / @docs surfaces
+- `design/RECIPES.md` — Parameterised, retryable recipe schema, discovery paths, dispatcher flow, and composition with skills / flows / structured output / retry
 
 Index / changelog:
 

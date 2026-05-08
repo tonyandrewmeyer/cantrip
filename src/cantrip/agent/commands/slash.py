@@ -39,6 +39,7 @@ from cantrip.agent.commands.codeintel import (
 from cantrip.agent.commands.cost import format_cost
 from cantrip.agent.commands.goal import handle_goal
 from cantrip.agent.commands.map import handle_map, handle_map_refresh
+from cantrip.agent.commands.recipes import handle_recipe
 from cantrip.agent.commands.share import share_to_gist
 from cantrip.agent.commands.transcript import export_transcript
 from cantrip.agent.memory import commands as memory_commands
@@ -100,6 +101,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/pause", "Pause the autonomous loop (chat and CONFIRM tasks keep working)"),
     CommandInfo("/resume", "Resume a paused autonomous loop"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
+    CommandInfo("/recipe", "Run a parameterised recipe (`/recipe` lists available)"),
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
     CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
     CommandInfo("/symbols", "Search workspace symbols by name (read-only code intel)"),
@@ -285,6 +287,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_resume(agent, args))
     if verb == "/ralph":
         return SlashResult(text=handle_ralph(agent, args))
+    if verb == "/recipe":
+        return handle_recipe(agent, args)
     if verb == "/map":
         return SlashResult(text=handle_map(agent, args), markdown=True)
     if verb == "/map-refresh":
@@ -631,6 +635,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "(Ralph).  Re-feeds the goal up to N times until the agent "
         "emits `STOP` or stall detection trips.  Engages inside "
         "`cantrip run --print --ralph N`.\n"
+        "- `/recipe` — list recipes from `.cantrip-recipes/*.yaml` "
+        "(repo) or `~/.config/cantrip/recipes/*.yaml` (user).  "
+        "`/recipe <name> key=value …` runs a parameterised recipe; "
+        "`/recipe <name> --help` shows its parameter list.\n"
         "- `/map` — print a compact summary of the top-ranked "
         "repository files (one line per file, primary symbol "
         "shown).  Use `/map full` for the per-file symbol "

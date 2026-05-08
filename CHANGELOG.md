@@ -4,6 +4,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Parameterised recipes (Phase 73.1).**  YAML recipes under
+  ``<charm>/.cantrip-recipes/`` (repo) and
+  ``~/.config/cantrip/recipes/`` (user) carry typed parameters
+  (string / number / boolean / date / file / select) with
+  ``required`` / ``optional`` / ``prompted`` requirement and
+  Jinja-rendered ``instructions`` so a complex multi-step prompt
+  can be invoked deterministically: ``/recipe charm-cos-add
+  charm_name=ntfy scrape_path=/metrics``.  Recipes compose with
+  Phase 73.3 ``response`` (post-hoc JSON-schema validation of the
+  final reply) and Phase 73.4 ``retry`` (rerun until shell /
+  file-exists / JSON-schema checks pass).  Bare ``/recipe`` lists
+  the catalogue; ``/recipe <name> --help`` shows the parameter
+  list.  Sub-recipe orchestration, ``settings`` mid-session swap,
+  ``extensions`` enforcement, and the three built-in recipes
+  (``charm-new``, ``charm-cos-add``, ``charm-reactive-to-ops``)
+  are explicitly deferred to a follow-up — the schema accepts
+  them today so the YAML stays forward-compatible.  See
+  ``design/RECIPES.md`` for the full schema and dispatcher flow.
+
 ### Fixed
 - **Inference-snap context probe hits `/v1/slots`, never auto-detects
   the runtime KV cache.**  llama.cpp surfaces per-slot ``n_ctx`` at
