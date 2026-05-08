@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import pathlib
 import shutil
 import subprocess
@@ -163,6 +164,25 @@ class PlanTasksTool(Tool):
                 # having to prefix every path with ``<charm_name>/``.
                 if self._invalidate_tools_cache is not None:
                     self._invalidate_tools_cache()
+                # Subprocess-launching tools (``charmcraft_pack``,
+                # ``run_charm_tests``, ``charm_validate`` …) resolve
+                # ``path="."`` against the *process* cwd, not
+                # ``state.charm_path``.  Without rehoming the cwd
+                # those tools stay anchored to the launch directory
+                # and ``charmcraft pack`` 404s on ``charmcraft.yaml``
+                # even after ``charmcraft_init`` ran cleanly into the
+                # subdir.  ``mkdir`` is safe — ``charmcraft init``
+                # already requires the parent to exist and the
+                # leaf is created either way.
+                try:
+                    expected_path.mkdir(parents=True, exist_ok=True)
+                    os.chdir(expected_path)
+                except OSError as exc:
+                    log.warning(
+                        "Sprint: could not rehome cwd to '%s': %s",
+                        expected_path,
+                        exc,
+                    )
 
         summary = _format_plan_summary(tasks)
         return ToolResult(
