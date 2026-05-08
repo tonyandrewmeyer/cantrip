@@ -37,6 +37,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the executor on the same files.  Now only the title plus the
   first sentence of the description, followed by an explicit
   hand-off line to the work queue.
+- **Sprint mode does not rehome the cwd to the scaffold subdir.**
+  Subprocess-launching tools (``charmcraft_pack``,
+  ``run_charm_tests``, ``charm_validate`` …) resolve ``path="."``
+  against the *process* cwd, not ``state.charm_path``; without the
+  rehome those tools stay anchored to the launch directory and
+  ``charmcraft pack`` 404s on ``charmcraft.yaml`` immediately after
+  ``charmcraft_init`` ran cleanly.  ``PlanTasksTool`` now mkdirs
+  the expected scaffold path and chdirs there.  ``charmcraft_init``
+  was also tightened to suppress the ``ntfy/ntfy/`` nesting when
+  the cwd already names the charm — ``Path(".").name`` is the
+  empty string, so the previous same-name check always failed.
 
 ### Added
 - **Declarative `retry:` blocks on custom slash commands (Phase
