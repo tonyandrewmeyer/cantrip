@@ -728,6 +728,10 @@ class CantripApp(App):
         existing = self._agent.work_queue.all_tasks()
         if existing:
             checklist.notify_changed(existing)
+        # Phase 99.4: prime the lifecycle badge from restored state so a
+        # session resumed mid-block doesn't render as ``running`` until
+        # the first task event arrives.
+        self._refresh_lifecycle_badge()
 
     def _on_bus_task_updated(self, event: ui_events.Event) -> None:
         """Handle a task-updated event from the bus.
@@ -749,6 +753,11 @@ class CantripApp(App):
             return
         checklist.notify_changed(self._agent.work_queue.all_tasks())
         self._refresh_subagent_status_bar()
+        # Phase 99.4: keep the lifecycle badge in sync with queue state.
+        # A task moving to BLOCKED with a budget reason flips the badge
+        # to BUDGET LIMITED on the next paint; a queue draining to empty
+        # flips it to DONE without /pause needing to fire.
+        self._refresh_lifecycle_badge()
 
         # Detect when a confirm task becomes blocked.
         payload = event.payload
@@ -1501,6 +1510,24 @@ class CantripApp(App):
     def _refresh_subagent_status_bar(self) -> None:
         """Mirror the currently-active subagent phase into the status bar."""
         watcher_actions.refresh_subagent_status_bar(self)
+
+    def _refresh_lifecycle_badge(self) -> None:
+        """Phase 99.4: pull the projected lifecycle label onto the status bar.
+
+        Called after every queue change so the badge reflects current
+        truth without relying on a slash command to publish.  Swallows
+        ``NoMatches`` because the bar can be torn down before a late
+        task-update event lands during shutdown.
+        """
+        from textual.css.query import NoMatches
+
+        if self._agent is None:
+            return
+        try:
+            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+        except NoMatches:
+            return
+        status_bar.loop_state = self._agent.lifecycle_label()
 
     def action_toggle_watcher(self) -> None:
         """Toggle the event watcher on or off."""

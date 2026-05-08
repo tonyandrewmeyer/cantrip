@@ -288,6 +288,12 @@ async def _api_state(request: web.Request) -> web.Response:
         {
             "charm_name": agent.state.charm_name or "",
             "tasks": tasks,
+            # Phase 99.4: project the Codex-style lifecycle label so the
+            # Web UI's header badge primes correctly on page load.  Same
+            # helper the TUI status bar reads, so the two surfaces
+            # never disagree about whether the loop is paused / done /
+            # blocked / budget-limited.
+            "loop_state": agent.lifecycle_label(),
         }
     )
 

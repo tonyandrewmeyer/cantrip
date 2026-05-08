@@ -948,6 +948,11 @@ def _make_agent(response: str = "ok") -> MagicMock:
     # (truthy), which would mis-route every chat message as an arena
     # pick.
     agent.active_arena = None
+    # Phase 99.4: ``/api/state`` calls ``agent.lifecycle_label()`` so
+    # the Web header badge primes correctly.  Default to ``running``
+    # so the response shape is always JSON-serialisable; tests that
+    # care override this explicitly.
+    agent.lifecycle_label = MagicMock(return_value="running")
     return agent
 
 
@@ -1348,6 +1353,8 @@ class TestApiState:
                         "worktree_path": None,
                     }
                 ]
+                # Phase 99.4: lifecycle label primes the header badge.
+                assert data["loop_state"] == "running"
 
         asyncio.run(_run())
 
@@ -1362,7 +1369,11 @@ class TestApiState:
             async with TestClient(TestServer(app)) as client:
                 resp = await client.get("/api/state")
                 data = await resp.json()
-                assert data == {"charm_name": "mycharm", "tasks": []}
+                assert data == {
+                    "charm_name": "mycharm",
+                    "tasks": [],
+                    "loop_state": "running",
+                }
 
         asyncio.run(_run())
 

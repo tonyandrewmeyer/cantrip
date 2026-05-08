@@ -547,6 +547,23 @@ class CantripAgent:
         """The agent's work queue, for TUI and executor access."""
         return self._work_queue
 
+    def lifecycle_label(self) -> str:
+        """Phase 99.4: project current state into a Codex-style lifecycle label.
+
+        Returns one of ``running`` / ``paused`` / ``done`` / ``blocked`` /
+        ``budget-limited`` per :func:`cantrip.agent.lifecycle.lifecycle_label`.
+        Read-only — every input lives on existing fields, so callers can
+        invoke this on every task / pause / budget event without worrying
+        about mutating state.  The TUI status bar and the Web UI status
+        indicator both call this so the two surfaces never disagree.
+        """
+        from cantrip.agent.lifecycle import lifecycle_label
+
+        return lifecycle_label(
+            user_paused=self._executor_ctl.user_paused,
+            tasks=self._work_queue.all_tasks(),
+        )
+
     @property
     def context_manager(self) -> ContextManager:
         """The agent's context manager, for TUI status display."""

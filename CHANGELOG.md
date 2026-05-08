@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Lifecycle badge in the TUI status bar and Web UI header
+  (Phase 99.4).**  A single Codex-style label
+  (`running`/`paused`/`done`/`blocked`/`budget-limited`) projects
+  the current state of the autonomous loop so users can tell at a
+  glance whether work is happening, blocked, or capped by the
+  per-goal budget.  Read-only over existing fields — no new state,
+  no new persistence.  TUI tints the bar per state; Web UI shows a
+  matching colour-cued chip in the header.  The projection lives in
+  `cantrip.agent.lifecycle` so both surfaces never disagree, with
+  documented precedence (`paused` beats `blocked`, `budget-limited`
+  more specific than `blocked`, pending/active work always reads as
+  `running`).
 - **User-prose objective string and `/goal` slash command
   (Phase 99.3).**  Free-text user-prose objective is now
   a first-class session field — stamped via `--objective "<text>"`

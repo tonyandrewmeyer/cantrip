@@ -138,6 +138,19 @@ class ExecutorController:
 
         def _notify_bus(task: AgentTask) -> None:
             self._event_bus.publish(ui_events.task_updated_from_task(task))
+            # Phase 99.4: keep the lifecycle badge in sync with queue
+            # transitions.  A task moving to BLOCKED with a budget
+            # reason flips the projection to ``budget-limited``; a
+            # queue draining empty flips it to ``done``.  The Web UI
+            # pulls this off the same ``status_bar_changed`` event the
+            # TUI already listens to.
+            from cantrip.agent.lifecycle import lifecycle_label
+
+            label = lifecycle_label(
+                user_paused=self._user_paused,
+                tasks=queue.all_tasks(),
+            )
+            self._event_bus.publish(ui_events.status_bar_changed(loop_state=label))
 
         queue._on_task_changed = _notify_bus
 

@@ -119,8 +119,15 @@ class TestSlashResume:
         agent.event_bus.subscribe(events.EventType.STATUS_BAR_CHANGED, received.append)
         slash_commands.dispatch(agent, "/resume")
 
+        # Phase 99.4: /resume publishes whatever the lifecycle projection
+        # says — never ``paused``, never the hard-coded literal.  An
+        # empty queue resolves to ``done`` here; any of the non-paused
+        # labels is the correct answer for "the user-pause flag came
+        # off".
         loop_states = [ev.payload.get("loop_state") for ev in received]
-        assert "running" in loop_states
+        assert loop_states  # at least one event emitted
+        assert "paused" not in loop_states
+        assert all(s in {"running", "done", "blocked", "budget-limited"} for s in loop_states)
 
 
 class TestCatalogueAndHelp:

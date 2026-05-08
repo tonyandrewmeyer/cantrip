@@ -29,6 +29,13 @@ class StatusBar(Widget):
     StatusBar.-paused {
         background: $warning-darken-1;
     }
+    StatusBar.-blocked {
+        background: $warning-darken-2;
+    }
+    StatusBar.-budget-limited {
+        background: $error-darken-1;
+        color: $text;
+    }
     """
 
     task_label: reactive[str] = reactive("", init=False)
@@ -40,9 +47,23 @@ class StatusBar(Widget):
     # CSS class so the bar tints distinctly.  Anything else
     # (default ``"build"``) keeps the normal theme.
     mode: reactive[str] = reactive("build", init=False)
-    # Phase 99.1: ``"paused"`` adds a PAUSED badge alongside whichever
-    # mode badge is active.  ``"running"`` (the default) hides it.
+    # Phase 99.1 / 99.4: lifecycle label projected by
+    # :func:`cantrip.agent.lifecycle.lifecycle_label`.  ``"running"`` is
+    # the default and renders no badge; the other four
+    # (``"paused"``, ``"done"``, ``"blocked"``, ``"budget-limited"``)
+    # add a labelled badge plus a per-state CSS tint.
     loop_state: reactive[str] = reactive("running", init=False)
+
+    # Phase 99.4: badge text for each lifecycle label.  Closed mapping
+    # so a future label addition has to update both this table and the
+    # ``LIFECYCLE_LABELS`` tuple in ``cantrip.agent.lifecycle``.
+    _LIFECYCLE_BADGES = {
+        "running": "",
+        "paused": "PAUSED",
+        "done": "DONE",
+        "blocked": "BLOCKED",
+        "budget-limited": "BUDGET LIMITED",
+    }
 
     def compose(self) -> ComposeResult:
         """Compose the status bar."""
@@ -56,7 +77,7 @@ class StatusBar(Widget):
             mode_badge = "YOLO MODE — confirmations off"
         else:
             mode_badge = ""
-        loop_badge = "PAUSED" if self.loop_state == "paused" else ""
+        loop_badge = self._LIFECYCLE_BADGES.get(self.loop_state, "")
         segments = [
             s
             for s in (
@@ -76,6 +97,8 @@ class StatusBar(Widget):
         self.set_class(self.mode == "plan", "-plan-mode")
         self.set_class(self.mode == "yolo", "-yolo-mode")
         self.set_class(self.loop_state == "paused", "-paused")
+        self.set_class(self.loop_state == "blocked", "-blocked")
+        self.set_class(self.loop_state == "budget-limited", "-budget-limited")
 
     # Every reactive triggers the same refresh — watchers generated below.
 

@@ -287,10 +287,48 @@ const cantrip = (() => {
   // activity has ended — revert to the flavour pool on the next
   // ``thinking`` event.
   function _handleStatusBarChanged(data) {
-    if (data.task_label === undefined) return;
-    _setThinkingLabel(data.task_label);
-    const footer = document.getElementById("status-label");
-    if (footer) footer.textContent = data.task_label || "";
+    if (data.task_label !== undefined) {
+      _setThinkingLabel(data.task_label);
+      const footer = document.getElementById("status-label");
+      if (footer) footer.textContent = data.task_label || "";
+    }
+    // Phase 99.4: keep the lifecycle badge in the header in sync with
+    // every loop_state publish from /pause, /resume, /budget, and the
+    // task-update path.  Empty / "running" hides the badge so the
+    // default state is visually quiet.
+    if (data.loop_state !== undefined) {
+      _setLifecycleBadge(data.loop_state);
+    }
+  }
+
+  // Phase 99.4: header lifecycle badge.  Mirrors the TUI status-bar
+  // badge so the Web UI shows the same Codex-style label
+  // (running / paused / done / blocked / budget-limited).
+  const _LIFECYCLE_BADGES = {
+    running: "",
+    paused: "PAUSED",
+    done: "DONE",
+    blocked: "BLOCKED",
+    "budget-limited": "BUDGET LIMITED",
+  };
+
+  function _setLifecycleBadge(state) {
+    const el = document.getElementById("lifecycle-badge");
+    if (!el) return;
+    const text = _LIFECYCLE_BADGES[state];
+    // ``running`` and any unknown label render quiet — the default
+    // state shouldn't add visual noise.
+    if (!text) {
+      el.hidden = true;
+      el.textContent = "";
+      el.className = "lifecycle-badge lifecycle-running";
+      el.setAttribute("aria-label", "Autonomous loop running");
+      return;
+    }
+    el.hidden = false;
+    el.textContent = text;
+    el.className = `lifecycle-badge lifecycle-${state}`;
+    el.setAttribute("aria-label", `Autonomous loop ${state}`);
   }
 
   function _setThinkingLabel(label) {
@@ -1012,6 +1050,12 @@ const cantrip = (() => {
       if (!resp.ok) return;
       const state = await resp.json();
       if (state.tasks) replaceAllTasks(state.tasks);
+      // Phase 99.4: prime the lifecycle badge on page load so a
+      // session reconnected mid-block doesn't render as ``running``
+      // until the first status_bar_changed event lands.
+      if (state.loop_state !== undefined) {
+        _setLifecycleBadge(state.loop_state);
+      }
     } catch { /* ignore */ }
   }
 

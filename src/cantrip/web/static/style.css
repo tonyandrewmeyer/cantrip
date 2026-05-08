@@ -126,6 +126,26 @@ header h1 {
   white-space: nowrap;
 }
 
+/* Phase 99.4: Codex-style lifecycle badge in the header.  Mirrors the
+   TUI status-bar badge — ``running`` (default) is hidden so the bar
+   is visually quiet most of the time, and the four "stopped" states
+   each get a distinct colour cue so the user can tell at a glance
+   why the loop isn't picking new tasks. */
+.lifecycle-badge {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.lifecycle-paused { color: var(--yellow); border-color: var(--yellow); }
+.lifecycle-done { color: var(--green); border-color: var(--green); }
+.lifecycle-blocked { color: var(--yellow); border-color: var(--yellow); }
+.lifecycle-budget-limited { color: var(--red); border-color: var(--red); }
+
 main {
   display: grid;
   grid-template-columns: 1fr 340px;

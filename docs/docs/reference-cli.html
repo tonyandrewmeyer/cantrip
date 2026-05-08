@@ -1136,9 +1136,16 @@ next iteration without restarting the loop.</p>
 <p>Both commands are idempotent: <code>/pause</code> while already
 paused (and <code>/resume</code> while already running) reports
 the current state without touching the executor.  The TUI status
-bar surfaces a <code>PAUSED</code> badge alongside the existing
-plan/yolo badges so the loop&rsquo;s state stays visible at a
-glance.</p>
+bar and the Web UI header surface a single Codex-style lifecycle
+badge that swaps between <code>PAUSED</code>, <code>DONE</code>,
+<code>BLOCKED</code>, <code>BUDGET LIMITED</code>, and a quiet
+default <code>running</code> state &mdash; the projection lives
+in <code>cantrip.agent.lifecycle</code> so the two surfaces
+never disagree.  Precedence: <code>paused</code> beats
+<code>blocked</code>, <code>budget-limited</code> is more
+specific than <code>blocked</code>, and a session with pending
+or active work always reads as <code>running</code> regardless
+of stale blockers.</p>
 <h3>Project diagnostics</h3>
 <dl>
   <dt><code>/diagnostics</code></dt>

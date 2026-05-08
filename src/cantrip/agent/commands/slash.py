@@ -1291,7 +1291,7 @@ def handle_pause(agent: CantripAgent, args: str) -> str:
 
     changed = executor_ctl.user_pause()
     try:
-        agent.event_bus.publish(ui_events.status_bar_changed(loop_state="paused"))
+        agent.event_bus.publish(ui_events.status_bar_changed(loop_state=agent.lifecycle_label()))
     except (TypeError, ValueError, RuntimeError, AttributeError):
         log.exception("status_bar_changed publish failed on /pause")
 
@@ -1314,7 +1314,7 @@ def handle_resume(agent: CantripAgent, args: str) -> str:
 
     changed = executor_ctl.user_resume()
     try:
-        agent.event_bus.publish(ui_events.status_bar_changed(loop_state="running"))
+        agent.event_bus.publish(ui_events.status_bar_changed(loop_state=agent.lifecycle_label()))
     except (TypeError, ValueError, RuntimeError, AttributeError):
         log.exception("status_bar_changed publish failed on /resume")
 

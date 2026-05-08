@@ -13,6 +13,10 @@
       {% if charm_name %}<span class="charm-name">{{ charm_name }}</span>{% endif %}
     </div>
     <div class="header-right">
+      <span id="lifecycle-badge" class="lifecycle-badge lifecycle-running"
+            role="status" aria-live="polite"
+            aria-label="Autonomous loop state"
+            hidden></span>
       <span id="cache-indicator" class="cache-indicator"
             role="status" aria-live="polite" aria-label="Prompt cache"
             hidden></span>

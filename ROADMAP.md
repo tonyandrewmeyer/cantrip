@@ -2800,16 +2800,24 @@ Three Codex ``/goal`` mechanics are explicitly **out of scope**:
 
 ### 99.4 Medium — Status-bar projection of goal lifecycle state
 
-- [ ] Add a small helper (in ``src/cantrip/agent/state.py`` or beside
+- [x] Add a small helper (in ``src/cantrip/agent/state.py`` or beside
   ``goal_budget.py``) that projects current state into a Codex-style
   label: ``running``, ``paused``, ``done`` (queue empty and no
   active task), ``blocked`` (only blocked tasks remain), or
   ``budget-limited`` (latest budget event is
   ``GOAL_BUDGET_EXCEEDED``).  Read-only over existing fields — no
-  new state, no new persistence.
-- [ ] Surface the label in the TUI status bar and the Web UI status
-  indicator alongside the ``/yolo`` and ``/ralph`` badges.
-- [ ] Unit tests for the projection covering each label and the
+  new state, no new persistence.  (Landed as ``cantrip.agent.lifecycle``
+  with a pure ``lifecycle_label()`` function; ``CantripAgent.lifecycle_label()``
+  bridges it to live state.  Detects budget-limited by matching
+  the ``Goal budget exceeded`` prefix on ``AgentTask.blocked_reason``,
+  which is more reliable than reading the SQLite event log.)
+- [x] Surface the label in the TUI status bar and the Web UI status
+  indicator alongside the ``/yolo`` and ``/ralph`` badges.  (TUI
+  swaps the existing ``loop_state`` reactive between the five labels
+  with per-state CSS tints; Web UI gains a header chip
+  (``#lifecycle-badge``) primed from ``/api/state`` and updated via
+  the existing ``status_bar_changed`` event.)
+- [x] Unit tests for the projection covering each label and the
   precedence ordering between them (e.g. ``paused`` beats
   ``blocked``; ``budget-limited`` beats ``running``).
 
