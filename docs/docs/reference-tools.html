@@ -583,8 +583,69 @@
 <td><code>run_command</code></td>
 <td>Run a shell command</td>
 </tr>
+<tr>
+<td><code>wait_for</code></td>
+<td>Block until a typed condition is true (file appears, port opens, command exits zero, juju app reaches <code>active/idle</code>)</td>
+</tr>
 </tbody>
 </table>
+<h3><code>wait_for</code> &mdash; typed waits</h3>
+<p>Use <code>wait_for</code> instead of scripting <code>until &hellip;; do sleep</code> loops or hanging a turn on a long-timeout subprocess. Predicates are tagged so the schema is enumerable; <code>command_exits_zero</code> runs argv directly (no shell pipeline) and is gated by the same destructive-shape policy as <code>run_command</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Predicate</th>
+<th>Required arguments</th>
+<th>Poll cadence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file_exists</code></td>
+<td><code>path</code></td>
+<td>0.5s</td>
+</tr>
+<tr>
+<td><code>file_absent</code></td>
+<td><code>path</code></td>
+<td>0.5s</td>
+</tr>
+<tr>
+<td><code>process_exited</code></td>
+<td><code>pid</code></td>
+<td>0.5s</td>
+</tr>
+<tr>
+<td><code>port_open</code></td>
+<td><code>port</code> (optional <code>host</code>, default <code>127.0.0.1</code>)</td>
+<td>0.5s</td>
+</tr>
+<tr>
+<td><code>command_exits_zero</code></td>
+<td><code>command</code> (argv list; base must be one of <code>charmcraft</code>, <code>juju</code>, <code>make</code>, <code>pytest</code>, <code>test</code>)</td>
+<td>5s</td>
+</tr>
+<tr>
+<td><code>juju_app_active_idle</code></td>
+<td><code>app</code> (optional <code>model</code>)</td>
+<td>delegates to <code>juju wait-for --timeout</code></td>
+</tr>
+</tbody>
+</table>
+<p>Every call requires <code>timeout_seconds</code> (capped at 1800). Successful calls return a one-line caption like <code>juju app prom reached active/idle after 47.2s</code>; timeouts return <code>success=false</code> with <code>timed_out=true</code> in the result data.</p>
+<p>Worked example &mdash; wait for <code>charmcraft pack</code> to finish a long build, then for the app to settle:</p>
+<pre><code class="language-python">wait_for(
+    predicate=&quot;command_exits_zero&quot;,
+    command=[&quot;charmcraft&quot;, &quot;pack&quot;],
+    timeout_seconds=900,
+)
+wait_for(
+    predicate=&quot;juju_app_active_idle&quot;,
+    app=&quot;my-charm&quot;,
+    timeout_seconds=600,
+)
+</code></pre>
+<p>For waits that must span turns (the autonomous loop should stop while you wait), use <code>/pause</code> and <code>/resume</code> instead &mdash; <code>wait_for</code> blocks the current tool call only.</p>
 <h2 id="memory">Memory</h2>
 <p>Durable learning tools. The agent calls these when the auto-writer
 needs to persist a lesson, or when the user drives a

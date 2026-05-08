@@ -190,6 +190,39 @@ on_this_page:
 | `concierge_status` | Check environment readiness |
 | `list_inference_snaps` | List available local inference snaps |
 | `run_command` | Run a shell command |
+| `wait_for` | Block until a typed condition is true (file appears, port opens, command exits zero, juju app reaches `active/idle`) |
+
+### `wait_for` — typed waits
+
+Use `wait_for` instead of scripting `until …; do sleep` loops or hanging a turn on a long-timeout subprocess. Predicates are tagged so the schema is enumerable; `command_exits_zero` runs argv directly (no shell pipeline) and is gated by the same destructive-shape policy as `run_command`.
+
+| Predicate | Required arguments | Poll cadence |
+|---|---|---|
+| `file_exists` | `path` | 0.5s |
+| `file_absent` | `path` | 0.5s |
+| `process_exited` | `pid` | 0.5s |
+| `port_open` | `port` (optional `host`, default `127.0.0.1`) | 0.5s |
+| `command_exits_zero` | `command` (argv list; base must be one of `charmcraft`, `juju`, `make`, `pytest`, `test`) | 5s |
+| `juju_app_active_idle` | `app` (optional `model`) | delegates to `juju wait-for --timeout` |
+
+Every call requires `timeout_seconds` (capped at 1800). Successful calls return a one-line caption like `juju app prom reached active/idle after 47.2s`; timeouts return `success=false` with `timed_out=true` in the result data.
+
+Worked example — wait for `charmcraft pack` to finish a long build, then for the app to settle:
+
+```python
+wait_for(
+    predicate="command_exits_zero",
+    command=["charmcraft", "pack"],
+    timeout_seconds=900,
+)
+wait_for(
+    predicate="juju_app_active_idle",
+    app="my-charm",
+    timeout_seconds=600,
+)
+```
+
+For waits that must span turns (the autonomous loop should stop while you wait), use `/pause` and `/resume` instead — `wait_for` blocks the current tool call only.
 
 {#memory}
 ## Memory

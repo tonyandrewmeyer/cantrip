@@ -25,6 +25,12 @@ Several tool families are exposed as a single bundled tool with a `subcommand` d
 
 Call them as `juju(subcommand="deploy", charm="redis-k8s", channel="edge")`. The argument schema for each subcommand is in the bundled tool's description — pass the leaf's args as top-level keys alongside `subcommand`. Skill files written before bundling sometimes spell the leaf out (`juju_deploy(...)`, `git_commit(...)`); read those as the equivalent bundled call.
 
+## Waiting for Conditions (`wait_for`)
+
+When you need to block until something becomes true — a file appears, a port opens, an app reaches `active/idle`, `make integration` returns 0 — call `wait_for` with a typed predicate. Do **not** script `until ...; do sleep` loops through `run_command`, and do **not** burn a long-timeout subprocess on a poll that has its own predicate already.
+
+Predicates: `file_exists`, `file_absent`, `process_exited`, `port_open`, `command_exits_zero` (whitelisted argv), `juju_app_active_idle`. Every call must set `timeout_seconds` (capped at 1800). Examples: `wait_for(predicate="juju_app_active_idle", app="prom", timeout_seconds=900)`, `wait_for(predicate="command_exits_zero", command=["make", "integration"], timeout_seconds=1200)`.
+
 ## Indexed Documentation (`docs_search`)
 
 When the user asks "how do I …" about Juju, ops, charmcraft, rockcraft, jubilant, or Charmhub authoring conventions, **call `docs_search` before answering from memory**. The tool returns canonical reference passages with their URLs; cite the URLs verbatim and never paraphrase the docs into specifics that the index didn't return — hallucinated config keys and made-up hook names are the failure mode this tool exists to prevent.

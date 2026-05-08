@@ -186,6 +186,7 @@ def build_tools(
     from cantrip.agent.tools.testing import GenerateTestsTool, RunCharmTestsTool
     from cantrip.agent.tools.upgrade import UpgradeTestTool
     from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
+    from cantrip.agent.tools.wait_for import WaitForTool
     from cantrip.agent.tools.web import WebFetchTool
     from cantrip.agent.tools.web_search import WebSearchTool
     from cantrip.agent.tools.workspace import WorkspaceInfoTool
@@ -365,6 +366,8 @@ def build_tools(
         ConfigUnderLoadTool(),
         # Command runner
         RunCommandTool(),
+        # Block until a typed predicate flips (Phase 100).
+        WaitForTool(),
         # Multi-charm workspace
         WorkspaceInfoTool(),
     ]

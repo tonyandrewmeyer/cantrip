@@ -2877,13 +2877,15 @@ class of failure by construction.
 
 ### 100.1 High — ``wait_for`` tool with a closed predicate set
 
-- [ ] New module ``src/cantrip/agent/tools/wait_for.py`` registering
+- [x] New module ``src/cantrip/agent/tools/wait_for.py`` registering
   a single ``wait_for`` tool.  Predicate is a tagged-union argument
   so the schema is enumerable rather than free-form shell.  Initial
   set:
   - ``file_exists`` — path becomes readable.
   - ``file_absent`` — path goes away (rollback / cleanup waits).
-  - ``process_exited`` — PID terminates; reports exit code.
+  - ``process_exited`` — PID terminates; reports exit code (best-effort:
+    foreign PIDs return ``exit_code=None`` rather than fabricating a
+    value, since ``waitpid`` only works for our own children).
   - ``port_open`` — TCP connect succeeds on host:port.
   - ``command_exits_zero`` — runs a *single* whitelisted command
     (``charmcraft``, ``juju``, ``make``, ``pytest``, ``test``)
@@ -2891,43 +2893,50 @@ class of failure by construction.
   - ``juju_app_active_idle`` — wraps existing
     ``juju_subprocess.wait_for_app`` (``src/cantrip/agent/tools/juju_subprocess.py:143``)
     so the agent stops scripting raw ``juju wait-for`` calls.
-- [ ] Hard ``timeout_seconds`` argument (required, capped at 1800s);
+- [x] Hard ``timeout_seconds`` argument (required, capped at 1800s);
   the tool *always* returns within that bound with a clear
   ``timed_out`` field rather than running indefinitely.
-- [ ] Poll cadence picked by predicate type, not by the model:
+- [x] Poll cadence picked by predicate type, not by the model:
   ``port_open`` / ``process_exited`` polls every 0.5s;
-  ``command_exits_zero`` / ``juju_app_active_idle`` every 5s;
+  ``command_exits_zero`` every 5s; ``juju_app_active_idle``
+  delegates to ``juju wait-for --timeout`` (no Python-side polling);
   ``file_exists`` / ``file_absent`` every 0.5s.  No model-tuned
   knob.
-- [ ] ``ToolResult.caption`` summarises the outcome ("waited 47s for
+- [x] ``ToolResult.caption`` summarises the outcome ("waited 47s for
   ``juju app prom`` to reach active/idle"), per the Phase 81 caption
-  contract — every new tool must set a caption.
-- [ ] Integration with the worker model: ``wait_for`` runs as an
+  contract — every new tool must set a caption.  ``intro_caption``
+  also overrides per predicate so the chat shows a present-continuous
+  "Waiting for …" line while the call is in flight.
+- [x] Integration with the worker model: ``wait_for`` runs as an
   ordinary tool inside the current turn.  No new background-task
   primitive; if the agent needs the wait to span turns, that's a
   scheduler concern (Phase 99 / executor pause), not a wait-for
   concern.
-- [ ] System-prompt guidance in ``src/cantrip/agent/prompts/system.py``
-  pointing at ``wait_for`` for "until X is true" needs, alongside a
-  short anti-pattern note ("don't loop ``run_command sleep``").
-- [ ] Permission hook: ``command_exits_zero`` predicate goes through
+- [x] System-prompt guidance in
+  ``src/cantrip/agent/prompts/system.md.j2`` pointing at ``wait_for``
+  for "until X is true" needs, alongside a short anti-pattern note
+  ("don't loop ``run_command sleep``").
+- [x] Permission hook: ``command_exits_zero`` predicate goes through
   the same allow/deny machinery as ``run_command`` (Phase 80
   ``GovernancePolicy``) so a denied command in the active policy
   cannot be smuggled in via ``wait_for``.
 
 ### 100.2 Medium — Tests and reference docs
 
-- [ ] Unit tests in ``tests/unit/agent/tools/test_wait_for.py``
+- [x] Unit tests in ``tests/unit/agent/tools/test_wait_for.py``
   covering each predicate's success, failure, and timeout paths plus
   the policy-deny path for ``command_exits_zero``.
-- [ ] One end-to-end test that drives ``wait_for(juju_app_active_idle)``
-  against a fake juju surface from ``tests/conftest`` so we catch
-  contract drift if ``wait_for_app`` changes shape.
-- [ ] ``docs/src/reference-tools.md`` gets a ``wait_for`` section with
+- [x] One end-to-end test that drives ``wait_for(juju_app_active_idle)``
+  against a fake ``jubilant.Juju`` surface so we catch contract drift
+  if ``wait_for_app`` changes shape.  (Patches ``jubilant.Juju``
+  directly rather than reusing a ``tests/conftest`` fake — none of
+  the existing fakes covered the ``wait-for application --timeout Ns``
+  call shape.)
+- [x] ``docs/src/reference-tools.md`` gets a ``wait_for`` section with
   the predicate enum, timeout guidance, and a worked example
   ("wait for ``charmcraft pack`` to finish").  Rebuild HTML via
   ``uv run python docs/src/_build.py``.
-- [ ] CHANGELOG entry under Unreleased.
+- [x] CHANGELOG entry under Unreleased.
 
 ### What this phase is *not*
 

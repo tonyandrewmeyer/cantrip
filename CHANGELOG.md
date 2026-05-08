@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`wait_for` tool — typed predicates for "until X is true"
+  waits (Phase 100.1).**  A single tool with a closed predicate
+  set (`file_exists`, `file_absent`, `process_exited`, `port_open`,
+  `command_exits_zero`, `juju_app_active_idle`) so the agent stops
+  scripting `until …; do sleep` loops through `run_command` or
+  hanging a turn on a long-timeout subprocess.  `timeout_seconds`
+  is required (capped at 1800); poll cadence is fixed per predicate.
+  `command_exits_zero` runs argv directly (no shell pipeline) and
+  honours the same destructive-shape policy as `run_command` — a
+  denied command in the active policy cannot be smuggled in via
+  `wait_for`.  `juju_app_active_idle` wraps `juju wait-for
+  application` via Jubilant.  Streaming-style per-line waits stay
+  out of scope behind a named follow-up.
 - **Lifecycle badge in the TUI status bar and Web UI header
   (Phase 99.4).**  A single Codex-style label
   (`running`/`paused`/`done`/`blocked`/`budget-limited`) projects
