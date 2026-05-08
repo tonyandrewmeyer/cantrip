@@ -25,6 +25,7 @@ import logging
 import pathlib
 import shutil
 import subprocess
+from collections.abc import Callable
 
 from cantrip.agent import lint_context
 from cantrip.agent.context_providers import (
@@ -39,6 +40,12 @@ from cantrip.agent.context_providers import (
 )
 from cantrip.agent.tools import charmhub as charmhub_tools
 from cantrip.agent.tools import web as web_tools
+from cantrip.codeintel import CodeIntel
+from cantrip.codeintel.index import (
+    render_definitions,
+    render_references,
+    render_symbols,
+)
 from cantrip.llm import roles as llm_roles
 
 log = logging.getLogger(__name__)
@@ -55,6 +62,11 @@ _URL_MAX_CHARS = chars_for_tokens(3000)
 _CHARM_MAX_CHARS = chars_for_tokens(2000)
 _JUJU_MAX_CHARS = chars_for_tokens(2000)
 _DOCS_MAX_CHARS = chars_for_tokens(3000)
+# Phase 72b: keep codeintel expansions tight — symbol listings and
+# reference lists rarely justify more than a couple of dozen lines
+# inline.  The index already truncates with explicit counts so the
+# block stays honest about elision.
+_CODEINTEL_MAX_CHARS = chars_for_tokens(1500)
 
 _GIT_TIMEOUT_SECONDS = 10.0
 _JUJU_TIMEOUT_SECONDS = 30.0
@@ -621,6 +633,147 @@ class DocsProvider:
 
 
 # ---------------------------------------------------------------------------
+# @symbol / @definition / @references — Phase 72b code intelligence
+# ---------------------------------------------------------------------------
+
+
+CodeIntelGetter = Callable[[], CodeIntel | None]
+
+
+def _codeintel_unavailable(raw: str, name: str) -> ContextBlock:
+    return ContextBlock(
+        raw=raw,
+        rendered=f"[{name}: no active charm path on this session]",
+        error="no charm",
+    )
+
+
+def _build_codeintel(getter: CodeIntelGetter) -> CodeIntel | None:
+    """Resolve the index getter and ensure the index is current.
+
+    Errors during ``build`` are swallowed — codeintel mentions are a
+    convenience surface and a failed parse should not break the rest
+    of the user message.  The mention then renders as a "build
+    failed" inline block instead of crashing the whole expansion.
+    """
+    index = getter()
+    if index is None:
+        return None
+    try:
+        index.build()
+    except (OSError, RuntimeError) as exc:
+        log.warning("codeintel @-provider build failed: %s", exc)
+        return None
+    return index
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SymbolProvider:
+    """``@symbol <query>`` — workspace symbol search via codeintel."""
+
+    info: ProviderInfo = ProviderInfo(
+        name="symbol",
+        summary="Search workspace symbols by name",
+        arg_style=ArgStyle.REST_OF_LINE,
+        args_hint="<query>",
+    )
+    getter: CodeIntelGetter | None = None
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        raw = f"@symbol {args}".rstrip()
+        query = args.strip()
+        if not query:
+            return ContextBlock(
+                raw=raw,
+                rendered="[@symbol: missing query — `@symbol <name>`]",
+                error="missing query",
+            )
+        if self.getter is None:
+            return _codeintel_unavailable(raw, "@symbol")
+        index = _build_codeintel(self.getter)
+        if index is None:
+            return _codeintel_unavailable(raw, "@symbol")
+        matches, truncated = index.workspace_symbols(query)
+        if not matches:
+            return ContextBlock(raw=raw, rendered=f"[@symbol {query}: no matches]")
+        return truncate(
+            raw=raw,
+            rendered=render_symbols(matches, truncated=truncated),
+            max_chars=_CODEINTEL_MAX_CHARS,
+        )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class DefinitionProvider:
+    """``@definition <symbol>`` — go-to-definition via codeintel."""
+
+    info: ProviderInfo = ProviderInfo(
+        name="definition",
+        summary="Resolve a symbol to its defining file/line + snippet",
+        arg_style=ArgStyle.TOKEN,
+        args_hint="<symbol>",
+    )
+    getter: CodeIntelGetter | None = None
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        raw = f"@definition {args}".rstrip()
+        if not args:
+            return ContextBlock(
+                raw=raw,
+                rendered="[@definition: missing symbol — `@definition <name>`]",
+                error="missing symbol",
+            )
+        if self.getter is None:
+            return _codeintel_unavailable(raw, "@definition")
+        index = _build_codeintel(self.getter)
+        if index is None:
+            return _codeintel_unavailable(raw, "@definition")
+        result = index.go_to_definition(args)
+        if not result.semantic:
+            return ContextBlock(raw=raw, rendered=f"[@definition {args}: no semantic match]")
+        return truncate(
+            raw=raw,
+            rendered=render_definitions(result),
+            max_chars=_CODEINTEL_MAX_CHARS,
+        )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReferencesProvider:
+    """``@references <symbol>`` — find-references via codeintel."""
+
+    info: ProviderInfo = ProviderInfo(
+        name="references",
+        summary="List recorded callsites for a symbol",
+        arg_style=ArgStyle.TOKEN,
+        args_hint="<symbol>",
+    )
+    getter: CodeIntelGetter | None = None
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        raw = f"@references {args}".rstrip()
+        if not args:
+            return ContextBlock(
+                raw=raw,
+                rendered="[@references: missing symbol — `@references <name>`]",
+                error="missing symbol",
+            )
+        if self.getter is None:
+            return _codeintel_unavailable(raw, "@references")
+        index = _build_codeintel(self.getter)
+        if index is None:
+            return _codeintel_unavailable(raw, "@references")
+        result = index.find_references(args)
+        if not result.semantic:
+            return ContextBlock(raw=raw, rendered=f"[@references {args}: no semantic match]")
+        return truncate(
+            raw=raw,
+            rendered=render_references(result),
+            max_chars=_CODEINTEL_MAX_CHARS,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Default registry
 # ---------------------------------------------------------------------------
 
@@ -628,6 +781,7 @@ class DocsProvider:
 def build_default_registry(
     *,
     role_router: llm_roles.RoleRouter | None = None,
+    code_intel_getter: CodeIntelGetter | None = None,
 ) -> ProviderRegistry:
     """Return a :class:`ProviderRegistry` with the baseline ``@`` providers.
 
@@ -655,6 +809,10 @@ def build_default_registry(
     ]
     if role_router is not None:
         providers.append(DocsProvider(role_router=role_router))
+    if code_intel_getter is not None:
+        providers.append(SymbolProvider(getter=code_intel_getter))
+        providers.append(DefinitionProvider(getter=code_intel_getter))
+        providers.append(ReferencesProvider(getter=code_intel_getter))
     for provider in providers:
         registry.register(_as_protocol(provider))
     return registry

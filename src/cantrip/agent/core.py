@@ -519,6 +519,7 @@ class CantripAgent:
         self.context_providers: context_providers.ProviderRegistry = (
             context_providers_builtin.build_default_registry(
                 role_router=self.role_router if self.role_router.has_embed() else None,
+                code_intel_getter=self._code_intel_or_none,
             )
         )
 
