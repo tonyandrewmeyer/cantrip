@@ -31,6 +31,11 @@ from cantrip.agent import declarative_retry, sandbox
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.commands import mcp as mcp_commands
 from cantrip.agent.commands.budget import handle_budget
+from cantrip.agent.commands.codeintel import (
+    handle_definition,
+    handle_references,
+    handle_symbols,
+)
 from cantrip.agent.commands.cost import format_cost
 from cantrip.agent.commands.goal import handle_goal
 from cantrip.agent.commands.map import handle_map, handle_map_refresh
@@ -97,6 +102,9 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
     CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
+    CommandInfo("/symbols", "Search workspace symbols by name (read-only code intel)"),
+    CommandInfo("/definition", "Resolve a symbol to its defining file/line + snippet"),
+    CommandInfo("/references", "List every recorded callsite for a symbol"),
     CommandInfo("/diagnostics", "Show ruff/ty/charmlint issues across the active charm"),
     CommandInfo("/review", "Run prompt-based review checks (judgment-based rules)"),
     CommandInfo("/search-charms", "Search Charmhub and Launchpad for existing charms"),
@@ -281,6 +289,12 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_map(agent, args), markdown=True)
     if verb == "/map-refresh":
         return SlashResult(text=handle_map_refresh(agent, args), markdown=True)
+    if verb == "/symbols":
+        return SlashResult(text=handle_symbols(agent, args), markdown=True)
+    if verb == "/definition":
+        return SlashResult(text=handle_definition(agent, args), markdown=True)
+    if verb == "/references":
+        return SlashResult(text=handle_references(agent, args), markdown=True)
     if verb == "/diagnostics":
         return _handle_diagnostics(agent, args)
     if verb == "/review":
@@ -624,6 +638,16 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "- `/map-refresh` — discard the repo-map cache "
         "(`.cantrip-repomap.json`) and reparse from scratch.  "
         "Same compact-vs-full toggle as `/map`.\n"
+        "- `/symbols <query>` — search the workspace symbol index "
+        "(Phase 72b).  Layered match policy: exact qualified > "
+        "exact > prefix > fuzzy.  Use this instead of grep when "
+        "you know the symbol name.\n"
+        "- `/definition <symbol>` — resolve a symbol to its "
+        "defining file/line plus a bounded snippet.  Ambiguous "
+        "queries return every candidate.\n"
+        "- `/references <symbol>` — list every recorded callsite "
+        "(call, attribute access, import) for a symbol, with file:line "
+        "locations.  Honest about ambiguity and truncation.\n"
         "- `/search-charms <query>` — Phase 70.1 Librarian: search "
         "Charmhub and Launchpad in parallel for existing charms or "
         "projects matching *query*.  Quality flags surface stale or "
