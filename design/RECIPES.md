@@ -45,10 +45,11 @@ list are the cost of a reproducible execution surface.
 
 ## Discovery
 
-Two roots, in precedence order (later wins on name collision):
+Three roots, in precedence order (later wins on name collision):
 
 | Path | Scope |
 |------|-------|
+| ``cantrip/recipes/*.yaml`` (bundled) | Built-ins shipped in the wheel |
 | ``~/.config/cantrip/recipes/*.yaml`` | User-personal recipes |
 | ``<charm>/.cantrip-recipes/*.yaml`` | Repo-shared recipes |
 
@@ -255,26 +256,54 @@ output so users know the field is recorded-but-not-applied.
 
 ### Extensions (``extensions``)
 
-Recorded as a tuple of strings so the schema captures the intent:
-``mcp:<server>`` declares an MCP server requirement;
-``tool:<name>`` declares a built-in tool requirement.
+A tuple of strings declaring tool / MCP-server requirements:
 
-Enforcement (refuse to invoke if a required server isn't connected)
-is a follow-up landing.  Listing extensions today is forward-
-compatible — when the dispatcher learns to enforce them, no recipe
-rewrite is needed.
+- ``mcp:<server-name>`` — the named MCP server must be CONNECTED on
+  :pyattr:`CantripAgent.mcp_registry` at dispatch.  PENDING /
+  FAILED / STOPPED all count as missing so the recipe doesn't run
+  against half-loaded tooling.
+- ``tool:<tool-name>`` — the named built-in tool must appear in
+  :pyattr:`CantripAgent._tool_map` (i.e., registered for the
+  active session).  Recipes that depend on a feature-gated tool
+  fail cleanly when the gate is off.
+
+Cantrip refuses to invoke the recipe when any extension is
+unmet, listing only the missing ones in the refusal message.
+Unknown prefixes (no ``:`` separator or anything other than ``mcp``
+/ ``tool``) are treated as missing so a typo surfaces immediately.
 
 ### Sub-recipes (``sub_recipes``)
 
-Recorded so the schema is complete, but orchestration is deferred:
+A list of :class:`SubRecipeRef` mappings the dispatcher runs
+**after** the parent's primary reply (and after the parent's
+retry / response validation):
 
-- Default semantics will be parallel via Phase 44 worktrees when
-  the parent runs them in a loop, sequential when invoked once.
-- ``sequential_when_repeated`` overrides the loop default.
-- The dispatcher today ignores ``sub_recipes`` and runs only the
-  parent's top-level instructions.  Help output flags this so
-  authors don't expect cross-recipe composition before the
-  follow-up landing.
+- **Sequential only in v1.**  Every sub-recipe runs in declaration
+  order.  ``sequential_when_repeated`` parses cleanly so authors
+  can describe the intent today; parallel/worktree dispatch via
+  Phase 44 worktrees is a follow-up landing.
+- **Each sub-recipe is its own dispatch.**  Sub-recipes inherit
+  the agent's permission policy, run their own ``retry`` block
+  if declared, validate their own ``response`` schema, and
+  enforce their own ``extensions``.  A failure in one sub-recipe
+  does not abort the chain.
+- **Cycle-safe.**  The dispatcher tracks the chain of recipe
+  names already on the stack and refuses any sub-recipe that
+  would loop back into it.  The cycle path is surfaced to the
+  user in the chat output.
+- **Missing sub-recipes are non-fatal.**  A reference to an
+  unknown recipe name surfaces a one-line "skipped" note inline
+  in the parent's output rather than aborting the chain.
+- **Output composition.**  The parent's reply renders verbatim,
+  followed by one section per sub-recipe headed by
+  ``### Sub-recipe N/M: \`<name>\```.  No template-level
+  interleaving — the sub-recipe's reply does not splice into the
+  parent's instructions.
+
+``SubRecipeRef.values`` is a pre-parsed mapping that bypasses
+argv parsing on the sub-recipe's binder; coercion still runs so
+a YAML literal that doesn't already match the parameter type
+binds correctly.
 
 ## Dispatch flow
 
@@ -298,20 +327,44 @@ Unit-test coverage lives in
 and ``tests/unit/agent/commands/test_recipe_slash.py`` (catalogue,
 help paths, invocation, schema validation, dispatcher integration).
 
+## Built-in recipes
+
+Three ship inside the wheel under ``cantrip/recipes/``:
+
+- ``charm-new.yaml`` — frames the standard research → design →
+  confirm → build pipeline for a new charm.  Parameters cover
+  ``workload`` (required), ``substrate`` (k8s | machine),
+  ``framework`` (auto | flask | django | fastapi | go | nodejs |
+  python-other | custom), and observability switches
+  (``with_cos``, ``with_tracing``).  No retry — the flow naturally
+  pauses for user confirmation between phases.
+- ``charm-cos-add.yaml`` — adds the COS bundle (Prometheus /
+  Loki / Grafana / Tempo) to the active charm.  Parameters cover
+  the metrics endpoint shape (``metrics_path`` / ``metrics_port``)
+  and four switch knobs (``include_logs``, ``include_dashboards``,
+  ``include_tracing``).  Retry runs until ``charmcraft.yaml``
+  declares the new relations and ``make check`` exits clean.
+- ``charm-reactive-to-ops.yaml`` — walks a reactive charm onto
+  the Operator Framework idiom.  Parameters cover the target
+  ``ops`` version, action / interface preservation, and whether
+  to scaffold Scenario + Jubilant tests.  Retry verifies that
+  ``charms.reactive`` is gone from ``src/`` and ``make check``
+  passes.
+
+Override any built-in by dropping a same-named YAML file into
+the user or repo scope; the loader's later-wins precedence
+applies.
+
 ## Deferred
 
 Tracked under Phase 73.1 and follow-up landings:
 
-- Sub-recipe orchestration (parallel via Phase 44 worktrees,
-  sequential, cycle detection).
+- Sub-recipe parallel dispatch (Phase 44 worktrees) — sequential
+  is shipping in v1; parallel is gated behind a real
+  multi-recipe workload that benefits from the isolation.
 - ``settings.model`` / ``settings.temperature`` / ``settings.max_turns``
   applied at dispatch.
-- ``extensions`` enforcement (refuse to invoke when an MCP server
-  or tool is missing).
-- Three built-in recipes (``charm-new``, ``charm-cos-add``,
-  ``charm-reactive-to-ops``).
 - Interactive prompt callback for ``requirement: prompted``
   parameters wired into the TUI / Web prompt manager.
-- ``docs/src/howto-recipes.md`` user-facing how-to.
 - Native provider enforcement via ``response_schema`` for recipes
   that don't call tools.

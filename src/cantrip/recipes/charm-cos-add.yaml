@@ -1,0 +1,98 @@
+version: 1
+title: Add COS observability to an existing charm
+description: |
+  Wires the standard Canonical Observability Stack (Prometheus,
+  Grafana, Loki, Tempo) into a charm that does not yet expose
+  metrics, logs, dashboards, or traces.  Operates on the active
+  charm (``state.charm_path``); invoke from the directory containing
+  ``charmcraft.yaml`` so Cantrip's session is rooted there.
+
+parameters:
+  - name: metrics_path
+    type: string
+    default: /metrics
+    description: |
+      HTTP path the workload exposes Prometheus metrics on.  Used
+      to seed the Prometheus scrape config — the agent will adjust
+      if the workload uses a different endpoint shape (e.g.,
+      sidecar-rendered metrics, OpenMetrics on a separate port).
+
+  - name: metrics_port
+    type: number
+    default: 8080
+    description: TCP port the workload exposes metrics on.
+
+  - name: include_logs
+    type: boolean
+    default: true
+    description: Add the Loki push integration for charm + workload logs.
+
+  - name: include_dashboards
+    type: boolean
+    default: true
+    description: Provide a starter Grafana dashboard exposed via grafana_dashboard.
+
+  - name: include_tracing
+    type: boolean
+    default: true
+    description: Wire ops-tracing so charm code emits spans to Tempo.
+
+instructions: |
+  Add COS observability to the active charm.
+
+  Required integrations (use PyPI charm libraries, not
+  ``charmcraft fetch-libs``):
+
+  - ``prometheus_scrape`` provider on ``metrics-endpoint`` —
+    scrape ``{{ metrics_path }}`` on port {{ metrics_port }}.
+  {% if include_logs -%}
+  - ``loki_push_api`` consumer on ``log-proxy`` — Pebble plan
+    ships workload stdout/stderr through to Loki.
+  {%- endif %}
+  {% if include_dashboards -%}
+  - ``grafana_dashboard`` provider on ``grafana-dashboard`` —
+    starter dashboard with request rate, error rate, latency,
+    and saturation panels.  Use the workload's documented SLOs
+    where they exist.
+  {%- endif %}
+  {% if include_tracing -%}
+  - ``tracing`` consumer on ``charm-tracing`` plus the
+    ``ops-tracing`` package wired into ``src/charm.py`` — every
+    Operator Framework hook emits a span automatically.
+  {%- endif %}
+
+  Concrete steps:
+
+  1. Inspect the existing ``charmcraft.yaml`` and ``src/charm.py``
+     to learn what relations and Pebble layers already exist.
+  2. Add the required relations to ``charmcraft.yaml`` (or
+     ``metadata.yaml`` for charms still on the legacy split).
+  3. Add the charm libraries to ``charm-libs`` in
+     ``charmcraft.yaml`` (PyPI versions; ``charmcraft fetch-libs``
+     only when the package isn't on PyPI).
+  4. Wire the consumer/provider classes into ``src/charm.py`` —
+     instantiate at construction, hook into ``__init__``.
+  5. Update Scenario unit tests to cover the new relations.
+  6. Add Jubilant integration tests that ``relate`` the charm
+     to a real ``cos-lite`` deployment if the test harness
+     supports it; otherwise stub the relation databag.
+
+  Stop and ask the user when:
+  - The workload's metrics endpoint shape differs materially from
+    ``{{ metrics_path }}`` on port {{ metrics_port }}.
+  - The charm already has a partial COS integration that needs
+    reconciling rather than replacing.
+  - A required PyPI library is unmaintained or has unresolved
+    security advisories.
+
+retry:
+  max_retries: 2
+  timeout_seconds: 1200
+  checks:
+    - type: shell
+      command: |
+        grep -q "metrics-endpoint\|log-proxy\|grafana-dashboard\|charm-tracing" charmcraft.yaml metadata.yaml 2>/dev/null
+      timeout_seconds: 10
+    - type: shell
+      command: make check
+      timeout_seconds: 600

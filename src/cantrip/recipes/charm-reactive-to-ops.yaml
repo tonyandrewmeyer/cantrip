@@ -1,0 +1,113 @@
+version: 1
+title: Migrate a reactive charm to the Operator Framework
+description: |
+  Walks an existing reactive charm (``layer:foo`` / ``@when_*``
+  decorators / ``charms.reactive`` imports) onto the Operator
+  Framework idiom: an ``ops.CharmBase`` subclass with framework-
+  observed events, Scenario unit tests, and Jubilant integration
+  tests.  Operates on the active charm — invoke from the directory
+  containing the reactive charm so Cantrip's session is rooted there.
+
+parameters:
+  - name: target_ops_version
+    type: string
+    default: ">=2.16"
+    description: |
+      Version constraint for the ``ops`` Python package in
+      ``charmcraft.yaml`` (or ``requirements.txt`` for legacy
+      builds).  Use a current minor — older charms occasionally
+      pin to ``<2`` and the migration is the right time to move on.
+
+  - name: keep_actions
+    type: boolean
+    default: true
+    description: Preserve every action declared in ``actions.yaml``.
+
+  - name: keep_relation_interfaces
+    type: boolean
+    default: true
+    description: |
+      Preserve the existing relation interface names so already-
+      deployed bundles keep relating cleanly.  Disable only when
+      the migration is large enough to justify a breaking change.
+
+  - name: scaffold_tests
+    type: boolean
+    default: true
+    description: |
+      Generate Scenario unit tests covering the migrated event
+      handlers plus Jubilant integration tests for relation
+      interfaces.  Tests are mandatory for a clean migration —
+      disable only when porting a charm that ships its own
+      integration suite already.
+
+instructions: |
+  Migrate the active reactive charm to the Operator Framework.
+
+  Target: ``ops {{ target_ops_version }}``.
+
+  Mandatory steps:
+
+  1. **Inventory.**  Read the existing layers ({% raw %}``layer.yaml``{% endraw %},
+     ``layer-options.yaml``), the ``charms.reactive`` decorators
+     (``@when``, ``@when_not``, ``@hook``), the actions, the
+     relation interfaces, and any Pebble-equivalent state machines
+     hiding inside ``hooks/``.  Record the entry points so the
+     ``ops`` event handlers map cleanly.
+  2. **Scaffold.**  Generate a fresh ``src/charm.py`` with an
+     ``ops.CharmBase`` subclass, ``observe`` every framework event
+     a reactive ``@when`` was watching, port the action handlers,
+     and re-declare the relations using the new
+     ``charm-libs`` / PyPI library pattern.
+  {% if keep_actions -%}
+  3. **Actions.**  Every action in ``actions.yaml`` must have a
+     matching ``_on_<action>_action`` handler in the new charm.
+  {%- else -%}
+  3. **Actions.**  Drop unused or duplicated actions; surface a
+     deprecation note for any removed action so operators
+     upgrading from the reactive charm see why their habit broke.
+  {%- endif %}
+  {% if keep_relation_interfaces -%}
+  4. **Relations.**  Keep the interface names from
+     ``metadata.yaml``.  Already-deployed bundles must continue
+     to relate without intervention.
+  {%- else -%}
+  4. **Relations.**  Reshape relation interfaces freely;
+     document the breaking change in ``CHANGELOG.md`` and bump
+     the major version of ``charmcraft.yaml``.
+  {%- endif %}
+  5. **Pebble.**  Translate any reactive layer service-management
+     code into a Pebble plan via the ``ops.pebble`` API.  Restart
+     semantics, file ownership, and environment variables must
+     match the reactive charm exactly.
+  {% if scaffold_tests -%}
+  6. **Tests.**  Add Scenario unit tests in ``tests/unit/`` (use
+     ``ops.testing``, **not** ``Harness``) covering every observed
+     event and action.  Add Jubilant integration tests in
+     ``tests/integration/`` (use ``Jubilant``, **not**
+     ``pytest-operator``) covering the deploy + relation flow.
+  {%- endif %}
+  7. **Cleanup.**  Remove ``charms.reactive``, ``hookenv``, and
+     any ``layer-`` directories.  ``charmcraft.yaml`` must declare
+     a non-reactive build path.  ``make check`` must pass before
+     handing back.
+
+  Stop and ask the user when:
+  - A reactive layer pulls in an out-of-tree dependency that has
+    no ops-framework equivalent.
+  - The reactive charm's hook order materially affects workload
+    state in a way that would change on the new framework.
+  - A relation interface is shared with another charm whose
+    behaviour assumes reactive semantics.
+
+retry:
+  max_retries: 1
+  timeout_seconds: 1800
+  checks:
+    - type: shell
+      command: |
+        ! grep -rq "from charms.reactive\|from charmhelpers" src/ 2>/dev/null
+      timeout_seconds: 10
+    - type: shell
+      command: make check
+      timeout_seconds: 600

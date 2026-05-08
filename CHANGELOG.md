@@ -6,23 +6,30 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Added
 - **Parameterised recipes (Phase 73.1).**  YAML recipes under
-  ``<charm>/.cantrip-recipes/`` (repo) and
-  ``~/.config/cantrip/recipes/`` (user) carry typed parameters
+  ``<charm>/.cantrip-recipes/`` (repo),
+  ``~/.config/cantrip/recipes/`` (user), and the bundled
+  ``cantrip/recipes/`` (built-ins) carry typed parameters
   (string / number / boolean / date / file / select) with
   ``required`` / ``optional`` / ``prompted`` requirement and
   Jinja-rendered ``instructions`` so a complex multi-step prompt
   can be invoked deterministically: ``/recipe charm-cos-add
-  charm_name=ntfy scrape_path=/metrics``.  Recipes compose with
-  Phase 73.3 ``response`` (post-hoc JSON-schema validation of the
-  final reply) and Phase 73.4 ``retry`` (rerun until shell /
-  file-exists / JSON-schema checks pass).  Bare ``/recipe`` lists
-  the catalogue; ``/recipe <name> --help`` shows the parameter
-  list.  Sub-recipe orchestration, ``settings`` mid-session swap,
-  ``extensions`` enforcement, and the three built-in recipes
-  (``charm-new``, ``charm-cos-add``, ``charm-reactive-to-ops``)
-  are explicitly deferred to a follow-up — the schema accepts
-  them today so the YAML stays forward-compatible.  See
-  ``design/RECIPES.md`` for the full schema and dispatcher flow.
+  metrics_path=/metrics``.  Recipes compose with Phase 73.3
+  ``response`` (post-hoc JSON-schema validation of the final
+  reply) and Phase 73.4 ``retry`` (rerun until shell /
+  file-exists / JSON-schema checks pass).  Three built-ins ship
+  in the wheel: ``charm-new`` (research → design → build for a
+  new workload), ``charm-cos-add`` (add COS observability to an
+  existing charm), and ``charm-reactive-to-ops`` (migrate a
+  reactive charm onto the Operator Framework).  ``extensions: [
+  mcp:..., tool:... ]`` is enforced at dispatch — recipes refuse
+  to run when a required MCP server isn't connected or a
+  required built-in tool isn't registered.  Bare ``/recipe``
+  lists the catalogue; ``/recipe <name> --help`` shows the
+  parameter list.  Sub-recipe orchestration and ``settings``
+  mid-session swap remain deferred — the schema accepts them
+  today so the YAML stays forward-compatible.  See
+  ``design/RECIPES.md`` and ``docs/docs/howto-recipes.html`` for
+  the full schema and dispatcher flow.
 
 ### Fixed
 - **Inference-snap context probe hits `/v1/slots`, never auto-detects

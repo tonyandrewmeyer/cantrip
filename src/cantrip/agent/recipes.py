@@ -108,6 +108,13 @@ _SUB_RECIPE_KEYS: frozenset[str] = frozenset({"name", "values", "sequential_when
 USER_CONFIG_RECIPES_DIR = pathlib.Path(".config") / "cantrip" / "recipes"
 REPO_RECIPES_DIR = pathlib.Path(".cantrip-recipes")
 
+#: Bundled recipes ship inside the Cantrip wheel at ``cantrip/recipes/``
+#: (a sibling of ``cantrip/skills/``).  This is a *content* directory,
+#: not a Python package — there is no ``__init__.py``.  Built-ins are
+#: walked first, so user and repo recipes can override a built-in by
+#: naming a YAML file the same.
+BUNDLED_RECIPES_DIR = pathlib.Path(__file__).resolve().parents[1] / "recipes"
+
 
 _VALID_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -569,19 +576,27 @@ def discover_recipes(
     *,
     charm_path: pathlib.Path | None = None,
     user_config_dir: pathlib.Path | None = None,
+    bundled_dir: pathlib.Path | None = None,
 ) -> list[Recipe]:
-    """Discover recipes from the user and repo directories.
+    """Discover recipes from bundled, user, and repo directories.
 
-    Returns a list in ``name`` order.  Repo recipes override user
-    recipes when names collide, matching the precedence rule
-    :mod:`cantrip.agent.commands.custom` uses for slash commands.
-    ``user_config_dir`` defaults to ``~/.config/cantrip/`` — override
-    for tests.
+    Returns a list in ``name`` order.  Precedence (later wins on
+    name collision): bundled built-ins < user (``~/.config/cantrip/
+    recipes/``) < repo (``<charm>/.cantrip-recipes/``).  This mirrors
+    :mod:`cantrip.agent.commands.custom` for slash commands and lets
+    a user override a built-in just by dropping a same-named YAML
+    file into either personal or repo scope.  ``user_config_dir``
+    defaults to ``~/.config/cantrip/`` and ``bundled_dir`` defaults
+    to :data:`BUNDLED_RECIPES_DIR` — override for tests.
     """
     if user_config_dir is None:
         user_config_dir = pathlib.Path.home() / ".config" / "cantrip"
+    if bundled_dir is None:
+        bundled_dir = BUNDLED_RECIPES_DIR
     user_dir = user_config_dir / "recipes"
-    merged: dict[str, Recipe] = dict(_collect_recipes(user_dir))
+    merged: dict[str, Recipe] = dict(_collect_recipes(bundled_dir))
+    for name, recipe in _collect_recipes(user_dir).items():
+        merged[name] = recipe
     if charm_path is not None:
         repo_dir = charm_path / REPO_RECIPES_DIR
         for name, recipe in _collect_recipes(repo_dir).items():
@@ -731,8 +746,35 @@ async def bind_parameters(
       surface fails loudly rather than silently dropping the param).
     """
     raw_argv = _parse_argv(args)
+    return await _bind_values(recipe, raw_argv, prompt_callback=prompt_callback)
+
+
+async def bind_parameter_values(
+    recipe: Recipe,
+    values: Mapping[str, Any],
+    *,
+    prompt_callback: PromptCallback | None = None,
+) -> dict[str, Any]:
+    """Bind a YAML / dict-shaped values map against declared parameters.
+
+    Same semantics as :func:`bind_parameters` but the inputs come from
+    a pre-parsed mapping (e.g.  :pyattr:`SubRecipeRef.values`) instead
+    of an argv string.  Coercion still runs so YAML literals that
+    don't already match the parameter type (a ``string`` in place of a
+    ``number``, or a stringified date) bind correctly.
+    """
+    return await _bind_values(recipe, values, prompt_callback=prompt_callback)
+
+
+async def _bind_values(
+    recipe: Recipe,
+    raw_values: Mapping[str, Any],
+    *,
+    prompt_callback: PromptCallback | None = None,
+) -> dict[str, Any]:
+    """Shared binder used by both argv and pre-parsed-mapping callers."""
     declared = {p.name: p for p in recipe.parameters}
-    unknown = set(raw_argv.keys()) - set(declared.keys())
+    unknown = set(raw_values.keys()) - set(declared.keys())
     if unknown:
         raise RecipeError(
             f"unknown parameters {sorted(unknown)}; "
@@ -740,18 +782,18 @@ async def bind_parameters(
         )
     bound: dict[str, Any] = {}
     for parameter in recipe.parameters:
-        if parameter.name in raw_argv:
+        if parameter.name in raw_values:
             try:
                 bound[parameter.name] = _coerce_value(
                     parameter.type,
-                    raw_argv[parameter.name],
+                    raw_values[parameter.name],
                     options=parameter.options,
                 )
             except RecipeError as exc:
                 raise RecipeError(f"parameter {parameter.name!r}: {exc}") from exc
             continue
 
-        # Not in argv — fall through to default / prompt / error.
+        # Not in inputs — fall through to default / prompt / error.
         if parameter.default is not None:
             bound[parameter.name] = parameter.default
             continue
@@ -864,6 +906,7 @@ __all__ = [
     "PARAMETER_TYPES",
     "Parameter",
     "PromptCallback",
+    "BUNDLED_RECIPES_DIR",
     "REPO_RECIPES_DIR",
     "USER_CONFIG_RECIPES_DIR",
     "Recipe",
@@ -872,6 +915,7 @@ __all__ = [
     "RecipeResponseSpec",
     "RecipeSettings",
     "SubRecipeRef",
+    "bind_parameter_values",
     "bind_parameters",
     "discover_recipes",
     "load_recipe_file",

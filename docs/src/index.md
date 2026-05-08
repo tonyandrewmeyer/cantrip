@@ -153,6 +153,18 @@ section: index
     </p>
   </a>
 
+  <a href="howto-recipes.html" class="doc-card">
+    <span class="doc-card-label">How-to</span>
+    <h3>Run a recipe</h3>
+    <p>
+      Parameterised, retryable workflows committed alongside the
+      charm: <code>/recipe charm-cos-add</code> or
+      <code>/recipe charm-reactive-to-ops</code> ship the same
+      prompt, the same parameter shapes, and the same convergence
+      checks every time.
+    </p>
+  </a>
+
   <a href="howto-mcp.html" class="doc-card">
     <span class="doc-card-label">How-to</span>
     <h3>Configure MCP servers</h3>

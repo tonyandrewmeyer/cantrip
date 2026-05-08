@@ -85,14 +85,15 @@ def _format_recipe_help(recipe: recipes.Recipe) -> str:
     if recipe.extensions:
         lines.append("")
         lines.append(
-            "_Extensions are recorded but enforcement is deferred — see "
-            "design/RECIPES.md for the rationale._"
+            f"_Required extensions: {', '.join(f'`{e}`' for e in recipe.extensions)}.  "
+            "The recipe will refuse to invoke when any of them are missing._"
         )
     if recipe.sub_recipes:
         lines.append("")
         lines.append(
-            "_Sub-recipes are recorded but orchestration is deferred — "
-            "this recipe will run its top-level instructions only._"
+            f"_Runs {len(recipe.sub_recipes)} sub-recipe(s) sequentially "
+            "after the parent reply.  Cycles are refused; missing "
+            "sub-recipe names are skipped with a note in the output._"
         )
     return "\n".join(lines)
 
@@ -179,12 +180,45 @@ def handle_recipe(agent: CantripAgent, args: str) -> SlashResult:
 # ---------------------------------------------------------------------------
 
 
-async def _invoke_recipe(agent: CantripAgent, recipe: recipes.Recipe, args: str) -> str:
-    """Bind, render, and run *recipe* through the agent's primary loop."""
-    try:
-        bound = await recipes.bind_parameters(
-            recipe, args, prompt_callback=_make_prompt_callback(agent, recipe)
+async def _invoke_recipe(
+    agent: CantripAgent,
+    recipe: recipes.Recipe,
+    args: str,
+    *,
+    chain: tuple[str, ...] = (),
+    sub_values: object | None = None,
+) -> str:
+    """Bind, render, and run *recipe* through the agent's primary loop.
+
+    ``chain`` carries the names of recipes already on the call stack so
+    sub-recipes can refuse cycles cleanly.  ``sub_values`` is set when
+    the call originates from another recipe's ``sub_recipes:`` list —
+    it short-circuits argv parsing and binds the pre-parsed mapping
+    instead.  Both are internal contracts; primary ``/recipe`` callers
+    still pass argv via ``args``.
+    """
+    missing = _check_extensions(agent, recipe)
+    if missing:
+        bullets = "\n".join(f"  - `{ext}`" for ext in missing)
+        return (
+            f"`/recipe {recipe.name}` cannot run — required extensions are "
+            f"unavailable:\n{bullets}\n\n"
+            "Connect the missing MCP servers via `/mcp` (or check the active "
+            "tool roster) and try again.  Drop the recipe's `extensions:` "
+            "block to invoke without enforcement."
         )
+
+    try:
+        if sub_values is not None:
+            bound = await recipes.bind_parameter_values(
+                recipe,
+                sub_values,
+                prompt_callback=_make_prompt_callback(agent, recipe),
+            )
+        else:
+            bound = await recipes.bind_parameters(
+                recipe, args, prompt_callback=_make_prompt_callback(agent, recipe)
+            )
     except recipes.RecipeError as exc:
         return f"`/recipe {recipe.name}` failed: {exc}"
 
@@ -212,7 +246,63 @@ async def _invoke_recipe(agent: CantripAgent, recipe: recipes.Recipe, args: str)
         if validation_note is not None:
             response_text = f"{response_text}\n\n{validation_note}"
 
+    if recipe.sub_recipes:
+        sub_output = await _run_sub_recipes(agent, recipe, chain=chain)
+        if sub_output:
+            response_text = f"{response_text}\n\n{sub_output}"
+
     return response_text
+
+
+async def _run_sub_recipes(
+    agent: CantripAgent,
+    parent: recipes.Recipe,
+    *,
+    chain: tuple[str, ...],
+) -> str:
+    """Run *parent*'s ``sub_recipes`` sequentially after the parent reply.
+
+    v1 semantics:
+
+    * Sub-recipes run **after** the parent's primary reply (and after
+      its retry / response validation).  No template-level interleaving.
+    * **Sequential only** — every sub-recipe runs in order.  The
+      ``sequential_when_repeated`` flag parses cleanly so authors can
+      describe the intent today; parallel/worktree dispatch is a
+      follow-up landing.
+    * **Cycle-safe** — a sub-recipe that names itself, or names any
+      recipe already on the chain, is refused with a clear error
+      rather than recursing.  The chain is composed of recipe names
+      (parent first, then any nesting).
+    * **Lookup miss** is non-fatal — the missing name is reported
+      alongside whatever sub-recipes did run, so a partial chain
+      surfaces useful work.
+    """
+    registry = getattr(agent, "recipes", None)
+    if not isinstance(registry, recipes.RecipeRegistry):
+        return ""
+
+    next_chain = (*chain, parent.name)
+    sections: list[str] = []
+    for index, ref in enumerate(parent.sub_recipes, start=1):
+        header = f"### Sub-recipe {index}/{len(parent.sub_recipes)}: `{ref.name}`"
+        if ref.name in next_chain:
+            cycle = " → ".join((*next_chain, ref.name))
+            sections.append(f"{header}\n\n_Refused — cycle detected: {cycle}._")
+            continue
+        sub_recipe = registry.get(ref.name)
+        if sub_recipe is None:
+            sections.append(f"{header}\n\n_No recipe named `{ref.name}`; skipped._")
+            continue
+        sub_output = await _invoke_recipe(
+            agent,
+            sub_recipe,
+            args="",
+            chain=next_chain,
+            sub_values=ref.values,
+        )
+        sections.append(f"{header}\n\n{sub_output}")
+    return "\n\n".join(sections)
 
 
 def _validate_response(recipe: recipes.Recipe, response: str) -> str | None:
@@ -255,6 +345,75 @@ def _format_retry_outcome(
     if outcome.on_failure_ran:
         summary += "\n_on_failure cleanup ran._"
     return outcome.output + summary
+
+
+def _check_extensions(agent: CantripAgent, recipe: recipes.Recipe) -> list[str]:
+    """Return the extensions that the active session cannot satisfy.
+
+    Two recognised forms:
+
+    * ``mcp:<server-name>`` — the named MCP server must be CONNECTED on
+      :pyattr:`CantripAgent.mcp_registry`.  PENDING / FAILED / STOPPED
+      all count as missing so the recipe doesn't run against half-loaded
+      tooling.
+    * ``tool:<tool-name>`` — the named built-in tool must be in
+      :pyattr:`CantripAgent._tool_map` (i.e., registered for this
+      session).  Recipes that depend on a feature-gated tool fail
+      cleanly when the gate is off.
+
+    Unknown forms (no ``:`` prefix or an unrecognised prefix) are
+    treated as missing so a typo surfaces immediately.  An empty
+    extensions list always passes.
+    """
+    if not recipe.extensions:
+        return []
+
+    missing: list[str] = []
+
+    # MCP-connected names live on the registry; build the set lazily so
+    # a session without an MCP registry doesn't crash on attribute
+    # access.
+    connected_mcp: set[str] = set()
+    registry = getattr(agent, "mcp_registry", None)
+    if registry is not None:
+        try:
+            for snapshot in registry.snapshot():
+                # ``ServerStatus.CONNECTED`` is a StrEnum; compare by value
+                # so the recipes module doesn't take a hard import on the
+                # mcp package.
+                if str(snapshot.status) == "connected":
+                    connected_mcp.add(snapshot.name)
+        except (AttributeError, TypeError):
+            # An unusual MCP-registry shim (e.g., MagicMock in tests)
+            # is the same as "no servers connected" for enforcement
+            # purposes — the recipe's extensions are unmet.
+            connected_mcp = set()
+
+    tool_map: dict[str, object] = {}
+    try:
+        # ``_tool_map`` is the canonical lookup the executor uses; the
+        # leading underscore is a "tools register lazily" hint, not a
+        # privacy boundary.
+        candidate = agent._tool_map
+        if isinstance(candidate, dict):
+            tool_map = candidate
+    except (AttributeError, TypeError):
+        tool_map = {}
+
+    for ext in recipe.extensions:
+        prefix, _, target = ext.partition(":")
+        if not _ or not target:
+            missing.append(ext)
+            continue
+        if prefix == "mcp":
+            if target not in connected_mcp:
+                missing.append(ext)
+        elif prefix == "tool":
+            if target not in tool_map:
+                missing.append(ext)
+        else:
+            missing.append(ext)
+    return missing
 
 
 def _make_prompt_callback(

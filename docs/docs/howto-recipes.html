@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to run a recipe &mdash; Cantrip</title>
+<meta name="description" content="Recipes are parameterised, retryable workflows checked into .cantrip-recipes/ that turn a complex multi-step prompt into a deterministic invocation: /recipe charm-cos-add charm_name=ntfy.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-interface.html">Choose an interface</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-recipes.html" class="current">Run a recipe</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-eval.html">Score against an eval spec</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+      <li><a href="howto-vm-inference-proxy.html">Run in a VM with host GPU inference</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="reference-response-schemas.html">Response schemas</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Run a recipe
+    </div>
+
+    <h1>Run a recipe</h1>
+    <p class="subtitle">
+      Parameterised, retryable workflows committed alongside the charm &mdash; same prompt, same wiring, every time.
+    </p>
+
+<h2 id="overview">The idea</h2>
+<p>Cantrip already ships a handful of primitives for repeatable
+work &mdash; <strong>skills</strong> for knowledge bundles,
+<strong>flows</strong> for visual decision diagrams,
+<strong>custom slash commands</strong> for one-off prompt
+templates. Recipes fill the gap that opens when a custom command
+starts growing: typed parameters with defaults, Jinja-rendered
+instructions, post-hoc JSON-schema validation of the final reply,
+and shell-validator-driven retry until <code>make check</code>
+exits zero.</p>
+<p>A recipe is a single YAML file. Drop one into
+<code>.cantrip-recipes/</code> next to your charm and
+<code>/recipe &lt;name&gt; key=value &hellip;</code> becomes a
+deterministic invocation that ships the same prompt, the same
+parameter shapes, and the same convergence checks every time.</p>
+<h2 id="bundled">Bundled recipes</h2>
+<p>Three built-in recipes ship with Cantrip and are available in
+every session:</p>
+<dl>
+  <dt><code>/recipe charm-new workload=&lt;name&gt;</code></dt>
+  <dd>Frame the research &rarr; design &rarr; confirm &rarr;
+  build pipeline for a new charm. Picks the substrate
+  (<code>k8s</code> by default), framework hint
+  (<code>auto</code> infers), and observability switches
+  (<code>with_cos=true</code>, <code>with_tracing=true</code>).
+  Run <code>/recipe charm-new --help</code> for the full
+  parameter list.</dd>
+  <dt><code>/recipe charm-cos-add</code></dt>
+  <dd>Add Prometheus / Loki / Grafana / Tempo integrations to
+  the active charm using PyPI charm libraries. Defaults pick a
+  conventional <code>/metrics</code> on port <code>8080</code>;
+  override per workload with
+  <code>metrics_path=...</code> and
+  <code>metrics_port=...</code>. Retries up to twice until the
+  charm packs cleanly and <code>make check</code> is green.</dd>
+  <dt><code>/recipe charm-reactive-to-ops</code></dt>
+  <dd>Migrate a reactive charm
+  (<code>charms.reactive</code> / <code>@when_*</code>
+  decorators / <code>layer:foo</code> stack) onto the Operator
+  Framework idiom: <code>ops.CharmBase</code> with framework-
+  observed events, Scenario unit tests, and Jubilant
+  integration tests. Preserves action and relation interface
+  names by default so already-deployed bundles keep relating.</dd>
+</dl>
+<p>Bare <code>/recipe</code> lists the catalogue;
+<code>/recipe &lt;name&gt; --help</code> shows the parameter
+list.</p>
+<h2 id="discovery">Where Cantrip looks</h2>
+<p>Three roots, in precedence order &mdash; later wins on name
+collision so you can override a built-in just by dropping a
+same-named YAML file into one of the writable scopes:</p>
+<ol>
+  <li><strong>Bundled.</strong> Ships with Cantrip itself
+    (<code>charm-new</code>, <code>charm-cos-add</code>,
+    <code>charm-reactive-to-ops</code>).</li>
+  <li><code>~/.config/cantrip/recipes/*.yaml</code> &mdash; your
+    personal recipes, available across every charm.</li>
+  <li><code>&lt;charm&gt;/.cantrip-recipes/*.yaml</code> &mdash;
+    per-charm recipes, committed alongside the code so every
+    team member gets them automatically.</li>
+</ol>
+<p>The repo path is a sibling of the SQLite session file at
+<code>&lt;charm&gt;/.cantrip</code>. Cantrip cannot use
+<code>&lt;charm&gt;/.cantrip/recipes/</code> because a single
+path can't be both a regular file and a directory.</p>
+<p>Both <code>.yaml</code> and <code>.yml</code> extensions are
+recognised. Filenames must match
+<code>[a-z0-9][a-z0-9_-]*</code>; the lowercased stem becomes
+the recipe name. Malformed files log a warning and are skipped
+so a single bad recipe never blocks the rest of the
+catalogue.</p>
+<h2 id="example">A working example</h2>
+<p>Save this as
+<code>.cantrip-recipes/release-notes.yaml</code> in a charm:</p>
+<pre><code>version: 1
+title: Generate release notes from recent commits
+description: |
+  Walk the commits since &lt;since_tag&gt; and produce release
+  notes grouped by feature / fix / chore. Output validates
+  against the &lt;code&gt;check_result&lt;/code&gt; built-in schema so
+  downstream tooling can consume the JSON directly.
+
+parameters:
+  - name: since_tag
+    type: string
+    requirement: required
+    description: Git tag (or sha) to start the changelog from.
+  - name: include_chores
+    type: boolean
+    default: false
+    description: Include &lt;code&gt;chore(...)&lt;/code&gt; commits in the notes.
+
+instructions: |
+  Read &lt;code&gt;git log {{ since_tag }}..HEAD --pretty=format:'%h %s'&lt;/code&gt;
+  and produce structured release notes.
+
+  Group commits by Conventional Commit type: features under
+  &lt;strong&gt;Added&lt;/strong&gt;, fixes under &lt;strong&gt;Fixed&lt;/strong&gt;,
+  {% if include_chores %}chores under &lt;strong&gt;Chores&lt;/strong&gt;,{% endif %}
+  refactors under &lt;strong&gt;Changed&lt;/strong&gt;.
+
+  Reply with valid JSON conforming to the &lt;code&gt;check_result&lt;/code&gt; schema:
+  &lt;code&gt;status&lt;/code&gt; is &lt;code&gt;pass&lt;/code&gt; if the changelog
+  parsed every commit, &lt;code&gt;fail&lt;/code&gt; if any were unrecognised.
+
+response:
+  schema_name: check_result
+
+retry:
+  max_retries: 1
+  timeout_seconds: 120
+</code></pre>
+<p>Then, in any Cantrip session for that charm:</p>
+<pre><code><span class="prompt">&gt;</span> /recipe release-notes since_tag=v1.4.0 include_chores=true</code></pre>
+<p>Cantrip:</p>
+<ol>
+  <li>Binds <code>since_tag=v1.4.0</code> and
+    <code>include_chores=true</code> to the declared parameter
+    types (<code>string</code>, <code>boolean</code>),
+    rejecting any unknown key.</li>
+  <li>Renders the Jinja-templated instructions with the bound
+    parameters in scope. The <code>{% if include_chores %}</code>
+    branch fires.</li>
+  <li>Hands the rendered prompt to the agent's primary
+    conversation loop and waits for a reply.</li>
+  <li>Validates the final assistant text against the
+    <code>check_result</code> built-in schema. A schema mismatch
+    triggers one corrective retry (<code>max_retries: 1</code>).</li>
+  <li>Returns the final reply (validated) to the caller.</li>
+</ol>
+<h2 id="schema">Schema</h2>
+<p>A recipe is a single YAML mapping at the file's top level.
+Unknown keys raise on load &mdash; typos surface immediately.</p>
+<dl>
+  <dt><code>title</code> &mdash; non-empty string</dt>
+  <dd>Catalogue label; rendered in <code>/recipe</code> and
+    <code>/help</code>.</dd>
+  <dt><code>description</code> &mdash; non-empty string</dt>
+  <dd>One-paragraph rationale; shown in
+    <code>/recipe &lt;name&gt; --help</code>.</dd>
+  <dt><code>instructions</code> &mdash; non-empty string</dt>
+  <dd>Jinja2 template body. Bound parameters appear in scope
+    under their names. Sandboxed (<code>__class__</code>,
+    <code>__bases__</code>, &hellip; are blocked) and
+    <code>StrictUndefined</code> raises on a missing
+    parameter rather than silently producing empty text.
+    String parameter values are scrubbed of
+    <code>{</code>, <code>}</code>, and <code>%</code> before
+    interpolation so a user-supplied value cannot smuggle
+    template logic into the rendered prompt.</dd>
+  <dt><code>parameters</code> &mdash; list (optional)</dt>
+  <dd>Each parameter has a <code>name</code>
+    (<code>[a-z0-9][a-z0-9_-]*</code>), a
+    <code>type</code> (<code>string</code>,
+    <code>number</code>, <code>boolean</code>,
+    <code>date</code>, <code>file</code>, or
+    <code>select</code>), an optional
+    <code>requirement</code> (<code>required</code>,
+    <code>optional</code>, or <code>prompted</code>),
+    optional <code>default</code> and
+    <code>description</code>, and (for
+    <code>select</code>) <code>options</code>.</dd>
+  <dt><code>response</code> &mdash; mapping (optional)</dt>
+  <dd>Schema-validated final-output enforcement. Set exactly
+    one of <code>schema_name</code> (a built-in
+    &mdash; <code>planner_briefing</code>,
+    <code>oracle_answer</code>, <code>check_result</code>,
+    <code>acceptance_report</code>) or <code>json_schema</code>
+    (an inline JSON Schema mapping). The recipe's reply is
+    validated post-hoc; pair with a <code>json_schema</code>
+    check inside <code>retry</code> to make Cantrip re-run
+    until validation passes.</dd>
+  <dt><code>retry</code> &mdash; mapping (optional)</dt>
+  <dd>Declarative retry block. Same shape as a custom-command
+    retry block: <code>max_retries</code> (default 1),
+    <code>timeout_seconds</code> (default 600),
+    <code>checks</code> (a list of
+    <code>{type: shell, command: ...}</code> /
+    <code>{type: file_exists, path: ...}</code> /
+    <code>{type: json_schema, schema: ...}</code> entries; every
+    check must pass for the recipe to converge), and an
+    optional <code>on_failure</code> shell command that runs
+    once at the end if the run exits without converging.</dd>
+  <dt><code>extensions</code> &mdash; list of strings (optional)</dt>
+  <dd>Required tooling. <code>mcp:&lt;server-name&gt;</code>
+    declares an MCP server that must be CONNECTED in the
+    active session; <code>tool:&lt;tool-name&gt;</code> declares
+    a built-in tool that must be registered. Cantrip refuses to
+    invoke the recipe when any extension is missing rather than
+    sending the agent off to call tools that aren't there.</dd>
+  <dt><code>settings</code> &mdash; mapping (optional)</dt>
+  <dd>Recorded for forward-compatibility but not yet honoured
+    at dispatch (<code>model</code>, <code>temperature</code>,
+    <code>max_turns</code> all parse cleanly today; a
+    follow-up landing wires them into the conversation loop).
+    The recipe's <code>--help</code> output flags this so
+    authors don't expect the override to apply silently.</dd>
+  <dt><code>sub_recipes</code> &mdash; list (optional)</dt>
+  <dd>Other recipes to invoke after the parent's primary reply.
+    Each entry has a <code>name</code>, an optional
+    <code>values</code> mapping bound directly to the
+    sub-recipe's declared parameters (no argv re-parsing), and
+    an optional <code>sequential_when_repeated</code> flag.
+    Sub-recipes run sequentially in declaration order in v1;
+    parallel/worktree dispatch is a follow-up. Cycles are
+    refused with a clear message; missing sub-recipe names
+    surface as a one-line "skipped" note rather than aborting
+    the chain.</dd>
+  <dt><code>version</code> &mdash; string or integer (optional)</dt>
+  <dd>Defaults to <code>"1"</code>. Reserved for future schema
+    migrations.</dd>
+</dl>
+<h2 id="parameters">Parameter types</h2>
+<p>YAML scalars and CLI-style <code>key=value</code> strings both
+run through the same coercer so a default declared as
+<code>default: 8080</code> in YAML and an argv override
+<code>port=8080</code> bind to the same Python value.</p>
+<dl>
+  <dt><code>string</code></dt>
+  <dd>Accepts strings or stringifies scalars. Use
+    <code>note="hello world"</code> to pass quoted strings on
+    the slash line.</dd>
+  <dt><code>number</code></dt>
+  <dd>Parses floats. Booleans are rejected here even though
+    Python treats them as <code>int</code> &mdash; if you want a
+    flag, use <code>boolean</code>.</dd>
+  <dt><code>boolean</code></dt>
+  <dd>Accepts <code>true</code> / <code>yes</code> /
+    <code>1</code> / <code>on</code> and the inverse set. Anything
+    else raises rather than silently coerce.</dd>
+  <dt><code>date</code></dt>
+  <dd>ISO 8601 (<code>YYYY-MM-DD</code>); also accepts a YAML-
+    native date literal in defaults.</dd>
+  <dt><code>file</code></dt>
+  <dd>Passes the path string through verbatim. The recipe's
+    instructions decide what to do with it &mdash; v1 does not
+    validate existence here.</dd>
+  <dt><code>select</code></dt>
+  <dd>Must equal one of <code>options</code>. Strings and
+    numbers compare via <code>str()</code> so YAML
+    <code>options: [1, 2, 3]</code> and CLI <code>size=2</code>
+    both bind.</dd>
+</dl>
+<p>Each parameter has a <code>requirement</code>: <code>required</code>
+errors out when missing without a default; <code>optional</code>
+binds <code>None</code> when absent; <code>prompted</code> defers
+binding to a caller-supplied callback so an interactive surface
+can ask the user (when no callback is wired, <code>prompted</code>
+behaves identically to <code>required</code>).</p>
+<h2 id="composition">Composition with retry and response</h2>
+<p>The most useful pattern for recipes that produce structured
+output: declare both <code>response</code> and a
+<code>retry</code> block with a <code>json_schema</code> check.
+The retry block drives convergence (rerun until the JSON shape
+matches) and the response block surfaces validation status
+in the final reply.</p>
+<pre><code>response:
+  schema_name: acceptance_report
+
+retry:
+  max_retries: 2
+  timeout_seconds: 600
+  checks:
+    - type: json_schema
+      schema:
+        type: object
+        properties:
+          overall_status:
+            type: string
+            enum: [pass, fail, partial]
+        required: [overall_status]
+</code></pre>
+<p>For recipes that just want a clean build, declare a
+<code>shell</code> check that runs <code>make check</code>:</p>
+<pre><code>retry:
+  max_retries: 1
+  timeout_seconds: 1200
+  checks:
+    - type: shell
+      command: make check
+      timeout_seconds: 600
+</code></pre>
+<p>Shell checks gate through the same Phase 68.2 permission policy
+that the rest of Cantrip respects, so a denied command cannot be
+smuggled in via a recipe.</p>
+<h2 id="related">Related</h2>
+<ul>
+  <li><a href="howto-custom-commands.html">Define custom slash
+    commands</a> &mdash; lighter-weight prompt templates with
+    positional / file / shell expansions.</li>
+  <li><a href="howto-skills.html">Add a custom skill</a> &mdash;
+    knowledge bundles the agent reads when context demands it.</li>
+  <li><a href="reference-response-schemas.html">Response schemas</a>
+    &mdash; details on the four built-in JSON schemas
+    (<code>planner_briefing</code>, <code>oracle_answer</code>,
+    <code>check_result</code>, <code>acceptance_report</code>).</li>
+</ul>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

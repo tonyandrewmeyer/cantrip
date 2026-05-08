@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import pathlib
 import textwrap
@@ -479,6 +480,15 @@ class TestLoaderErrors:
 
 
 class TestDiscovery:
+    # The default ``bundled_dir`` ships three built-ins (``charm-new``,
+    # ``charm-cos-add``, ``charm-reactive-to-ops``).  Discovery tests
+    # that assert *exactly* what's loaded need to point at a non-
+    # existent bundled root so the bundled set doesn't pollute the
+    # assertion.  Bundled-specific behaviour gets its own tests below.
+
+    def _absent_bundle(self, tmp_path):
+        return tmp_path / "absent-bundle"
+
     def test_repo_overrides_user(self, tmp_path):
         user_root = tmp_path / "user"
         user_dir = user_root / "recipes"
@@ -516,7 +526,11 @@ class TestDiscovery:
             ).lstrip("\n"),
             encoding="utf-8",
         )
-        loaded = recipes.discover_recipes(charm_path=repo, user_config_dir=user_root)
+        loaded = recipes.discover_recipes(
+            charm_path=repo,
+            user_config_dir=user_root,
+            bundled_dir=self._absent_bundle(tmp_path),
+        )
         names = {r.name: r for r in loaded}
         # Repo wins for the shared name; personal still appears.
         assert names["shared"].title == "Repo"
@@ -539,7 +553,11 @@ class TestDiscovery:
         )
         user_root = tmp_path / "user"
         with caplog.at_level("WARNING"):
-            loaded = recipes.discover_recipes(charm_path=repo, user_config_dir=user_root)
+            loaded = recipes.discover_recipes(
+                charm_path=repo,
+                user_config_dir=user_root,
+                bundled_dir=self._absent_bundle(tmp_path),
+            )
         assert [r.name for r in loaded] == ["ok"]
         assert any("broken.yaml" in m for m in caplog.messages)
 
@@ -548,17 +566,111 @@ class TestDiscovery:
         repo_dir = repo / ".cantrip-recipes"
         repo_dir.mkdir(parents=True)
         (repo_dir / "alt.yml").write_text(_MINIMAL_RECIPE.lstrip("\n"), encoding="utf-8")
-        loaded = recipes.discover_recipes(charm_path=repo, user_config_dir=tmp_path / "u")
+        loaded = recipes.discover_recipes(
+            charm_path=repo,
+            user_config_dir=tmp_path / "u",
+            bundled_dir=self._absent_bundle(tmp_path),
+        )
         assert [r.name for r in loaded] == ["alt"]
 
     def test_missing_dirs_return_empty(self, tmp_path):
-        # Neither charm_path nor user_config_dir exist on disk — caller
-        # gets an empty list instead of an exception.
+        # All three roots absent on disk — caller gets an empty list
+        # instead of an exception.
         loaded = recipes.discover_recipes(
             charm_path=tmp_path / "absent",
             user_config_dir=tmp_path / "also-absent",
+            bundled_dir=self._absent_bundle(tmp_path),
         )
         assert loaded == []
+
+    def test_default_bundled_dir_loads_built_ins(self):
+        # No charm_path / user_config_dir — only the bundled built-ins
+        # land.  Pins the names so a removed built-in surfaces as a
+        # test failure rather than silently going missing.
+        loaded = recipes.discover_recipes(
+            user_config_dir=pathlib.Path("/__nonexistent_user_config_dir")
+        )
+        names = {r.name for r in loaded}
+        assert {"charm-new", "charm-cos-add", "charm-reactive-to-ops"} <= names
+
+    def test_user_overrides_bundled(self, tmp_path):
+        # A user-scope file with the same name as a bundled built-in
+        # wins.  Operators rely on this to customise the bundled
+        # recipes without forking Cantrip.
+        user_root = tmp_path / "user"
+        user_dir = user_root / "recipes"
+        user_dir.mkdir(parents=True)
+        (user_dir / "charm-new.yaml").write_text(
+            textwrap.dedent(
+                """
+                title: User Override
+                description: My version of charm-new.
+                instructions: just do it
+                """
+            ).lstrip("\n"),
+            encoding="utf-8",
+        )
+        loaded = recipes.discover_recipes(user_config_dir=user_root)
+        match = next(r for r in loaded if r.name == "charm-new")
+        assert match.title == "User Override"
+
+    def test_bundled_recipes_render_with_defaults(self):
+        # Pins each bundled recipe end-to-end: load from the wheel,
+        # supply only the parameters that lack a default (via a small
+        # per-recipe argv shim), bind, render, and confirm the
+        # rendered prompt is non-trivial and does not leak Jinja
+        # syntax.  A regression here means a built-in shipped broken.
+        loaded = {
+            r.name: r
+            for r in recipes.discover_recipes(
+                user_config_dir=pathlib.Path("/__nonexistent_user_config_dir")
+            )
+        }
+        argv_by_name = {
+            "charm-new": "workload=ntfy",
+            "charm-cos-add": "",
+            "charm-reactive-to-ops": "",
+        }
+        for name, argv in argv_by_name.items():
+            recipe = loaded[name]
+            bound = asyncio.run(recipes.bind_parameters(recipe, argv))
+            rendered = recipes.render_instructions(recipe, bound)
+            # Substantive — every built-in is at least 200 chars.
+            assert len(rendered) > 200, f"{name} rendered to {len(rendered)} chars"
+            # No leftover Jinja syntax in the rendered output.
+            assert "{{" not in rendered and "{%" not in rendered, f"{name} leaked Jinja syntax"
+
+    def test_repo_overrides_bundled(self, tmp_path):
+        # And the repo path wins over both user and bundled.
+        repo = tmp_path / "repo"
+        repo_dir = repo / ".cantrip-recipes"
+        repo_dir.mkdir(parents=True)
+        (repo_dir / "charm-new.yaml").write_text(
+            textwrap.dedent(
+                """
+                title: Repo Override
+                description: This charm's local override.
+                instructions: just do it
+                """
+            ).lstrip("\n"),
+            encoding="utf-8",
+        )
+        user_root = tmp_path / "user"
+        user_dir = user_root / "recipes"
+        user_dir.mkdir(parents=True)
+        (user_dir / "charm-new.yaml").write_text(
+            textwrap.dedent(
+                """
+                title: User Override
+                description: My version of charm-new.
+                instructions: just do it
+                """
+            ).lstrip("\n"),
+            encoding="utf-8",
+        )
+        loaded = recipes.discover_recipes(charm_path=repo, user_config_dir=user_root)
+        match = next(r for r in loaded if r.name == "charm-new")
+        assert match.title == "Repo Override"
 
 
 # ---------------------------------------------------------------------------

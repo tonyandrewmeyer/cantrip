@@ -1,0 +1,78 @@
+version: 1
+title: Create a new charm for a workload
+description: |
+  Frames the research → design → confirm → build pipeline for a new charm.
+  Hands the workload and the chosen substrate / framework / observability
+  switches to the planner so the autonomous loop can decompose the work
+  into ordered tasks.  Use this when starting from nothing — for an
+  existing charm you want to improve, see ``charm-cos-add`` or
+  ``charm-reactive-to-ops``.
+
+parameters:
+  - name: workload
+    type: string
+    requirement: required
+    description: |
+      Workload to charm.  A common name (``redis``, ``ntfy``,
+      ``postgresql``) or a short description (``a Flask todo app at
+      github.com/example/todo``) — the planner will research either.
+
+  - name: substrate
+    type: select
+    options: [k8s, machine]
+    default: k8s
+    description: Deployment target.  Most cloud-native workloads pick ``k8s``.
+
+  - name: framework
+    type: select
+    options: [auto, flask, django, fastapi, go, nodejs, python-other, custom]
+    default: auto
+    description: |
+      Application framework hint.  ``auto`` lets the agent infer from
+      the workload (12-factor PaaS path when the framework matches,
+      otherwise custom-app).
+
+  - name: with_cos
+    type: boolean
+    default: true
+    description: Wire Prometheus / Grafana / Loki / Tempo integrations from the start.
+
+  - name: with_tracing
+    type: boolean
+    default: true
+    description: Include ``ops-tracing`` so charm code emits spans without further effort.
+
+instructions: |
+  Build a new Juju charm for **{{ workload }}**.
+
+  Substrate: **{{ substrate }}**.
+  {% if framework != "auto" -%}
+  Framework hint: **{{ framework }}**.
+  {%- else -%}
+  Framework: infer from the workload (12-factor PaaS path when a
+  recognisable framework matches, otherwise custom-app).
+  {%- endif %}
+  Observability: {% if with_cos %}include the full COS bundle{% else %}skip COS for now{% endif %}.
+  Tracing: {% if with_tracing %}wire up ops-tracing from the start{% else %}defer tracing instrumentation{% endif %}.
+
+  Run the standard pipeline:
+
+  1. **Research phase** — call ``plan_tasks`` to decompose the
+     work, then dispatch the parallel research tasks (Charmhub
+     survey, source analysis, web research) via the autonomous
+     loop.
+  2. **Synthesis phase** — produce a structured design proposal
+     covering the path (12-factor / custom / infrastructure),
+     workload integration shape, relations, secrets, and the
+     observability surface.
+  3. **Confirm phase** — present the design for approval before
+     scaffolding.  Surface the substrate / framework / COS /
+     tracing choices above as confirmed defaults; flag any
+     research finding that contradicts them.
+  4. **Build phase** — generate scaffolding (``charmcraft init``,
+     rock if the workload is a custom container), wire relations,
+     write Scenario unit tests and Jubilant integration tests,
+     and run ``make check`` until it is green.
+
+  Stop after the design phase if the user has not approved.  Do
+  not deploy anything until the build phase exits clean.
