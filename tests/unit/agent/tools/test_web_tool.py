@@ -491,6 +491,165 @@ class TestLlmsTxtAwareness:
         assert "llms_txt_url" not in result.data
 
 
+class TestContentNegotiation:
+    """Tests for ``Accept: text/markdown`` content negotiation."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        clear_llms_txt_cache()
+        yield
+        clear_llms_txt_cache()
+
+    @pytest.fixture
+    def tool(self):
+        return WebFetchTool()
+
+    @pytest.mark.asyncio
+    async def test_accept_header_sent_on_fetch(self, tool):
+        """Outgoing requests must advertise that markdown is preferred."""
+        resp = _make_response(text="hi", content_type="text/plain")
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("cantrip.agent.tools.web.httpx.AsyncClient") as factory:
+            factory.return_value = mock_client
+            await tool.execute(url="https://example.com/page")
+
+        # Inspect the headers passed to AsyncClient.
+        kwargs = factory.call_args.kwargs
+        accept = kwargs["headers"]["Accept"]
+        assert "text/markdown" in accept
+        # Markdown must rank above HTML for the negotiation to do anything.
+        markdown_pos = accept.index("text/markdown")
+        html_pos = accept.index("text/html")
+        assert markdown_pos < html_pos
+
+    @pytest.mark.asyncio
+    async def test_markdown_response_returned_as_is(self, tool):
+        """A ``text/markdown`` response skips HTML stripping and llms.txt subst."""
+        md_resp = _make_response(
+            text="# Title\n\nBody **markdown**.",
+            content_type="text/markdown; charset=utf-8",
+            url="https://example.com/page.md",
+        )
+        # llms.txt exists but must NOT be substituted because the page
+        # already came back as markdown.
+        llms_resp = _make_response(
+            text="# Index\n- /a.md\n",
+            content_type="text/markdown",
+            url="https://example.com/.well-known/llms.txt",
+        )
+
+        async def mock_get(url, **_kwargs):
+            url_str = str(url)
+            if "llms" in url_str:
+                return llms_resp
+            return md_resp
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("cantrip.agent.tools.web.httpx.AsyncClient", return_value=mock_client):
+            result = await tool.execute(url="https://example.com/page.md")
+
+        assert result.success
+        # Markdown body preserved verbatim — no stripping, no substitution.
+        assert result.output == "# Title\n\nBody **markdown**."
+        assert "llms_txt_url" not in result.data
+
+
+class TestLlmsFullTxtDiscovery:
+    """Tests for the llms-full.txt probing and result-data exposure."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        clear_llms_txt_cache()
+        yield
+        clear_llms_txt_cache()
+
+    @pytest.fixture
+    def tool(self):
+        return WebFetchTool()
+
+    @pytest.mark.asyncio
+    async def test_llms_full_url_surfaced_in_result_data(self, tool):
+        """When the domain serves llms-full.txt, expose its URL to the agent."""
+        index_resp = _make_response(
+            text="# Index\n- /a.md\n",
+            content_type="text/markdown",
+            url="https://example.com/llms.txt",
+        )
+        full_resp = _make_response(
+            text="# Full corpus\nlots of markdown",
+            content_type="text/markdown",
+            url="https://example.com/llms-full.txt",
+        )
+        page_resp = _make_response(
+            text="# Page",
+            content_type="text/markdown",
+            url="https://example.com/page",
+        )
+
+        async def mock_get(url, **_kwargs):
+            url_str = str(url)
+            if url_str.endswith("/llms-full.txt"):
+                return full_resp
+            if url_str.endswith("/llms.txt"):
+                return index_resp
+            if "/.well-known/" in url_str:
+                # Other well-known paths 404.
+                return _make_response(status_code=404, content_type="text/html")
+            return page_resp
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("cantrip.agent.tools.web.httpx.AsyncClient", return_value=mock_client):
+            result = await tool.execute(url="https://example.com/page")
+
+        assert result.success
+        assert result.data["llms_full_txt_url"] == "https://example.com/llms-full.txt"
+
+    @pytest.mark.asyncio
+    async def test_llms_full_absent_no_key(self, tool):
+        """When no llms-full.txt exists, the key is omitted from result.data."""
+        index_resp = _make_response(
+            text="# Index",
+            content_type="text/markdown",
+            url="https://example.com/.well-known/llms.txt",
+        )
+        page_resp = _make_response(
+            text="<html><body>page</body></html>",
+            content_type="text/html",
+            url="https://example.com/page",
+        )
+
+        async def mock_get(url, **_kwargs):
+            url_str = str(url)
+            if url_str.endswith("/.well-known/llms.txt"):
+                return index_resp
+            if "llms-full.txt" in url_str or "llms.txt" in url_str:
+                return _make_response(status_code=404, content_type="text/html")
+            return page_resp
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("cantrip.agent.tools.web.httpx.AsyncClient", return_value=mock_client):
+            result = await tool.execute(url="https://example.com/page")
+
+        assert result.success
+        assert "llms_full_txt_url" not in result.data
+
+
 class TestIsPrivateUrl:
     """Tests for _is_private_url — IPv4, IPv6, and metadata blocking."""
 

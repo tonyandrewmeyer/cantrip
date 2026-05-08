@@ -1,5 +1,6 @@
 """Web fetch tool for retrieving content from URLs."""
 
+import dataclasses
 import html.parser
 import ipaddress
 import logging
@@ -61,11 +62,21 @@ _MAX_REDIRECTS = 10
 # Tags whose content should be discarded entirely when stripping HTML.
 _SKIP_TAGS = frozenset({"script", "style"})
 
-# Probe paths for llms.txt, tried in order.
-_LLMS_TXT_PATHS = ("/.well-known/llms.txt", "/llms.txt")
+# Probe paths for the llms.txt convention, tried in order.  ``llms.txt``
+# is the curated index of markdown URLs; ``llms-full.txt`` is the full
+# concatenated corpus.  ``/.well-known/`` is the IETF-blessed location
+# but in practice most sites ship the file at the root, so we try both.
+_LLMS_INDEX_PATHS = ("/.well-known/llms.txt", "/llms.txt")
+_LLMS_FULL_PATHS = ("/.well-known/llms-full.txt", "/llms-full.txt")
 
 # Timeout for llms.txt probes (keep it short — this is speculative).
 _LLMS_TXT_PROBE_TIMEOUT = 5.0
+
+# Accept header sent on every fetch.  Servers that honour content
+# negotiation (Mintlify, Anthropic docs, GitHub raw, …) return markdown
+# directly when asked, so we never need to strip HTML or substitute
+# llms.txt for those pages.  ``*/*`` keeps non-text endpoints happy.
+_ACCEPT_HEADER = "text/markdown, text/plain;q=0.9, text/html;q=0.5, */*;q=0.1"
 
 
 class _HTMLTextExtractor(html.parser.HTMLParser):
@@ -102,25 +113,52 @@ def _strip_html(content: str) -> str:
     return extractor.get_text()
 
 
-# Session-level cache: domain → llms.txt URL (or None if unavailable).
-# Populated lazily on first fetch to each domain.
-_llms_txt_cache: dict[str, str | None] = {}
+@dataclasses.dataclass(frozen=True)
+class _LlmsTxtUrls:
+    """Resolved URLs for the llms.txt artefacts on a domain.
+
+    Either field can be ``None`` if the corresponding probe came back
+    empty.  An instance with both fields ``None`` is a successful "this
+    domain has no llms.txt-family files" cache entry.
+    """
+
+    index: str | None = None
+    full: str | None = None
 
 
-async def _probe_llms_txt(client: httpx.AsyncClient, url: str) -> str | None:
-    """Check whether the domain of *url* has an llms.txt file.
+# Session-level cache: domain → discovered llms.txt URLs.  Populated
+# lazily on first fetch to each domain.
+_llms_txt_cache: dict[str, _LlmsTxtUrls] = {}
 
-    Probes ``/.well-known/llms.txt`` first, then ``/llms.txt``.
-    Returns the URL of the llms.txt if found, else ``None``.
-    Results are cached per domain for the session.
+
+async def _probe_llms_txt(client: httpx.AsyncClient, url: str) -> _LlmsTxtUrls:
+    """Discover llms.txt and llms-full.txt URLs for the domain of *url*.
+
+    Probes the ``/.well-known/`` location then the bare path for each of
+    ``llms.txt`` (the curated index) and ``llms-full.txt`` (the full
+    corpus).  Results are cached per domain for the session.
     """
     parsed = urllib.parse.urlparse(url)
     domain = f"{parsed.scheme}://{parsed.netloc}"
 
-    if domain in _llms_txt_cache:
-        return _llms_txt_cache[domain]
+    cached = _llms_txt_cache.get(domain)
+    if cached is not None:
+        return cached
 
-    for probe_path in _LLMS_TXT_PATHS:
+    index_url = await _probe_first_match(client, domain, _LLMS_INDEX_PATHS)
+    full_url = await _probe_first_match(client, domain, _LLMS_FULL_PATHS)
+    result = _LlmsTxtUrls(index=index_url, full=full_url)
+    _llms_txt_cache[domain] = result
+    return result
+
+
+async def _probe_first_match(
+    client: httpx.AsyncClient,
+    domain: str,
+    paths: tuple[str, ...],
+) -> str | None:
+    """Return the first probe path that yields ``200 text/markdown|plain``."""
+    for probe_path in paths:
         probe_url = domain + probe_path
         try:
             resp = await client.get(probe_url, timeout=_LLMS_TXT_PROBE_TIMEOUT)
@@ -128,13 +166,10 @@ async def _probe_llms_txt(client: httpx.AsyncClient, url: str) -> str | None:
                 ct = resp.headers.get("content-type", "")
                 # Only accept text responses (not HTML error pages).
                 if "text/plain" in ct or "text/markdown" in ct:
-                    _llms_txt_cache[domain] = str(resp.url)
-                    log.debug("Found llms.txt at %s", resp.url)
-                    return _llms_txt_cache[domain]
+                    log.debug("Found llms artefact at %s", resp.url)
+                    return str(resp.url)
         except (httpx.RequestError, httpx.TimeoutException):
             continue
-
-    _llms_txt_cache[domain] = None
     return None
 
 
@@ -215,8 +250,9 @@ class WebFetchTool(Tool):
         return (
             "Fetch content from a URL. Useful for reading documentation, source code,"
             " Charmhub pages, PyPI packages, and GitHub repositories."
-            " Automatically checks for llms.txt (LLM-friendly content) on first"
-            " visit to each domain."
+            " Sends ``Accept: text/markdown`` so servers that support content"
+            " negotiation return markdown directly, and probes for llms.txt /"
+            " llms-full.txt on first visit to each domain."
         )
 
     def intro_caption(self, arguments: dict[str, Any]) -> str | None:
@@ -273,10 +309,13 @@ class WebFetchTool(Tool):
             async with httpx.AsyncClient(
                 timeout=30.0,
                 follow_redirects=False,
-                headers={"User-Agent": "Cantrip/0.1"},
+                headers={
+                    "User-Agent": "Cantrip/0.1",
+                    "Accept": _ACCEPT_HEADER,
+                },
             ) as client:
-                # Probe for llms.txt on first visit to this domain.
-                llms_url = await _probe_llms_txt(client, url)
+                # Probe for llms.txt / llms-full.txt on first visit to this domain.
+                llms_urls = await _probe_llms_txt(client, url)
 
                 response = await _get_with_validated_redirects(client, url)
                 response.raise_for_status()
@@ -284,11 +323,13 @@ class WebFetchTool(Tool):
                 content_type = response.headers.get("content-type", "")
                 text = response.text
 
-                # If the response is HTML and llms.txt is available, fetch it
-                # and use the LLM-friendly content instead.
+                # If content negotiation already returned markdown / plain text
+                # there's nothing to substitute — skip the llms.txt fetch.
+                # Only fall back to the llms.txt index when the server gave us
+                # HTML, which is what the substitution exists to soften.
                 llms_content: str | None = None
-                if llms_url and "text/html" in content_type:
-                    llms_content = await _fetch_llms_txt(client, llms_url)
+                if llms_urls.index and "text/html" in content_type:
+                    llms_content = await _fetch_llms_txt(client, llms_urls.index)
 
         except _SSRFRedirectError as exc:
             return ToolResult(
@@ -317,9 +358,11 @@ class WebFetchTool(Tool):
             )
 
         if llms_content:
-            text = f"[llms.txt content from {llms_url}]\n\n{llms_content}"
+            text = f"[llms.txt content from {llms_urls.index}]\n\n{llms_content}"
         elif extract_text and "text/html" in content_type:
             text = _strip_html(text)
+        # Markdown / plain text passes through unchanged — content negotiation
+        # already gave us the LLM-friendly representation.
 
         truncated = len(text) > MAX_RESPONSE_CHARS
         if truncated:
@@ -332,7 +375,11 @@ class WebFetchTool(Tool):
             "truncated": truncated,
         }
         if llms_content:
-            data["llms_txt_url"] = llms_url
+            data["llms_txt_url"] = llms_urls.index
+        # Always surface the llms-full.txt URL when discovered so the agent
+        # can fetch the full corpus explicitly on a subsequent call.
+        if llms_urls.full:
+            data["llms_full_txt_url"] = llms_urls.full
 
         # Strip protocol/scheme from caption for readability.
         display_url = str(response.url)
