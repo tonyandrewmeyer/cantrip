@@ -93,7 +93,11 @@ class TestBuildSystemPromptDecisions:
         decisions = [{"type": "path", "choice": "12-factor"}]
         result = build_system_prompt(charm_name="x", recent_decisions=decisions)
         assert "path: 12-factor" in result
-        assert "()" not in result
+        # Pin the absence of an empty parenthetical on the decisions line
+        # specifically — looking for "()" anywhere in the prompt is too
+        # broad now that the tracing recipe quotes ``super().__init__``.
+        assert "path: 12-factor ()" not in result
+        assert "12-factor (\n" not in result
 
     def test_only_last_five_decisions(self):
         """Only the last 5 of 7 decisions should be rendered."""

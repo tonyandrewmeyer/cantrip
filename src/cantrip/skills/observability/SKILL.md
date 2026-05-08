@@ -52,11 +52,11 @@ import ops_tracing
 class MyCharm(ops.CharmBase):
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
-        ops_tracing.setup(self)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
         # ... rest of charm init
 ```
 
-That single `ops_tracing.setup(self)` call handles everything — it watches for the tracing relation and sends spans to Tempo automatically.
+That single `Tracing(self, "tracing")` constructor handles everything — it watches for the named tracing relation and sends spans to Tempo automatically. The relation name passed to `Tracing` must match the `tracing:` entry under `requires:` in `charmcraft.yaml`. Do **not** use the legacy `ops_tracing.setup(self)` shorthand — it has been removed from ops-tracing and produces an `AttributeError` at charm import.
 
 ## Step 2: Add Metrics Endpoint
 

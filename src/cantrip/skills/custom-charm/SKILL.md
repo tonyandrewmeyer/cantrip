@@ -137,7 +137,7 @@ class MyAppCharm(ops.CharmBase):
 
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
-        ops_tracing.setup(self)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
         self._container = self.unit.get_container("my-app")
 
         framework.observe(self.on["my-app"].pebble_ready, self._on_pebble_ready)
@@ -204,7 +204,7 @@ class MyAppCharm(ops.CharmBase):
 
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
-        ops_tracing.setup(self)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
 
         framework.observe(self.on.install, self._on_install)
         framework.observe(self.on.start, self._on_start)

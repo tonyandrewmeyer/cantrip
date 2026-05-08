@@ -248,10 +248,10 @@ if __name__ == "__main__":
         assert "tracing" in charmcraft
         assert "interface: tracing" in charmcraft
 
-        # src/charm.py should have the import and setup call.
+        # src/charm.py should have the import and Tracing constructor call.
         charm_py = (charm_dir / "src" / "charm.py").read_text()
         assert "import ops_tracing" in charm_py
-        assert "ops_tracing.setup(self)" in charm_py
+        assert 'ops_tracing.Tracing(self, "tracing")' in charm_py
 
     @pytest.mark.asyncio
     async def test_tracing_charmcraft_yaml_only_for_paas(self, tool, temp_dir):
@@ -296,7 +296,7 @@ if __name__ == "__main__":
                 "import ops\n", "import ops\nimport ops_tracing\n"
             ).replace(
                 "super().__init__(framework)",
-                "super().__init__(framework)\n        ops_tracing.setup(self)",
+                'super().__init__(framework)\n        self._tracing = ops_tracing.Tracing(self, "tracing")',
             )
             (src / "charm.py").write_text(charm_py_with_tracing)
 
@@ -316,7 +316,7 @@ if __name__ == "__main__":
 
         charm_py = (charm_dir / "src" / "charm.py").read_text()
         assert charm_py.count("import ops_tracing") == 1
-        assert charm_py.count("ops_tracing.setup") == 1
+        assert charm_py.count("ops_tracing.Tracing") == 1
 
     @pytest.mark.asyncio
     async def test_tracing_missing_files_still_succeeds(self, tool, temp_dir):
@@ -609,7 +609,10 @@ class MyCharm(ops.CharmBase):
         patched = _inject_ops_tracing_into_charm_py(self._SIMPLE_CHARM)
         assert patched is not None
         assert "import ops\nimport ops_tracing\n" in patched
-        assert "super().__init__(framework)\n        ops_tracing.setup(self)\n" in patched
+        assert (
+            "super().__init__(framework)\n"
+            '        self._tracing = ops_tracing.Tracing(self, "tracing")\n'
+        ) in patched
 
     def test_alternate_init_argument(self):
         """Charms using ``*args`` or a different arg name still get patched."""
@@ -619,8 +622,11 @@ class MyCharm(ops.CharmBase):
         )
         patched = _inject_ops_tracing_into_charm_py(source)
         assert patched is not None
-        # Setup line uses the same 8-space indent as the matched init line.
-        assert "super().__init__(*args, **kwargs)\n        ops_tracing.setup(self)" in patched
+        # Tracing line uses the same 8-space indent as the matched init line.
+        assert (
+            "super().__init__(*args, **kwargs)\n"
+            '        self._tracing = ops_tracing.Tracing(self, "tracing")'
+        ) in patched
 
     def test_empty_super_init(self):
         """``super().__init__()`` (no args) is still a valid anchor."""
@@ -630,7 +636,9 @@ class MyCharm(ops.CharmBase):
         )
         patched = _inject_ops_tracing_into_charm_py(source)
         assert patched is not None
-        assert "super().__init__()\n        ops_tracing.setup(self)" in patched
+        assert (
+            'super().__init__()\n        self._tracing = ops_tracing.Tracing(self, "tracing")'
+        ) in patched
 
     def test_import_ops_charm_alone_is_not_enough(self):
         """``import ops.charm`` alone — without a bare ``import ops`` — fails safely."""
@@ -641,9 +649,9 @@ class MyCharm(ops.CharmBase):
         """Without a ``super().__init__`` anchor, the helper refuses to patch.
 
         Previously the helper would silently insert the import line and
-        leave the setup call missing — a NameError at charm start.  The
-        regex-anchored version returns ``None`` so the caller reports a
-        skip instead.
+        leave the constructor call missing — a NameError at charm start.
+        The regex-anchored version returns ``None`` so the caller reports
+        a skip instead.
         """
         source = (
             "#!/usr/bin/env python3\nimport ops\n\n\nclass NakedCharm(ops.CharmBase):\n    pass\n"
@@ -662,7 +670,10 @@ class MyCharm(ops.CharmBase):
         )
         patched = _inject_ops_tracing_into_charm_py(source)
         assert patched is not None
-        assert "    super().__init__(framework)\n    ops_tracing.setup(self)\n" in patched
+        assert (
+            "    super().__init__(framework)\n"
+            '    self._tracing = ops_tracing.Tracing(self, "tracing")\n'
+        ) in patched
 
     def test_crlf_line_endings(self):
         """CRLF-line-ending files still match the anchors."""
@@ -672,7 +683,7 @@ class MyCharm(ops.CharmBase):
         # The injection output uses LF for the new lines it inserts — that
         # is consistent with how Python writes files on Linux runners.
         assert "import ops_tracing" in patched
-        assert "ops_tracing.setup(self)" in patched
+        assert 'ops_tracing.Tracing(self, "tracing")' in patched
 
     def test_only_first_occurrence_patched(self):
         """Multiple ``super().__init__`` calls: only the first is patched."""
@@ -689,5 +700,5 @@ class MyCharm(ops.CharmBase):
         )
         patched = _inject_ops_tracing_into_charm_py(source)
         assert patched is not None
-        assert patched.count("ops_tracing.setup(self)") == 1
+        assert patched.count('ops_tracing.Tracing(self, "tracing")') == 1
         assert patched.count("import ops_tracing") == 1

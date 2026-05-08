@@ -116,7 +116,7 @@ Checklist:
 ### 10. Integration with COS
 
 - [ ] `tracing` relation present on PaaS / Path B / Path C.
-- [ ] `ops_tracing.setup(self)` called from `__init__` (after `super().__init__`).
+- [ ] `self._tracing = ops_tracing.Tracing(self, "<relation_name>")` constructed from `__init__` (after `super().__init__`); the relation name matches a `requires:` entry of interface `tracing` in `charmcraft.yaml`. The legacy `ops_tracing.setup(self)` shorthand is gone — flag it if seen.
 - [ ] `loki-push-api` relation consumer wired up for machine charms.
 - [ ] Cross-model COS: `juju offer` declared in design, not hardcoded to
   same controller.

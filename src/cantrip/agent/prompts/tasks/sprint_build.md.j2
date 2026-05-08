@@ -6,7 +6,7 @@ Do NOT write tests. Do NOT run charm_validate. Do NOT add COS/observability inte
 Steps:
 1. Run charmcraft_init with name='{{ workload }}' and profile='{{ profile }}'
 2. Edit charmcraft.yaml: change `base: ubuntu@22.04` to `base: ubuntu@{{ ubuntu_version }}`.  Keep the scaffolded `parts.charm.plugin: uv` — quick_pack uses it to build locally without LXD.
-3. Edit src/charm.py: remove any `import ops_tracing` line and any `ops_tracing.setup(self)` call (since ops-tracing is not a hard dependency of the scaffold). Leave everything else as-is.
+3. Edit src/charm.py: remove any `import ops_tracing` line and any `ops_tracing.Tracing(...)` (or legacy `ops_tracing.setup(self)`) call (since ops-tracing is not a hard dependency of the scaffold). Leave everything else as-is.
 4. Generate `uv.lock` for the frozen install quick_pack needs: run `run_command` with command=['uv', 'lock'] in the charm directory.
 5. **CRITICAL**: pack the charm.  Prefer `quick_pack` — much faster than charmcraft.  If quick_pack fails (unsupported plugin, override-build, missing uv.lock), fall back to `charmcraft_pack` with destructive_mode=true. The task is not done without a .charm file.
 6. Use git_init, git_add, and git_commit to save the work

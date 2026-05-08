@@ -3130,38 +3130,52 @@ hook unless the operator manually rewrites the line.
 
 ### 101.1 P0 — Update the system prompt
 
-- [ ] Edit ``src/cantrip/agent/prompts/system.md.j2`` (and the
+- [x] Edit ``src/cantrip/agent/prompts/system.md.j2`` (and the
   ``system_compact.md.j2`` companion) so the tracing recipe quotes
   the ``Tracing(charm, "<relation_name>")`` constructor, not
   ``setup(self)``.  Mention that the relation name must match the
   ``tracing:`` entry under ``requires:`` in ``charmcraft.yaml``.
-- [ ] Audit subagent guidance under
+  (``system_compact.md.j2`` has no tracing snippet to update; the
+  observability / custom-charm / charm-improvement / identity-platform /
+  find-bugs skills were updated in the same pass.)
+- [x] Audit subagent guidance under
   ``src/cantrip/agent/prompts/subagent/`` (``build.md``, ``demo.md``,
   ``infra.md``) for the same stale snippet and fix in place.
-- [ ] Audit ``src/cantrip/agent/prompts/tasks/`` for any sprint /
+  (Only ``build.md`` mentions tracing and it does not quote ``setup``;
+  no fix needed.)
+- [x] Audit ``src/cantrip/agent/prompts/tasks/`` for any sprint /
   one-shot template that injects ``ops_tracing.setup`` text and fix
-  in the same patch.
+  in the same patch.  (Updated ``sprint_build.md.j2`` and
+  ``improvement_fill_observability.md.j2``.)
 
 ### 101.2 P0 — Update the charmcraft injection helpers
 
-- [ ] ``_inject_ops_tracing`` in ``src/cantrip/agent/tools/charm.py``
+- [x] ``_inject_ops_tracing`` in ``src/cantrip/agent/tools/charm.py``
   appends ``ops_tracing.setup(self)`` to scaffolded ``src/charm.py``
   files.  Rewrite to insert
   ``self._tracing = ops_tracing.Tracing(self, "tracing")`` instead;
   keep the ``import ops_tracing`` line as-is.
-- [ ] Unit tests in
+- [x] Unit tests in
   ``tests/unit/charm_tools/test_charmcraft_init.py`` that load the
   injected module under a real ``ops-tracing>=4`` import to catch a
-  future API drift the same way.
+  future API drift the same way.  (Test landed in
+  ``tests/unit/charm_tools/test_ops_tracing_recipe.py`` alongside the
+  Scenario-based regression test from 101.3 — the helper-output import
+  check exercises the same drift.)
 
 ### 101.3 P1 — Pin the API in a regression test
 
-- [ ] One Scenario-based unit test that constructs a minimal charm,
+- [x] One Scenario-based unit test that constructs a minimal charm,
   imports ``ops_tracing``, instantiates ``Tracing``, and runs a
   ``pebble_ready`` event — guarantees the recipe in the system prompt
   matches what ``ops-tracing`` currently exposes on PyPI.  Skip the
   test gracefully when ``ops-tracing`` isn't installed so it doesn't
-  block the rest of the suite on stripped CI images.
+  block the rest of the suite on stripped CI images.  (Lives in
+  ``tests/unit/charm_tools/test_ops_tracing_recipe.py``; uses
+  ``pytest.importorskip`` for ``ops-tracing`` and ``ops-scenario`` so
+  stripped CI images skip cleanly.  Drives a ``start`` event rather
+  than ``pebble_ready`` so the charm meta stays minimal — same
+  contract guarantee.)
 
 **Exit criteria:** A fresh sprint build under any provider produces
 a charm whose ``src/charm.py`` imports cleanly under the latest

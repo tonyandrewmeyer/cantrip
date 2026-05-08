@@ -161,7 +161,7 @@ from charms.hydra.v0.oauth import OAuthRequirer, ClientConfig
 class MyAppCharm(ops.CharmBase):
     def __init__(self, framework: ops.Framework) -> None:
         super().__init__(framework)
-        ops_tracing.setup(self)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
         self._oauth = OAuthRequirer(
             self,
             client_config=ClientConfig(

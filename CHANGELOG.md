@@ -53,6 +53,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **ops-tracing recipe refresh — stop teaching the long-removed
+  ``setup`` shorthand (Phase 101).**  The system prompt, observability /
+  custom-charm / charm-improvement / identity-platform / find-bugs
+  skills, the sprint and improvement task templates, and the
+  ``_inject_ops_tracing`` charm-scaffolding helper all taught
+  ``ops_tracing.setup(self)``.  That shorthand has been gone from
+  ``ops-tracing`` for several releases; every charm cantrip wrote
+  carried a load-time ``AttributeError: module 'ops_tracing' has no
+  attribute 'setup'`` on the first hook unless the operator manually
+  rewrote the line.  All call sites now teach the modern
+  ``self._tracing = ops_tracing.Tracing(self, "tracing")``
+  constructor, and a Scenario-based regression test imports the live
+  PyPI ``ops-tracing`` to fail loudly if the recipe drifts back.
 - **Inference-snap context probe hits `/v1/slots`, never auto-detects
   the runtime KV cache.**  llama.cpp surfaces per-slot ``n_ctx`` at
   `<root>/slots`, not `<root>/v1/slots` — the OpenAI-compat client

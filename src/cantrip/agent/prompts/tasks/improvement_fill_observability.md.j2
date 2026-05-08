@@ -4,7 +4,7 @@ Missing: {{ cos_gaps }}
 
 1. Load the `observability` and `charm-improvement` skills.
 2. Add missing COS relations to charmcraft.yaml (tracing, metrics-endpoint, logging, grafana-dashboard).
-3. Add ops-tracing if missing — install dependency and add `ops_tracing.setup(self)` in `__init__`.
+3. Add ops-tracing if missing — install the `ops-tracing` dependency, declare a `tracing:` requirer in `charmcraft.yaml`, and add `self._tracing = ops_tracing.Tracing(self, "tracing")` in `__init__` after `super().__init__`. The relation name passed to `Tracing` must match the `requires:` entry name. Do not use the legacy `ops_tracing.setup(self)` shorthand — it has been removed from ops-tracing.
 4. Add a Prometheus metrics endpoint if missing — expose workload metrics via the `metrics-endpoint` relation.
 5. Add Loki log forwarding if missing — add the `logging` relation and ensure structured logging is used.
 6. Generate a basic Grafana dashboard JSON in `src/grafana_dashboards/` covering key operational metrics (unit status, hook durations, relation counts).

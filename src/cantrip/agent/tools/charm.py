@@ -165,7 +165,9 @@ def _inject_ops_tracing(target_path: pathlib.Path, profile: str) -> list[str]:
             patched = _inject_ops_tracing_into_charm_py(content)
             if patched is not None:
                 charm_py.write_text(patched)
-                actions.append("Injected ops_tracing import and setup into src/charm.py")
+                actions.append(
+                    "Injected ops_tracing import and Tracing constructor into src/charm.py"
+                )
             else:
                 actions.append(
                     "src/charm.py did not match expected patterns — skipped ops-tracing"
@@ -197,13 +199,16 @@ def _inject_ops_tracing_into_charm_py(content: str) -> str | None:
     """Return updated ``src/charm.py`` content with ops-tracing wired in.
 
     Inserts ``import ops_tracing`` after the first bare ``import ops`` line
-    and ``ops_tracing.setup(self)`` (using the matched indent) after the
-    first ``super().__init__(...)`` call.  Both anchors must match,
-    otherwise returns ``None`` — partially patching a charm would leave the
-    setup call without its import (or vice versa).  Callers that receive
-    ``None`` should report a skip rather than writing back unchanged
-    content.  Content that already contains ``ops_tracing`` is out of scope
-    for this helper; the caller guards that case.
+    and ``self._tracing = ops_tracing.Tracing(self, "tracing")`` (using the
+    matched indent) after the first ``super().__init__(...)`` call.  The
+    relation name matches the ``tracing:`` entry under ``requires:`` in
+    ``charmcraft.yaml`` that ``_inject_ops_tracing`` adds alongside.  Both
+    anchors must match, otherwise returns ``None`` — partially patching a
+    charm would leave the constructor call without its import (or vice
+    versa).  Callers that receive ``None`` should report a skip rather than
+    writing back unchanged content.  Content that already contains
+    ``ops_tracing`` is out of scope for this helper; the caller guards that
+    case.
     """
     if not _IMPORT_OPS_RE.search(content):
         return None
@@ -212,10 +217,13 @@ def _inject_ops_tracing_into_charm_py(content: str) -> str | None:
 
     patched = _IMPORT_OPS_RE.sub("import ops\nimport ops_tracing", content, count=1)
 
-    def _add_setup(match: re.Match[str]) -> str:
-        return f"{match.group(0)}\n{match.group('indent')}ops_tracing.setup(self)"
+    def _add_tracing(match: re.Match[str]) -> str:
+        return (
+            f"{match.group(0)}\n"
+            f'{match.group("indent")}self._tracing = ops_tracing.Tracing(self, "tracing")'
+        )
 
-    patched = _SUPER_INIT_RE.sub(_add_setup, patched, count=1)
+    patched = _SUPER_INIT_RE.sub(_add_tracing, patched, count=1)
     return patched
 
 

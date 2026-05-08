@@ -48,8 +48,10 @@ import ops_tracing
 class MyCharm(ops.CharmBase):
     def __init__(self, framework):
         super().__init__(framework)
-        ops_tracing.setup(self)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
 ```
+
+The relation name passed to `Tracing` must match the `tracing:` entry under `requires:` in `charmcraft.yaml`. Do **not** use the legacy `ops_tracing.setup(self)` shorthand — it has been removed from ops-tracing.
 
 ops-tracing instruments hooks, Pebble interactions, relations, status changes, and secrets automatically. Only add manual spans for long-running operations, external API calls, and fallback decision logic.
 

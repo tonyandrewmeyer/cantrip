@@ -385,7 +385,23 @@ descriptions. Log *what happened*, not *what the secret contains*.
 
 ### Tracing Instrumentation
 
-ops-tracing (`ops_tracing.setup(self)`) automatically instruments the ops framework.
+ops-tracing automatically instruments the ops framework.  Wire it up by
+constructing the `Tracing` class in `__init__` after `super().__init__`:
+
+```python
+import ops_tracing
+
+class MyCharm(ops.CharmBase):
+    def __init__(self, framework):
+        super().__init__(framework)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
+```
+
+The relation name (`"tracing"` here) must match the entry under `requires:`
+in `charmcraft.yaml`.  Do **not** call `ops_tracing.setup(self)` — that
+shorthand has been removed from `ops-tracing` and produces an
+`AttributeError` at charm import.
+
 Only add manual spans where ops-tracing has no visibility.
 
 **Already instrumented by ops-tracing (do NOT add manual spans):**
