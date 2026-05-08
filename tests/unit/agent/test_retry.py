@@ -8,6 +8,7 @@ import pytest
 from cantrip.agent.retry import (
     TRANSIENT_BASE_DELAY,
     TRANSIENT_RETRIES,
+    RetryEvent,
     _resolve_base_delay,
     complete_with_retry,
 )
@@ -202,6 +203,142 @@ class TestCompleteWithRetry:
             max_tokens=None,
             thinking_budget=None,
         )
+
+
+class TestConnectionErrorRetry:
+    """Phase 102.3: ``ProviderConnectionError`` is treated as transient."""
+
+    @pytest.mark.asyncio
+    async def test_retries_on_connection_error(self):
+        """A mid-stream disconnect retries with backoff and recovers."""
+        expected = llm.Response(content="ok")
+        provider = _make_provider(
+            [
+                llm.ProviderConnectionError("server hung up"),
+                expected,
+            ]
+        )
+
+        result = await complete_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+        )
+
+        assert result is expected
+        assert provider.complete.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_connection_error_raises_after_max_retries(self):
+        """Persistent ``ProviderConnectionError`` propagates once retries exhaust."""
+        provider = _make_provider(
+            [
+                llm.ProviderConnectionError("drop 1"),
+                llm.ProviderConnectionError("drop 2"),
+                llm.ProviderConnectionError("drop 3"),
+            ]
+        )
+
+        with pytest.raises(llm.ProviderConnectionError, match="drop 3"):
+            await complete_with_retry(
+                provider,
+                messages=[],
+                tools=None,
+                max_retries=3,
+                base_delay=0,
+            )
+
+        assert provider.complete.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_connection_error_uses_short_backoff(self, monkeypatch):
+        """Connection drops use a shorter backoff than rate-limit retries.
+
+        The retry layer's connection-drop path uses an exponential
+        ``2/4/8s`` ladder rather than the rate-limit ``base_delay *
+        attempt`` ladder so a slow snap can recover quickly without
+        waiting for cloud-grade backoff windows.
+        """
+        sleeps: list[float] = []
+
+        async def _capture_sleep(delay: float) -> None:
+            sleeps.append(delay)
+
+        monkeypatch.setattr("cantrip.agent.retry.asyncio.sleep", _capture_sleep)
+
+        provider = _make_provider(
+            [
+                llm.ProviderConnectionError("drop 1"),
+                llm.ProviderConnectionError("drop 2"),
+                llm.Response(content="ok"),
+            ]
+        )
+
+        await complete_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            max_retries=3,
+            # ``base_delay`` is the rate-limit ladder; connection drops
+            # ignore it.  Pass a wildly different value so the test
+            # would notice if the wrong ladder fired.
+            base_delay=1000,
+        )
+
+        assert len(sleeps) == 2
+        # First retry around 2s, second around 4s — both far below the
+        # rate-limit ladder's 1000+ seconds.
+        assert all(s < 10 for s in sleeps)
+        assert sleeps[1] > sleeps[0]
+
+    @pytest.mark.asyncio
+    async def test_on_retry_invoked_for_connection_error(self):
+        """The optional ``on_retry`` hook fires before each backoff sleep."""
+        events: list[RetryEvent] = []
+        provider = _make_provider(
+            [
+                llm.ProviderConnectionError("drop"),
+                llm.Response(content="ok"),
+            ]
+        )
+
+        await complete_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+            on_retry=events.append,
+        )
+
+        assert len(events) == 1
+        event = events[0]
+        assert event.provider_name == "test-provider"
+        assert isinstance(event.exception, llm.ProviderConnectionError)
+        assert event.attempt == 1
+        assert event.delay > 0
+
+    @pytest.mark.asyncio
+    async def test_on_retry_invoked_for_rate_limit(self):
+        """The hook also fires for rate-limit retries (Phase 102.4 banner)."""
+        events: list[RetryEvent] = []
+        provider = _make_provider(
+            [
+                llm.ProviderRateLimitError("slow"),
+                llm.Response(content="ok"),
+            ]
+        )
+
+        await complete_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+            on_retry=events.append,
+        )
+
+        assert len(events) == 1
+        assert isinstance(events[0].exception, llm.ProviderRateLimitError)
 
 
 class TestResolveBaseDelay:

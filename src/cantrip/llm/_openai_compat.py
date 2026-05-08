@@ -27,6 +27,7 @@ from cantrip.llm.base import (
     Image,
     LLMProvider,
     Message,
+    ProviderConnectionError,
     ProviderError,
     ProviderOverloadedError,
     ProviderRateLimitError,
@@ -358,6 +359,14 @@ class OpenAICompatBase(LLMProvider):
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
             self._raise_http_error(e)
+        except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.WriteTimeout) as e:
+            # Phase 102.3: a slow local snap can drop the connection
+            # mid-decode (``RemoteProtocolError``) or trip the read
+            # timeout once the conversation is several KB long.  Surface
+            # these as a transient ``ProviderConnectionError`` so
+            # ``complete_with_retry`` retries with backoff instead of
+            # exiting the conversation loop.
+            raise ProviderConnectionError(f"{self._error_label} connection dropped: {e}") from e
         except httpx.HTTPError as e:
             raise ProviderError(f"Failed to connect to {self._error_label}: {e}") from e
 
@@ -486,6 +495,11 @@ class OpenAICompatBase(LLMProvider):
 
         except httpx.HTTPStatusError as e:
             self._raise_http_error(e)
+        except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.WriteTimeout) as e:
+            # Phase 102.3: same transient-disconnect treatment as the
+            # ``complete`` path.  A mid-stream drop on a slow snap is a
+            # retryable event, not a fatal provider error.
+            raise ProviderConnectionError(f"{self._error_label} stream dropped: {e}") from e
         except httpx.HTTPError as e:
             raise ProviderError(f"Failed to connect to {self._error_label}: {e}") from e
 

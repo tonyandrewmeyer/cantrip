@@ -149,6 +149,19 @@ class ProviderError(Exception):
     """Raised for non-transient provider errors (auth, invalid request, etc.)."""
 
 
+class ProviderConnectionError(Exception):
+    """Raised for transient connection-level errors (mid-stream disconnect, read timeout).
+
+    Phase 102.3: separates "the model server hung up on us" from
+    permanent ``ProviderError`` failures so :func:`complete_with_retry`
+    can back off and retry instead of propagating the error and exiting
+    the conversation loop.  The qwen3-coder snap drops mid-decode on
+    long generations once the conversation is several KB long; without
+    this class the operator just saw the conversation exit on a stack
+    trace.
+    """
+
+
 class LLMProvider(ABC):
     """Abstract interface for LLM providers."""
 

@@ -131,6 +131,18 @@ def _add_run_model_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--snap-read-timeout",
+        type=float,
+        default=None,
+        help=(
+            "HTTP read timeout (seconds) for the inference-snap provider's "
+            "chat completions.  Defaults to CANTRIP_SNAP_READ_TIMEOUT or "
+            "1200s (20 min) — long enough for a worst-case big-file "
+            "rewrite on the slowest local snap.  Drop this on faster GPUs "
+            "to fail-fast on stuck generations."
+        ),
+    )
+    parser.add_argument(
         "--light-model",
         help=("Cheaper model for internal tasks like compaction (auto-detected if omitted)"),
     )

@@ -162,8 +162,13 @@ def run_cli(args: argparse.Namespace) -> int:
         snap_name = getattr(args, "snap", "gemma3")
         light_snap_name = getattr(args, "light_snap", None)
         base_url = getattr(args, "base_url", None)
+        snap_read_timeout = getattr(args, "snap_read_timeout", None)
         provider = create_provider(
-            args.provider, args.model, snap_name=snap_name, base_url=base_url
+            args.provider,
+            args.model,
+            snap_name=snap_name,
+            base_url=base_url,
+            snap_read_timeout=snap_read_timeout,
         )
     except (ValueError, ProviderError) as e:
         print(f"Error: {e}")

@@ -112,6 +112,16 @@ Start the agent and build or improve a charm.
     <code>fireworks</code>, <code>openrouter</code>, and
     <code>opencode-zen</code> (for proxies or compatible hosts).
   </dd>
+
+  <dt>--snap-read-timeout SECONDS</dt>
+  <dd>
+    HTTP read timeout for the inference-snap provider's chat
+    completions. Default: 1200&nbsp;s (20&nbsp;min) — long enough
+    for a worst-case big-file rewrite on the slowest local snap.
+    Drop this on faster GPUs to fail-fast on stuck generations.
+    Falls back to the <code>CANTRIP_SNAP_READ_TIMEOUT</code>
+    environment variable when omitted.
+  </dd>
 </dl>
 
 ### Light model (cost routing)

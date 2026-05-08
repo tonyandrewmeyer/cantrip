@@ -11,6 +11,7 @@ from cantrip.llm.base import Image, Message, ProviderError, Role, Tool, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 from cantrip.llm.inference_snap import (
     InferenceSnapProvider,
+    _resolve_read_timeout,
     discover_snap_endpoint,
     list_available_snaps,
 )
@@ -58,6 +59,37 @@ class TestDiscoverSnapEndpoint:
         with patch("cantrip.llm.inference_snap.subprocess.run", return_value=mock_result):
             url = discover_snap_endpoint("gemma3")
         assert url == "http://localhost:8328/v3"
+
+
+class TestResolveReadTimeout:
+    """Phase 102.1: ``_resolve_read_timeout`` precedence (arg > env > default)."""
+
+    def test_explicit_argument_wins(self, monkeypatch):
+        monkeypatch.setenv("CANTRIP_SNAP_READ_TIMEOUT", "999")
+        # Caller-supplied positive value beats both env and default.
+        assert _resolve_read_timeout(60.0) == 60.0
+
+    def test_env_used_when_no_argument(self, monkeypatch):
+        monkeypatch.setenv("CANTRIP_SNAP_READ_TIMEOUT", "300")
+        assert _resolve_read_timeout(None) == 300.0
+
+    def test_default_when_no_argument_and_no_env(self, monkeypatch):
+        monkeypatch.delenv("CANTRIP_SNAP_READ_TIMEOUT", raising=False)
+        assert _resolve_read_timeout(None) == InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS
+
+    def test_zero_or_negative_argument_falls_back(self, monkeypatch):
+        """A non-positive caller value is treated as "use default"."""
+        monkeypatch.delenv("CANTRIP_SNAP_READ_TIMEOUT", raising=False)
+        assert _resolve_read_timeout(0) == InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS
+        assert _resolve_read_timeout(-1) == InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS
+
+    def test_invalid_env_logs_and_falls_back(self, monkeypatch, caplog):
+        monkeypatch.setenv("CANTRIP_SNAP_READ_TIMEOUT", "💥")
+        with caplog.at_level("WARNING"):
+            assert (
+                _resolve_read_timeout(None) == InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS
+            )
+        assert "CANTRIP_SNAP_READ_TIMEOUT" in caplog.text
 
 
 class TestListAvailableSnaps:
@@ -160,6 +192,30 @@ class TestInferenceSnapProviderInit:
                 base_url="http://test:8328/v1",
             )
         assert provider.model_name == "gemma-3-4b-it"
+
+    def test_default_read_timeout(self):
+        """No explicit timeout falls back to the documented default."""
+        provider = self._make_provider()
+        assert provider.read_timeout == InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS
+
+    def test_explicit_read_timeout(self):
+        """``read_timeout`` argument wins over env / default."""
+        provider = self._make_provider(read_timeout=120.0)
+        assert provider.read_timeout == 120.0
+
+    def test_env_read_timeout(self, monkeypatch):
+        """``CANTRIP_SNAP_READ_TIMEOUT`` is consulted when no explicit value."""
+        monkeypatch.setenv("CANTRIP_SNAP_READ_TIMEOUT", "300")
+        provider = self._make_provider()
+        assert provider.read_timeout == 300.0
+
+    def test_invalid_env_falls_back_to_default(self, monkeypatch, caplog):
+        """A non-numeric env value logs a warning and falls back."""
+        monkeypatch.setenv("CANTRIP_SNAP_READ_TIMEOUT", "not-a-number")
+        with caplog.at_level("WARNING"):
+            provider = self._make_provider()
+        assert provider.read_timeout == InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS
+        assert "CANTRIP_SNAP_READ_TIMEOUT" in caplog.text
 
     def test_explicit_model_skips_detection(self):
         """An explicit model name different from snap_name is used directly."""

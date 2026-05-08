@@ -94,6 +94,7 @@ def create_provider(
     *,
     snap_name: str = "gemma3",
     base_url: str | None = None,
+    snap_read_timeout: float | None = None,
 ) -> LLMProvider:
     """Create an LLM provider by name.
 
@@ -106,6 +107,10 @@ def create_provider(
         base_url: Override the API base URL.  Required for
             ``openai-compatible``; optional for ``inference-snap``,
             ``fireworks``, ``openrouter`` and ``opencode-zen``.
+        snap_read_timeout: HTTP read timeout (seconds) for the
+            inference-snap provider's chat completions.  Phase 102.1:
+            ``None`` falls back to ``CANTRIP_SNAP_READ_TIMEOUT`` and
+            finally the provider default.
     """
     if name == "gemini":
         from cantrip.llm.gemini import GeminiProvider
@@ -131,6 +136,8 @@ def create_provider(
             kwargs["model"] = model
         if base_url:
             kwargs["base_url"] = base_url
+        if snap_read_timeout is not None:
+            kwargs["read_timeout"] = snap_read_timeout
         return InferenceSnapProvider(**kwargs)
 
     elif name == "fireworks":

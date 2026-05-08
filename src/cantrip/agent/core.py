@@ -63,7 +63,7 @@ from cantrip.agent.preflight import (
 )
 from cantrip.agent.prompts import agents_md, build_system_prompt
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
-from cantrip.agent.retry import complete_with_retry
+from cantrip.agent.retry import RetryEvent, complete_with_retry
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.snapshots import SnapshotManager
@@ -1668,6 +1668,11 @@ class CantripAgent:
         :attr:`LLMProvider.conversation_temperature` — frontier APIs
         keep that at 0.7, local quantised snaps clamp it down to
         steady tool-call formatting.
+
+        Phase 102.4: a transient retry (rate limit, mid-stream drop)
+        publishes a ``[provider reconnect]`` system message on the
+        chat surface so the operator sees what's happening rather
+        than staring at a frozen UI.
         """
         chosen_provider = provider or self.provider
         if temperature is None:
@@ -1678,6 +1683,36 @@ class CantripAgent:
             tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            on_retry=self._publish_provider_retry,
+        )
+
+    def _publish_provider_retry(self, event: RetryEvent) -> None:
+        """Publish a ``[provider reconnect]`` chat row for a retry event.
+
+        Phase 102.4: a slow local snap dropping mid-stream used to
+        surface only as a stack trace.  This handler converts the
+        retry-layer signal into an inline system message so the user
+        sees the reconnect attempt and the wait time before the loop
+        resumes.
+        """
+        kind = (
+            "rate-limited"
+            if isinstance(event.exception, llm.ProviderRateLimitError)
+            else (
+                "overloaded"
+                if isinstance(event.exception, llm.ProviderOverloadedError)
+                else "disconnected"
+            )
+        )
+        delay_str = f"{event.delay:.0f}s" if event.delay >= 1 else f"{event.delay:.1f}s"
+        message = (
+            f"[provider reconnect] {event.provider_name} {kind} "
+            f"(attempt {event.attempt}/{event.max_retries}); "
+            f"retrying in {delay_str}…"
+        )
+        self._event_bus.publish(ui_events.chat_message(role="system", content=message))
+        self._event_bus.publish(
+            ui_events.status_bar_changed(task_label=f"reconnecting ({delay_str})")
         )
 
     # ─── Phase 71.2: Architect / Editor two-model split ──────────────

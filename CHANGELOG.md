@@ -53,6 +53,33 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Added
+- **Long-generation resilience for inference-snap providers (Phase 102 partial).**
+  A slow local snap dropping mid-decode used to exit the conversation
+  loop on a stack trace; a single edit-file generation outlasting the
+  HTTP keep-alive lost minutes of useful tool calls.  Three of four
+  Phase 102 mitigations land:
+  - **HTTP read timeout knob (102.1).**  ``InferenceSnapProvider`` now
+    exposes ``DEFAULT_READ_TIMEOUT_SECONDS`` (1200 s) plus a
+    ``--snap-read-timeout`` CLI flag and ``CANTRIP_SNAP_READ_TIMEOUT``
+    env var.  Operators on faster GPUs can shrink this to fail-fast on
+    stuck generations; non-numeric / non-positive values fall back to
+    the default with a warning rather than crashing.
+  - **Transient-disconnect retries (102.3).**  ``ProviderConnectionError``
+    is a new exception class that ``_openai_compat`` raises when
+    ``httpx.RemoteProtocolError`` / ``ReadTimeout`` / ``WriteTimeout``
+    fires mid-call.  ``complete_with_retry`` now retries it with a
+    short exponential ladder (~2/4/8 s) — separate from the longer
+    rate-limit backoff because TCP-level drops recover quickly.
+  - **Reconnect banner (102.4).**  An ``on_retry`` hook fires before
+    each backoff sleep; ``_complete_with_retry`` wires it to publish a
+    ``[provider reconnect]`` system message in chat plus a
+    ``reconnecting (Ns)`` status-bar update so the operator sees what's
+    happening rather than staring at a frozen UI.
+  - **Streaming with progress writeback (102.2)** is deferred to a
+    follow-up — the writeback path needs a session-store schema
+    extension and warrants its own change set.
+
+### Added
 - **Resume-hallucination repair — re-read before editing
   (Phase 103).**  After ``cantrip resume`` the agent's in-conversation
   memory of file bytes is unreliable, and post-rehydrate ``edit_file``

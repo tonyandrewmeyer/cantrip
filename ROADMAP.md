@@ -3215,13 +3215,19 @@ keep-alive trips.
 
 ### 102.1 P0 — Bump the provider HTTP timeout
 
-- [ ] ``InferenceSnapProvider`` constructs ``httpx.AsyncClient`` with
+- [x] ``InferenceSnapProvider`` constructs ``httpx.AsyncClient`` with
   a 300 s default timeout today.  Raise the read timeout to a value
   big enough for a worst-case big-file rewrite (15–20 minutes), and
   expose it as ``--snap-read-timeout`` plus ``CANTRIP_SNAP_READ_TIMEOUT``
   env var so operators on faster GPUs can keep the existing
-  defaults.
-- [ ] Document the knob in ``docs/src/howto-provider.md``.
+  defaults.  (Default is 1200 s; the knob lives at
+  ``InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS`` /
+  ``READ_TIMEOUT_ENV`` with the resolver helper
+  ``_resolve_read_timeout``.  Non-numeric or non-positive values log
+  a warning and fall back to the default rather than crashing
+  provider construction.)
+- [x] Document the knob in ``docs/src/howto-provider.md`` (and
+  ``docs/src/reference-cli.md`` for the CLI flag entry).
 
 ### 102.2 P0 — Switch the slow path to streaming with progress writeback
 
@@ -3242,25 +3248,38 @@ keep-alive trips.
 
 ### 102.3 P1 — Retry on transient ``Server disconnected`` errors
 
-- [ ] ``_raise_http_error`` already maps 429 → ``ProviderRateLimitError``
+- [x] ``_raise_http_error`` already maps 429 → ``ProviderRateLimitError``
   and 5xx → ``ProviderOverloadedError``.  Extend the
   ``httpx.RemoteProtocolError`` / ``httpx.ReadTimeout`` paths to a
   new ``ProviderConnectionError`` and let
   ``complete_with_retry`` retry it (with exponential backoff capped
   by an overall budget).  Treat repeated disconnects as a soft fail
-  that surfaces in chat, not a hard exit.
-- [ ] Operator-facing test exercising
+  that surfaces in chat, not a hard exit.  (Backoff ladder is
+  ``2 * 2^(attempt-1)`` seconds — separate from the rate-limit
+  ladder because TCP-level drops recover faster than cloud
+  rate-limit windows.  Both ``complete`` and ``stream`` paths in
+  ``_openai_compat`` map the relevant httpx errors.)
+- [x] Operator-facing test exercising
   ``httpx.RemoteProtocolError`` mid-stream and asserting the next
-  turn lands without re-running file-read tool calls.
+  turn lands without re-running file-read tool calls.  (Lives in
+  ``tests/unit/agent/test_retry.py::TestConnectionErrorRetry`` —
+  exercises the recovery path through the dispatcher rather than via
+  a real socket, which is enough to pin the contract.)
 
 ### 102.4 P1 — Surface the disconnect in the UI
 
-- [ ] When a stream drops, the TUI / Web chat shows a coloured
+- [x] When a stream drops, the TUI / Web chat shows a coloured
   ``[provider reconnect]`` row with the timing context (last
   ``n_decoded`` if known, retry count, total wall clock spent on the
   current round).  Users today see only a stack trace and the
   conversation exiting — they need to know whether to bump the snap's
   ``--ctx-size`` / ``--parallel`` slot count or just rerun.
+  (Implemented as an ``on_retry`` hook on ``complete_with_retry`` that
+  publishes a ``CHAT_MESSAGE`` and ``STATUS_BAR_CHANGED`` event on
+  every retry — both rate-limit and disconnect.  The "last
+  ``n_decoded``" detail is left out for now; the message format
+  already covers attempt count and delay, which is what the operator
+  needs to decide whether to wait or rerun.)
 
 **Exit criteria:** A 90-minute soak-test against the qwen3-coder
 snap that intentionally throttles connections never exits the

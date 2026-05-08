@@ -203,6 +203,62 @@ class TestCantripAgent:
         assert "check.\n\nThe" in joined
 
     @pytest.mark.asyncio
+    async def test_reconnect_banner_published_on_provider_disconnect(self, monkeypatch):
+        """Phase 102.4: a transient ``ProviderConnectionError`` surfaces as a chat banner.
+
+        The conversation loop's ``_complete_with_retry`` wires an
+        ``on_retry`` hook into the retry layer; the hook publishes a
+        ``[provider reconnect]`` system message and a ``reconnecting``
+        status-bar update so the operator sees the recovery rather than
+        staring at a frozen UI.
+        """
+        from cantrip.llm.base import ProviderConnectionError
+        from cantrip.ui import events as ui_events
+
+        # Drive ``provider.complete`` so the first call raises the
+        # disconnect error and the second returns a real reply.  Skip
+        # the actual asyncio.sleep so the test stays fast.
+        monkeypatch.setattr(
+            "cantrip.agent.retry.asyncio.sleep",
+            AsyncMock(return_value=None),
+        )
+
+        attempts = {"n": 0}
+        recovery_response = Response(content="recovered")
+
+        async def _flaky_complete(*_args, **_kwargs):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise ProviderConnectionError("snap dropped mid-stream")
+            return recovery_response
+
+        provider = FakeProvider([recovery_response])
+        provider.complete = _flaky_complete  # override for test
+        agent = CantripAgent(provider=provider)
+
+        chat_messages: list[dict] = []
+        status_payloads: list[dict] = []
+        agent.event_bus.subscribe(
+            ui_events.EventType.CHAT_MESSAGE,
+            lambda event: chat_messages.append(event.payload),
+        )
+        agent.event_bus.subscribe(
+            ui_events.EventType.STATUS_BAR_CHANGED,
+            lambda event: status_payloads.append(event.payload),
+        )
+
+        result = await agent.process_message("Hi")
+
+        assert result == "recovered"
+        # A ``[provider reconnect]`` banner appears as a system chat row.
+        banner_rows = [m for m in chat_messages if "[provider reconnect]" in m.get("content", "")]
+        assert banner_rows, f"expected reconnect banner, got: {chat_messages}"
+        assert "disconnected" in banner_rows[0]["content"]
+        # And the status bar is briefly relabelled as reconnecting.
+        labels = [p.get("task_label", "") for p in status_payloads]
+        assert any("reconnecting" in label for label in labels)
+
+    @pytest.mark.asyncio
     async def test_max_tool_rounds_enforced(self):
         """Test that the tool loop stops after MAX_TOOL_ROUNDS."""
         tool_call = ToolCall(id="loop", name="juju_status", arguments={})

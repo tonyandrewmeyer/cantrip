@@ -92,6 +92,32 @@ compaction entirely. Run <code>&lt;snap-name&gt; status</code> if
 you suspect the wrong context size — Cantrip logs the
 runtime/trained mismatch at INFO when it downgrades.
 
+### Tune the snap HTTP read timeout
+
+Slow local snaps (qwen3-coder on a partial-offload setup, large
+quantised models on smaller GPUs) can take 8–15 minutes to finish a
+single big-file rewrite once the conversation is several KB long.
+Cantrip ships a 1200 s (20 min) read timeout by default — long
+enough for any plausible single-turn generation on the slowest
+local snap, short enough that a genuinely stuck server doesn't hang
+the conversation forever.
+
+Override the timeout on faster GPUs to fail-fast instead:
+
+<pre><code><span class="prompt">$</span> cantrip --provider inference-snap --snap qwen3-coder --snap-read-timeout 300
+<span class="prompt">$</span> CANTRIP_SNAP_READ_TIMEOUT=600 cantrip --provider inference-snap --snap gemma4</code></pre>
+
+The CLI flag wins over the environment variable, which wins over the
+1200 s default. A non-numeric or non-positive value logs a warning and
+falls back to the default rather than crashing.
+
+When the snap drops mid-stream (the qwen3-coder snap occasionally hangs
+up at long generations), Cantrip surfaces the recovery as a
+<code>[provider reconnect]</code> system message in the chat and
+retries with a short exponential backoff (~2/4/8 s) before giving up.
+The conversation loop stays alive across the retry — no need to
+re-launch.
+
 {#gemini}
 ## Use Gemini (default)
 
