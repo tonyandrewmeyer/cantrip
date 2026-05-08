@@ -27,6 +27,7 @@ def build_tools(
     store_getter: Callable[[], Any] | None = None,
     role_router: Any = None,
     invalidate_tools_cache: Callable[[], None] | None = None,
+    code_intel_getter: Callable[[], Any] | None = None,
 ) -> list[Tool]:
     """Build all agent tool instances.
 
@@ -67,6 +68,7 @@ def build_tools(
         CharmhubSearchTool,
     )
     from cantrip.agent.tools.charmlint_tool import CharmlintTool
+    from cantrip.agent.tools.codeintel import build_codeintel_tools
     from cantrip.agent.tools.docs_search import DocsSearchTool
     from cantrip.agent.tools.env_keys import InspectEnvKeysTool
     from cantrip.agent.tools.environment import (
@@ -421,6 +423,12 @@ def build_tools(
     if mcp_registry is not None:
         for info in mcp_registry.aggregated_tools():
             tools.append(MCPTool(info, mcp_registry))
+
+    # Phase 72b: read-only code intelligence.  Skipped when no getter
+    # is supplied — the agent gets the getter wired up at construction
+    # time; bare ``build_tools`` callers in tests opt out by omission.
+    if code_intel_getter is not None:
+        tools.extend(build_codeintel_tools(code_intel_getter))
 
     return tools
 

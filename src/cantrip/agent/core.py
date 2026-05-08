@@ -77,6 +77,7 @@ from cantrip.agent.tools import (
 from cantrip.agent.triage_controller import TriageController
 from cantrip.agent.watcher import WatcherConfig, WatcherEvent
 from cantrip.agent.watcher_controller import WatcherController
+from cantrip.codeintel import CodeIntel
 from cantrip.hooks import (
     HookEvent,
     HookResult,
@@ -489,6 +490,13 @@ class CantripAgent:
         # Lazy — sessions without a charm path skip it entirely; the
         # first ``_build_system_prompt`` call kicks off the parse.
         self._repo_map_cache: RepoMap | None = None
+
+        # Phase 72b: read-only code-intelligence index.  Built lazily
+        # via :pyattr:`code_intel`; the codeintel tools call into it
+        # through ``self._code_intel_or_none`` so a session without a
+        # charm path returns a clean error rather than crashing on the
+        # missing index.
+        self._code_intel_cache: CodeIntel | None = None
 
         # Phase 68.3: load user-defined slash commands from
         # ``.cantrip/commands/*.md`` + ``~/.config/cantrip/commands/*.md``
@@ -1251,6 +1259,11 @@ class CantripAgent:
             # subsequent ``edit_file("charmcraft.yaml")`` calls 404 until
             # the model retries with an explicit ``<charm_name>/`` prefix.
             invalidate_tools_cache=self._invalidate_tools_cache,
+            # Phase 72b: read-only code intelligence.  Lazy — the
+            # property below builds a CodeIntel only on first use, so
+            # sessions without an active charm path skip the parser
+            # cost entirely.
+            code_intel_getter=self._code_intel_or_none,
         )
 
     def _build_system_prompt(self) -> str:
@@ -1319,6 +1332,33 @@ class CantripAgent:
             return ""
         rm.build(force=True)
         return rm.render_full()
+
+    @property
+    def code_intel(self) -> CodeIntel | None:
+        """Phase 72b read-only code-intelligence index for the active charm.
+
+        Built lazily — same pattern as :attr:`repo_map`.  Returns
+        ``None`` when no charm path is set or the path doesn't exist
+        on disk; tools handle ``None`` by returning a clear error
+        rather than failing silently.
+        """
+        if self.state.charm_path is None:
+            return None
+        if not self.state.charm_path.exists():
+            return None
+        if self._code_intel_cache is None:
+            self._code_intel_cache = CodeIntel(self.state.charm_path)
+        return self._code_intel_cache
+
+    def _code_intel_or_none(self) -> CodeIntel | None:
+        """Bound getter handed to the codeintel tools.
+
+        Lambdas would close over ``self`` just as well, but a named
+        method gives the tool layer a stable hook to monkey-patch in
+        tests and a tidier ``repr`` if a tool ever logs its
+        provenance.
+        """
+        return self.code_intel
 
     def _render_repo_map(self) -> str | None:
         """Build (incremental) and render the repo-map for prompt injection.
