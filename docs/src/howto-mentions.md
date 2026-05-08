@@ -84,8 +84,28 @@ see_also:
       <td><code>@docs &lt;site&gt; &lt;query&gt;</code></td>
       <td>Top hits from your indexed Canonical documentation.  Requires <code>cantrip docs index</code> to have run first &mdash; see <a href="howto-docs-index.html">Index the charm docs</a>.</td>
     </tr>
+    <tr>
+      <td><code>@symbol &lt;query&gt;</code></td>
+      <td>Workspace symbol search across the active charm via the read-only code-intel index.  Match policy: exact qualified &gt; exact &gt; prefix &gt; fuzzy.  Truncated matches keep an honest count instead of silently eliding.</td>
+    </tr>
+    <tr>
+      <td><code>@definition &lt;symbol&gt;</code></td>
+      <td>Resolve a symbol to its defining file, line, and a bounded snippet.  Ambiguous names render every candidate.</td>
+    </tr>
+    <tr>
+      <td><code>@references &lt;symbol&gt;</code></td>
+      <td>Every recorded callsite for a symbol with <code>file:line</code> locations.  Pairs naturally with <code>@definition</code>.</td>
+    </tr>
   </tbody>
 </table>
+
+<p>
+  <code>@symbol</code>, <code>@definition</code>, and
+  <code>@references</code> only register on sessions that have an
+  active charm path &mdash; they share the index that powers the
+  matching <code>/symbols</code>, <code>/definition</code>, and
+  <code>/references</code> slash commands.
+</p>
 
 <p>
   Each provider has a per-call character cap; over-budget output

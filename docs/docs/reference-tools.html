@@ -203,6 +203,10 @@ tests/unit/test_charm.py:78  refresh
 <td>Audit observer-to-test coverage and flag missing <code>can_connect=False</code> / <code>relation-broken</code> event-shape tests</td>
 </tr>
 <tr>
+<td><code>inspect_env_keys</code></td>
+<td>Sweep an application source tree for environment-variable references (<code>os.getenv</code>, <code>process.env.X</code>, <code>System.getenv</code>, Spring <code>${...}</code>, <code>.env</code> rows) and return a deduplicated key list plus per-file usage map; per-framework env contracts ported from canonical/skills</td>
+</tr>
+<tr>
 <td><code>operational_readiness</code></td>
 <td>Evaluate against Canonical's Operational Readiness Metrics</td>
 </tr>
@@ -591,6 +595,10 @@ tests/unit/test_charm.py:78  refresh
 <td>Pack a rock (OCI image)</td>
 </tr>
 <tr>
+<td><code>check_rock_contract</code></td>
+<td>Validate a repo against the rockcraft framework contract for a 12-factor framework (Flask, Django, FastAPI, Express, Spring Boot, Go) &mdash; blocking issues, advisory warnings, supported <code>base:</code> values</td>
+</tr>
+<tr>
 <td><code>skopeo_registry_push</code></td>
 <td>Push an OCI image to a registry</td>
 </tr>
@@ -612,6 +620,10 @@ tests/unit/test_charm.py:78  refresh
 <tr>
 <td><code>concierge_status</code></td>
 <td>Check environment readiness</td>
+</tr>
+<tr>
+<td><code>preflight_targets</code></td>
+<td>Snapshot kubectl context, Juju controllers, <code>rockcraft</code> / <code>charmcraft</code> / <code>skopeo</code> presence and snap channel, plus the experimental-extension env vars expected by the chosen framework &mdash; runs before kicking off a 12-factor build</td>
 </tr>
 <tr>
 <td><code>list_inference_snaps</code></td>

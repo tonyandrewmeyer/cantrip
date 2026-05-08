@@ -85,6 +85,7 @@ Coverage starts deliberately narrow: Python source plus charm metadata YAML (`ch
 | `charmlint` | Run 35+ deterministic lint rules |
 | `harness_inventory` | Survey `tests/` for remaining `ops.testing.Harness` usages, with a per-file `harness`/`scenario`/`mixed` breakdown |
 | `scenario_coverage` | Audit observer-to-test coverage and flag missing `can_connect=False` / `relation-broken` event-shape tests |
+| `inspect_env_keys` | Sweep an application source tree for environment-variable references (`os.getenv`, `process.env.X`, `System.getenv`, Spring `${...}`, `.env` rows) and return a deduplicated key list plus per-file usage map; per-framework env contracts ported from canonical/skills |
 | `operational_readiness` | Evaluate against Canonical's Operational Readiness Metrics |
 
 {#juju-ops}
@@ -207,6 +208,7 @@ Coverage starts deliberately narrow: Python source plus charm metadata YAML (`ch
 |---|---|
 | `rockcraft_init` | Scaffold a rockcraft project |
 | `rockcraft_pack` | Pack a rock (OCI image) |
+| `check_rock_contract` | Validate a repo against the rockcraft framework contract for a 12-factor framework (Flask, Django, FastAPI, Express, Spring Boot, Go) — blocking issues, advisory warnings, supported `base:` values |
 | `skopeo_registry_push` | Push an OCI image to a registry |
 
 {#environment}
@@ -216,6 +218,7 @@ Coverage starts deliberately narrow: Python source plus charm metadata YAML (`ch
 |---|---|
 | `concierge_prepare` | Prepare the development environment (Juju, LXD, MicroK8s) |
 | `concierge_status` | Check environment readiness |
+| `preflight_targets` | Snapshot kubectl context, Juju controllers, `rockcraft` / `charmcraft` / `skopeo` presence and snap channel, plus the experimental-extension env vars expected by the chosen framework — runs before kicking off a 12-factor build |
 | `list_inference_snaps` | List available local inference snaps |
 | `run_command` | Run a shell command |
 | `wait_for` | Block until a typed condition is true (file appears, port opens, command exits zero, juju app reaches `active/idle`) |

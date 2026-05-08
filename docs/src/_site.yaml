@@ -19,6 +19,7 @@ sections:
       - { slug: howto-mcp, label: "Configure MCP servers" }
       - { slug: howto-charm-library, label: "Search the charm library" }
       - { slug: howto-charm-icon, label: "Generate a charm icon" }
+      - { slug: howto-identity-platform, label: "Add identity-platform login" }
       - { slug: howto-docs-index, label: "Index the charm docs" }
       - { slug: howto-mentions, label: "Use @-mention context" }
       - { slug: howto-hooks, label: "Configure hooks" }

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to add Canonical Identity Platform login to a charm &mdash; Cantrip</title>
+<meta name="description" content="Wire OIDC, OAuth, or federated login into a generated charm via Hydra, Kratos, and identity-platform-login-ui &mdash; using the bundled identity-platform skill.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-interface.html">Choose an interface</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-identity-platform.html" class="current">Add identity-platform login</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-recipes.html">Run a recipe</a></li>
+      <li><a href="howto-flows.html">Walk a flow</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-eval.html">Score against an eval spec</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+      <li><a href="howto-vm-inference-proxy.html">Run in a VM with host GPU inference</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#when">When to use this skill</a></li>
+      <li><a href="#trigger">Trigger it from a prompt</a></li>
+      <li><a href="#topology">Default topology</a></li>
+      <li><a href="#interface">Pick the right relation</a></li>
+      <li><a href="#libraries">Charm libraries</a></li>
+      <li><a href="#verify">Verify the wiring</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="explanation-charm-paths.html">The three charm paths</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Add identity-platform login
+    </div>
+
+    <h1>Add Canonical Identity Platform login</h1>
+    <p class="subtitle">
+      Reach for the bundled identity-platform skill when a charm needs OIDC tokens, OAuth clients, or federated login backed by Hydra, Kratos, and login-ui.
+    </p>
+
+<h2 id="when">When to use this skill</h2>
+<p>Cantrip ships a bundled <code>identity-platform</code> skill that teaches the
+agent how to wire charms to the <strong>Canonical Identity Platform</strong> &mdash;
+Hydra (the OAuth 2.0 / OIDC issuer), Kratos (identity and sessions),
+and identity-platform-login-ui (the reference login UI). The skill
+loads automatically when the agent recognises an identity request;
+you do not need to install or configure anything.</p>
+<p>Reach for it when the charm needs any of:</p>
+<ul>
+<li>&quot;Add login&quot; / &quot;add SSO&quot; / &quot;add OIDC&quot; to a generated charm.</li>
+<li>A web app that registers users, manages sessions, or accepts
+third-party identity (Google, GitHub, corporate IdP).</li>
+<li>A CLI or daemon that needs the OAuth 2.0 device-code flow or
+service-to-service credentials.</li>
+<li>A resource server that validates opaque access tokens via
+Hydra's introspection endpoint.</li>
+<li>An external-IdP charm that federates Google / GitHub / a generic
+OIDC issuer into Kratos.</li>
+</ul>
+<p>Do <strong>not</strong> reach for it for custom IAM (LDAP, SAML, ad-hoc OAuth),
+in-workload auth library wiring (PKCE, JWT verification &mdash; that is
+application code), or Vault-backed secrets (use the
+<code>charms.vault_kv.*</code> interface instead).</p>
+<h2 id="trigger">Trigger it from a prompt</h2>
+<p>The skill activates on prose, not a slash command. Describe what the
+charm needs in natural language and the agent will pick the skill up
+on its next planning step:</p>
+<pre><code><span class="prompt">cantrip&gt;</span> add OIDC login to this Flask charm against the
+Canonical Identity Platform bundle</code></pre>
+<p>You can also load it explicitly when steering a stuck plan:</p>
+<pre><code><span class="prompt">cantrip&gt;</span> /skill identity-platform</code></pre>
+<p><code>/skill</code> lists the bundled skills if you want to confirm the name.
+See <a href="howto-skills.html">Add a custom skill</a> for the discovery order
+and how to override a bundled skill from your own directory.</p>
+<h2 id="topology">Default topology &mdash; bundle-based hybrid</h2>
+<p>When the request is &quot;add login&quot; without further qualification, the
+skill generates against the published bundle:</p>
+<pre><code><span class="prompt">$</span> juju deploy canonical-identity-platform
+<span class="prompt">$</span> juju integrate my-app:oauth canonical-identity-platform.hydra:oauth</code></pre>
+<p><code>canonical-identity-platform</code> brings up Hydra + Kratos +
+identity-platform-login-ui + Traefik + a database backend as a
+single unit. The relying-party charm only talks to Hydra over the
+<code>oauth</code> relation; login-ui is the user-facing door; Kratos owns user
+accounts and login flows. This mirrors the COS-bundle pattern
+(<code>juju deploy cos-lite</code> &rarr; integrate).</p>
+<p>The skill keeps two other topologies in reserve when the user is
+explicit:</p>
+<table>
+<thead>
+<tr>
+<th>Topology</th>
+<th>Trigger phrase</th>
+<th>What changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bundle-based hybrid</strong> <em>(default)</em></td>
+<td>&quot;add login&quot;, &quot;OIDC&quot;, &quot;SSO&quot;</td>
+<td>Suggests <code>juju deploy canonical-identity-platform</code> and integrates <code>oauth</code>.</td>
+</tr>
+<tr>
+<td><strong>SaaS-style public Hydra</strong></td>
+<td>&quot;use my existing Hydra at &lt;URL&gt;&quot;, production reuse</td>
+<td>Same charm code; skips the bundle suggestion; points at the user's Hydra app.</td>
+</tr>
+<tr>
+<td><strong>Internal-only with mTLS</strong></td>
+<td>regulated or classified environments</td>
+<td>Same charm code; adds an mTLS profile to the relation handler; wires cert-manager.</td>
+</tr>
+</tbody>
+</table>
+<p>The charm code is portable across all three &mdash; only the deployment
+shape changes.</p>
+<h2 id="interface">Pick the right relation</h2>
+<p>The skill chooses one of five interfaces based on the charm's role.
+Charms generally play exactly one role; declare a second only when
+the charm genuinely needs both.</p>
+<table>
+<thead>
+<tr>
+<th>Interface</th>
+<th>Direction</th>
+<th>When</th>
+<th>Library</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>oauth</code></td>
+<td>RP requires, Hydra provides</td>
+<td>Web app registers as an OAuth/OIDC client; receives issuer URL + client ID + client secret per relation. <strong>The headline interface.</strong></td>
+<td><code>charms.hydra.v0.oauth</code></td>
+</tr>
+<tr>
+<td><code>oauth-cli</code></td>
+<td>CLI requires, Hydra provides</td>
+<td>CLI tool or daemon needs the OAuth 2.0 device-code flow.</td>
+<td><code>charms.hydra.v0.oauth_cli</code></td>
+</tr>
+<tr>
+<td><code>oidc-info</code></td>
+<td>Charm requires, Hydra provides</td>
+<td>Charm wants Hydra's discovery URL and JWKs to validate ID tokens itself.</td>
+<td><code>charms.hydra.v0.oidc_info</code></td>
+</tr>
+<tr>
+<td><code>hydra-token-introspect</code></td>
+<td>Resource server requires, Hydra provides</td>
+<td>Resource server validates opaque access tokens via Hydra's introspection endpoint.</td>
+<td><code>charms.hydra.v0.token_introspect</code></td>
+</tr>
+<tr>
+<td><code>kratos-external-idp</code></td>
+<td>Provider, Kratos requires</td>
+<td>Charm federates Google / GitHub / generic OIDC into Kratos.</td>
+<td><code>charms.kratos.v0.kratos_external_idp</code></td>
+</tr>
+</tbody>
+</table>
+<p>A quick decision shortcut:</p>
+<ul>
+<li><em>&quot;My web app needs login.&quot;</em> &rarr; <code>oauth</code>.</li>
+<li><em>&quot;My CLI needs to talk to a service that wants a token.&quot;</em> &rarr; <code>oauth-cli</code>.</li>
+<li><em>&quot;My charm validates JWTs itself.&quot;</em> &rarr; <code>oidc-info</code>.</li>
+<li><em>&quot;My charm validates opaque tokens by asking Hydra.&quot;</em> &rarr; <code>hydra-token-introspect</code>.</li>
+<li><em>&quot;I'm building a Google / GitHub / corporate-IdP charm.&quot;</em> &rarr; <code>kratos-external-idp</code>.</li>
+</ul>
+<h2 id="libraries">Charm libraries &mdash; fetch-libs route</h2>
+<p>These five libraries are not yet on PyPI. Cantrip declares them in
+<code>charmcraft.yaml</code> and runs <code>charmcraft fetch-libs</code> at scaffold time:</p>
+<pre><code class="language-yaml">charm-libs:
+  - lib: hydra.oauth
+    version: &quot;0&quot;
+  # add only the interfaces the charm actually imports
+</code></pre>
+<p>Once fetched, the libraries land under
+<code>lib/charms/hydra/v0/oauth.py</code> (etc.) and import as
+<code>from charms.hydra.v0.oauth import OAuthRequirer</code>. When the libs
+land on PyPI under the <code>charmlibs-*</code> namespace the skill will switch
+to <code>uv add charmlibs-hydra-oauth</code>; the agent tracks the upstream
+audit so this is a one-line change when the time comes.</p>
+<p>For 12-factor charms (Path A &mdash; Flask, Django, FastAPI, Express,
+Spring Boot, Go), the <code>paas-charm</code> base injects the resolved
+relation values into the workload as environment variables &mdash; no
+charm Python is needed:</p>
+<table>
+<thead>
+<tr>
+<th>Env var</th>
+<th>Source</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FLASK_OIDC_ISSUER_URL</code></td>
+<td><code>oauth</code> databag</td>
+<td>Hydra's issuer URL</td>
+</tr>
+<tr>
+<td><code>FLASK_OIDC_CLIENT_ID</code></td>
+<td><code>oauth</code> databag</td>
+<td>Per-relation client ID</td>
+</tr>
+<tr>
+<td><code>FLASK_OIDC_CLIENT_SECRET</code></td>
+<td>resolved Juju secret</td>
+<td>Per-relation client secret</td>
+</tr>
+</tbody>
+</table>
+<p>The framework prefix follows the <code>paas-charm</code> table &mdash; <code>FLASK_</code>,
+<code>DJANGO_</code>, or <code>APP_</code> for the rest. Hydra writes the client secret
+as a Juju secret (not a plain databag value); the library handles
+the secret-fetch dance, so the charm only needs to declare the
+relation.</p>
+<p>For custom (Path B) charms, call <code>OAuthRequirer.get_provider_info()</code>
+inside the relation-changed handler &mdash; the library transparently
+resolves the secret URI in the databag.</p>
+<h2 id="verify">Verify the wiring</h2>
+<p>Once the agent finishes, drive the usual verification loop. The most
+useful checks are:</p>
+<pre><code><span class="prompt">cantrip&gt;</span> @juju status
+<span class="prompt">cantrip&gt;</span> @juju show-relation oauth</code></pre>
+<p><code>@juju show-relation</code> is the fastest way to confirm Hydra has
+written the issuer URL, client ID, and secret URI into the relation
+databag &mdash; see <a href="howto-mentions.html">Use @-mention context</a> for the
+full provider catalogue. If the workload still cannot reach Hydra,
+check <code>juju_debug_log</code> for relation-changed errors and confirm the
+charm runs with permission to read Juju secrets.</p>
+<div class="callout">
+  <p>
+    Never log the client secret, never echo it into status messages,
+    and never place it in a config option &mdash; that defeats the
+    secret-relation contract. Cantrip's generator follows this rule;
+    audit before merging if you hand-edit the relation handler.
+  </p>
+</div>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+
+(function() {
+  document.querySelectorAll('.doc-content pre').forEach(function(pre) {
+    var code = pre.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.setAttribute('aria-label', 'Copy code to clipboard');
+    btn.addEventListener('click', function() {
+      var text = code.innerText;
+      var done = function() {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function() {});
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  });
+})();
+</script>
+
+</body>
+</html>

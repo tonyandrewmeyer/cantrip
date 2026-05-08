@@ -160,6 +160,9 @@ Once confirmed, the agent enters the autonomous work loop. Watch the
 task checklist update as subagents work through the plan:
 
 - Scaffolding the charm project with `charmcraft init`
+- Writing an `AGENTS.md` (with a `CLAUDE.md` symlink) so any
+  IDE agent that opens the charm later — Cursor, Codex, Claude
+  Code, Cantrip itself — inherits the same project context
 - Generating a `rockcraft.yaml` for the OCI image
 - Writing integration tests
 - Writing the charm code
