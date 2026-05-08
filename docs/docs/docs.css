@@ -279,6 +279,38 @@ a:hover { color: var(--accent-hover); }
   padding: 1rem 1.25rem;
   overflow-x: auto;
   margin-bottom: 1.25rem;
+  position: relative;
+}
+
+.doc-content pre .copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.55rem;
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.doc-content pre:hover .copy-btn,
+.doc-content pre .copy-btn:focus-visible {
+  opacity: 1;
+}
+
+.doc-content pre .copy-btn:hover {
+  color: var(--accent);
+}
+
+.doc-content pre .copy-btn.copied {
+  color: var(--accent);
+  opacity: 1;
 }
 
 .doc-content pre code {
