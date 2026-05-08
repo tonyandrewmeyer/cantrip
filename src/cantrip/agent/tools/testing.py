@@ -10,6 +10,26 @@ import yaml
 
 from cantrip.agent.tools.base import Tool, ToolResult
 
+
+def _resolve_path_via_state(path: str, state: Any) -> pathlib.Path:
+    """Resolve *path* against ``state.charm_path`` instead of the process cwd.
+
+    The default ``pathlib.Path(path).resolve()`` anchors at the
+    process cwd, which is fine in standalone use but wrong inside the
+    agent: sprint mode reroots ``state.charm_path`` into a
+    ``<launch>/<charm_name>`` subdir without changing cwd, so a
+    naive resolve still returns the launch directory.  Falls back to
+    the cwd-anchored resolve when ``state`` is not supplied — keeps
+    the function safe for direct unit tests.
+    """
+    candidate = pathlib.Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    if state is not None and getattr(state, "charm_path", None):
+        return (state.charm_path / candidate).resolve()
+    return candidate.resolve()
+
+
 # Timeouts per test type (seconds).
 _TIMEOUTS = {"unit": 120, "integration": 900}
 
@@ -114,6 +134,16 @@ def _build_pytest_target(test_dir: pathlib.Path, pattern: str | None) -> list[st
 class RunCharmTestsTool(Tool):
     """Tool to run unit or integration tests for a charm."""
 
+    def __init__(self, state: Any = None) -> None:
+        # ``state`` is optional so existing instantiations (and tests
+        # that build the tool without a full agent) keep working.  When
+        # set, ``path="."`` resolves against ``state.charm_path``
+        # rather than the process cwd — sprint mode reroots
+        # ``state.charm_path`` into a ``<launch>/<charm_name>`` subdir
+        # but does not chdir, so without this hook the test runner
+        # walks the launch directory instead of the charm subdir.
+        self._state = state
+
     @property
     def name(self) -> str:
         return "run_charm_tests"
@@ -171,7 +201,7 @@ class RunCharmTestsTool(Tool):
         pattern: str | None = None,
     ) -> ToolResult:
         """Run charm tests using tox or pytest."""
-        charm_path = pathlib.Path(path).resolve()
+        charm_path = _resolve_path_via_state(path, self._state)
         if not charm_path.is_dir():
             return ToolResult(
                 success=False,

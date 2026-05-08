@@ -399,26 +399,35 @@ class TestSprintAutoDetect:
 
 
 # ===================================================================
-# TestSprintRehomesCwd — sprint chdir keeps subprocess tools anchored
+# TestSprintInvalidatesToolCache — file tools follow the rerooted charm_path
 # ===================================================================
 
 
-class TestSprintRehomesCwd:
-    """Sprint mode rehomes the process cwd to the scaffold subdir.
+class TestSprintInvalidatesToolCache:
+    """Sprint mode reroots ``state.charm_path`` and invalidates the tool cache.
 
-    Subprocess-launching tools (``charmcraft_pack``, ``run_charm_tests``,
-    …) resolve ``path="."`` against the *process* cwd, not
-    ``state.charm_path``.  Without rehoming the cwd those tools stay
-    anchored to the launch directory and ``charmcraft pack`` 404s on
-    ``charmcraft.yaml``.
+    File tools captured ``base_path`` at construction; without the
+    invalidation, the next ``edit_file("charmcraft.yaml")`` after
+    sprint setup resolves against the parent directory and 404s
+    until the model retries with an explicit ``<charm_name>/`` prefix.
     """
 
     @pytest.mark.asyncio
-    async def test_sprint_chdirs_to_scaffold_subdir(self, tmp_path: pathlib.Path):
+    async def test_sprint_invalidates_tools_cache(self, tmp_path: pathlib.Path):
+        invalidations: list[None] = []
+
+        def _invalidator() -> None:
+            invalidations.append(None)
+
         provider = FakeProvider()
         state = AgentState(charm_path=tmp_path)
         queue = WorkQueue()
-        tool = PlanTasksTool(provider=provider, state=state, queue=queue)
+        tool = PlanTasksTool(
+            provider=provider,
+            state=state,
+            queue=queue,
+            invalidate_tools_cache=_invalidator,
+        )
 
         await tool.execute(
             intent="Sprint to deploy",
@@ -426,11 +435,9 @@ class TestSprintRehomesCwd:
             charm_type="k8s",
         )
 
-        import os
-
-        # The chdir lands inside ``<charm_path>/<charm_name>``; both the
-        # state field and the cwd point at the new directory so
-        # subprocess tools resolve ``path="."`` correctly.
+        # ``state.charm_path`` is rerouted into the scaffold subdir
+        # *and* the invalidator fires so the file tools rebuild with
+        # the new base_path on next access.
         expected = (tmp_path / "my-charm").resolve()
-        assert state.charm_path == expected
-        assert pathlib.Path(os.getcwd()).resolve() == expected
+        assert state.charm_path.resolve() == expected
+        assert len(invalidations) == 1

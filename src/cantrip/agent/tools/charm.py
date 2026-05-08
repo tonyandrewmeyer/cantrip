@@ -11,7 +11,7 @@ import yaml
 
 from cantrip.agent.tools._scan import scan
 from cantrip.agent.tools.base import Tool, ToolResult
-from cantrip.agent.tools.testing import RunCharmTestsTool
+from cantrip.agent.tools.testing import RunCharmTestsTool, _resolve_path_via_state
 from cantrip.agent.tools.workflows import inject_github_workflows
 from cantrip.charm import terraform
 
@@ -539,6 +539,17 @@ class CharmcraftInitTool(Tool):
 class CharmcraftPackTool(Tool):
     """Tool to pack a charm."""
 
+    def __init__(self, state: Any = None) -> None:
+        # ``state`` is optional so existing instantiations (and tests
+        # that build the tool without a full agent) keep working.  When
+        # set, ``path="."`` resolves against ``state.charm_path``
+        # rather than the process cwd — sprint mode reroots
+        # ``state.charm_path`` into a ``<launch>/<charm_name>`` subdir
+        # without chdir-ing the process, so without this hook
+        # ``charmcraft pack`` 404s on ``charmcraft.yaml`` after a
+        # successful ``charmcraft_init`` into the same subdir.
+        self._state = state
+
     @property
     def name(self) -> str:
         return "charmcraft_pack"
@@ -579,7 +590,7 @@ class CharmcraftPackTool(Tool):
     async def execute(self, path: str = ".", destructive_mode: bool = False) -> ToolResult:
         """Run charmcraft pack."""
         try:
-            charm_path = pathlib.Path(path).resolve()
+            charm_path = _resolve_path_via_state(path, self._state)
 
             # Re-assert PaaS charm dependencies before packing.  The
             # agent has been observed overwriting the charm's

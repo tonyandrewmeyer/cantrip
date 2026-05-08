@@ -43,32 +43,6 @@ def _disable_pypi_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CANTRIP_NO_UPDATE_CHECK", "1")
 
 
-@pytest.fixture(autouse=True)
-def _restore_cwd() -> object:
-    """Snapshot and restore the process cwd around every test.
-
-    A handful of agent code paths — sprint-mode planning, in
-    particular — call :func:`os.chdir` to keep subprocess-launching
-    tools anchored to the active charm directory.  In production that
-    is fine; in tests it can leak the cwd from one test into the
-    next.  This autouse fixture takes a snapshot in setup and restores
-    it in teardown so each test starts from the repo root regardless
-    of what the previous test did.
-    """
-    import contextlib
-    import os
-
-    saved = os.getcwd()
-    try:
-        yield
-    finally:
-        # Saved cwd may have vanished mid-test (e.g. ``tmp_path``
-        # teardown deleted it); swallow the error so teardown still
-        # completes, even if the next test starts from a stale cwd.
-        with contextlib.suppress(OSError):
-            os.chdir(saved)
-
-
 class FakeProvider(LLMProvider):
     """A fake LLM provider for testing.
 

@@ -209,7 +209,10 @@ def build_tools(
         OperationalReadinessTool(),
         # Charm operations
         CharmcraftInitTool(),
-        CharmcraftPackTool(),
+        # ``state`` lets the pack tool resolve ``path="."`` against the
+        # active charm directory after sprint mode reroots it; without
+        # the link the tool resolves against the process cwd and 404s.
+        CharmcraftPackTool(state=state),
         QuickPackTool(),
         CharmValidateTool(),
         CharmcraftFetchLibsTool(),
@@ -349,8 +352,9 @@ def build_tools(
         JujuStatusRenderTool(),
         # Inference snaps
         ListInferenceSnapsTool(),
-        # Testing
-        RunCharmTestsTool(),
+        # Testing — ``state`` for the same charm-dir resolution
+        # reason as ``CharmcraftPackTool`` above.
+        RunCharmTestsTool(state=state),
         GenerateTestsTool(),
         HookBenchmarkTool(),
         FuzzTestTool(),
