@@ -1704,11 +1704,32 @@ decomposition last.
   reach internal callers; eight ``_SETTINGS_PATH`` patches in
   ``test_update.py`` / ``test_slash.py`` were repointed to
   ``cantrip.update.check._SETTINGS_PATH``.
-- [ ] `src/cantrip/main.py` (1 080 lines) — once 85.6 has
-  removed the `parse_args` block, decide whether the
-  remaining `_run` plus helpers warrants a package or stays
-  flat.  Likely stays flat at ~600 lines; defer this bullet
-  if so.
+- [x] `src/cantrip/main.py` (was 1 575 lines after the 85.6
+  ``parse_args`` extraction — well over the ~600-line
+  defer-if-so threshold) → `src/cantrip/main/` package.
+  Argument parsing moves to `main/parser.py`; the ``_run``
+  TUI/Web/CLI dispatcher and its helpers
+  (`_install_unraisable_hook`, `_is_cantrip_source_tree`,
+  `_print_update_panel`, `_truncate_notes`,
+  `_CANTRIP_PYPROJECT_*`) move to `main/run.py`; each
+  subcommand handler gets its own module
+  (`main/transcript.py`, `main/compare.py`,
+  `main/hooks_cmd.py`, `main/skill_cmd.py`,
+  `main/checkpoints.py`, `main/audit.py`,
+  `main/permissions.py`).  `main/__init__.py` re-exports the
+  public + monkey-patchable surface (`parse_args`, `_run`,
+  `_install_unraisable_hook`, `_print_update_panel`, every
+  ``_<cmd>`` handler) so `from cantrip.main import …` lines
+  in tests keep working unchanged; the entry point
+  `cantrip.main:main` resolves to `main/__init__.py`'s
+  `main()`.  Test patches that targeted
+  `cantrip.main._install_unraisable_hook` (8) and
+  `cantrip.main._print_update_panel` (1) in
+  `tests/unit/test_main.py` retargeted to
+  `cantrip.main.run.<name>` so the patches reach the actual
+  call site rather than the package alias.  Pure refactor —
+  `make check` and `make unit` (7 172 passed, 9 skipped)
+  green.
 
 ### 85.8 Mirror — `tests/unit/` folder structure
 

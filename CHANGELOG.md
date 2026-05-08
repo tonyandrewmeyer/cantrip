@@ -122,6 +122,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``multimodal`` capability (treated as vision) at startup.
 
 ### Changed
+- **`src/cantrip/main.py` decomposed into a `cantrip.main` package
+  (Phase 85.7).**  Argument parsing, the `_run` dispatcher, and each
+  subcommand handler now live in focused submodules
+  (`parser.py`, `run.py`, `transcript.py`, `compare.py`,
+  `hooks_cmd.py`, `skill_cmd.py`, `checkpoints.py`, `audit.py`,
+  `permissions.py`).  Pure refactor — no public API change.
+  `cantrip.main:main`, `cantrip.main.parse_args`, and every existing
+  `from cantrip.main import …` import in the test suite continue to
+  work; package-level monkey-patches at
+  `cantrip.main._install_unraisable_hook` and
+  `cantrip.main._print_update_panel` retarget to
+  `cantrip.main.run.<name>` so they reach the actual call site.
 - **Backfilled exception-path regression tests for high-value modules
   (Phase 92.3).**  Seventeen focused tests cover the previously
   uncovered error mappings the review called out: Anthropic

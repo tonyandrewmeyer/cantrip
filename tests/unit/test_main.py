@@ -329,7 +329,7 @@ class TestRun:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         with (
             mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
-            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, provider="inference-snap", no_tui=True))
         assert rc == 0
@@ -343,7 +343,7 @@ class TestRun:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         with (
             mock.patch("cantrip.web.server.run_web", return_value=0) as run_web,
-            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, web=True))
         assert rc == 0
@@ -360,7 +360,7 @@ class TestRun:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         with (
             mock.patch("cantrip.web.server.run_web", return_value=0) as run_web,
-            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, web=True, improve=improve_dir))
         err = capsys.readouterr().err
@@ -376,7 +376,7 @@ class TestRun:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         with (
             mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
-            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, no_tui=True))
         assert rc == 0
@@ -398,7 +398,7 @@ class TestRun:
         with (
             mock.patch("cantrip.print_mode.run_print", return_value=2) as run_print,
             mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
-            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, no_tui=True, print_goal=""))
         assert rc == 2
@@ -414,7 +414,7 @@ class TestRun:
         fake_app = mock.MagicMock()
         with (
             mock.patch("cantrip.tui.app.CantripApp", return_value=fake_app) as cls,
-            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path))
         assert rc == 0
@@ -432,7 +432,7 @@ class TestRun:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         with (
             mock.patch("cantrip.tui.app.CantripApp", return_value=fake_app) as cls,
-            mock.patch("cantrip.main._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             cantrip_main._run(_run_args(tmp_path / "other", improve=improve_dir))
         kwargs = cls.call_args.kwargs
@@ -450,8 +450,8 @@ class TestRun:
         fake_app.pending_update_info = "sentinel"
         with (
             mock.patch("cantrip.tui.app.CantripApp", return_value=fake_app),
-            mock.patch("cantrip.main._install_unraisable_hook"),
-            mock.patch("cantrip.main._print_update_panel") as panel,
+            mock.patch("cantrip.main.run._install_unraisable_hook"),
+            mock.patch("cantrip.main.run._print_update_panel") as panel,
         ):
             cantrip_main._run(_run_args(tmp_path))
         panel.assert_called_once_with("sentinel")
@@ -808,7 +808,9 @@ class TestAuditEntry:
         assert rc == 0
         out = capsys.readouterr().out.strip().splitlines()
         assert len(out) == 2
-        parsed = [cantrip_main.json.loads(line) for line in out]
+        import json
+
+        parsed = [json.loads(line) for line in out]
         assert {row["tool"] for row in parsed} == {"juju_status", "juju_destroy_model"}
 
     def test_list_filters_by_action(
