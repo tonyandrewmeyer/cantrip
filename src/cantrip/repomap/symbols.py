@@ -60,6 +60,24 @@ class Symbol:
         return self.name
 
 
+@dataclasses.dataclass(frozen=True)
+class ReferenceLocation:
+    """One reference site: ``name`` mentioned at ``file:line``.
+
+    Populated by the Python visitor alongside :attr:`FileSymbols.references`
+    so the codeintel layer can answer ``find_references`` without
+    re-parsing.  Multiplicity matches ``references`` — a name mentioned
+    ten times produces ten ``ReferenceLocation`` entries.  YAML-derived
+    references stay in ``references`` only; YAML reference lines need
+    a position-aware loader and are out of scope until a use case
+    appears.
+    """
+
+    name: str
+    file: str
+    line: int  # 1-based; 0 when the parser cannot recover a position.
+
+
 @dataclasses.dataclass
 class FileSymbols:
     """Symbols extracted from one source file."""
@@ -71,6 +89,19 @@ class FileSymbols:
     # ten times more than a name referenced once when the graph layer
     # builds edges.
     references: list[str] = dataclasses.field(default_factory=list)
+    # Per-reference locations.  Aligned with ``references`` for Python
+    # parses (one entry per name occurrence, in source order); empty
+    # for YAML parses where line attribution would need a custom
+    # loader.  Consumers that only want PageRank input keep using
+    # ``references``; the codeintel layer reads ``reference_locations``.
+    reference_locations: list[ReferenceLocation] = dataclasses.field(default_factory=list)
+    # Imported-name aliases recovered from ``import`` / ``from … import …``
+    # statements: ``alias`` -> ``original``.  ``import foo as f`` records
+    # ``f -> foo``; ``from x import bar as b`` records ``b -> bar``.
+    # Used by codeintel to resolve a query like ``f.thing()`` back to
+    # the qualified ``foo.thing`` definition.  YAML parses leave this
+    # empty.
+    import_aliases: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +134,13 @@ def parse_python_file(path: pathlib.Path, *, repo_root: pathlib.Path) -> FileSym
 
     visitor = _PythonVisitor(file=rel)
     visitor.visit(tree)
-    return FileSymbols(file=rel, definitions=visitor.definitions, references=visitor.references)
+    return FileSymbols(
+        file=rel,
+        definitions=visitor.definitions,
+        references=visitor.references,
+        reference_locations=visitor.reference_locations,
+        import_aliases=dict(visitor.import_aliases),
+    )
 
 
 class _PythonVisitor(ast.NodeVisitor):
@@ -120,8 +157,23 @@ class _PythonVisitor(ast.NodeVisitor):
         self.file = file
         self.definitions: list[Symbol] = []
         self.references: list[str] = []
+        self.reference_locations: list[ReferenceLocation] = []
+        self.import_aliases: dict[str, str] = {}
         self._class_stack: list[str] = []
         self._inside_function = False
+
+    def _record_reference(self, name: str, lineno: int) -> None:
+        """Capture a single reference name + its source line.
+
+        Multiplicity matters for the PageRank graph (more refs = more
+        weight) so duplicates are kept.  ``lineno`` is whatever ``ast``
+        attaches to the call/attribute node — 1-based, never zero on a
+        successful parse.
+        """
+        if not name:
+            return
+        self.references.append(name)
+        self.reference_locations.append(ReferenceLocation(name=name, file=self.file, line=lineno))
 
     # -- definitions --------------------------------------------------
 
@@ -140,9 +192,7 @@ class _PythonVisitor(ast.NodeVisitor):
         # Track inheritance as a reference so subclasses pull their
         # bases up the rank.  Each base name counts once.
         for base in node.bases:
-            ref = _root_name(base)
-            if ref:
-                self.references.append(ref)
+            self._record_reference(_root_name(base), base.lineno)
         self._class_stack.append(node.name)
         for child in node.body:
             self.visit(child)
@@ -191,12 +241,12 @@ class _PythonVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
         ref = _root_name(node.func)
         if ref:
-            self.references.append(ref)
+            self._record_reference(ref, node.lineno)
         # Surface the leaf attribute too — `self.framework.observe(...)`
         # should reference ``observe`` so charmlib helpers rank.
         leaf = _leaf_attr(node.func)
         if leaf and leaf != ref:
-            self.references.append(leaf)
+            self._record_reference(leaf, node.lineno)
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:  # noqa: N802
@@ -204,7 +254,36 @@ class _PythonVisitor(ast.NodeVisitor):
         # standalone (not the ``func`` of a Call we already handled).
         # ``ast`` doesn't tell us the parent here, so we accept some
         # double counting — the rank is comparative anyway.
-        self.references.append(node.attr)
+        self._record_reference(node.attr, node.lineno)
+        self.generic_visit(node)
+
+    # -- imports ------------------------------------------------------
+
+    def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
+        for alias in node.names:
+            # ``import foo`` — alias.name="foo", alias.asname=None.
+            # ``import foo as f`` — alias.name="foo", alias.asname="f".
+            # Keep the leftmost dotted segment (``foo`` from ``foo.bar``)
+            # so attribute access through the import root resolves cleanly.
+            head = alias.name.split(".", 1)[0]
+            local = alias.asname or head
+            if local != alias.name:
+                self.import_aliases[local] = alias.name
+            # Treat the import as a reference too so ``import foo`` lets
+            # find_references locate the import site of ``foo``.
+            self._record_reference(head, node.lineno)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
+        module = node.module or ""
+        for alias in node.names:
+            local = alias.asname or alias.name
+            qualified = f"{module}.{alias.name}" if module else alias.name
+            if local != alias.name or alias.asname is not None:
+                self.import_aliases[local] = qualified
+            # Record both the local binding and the imported symbol so
+            # ``from foo import Bar`` lets find_references locate both.
+            self._record_reference(alias.name, node.lineno)
         self.generic_visit(node)
 
 
