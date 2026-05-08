@@ -66,3 +66,50 @@ class TestCharmcraftPackPaasRequirementsGuard:
 
         reqs = (charm_dir / "requirements.txt").read_text()
         assert "paas-charm" not in reqs
+
+
+def test_resolve_path_via_state_uses_state_charm_path(tmp_path):
+    """Relative ``path="."`` resolves against ``state.charm_path``.
+
+    The default ``pathlib.Path(path).resolve()`` anchors at the
+    process cwd, but the agent reroots ``state.charm_path`` into a
+    sprint scaffold subdir without changing cwd.  This regression
+    test pins the helper that lets the pack and run-tests tools
+    follow the reroute.
+    """
+    import types
+
+    from cantrip.agent.tools.testing import _resolve_path_via_state
+
+    state = types.SimpleNamespace(charm_path=tmp_path)
+    assert _resolve_path_via_state(".", state) == tmp_path.resolve()
+    assert _resolve_path_via_state("subdir", state) == (tmp_path / "subdir").resolve()
+
+
+def test_resolve_path_via_state_respects_absolute_paths(tmp_path):
+    """An absolute ``path`` bypasses the state-anchored resolution.
+
+    The model occasionally hands a tool an absolute path it had
+    already resolved itself; the helper must not double-prepend
+    ``state.charm_path``.
+    """
+    import types
+
+    from cantrip.agent.tools.testing import _resolve_path_via_state
+
+    state = types.SimpleNamespace(charm_path=tmp_path / "scaffold")
+    other = tmp_path / "outside"
+    assert _resolve_path_via_state(str(other), state) == other.resolve()
+
+
+def test_resolve_path_via_state_falls_back_to_cwd(monkeypatch, tmp_path):
+    """Without a state, the helper resolves against the process cwd.
+
+    Direct unit tests build pack/run-tests tools without an agent
+    state — preserving the cwd fallback keeps those tests working.
+    """
+    from cantrip.agent.tools.testing import _resolve_path_via_state
+
+    monkeypatch.chdir(tmp_path)
+    assert _resolve_path_via_state(".", None) == tmp_path.resolve()
+    assert _resolve_path_via_state(".", object()) == tmp_path.resolve()
