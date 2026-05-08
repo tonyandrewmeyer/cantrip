@@ -109,6 +109,45 @@ class TestAgentStatePersistence:
         assert "prompt 0/1,000" in summary
         assert "completion 0/500" in summary
 
+    def test_objective_round_trips_via_slash(self, tmp_path: pathlib.Path):
+        """Phase 99.3: ``/goal <text>`` survives ``cantrip resume``.
+
+        Drives the live slash handler so a future refactor that
+        side-stepped ``state.objective`` would surface immediately —
+        Ralph re-feed pulls the same field, so a missed wire-up here
+        would silently break the iterate-until-green loop.
+        """
+        from cantrip.agent.commands.goal import handle_goal
+
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        handle_goal(agent, "build a Postgres charm with COS plus Pebble notices")
+        agent.save_state()
+
+        agent2 = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        loaded = agent2.load_state()
+        assert loaded is True
+        assert agent2.state.objective == ("build a Postgres charm with COS plus Pebble notices")
+
+        # And the live ``/goal`` (no-arg) summary reflects the
+        # restored value, matching what a user would see.
+        summary = handle_goal(agent2, "")
+        assert "build a Postgres charm with COS plus Pebble notices" in summary
+
+    def test_objective_clear_round_trips_as_none(self, tmp_path: pathlib.Path):
+        from cantrip.agent.commands.goal import handle_goal
+
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        handle_goal(agent, "first version of the goal")
+        agent.save_state()
+        handle_goal(agent, "clear")
+        agent.save_state()
+
+        agent2 = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent2.load_state()
+        assert agent2.state.objective is None
+
     def test_goal_budget_clear_round_trips_as_none(self, tmp_path: pathlib.Path):
         """``/budget --clear`` after a save zeroes the persisted caps.
 

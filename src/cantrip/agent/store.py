@@ -15,7 +15,7 @@ from cantrip.agent.state import AgentState, Decision, load_shared_decisions
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS session (
     goal_budget_max_prompt_tokens INTEGER,
     goal_budget_max_completion_tokens INTEGER,
     goal_budget_started_at TEXT,
+    -- Phase 99.3: free-text user-prose objective for the session.
+    -- Stores the user's goal sentence verbatim so Ralph re-feed and
+    -- future goal-aware status surfaces work from the user's words
+    -- rather than a ``charm_name`` + ``charm_type`` paraphrase.  NULL
+    -- when no objective has been set.
+    objective TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -510,6 +516,15 @@ class SessionStore:
             if "goal_budget_started_at" not in cols:
                 self._conn.execute("ALTER TABLE session ADD COLUMN goal_budget_started_at TEXT")
 
+        if current < 16:
+            # v16: free-text user-prose objective on the session table
+            # (Phase 99.3).  Existing rows get NULL — load_session reads
+            # that as "no objective set" and the agent falls back to the
+            # spec-derived paraphrase exactly as it did before.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(session)").fetchall()}
+            if "objective" not in cols:
+                self._conn.execute("ALTER TABLE session ADD COLUMN objective TEXT")
+
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             self._conn.commit()
@@ -560,8 +575,9 @@ class SessionStore:
                                  goal_budget_max_prompt_tokens,
                                  goal_budget_max_completion_tokens,
                                  goal_budget_started_at,
+                                 objective,
                                  updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(id) DO UPDATE SET
                 charm_name                        = excluded.charm_name,
                 charm_path                        = excluded.charm_path,
@@ -575,6 +591,7 @@ class SessionStore:
                 goal_budget_max_prompt_tokens     = excluded.goal_budget_max_prompt_tokens,
                 goal_budget_max_completion_tokens = excluded.goal_budget_max_completion_tokens,
                 goal_budget_started_at            = excluded.goal_budget_started_at,
+                objective                         = excluded.objective,
                 updated_at                        = datetime('now')
             """,
             (
@@ -590,6 +607,7 @@ class SessionStore:
                 budget_prompt,
                 budget_completion,
                 budget_started_at,
+                state.objective,
             ),
         )
 
@@ -623,6 +641,7 @@ class SessionStore:
             framework=row["framework"],
             dev_model=row["dev_model"],
             cos_model=row["cos_model"],
+            objective=row["objective"],
         )
 
         # Restore the design proposal from persisted Markdown.

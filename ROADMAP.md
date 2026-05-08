@@ -2778,20 +2778,24 @@ Three Codex ``/goal`` mechanics are explicitly **out of scope**:
 
 ### 99.3 Medium — User-prose objective string on the session
 
-- [ ] Add an ``objective: str | None`` field to the persisted session
+- [x] Add an ``objective: str | None`` field to the persisted session
   state alongside ``charm_name`` / ``charm_type``.  Pick the
   CLI-injection shape (positional vs ``--objective`` flag) that fits
   the existing ``cantrip run`` argument layout without a breaking
-  change.
-- [ ] Slash: ``/goal <text>`` sets or updates the objective; ``/goal``
+  change.  (Chose ``--objective`` flag in the session-options group
+  for parity with ``--web-port`` / ``--theme``; positional was already
+  taken by the charm path.)
+- [x] Slash: ``/goal <text>`` sets or updates the objective; ``/goal``
   with no args shows the current value plus the projection from
   99.4; ``/goal clear`` removes it.  Add to ``COMMAND_CATALOGUE``.
-- [ ] Ralph re-feed (``src/cantrip/agent/ralph.py``) prefers the
+  (99.4 projection deferred to that phase; the bare ``/goal`` reports
+  the stored objective today.)
+- [x] Ralph re-feed (``src/cantrip/agent/ralph.py``) prefers the
   stored objective over the spec-derived paraphrase when present, so
   iterate-until-green loops use the user's words.
-- [ ] Tests cover: default empty, set/update/clear cycle, Ralph picks
+- [x] Tests cover: default empty, set/update/clear cycle, Ralph picks
   up the latest value across iterations, persistence across resume.
-- [ ] Update ``docs/src/reference-cli.md`` with the new flag and the
+- [x] Update ``docs/src/reference-cli.md`` with the new flag and the
   ``/goal`` slash entry; rebuild HTML.
 
 ### 99.4 Medium — Status-bar projection of goal lifecycle state

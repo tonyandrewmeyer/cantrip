@@ -1019,6 +1019,11 @@ def run_web(args: argparse.Namespace) -> int:
         max_tokens=getattr(args, "max_tokens", None),
     )
 
+    # Phase 99.3: stamp the user-prose objective from the CLI flag.
+    objective_arg = getattr(args, "objective", None)
+    if objective_arg is not None and objective_arg.strip():
+        agent.state.objective = objective_arg.strip()
+
     # Phase 68.1: opt out of per-turn working-tree snapshots.
     from cantrip.agent.snapshots import snapshots_enabled
 

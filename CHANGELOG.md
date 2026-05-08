@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **User-prose objective string and `/goal` slash command
+  (Phase 99.3).**  Free-text user-prose objective is now
+  a first-class session field — stamped via `--objective "<text>"`
+  on `cantrip run`, updated mid-session with `/goal <text>`, cleared
+  with `/goal clear`, and persisted across `cantrip resume`.  Ralph
+  re-feed (`cantrip run --print --ralph N`) prefers the stored
+  objective over the spec-derived paraphrase, so iterate-until-green
+  loops stay anchored to the user's words.  A `/goal` issued mid-run
+  takes effect on the very next iteration without restarting the
+  loop.
 - **`/budget` caps survive `cantrip resume` (Phase 99.2).**  The
   per-goal iteration / prompt-token / completion-token caps and the
   budget's `started_at` timestamp now persist into the SQLite session

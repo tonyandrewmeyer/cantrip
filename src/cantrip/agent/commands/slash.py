@@ -32,6 +32,7 @@ from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.commands import mcp as mcp_commands
 from cantrip.agent.commands.budget import handle_budget
 from cantrip.agent.commands.cost import format_cost
+from cantrip.agent.commands.goal import handle_goal
 from cantrip.agent.commands.map import handle_map, handle_map_refresh
 from cantrip.agent.commands.share import share_to_gist
 from cantrip.agent.commands.transcript import export_transcript
@@ -73,6 +74,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/mcp", "Manage MCP servers"),
     CommandInfo("/cost", "Show token usage and cost"),
     CommandInfo("/budget", "Show or raise the per-goal iteration / token budget"),
+    CommandInfo("/goal", "Show, set, or clear the user-prose session objective"),
     CommandInfo("/arena", "Blind A/B compare two models"),
     CommandInfo("/model", "Show or switch the active model"),
     CommandInfo("/export", "Export the live session transcript"),
@@ -222,6 +224,8 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=format_cost(agent), markdown=True)
     if verb == "/budget":
         return SlashResult(text=handle_budget(agent, args))
+    if verb == "/goal":
+        return SlashResult(text=handle_goal(agent, args))
     if verb == "/arena":
         if not args.strip():
             return SlashResult(

@@ -102,6 +102,7 @@ class CantripApp(App):
         base_url: str | None = None,
         max_iterations: int | None = None,
         max_tokens: int | None = None,
+        objective: str | None = None,
         no_snapshots: bool = False,
         yolo: bool = False,
         no_auto_lint: bool = False,
@@ -130,6 +131,7 @@ class CantripApp(App):
         self._base_url = base_url
         self._max_iterations = max_iterations
         self._max_tokens = max_tokens
+        self._objective = objective
         self._no_snapshots = no_snapshots
         self._yolo = yolo
         self._no_auto_lint = no_auto_lint
@@ -369,6 +371,10 @@ class CantripApp(App):
                 max_iterations=self._max_iterations,
                 max_tokens=self._max_tokens,
             )
+
+            # Phase 99.3: stamp the user-prose objective from the CLI flag.
+            if self._objective is not None and self._objective.strip():
+                self._agent.state.objective = self._objective.strip()
 
             # Phase 68.1: opt out of per-turn working-tree snapshots.
             from cantrip.agent.snapshots import snapshots_enabled

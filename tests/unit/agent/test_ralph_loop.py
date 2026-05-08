@@ -278,6 +278,120 @@ class TestReseeding:
         assert "STOP" in captured[1]
 
     @pytest.mark.asyncio
+    async def test_objective_provider_overrides_first_iteration_prompt(self):
+        """Phase 99.3: when an objective_provider returns a value, iteration 1
+        uses it instead of ``goal``.
+
+        Without this the user's stamped objective would be ignored on the
+        first call, even though every subsequent re-feed would honour it —
+        a confusing split that ``_resolve_goal`` exists to prevent.
+        """
+        captured: list[str] = []
+
+        async def fake_process(prompt: str) -> str:
+            captured.append(prompt)
+            return "STOP"
+
+        await run_ralph(
+            process_message=fake_process,
+            goal="fallback paraphrase",
+            config=RalphConfig(max_iterations=2),
+            objective_provider=lambda: "build a Postgres charm with COS",
+        )
+
+        assert captured[0] == "build a Postgres charm with COS"
+
+    @pytest.mark.asyncio
+    async def test_objective_provider_resolved_per_iteration(self):
+        """Phase 99.3: each iteration re-reads the objective so a mid-run
+        ``/goal`` takes effect on the next pass."""
+        objectives = iter(
+            [
+                "first version of the goal",
+                "first version of the goal",  # iteration 2 still original
+                "updated goal mid-run",  # iteration 3 picks up the change
+            ]
+        )
+
+        captured_prompts: list[str] = []
+        responses = iter(["keep going", "still going", "STOP"])
+
+        async def fake_process(prompt: str) -> str:
+            captured_prompts.append(prompt)
+            return next(responses)
+
+        def provider() -> str:
+            return next(objectives)
+
+        await run_ralph(
+            process_message=fake_process,
+            goal="never used because provider always returns",
+            config=RalphConfig(max_iterations=5),
+            objective_provider=provider,
+        )
+
+        # Iteration 1 sees the first objective verbatim.
+        assert captured_prompts[0] == "first version of the goal"
+        # Iteration 2's re-feed wraps the original objective.
+        assert "first version of the goal" in captured_prompts[1]
+        # Iteration 3 picks up the freshly-changed objective.
+        assert "updated goal mid-run" in captured_prompts[2]
+
+    @pytest.mark.asyncio
+    async def test_objective_provider_none_falls_back_to_goal(self):
+        """An objective_provider that returns None / empty falls back to ``goal``."""
+        captured: list[str] = []
+
+        async def fake_process(prompt: str) -> str:
+            captured.append(prompt)
+            return "STOP"
+
+        await run_ralph(
+            process_message=fake_process,
+            goal="the original goal",
+            config=RalphConfig(max_iterations=2),
+            objective_provider=lambda: None,
+        )
+
+        assert captured[0] == "the original goal"
+
+    @pytest.mark.asyncio
+    async def test_objective_provider_blank_falls_back_to_goal(self):
+        captured: list[str] = []
+
+        async def fake_process(prompt: str) -> str:
+            captured.append(prompt)
+            return "STOP"
+
+        await run_ralph(
+            process_message=fake_process,
+            goal="the original goal",
+            config=RalphConfig(max_iterations=2),
+            objective_provider=lambda: "   ",
+        )
+
+        assert captured[0] == "the original goal"
+
+    @pytest.mark.asyncio
+    async def test_objective_provider_works_in_disabled_mode(self):
+        """Even with max_iterations=0 (single-shot pass-through), the
+        objective_provider still wins over the spec-derived goal."""
+        captured: list[str] = []
+
+        async def fake_process(prompt: str) -> str:
+            captured.append(prompt)
+            return "ack"
+
+        await run_ralph(
+            process_message=fake_process,
+            goal="paraphrase",
+            config=RalphConfig(max_iterations=0),
+            objective_provider=lambda: "user objective",
+        )
+
+        assert captured == ["user objective"]
+
+    @pytest.mark.asyncio
     async def test_long_response_truncated_in_reseed(self):
         captured: list[str] = []
         long_text = "x" * 5000

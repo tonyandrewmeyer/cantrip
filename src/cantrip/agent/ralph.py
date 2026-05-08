@@ -221,6 +221,7 @@ async def run_ralph(
     event_bus: ui_events.EventBus | None = None,
     charm_path: pathlib.Path | None = None,
     on_iteration: Callable[[int, str], Awaitable[None]] | None = None,
+    objective_provider: Callable[[], str | None] | None = None,
 ) -> RalphResult:
     """Drive a Ralph loop and return the eventual outcome.
 
@@ -243,12 +244,31 @@ async def run_ralph(
     *on_iteration* is an optional async callback fired between
     iterations for callers that need to drain a queue (the print
     mode runner does this).
+
+    Phase 99.3: *objective_provider* is an optional callable resolved
+    at the top of every iteration.  When it returns a non-empty
+    string, that string replaces *goal* for both the first iteration
+    prompt and every re-feed thereafter, so a ``/goal <text>`` issued
+    mid-Ralph takes effect on the next iteration without restarting
+    the loop.  Pass ``lambda: agent.state.objective`` to wire the
+    persisted user-prose objective straight through.
     """
+
+    def _resolve_goal() -> str:
+        # Live-read so a ``/goal`` issued between iterations takes
+        # effect on the very next re-feed.  ``goal`` remains the
+        # always-available fallback when no objective is set.
+        if objective_provider is not None:
+            objective = objective_provider()
+            if objective and objective.strip():
+                return objective.strip()
+        return goal
+
     if not config.is_enabled():
         # Disabled config — fall through to a single pass without
         # the iteration framing.  The caller gets the response
         # exactly as they would without Ralph at all.
-        response = await process_message(goal)
+        response = await process_message(_resolve_goal())
         return RalphResult(
             outcome=RalphOutcome.CONVERGED,
             iterations=1,
@@ -272,20 +292,21 @@ async def run_ralph(
     iteration = 0
 
     for iteration in range(1, cap + 1):
+        live_goal = _resolve_goal()
         if event_bus is not None:
             event_bus.publish(
                 ui_events.ralph_iteration_started(
                     iteration=iteration,
                     max_iterations=(config.max_iterations if config.max_iterations > 0 else None),
-                    goal=goal,
+                    goal=live_goal,
                 )
             )
 
         if iteration == 1:
-            prompt = goal
+            prompt = live_goal
         else:
             prompt = _build_reseed_prompt(
-                original_goal=goal,
+                original_goal=live_goal,
                 last_response=responses[-1],
                 iteration=iteration,
                 convergence_signal=config.convergence_signal,

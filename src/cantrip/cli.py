@@ -211,6 +211,14 @@ def run_cli(args: argparse.Namespace) -> int:
         max_tokens=getattr(args, "max_tokens", None),
     )
 
+    # Phase 99.3: stamp the user-prose objective from the CLI flag.  A
+    # later ``load_state`` on resume overrides this with the persisted
+    # value, so passing ``--objective`` on resume is a noop unless the
+    # session had no objective before.
+    objective_arg = getattr(args, "objective", None)
+    if objective_arg is not None and objective_arg.strip():
+        agent.state.objective = objective_arg.strip()
+
     # Phase 68.1: opt out of per-turn working-tree snapshots.
     from cantrip.agent.snapshots import snapshots_enabled
 

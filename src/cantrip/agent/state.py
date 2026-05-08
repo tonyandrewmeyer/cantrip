@@ -221,6 +221,15 @@ class AgentState:
     charm_type: str | None = None  # "machine" or "k8s"
     framework: str | None = None
 
+    # Phase 99.3: free-text user-prose objective for the session.
+    # Captures the user's goal sentence ("build a Postgres charm with
+    # COS plus Pebble notices") so Ralph re-feed and goal-aware status
+    # surfaces work from the user's actual words rather than a
+    # ``charm_name`` + ``charm_type`` paraphrase.  Set via the
+    # ``--objective`` CLI flag at startup or the ``/goal`` slash
+    # command; persisted to the session row.
+    objective: str | None = None
+
     dev_model: str | None = None
     cos_model: str | None = None
 

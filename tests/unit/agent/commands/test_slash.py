@@ -401,6 +401,94 @@ class TestBudget:
         assert ">= 0" in result.text
 
 
+class TestGoal:
+    """Phase 99.3: ``/goal`` shows, sets, and clears the user-prose objective."""
+
+    def _make_agent(
+        self,
+        memory_manager: MemoryManager,
+        session_store: SessionStore,
+        *,
+        objective: str | None = None,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            _memory_manager=memory_manager,
+            state=SimpleNamespace(
+                charm_path=None,
+                objective=objective,
+                messages=[],
+            ),
+            mcp_registry=None,
+            mcp_marketplace_sources=[],
+            mcp_marketplace_loader=None,
+            store=session_store,
+            provider=SimpleNamespace(model_name="fake-model"),
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+        )
+
+    def test_no_objective_set_shows_hint(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, objective=None)
+        result = dispatch(agent, "/goal")
+        assert result is not None
+        assert "No objective" in result.text
+
+    def test_shows_current_objective(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(
+            memory_manager,
+            session_store,
+            objective="build a Postgres charm with COS",
+        )
+        result = dispatch(agent, "/goal")
+        assert result is not None
+        assert "build a Postgres charm with COS" in result.text
+
+    def test_set_objective_stamps_state(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, objective=None)
+        result = dispatch(agent, "/goal build a Postgres charm with COS")
+        assert result is not None
+        assert agent.state.objective == "build a Postgres charm with COS"
+        assert "Objective set" in result.text
+
+    def test_set_overwrites_previous_value(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, objective="old goal")
+        dispatch(agent, "/goal new goal")
+        assert agent.state.objective == "new goal"
+
+    def test_clear_removes_objective(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, objective="something")
+        result = dispatch(agent, "/goal clear")
+        assert result is not None
+        assert agent.state.objective is None
+        assert "cleared" in result.text.lower()
+
+    def test_clear_when_already_unset_is_a_noop(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, objective=None)
+        result = dispatch(agent, "/goal clear")
+        assert result is not None
+        assert agent.state.objective is None
+        assert "nothing to clear" in result.text.lower()
+
+    def test_set_strips_surrounding_whitespace(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, objective=None)
+        dispatch(agent, "/goal     leading and trailing spaces    ")
+        assert agent.state.objective == "leading and trailing spaces"
+
+
 class TestExport:
     """/export writes the live transcript to disk via the shared renderers."""
 

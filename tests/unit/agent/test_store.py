@@ -617,6 +617,66 @@ class TestGoalBudgetPersistence:
             second.close()
 
 
+class TestObjectivePersistence:
+    """Phase 99.3: free-text user-prose objective round-trips through save / load."""
+
+    def test_no_objective_round_trips_as_none(self, store: SessionStore) -> None:
+        state = AgentState(charm_name="x")
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.objective is None
+
+    def test_objective_round_trips(self, store: SessionStore) -> None:
+        state = AgentState(charm_name="x")
+        state.objective = "build a Postgres charm with COS plus Pebble notices"
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.objective == "build a Postgres charm with COS plus Pebble notices"
+
+    def test_clear_after_set_round_trips_as_none(self, store: SessionStore) -> None:
+        """Without the upsert covering ``objective`` on the unset path, a
+        ``/goal clear`` would leave the previous text in the database."""
+        state = AgentState(charm_name="x")
+        state.objective = "first goal"
+        store.save_session(state)
+        state.objective = None
+        store.save_session(state)
+        loaded = store.load_session()
+        assert loaded is not None
+        assert loaded.objective is None
+
+    def test_pre_v16_database_loads_with_no_objective(self, db_path: pathlib.Path) -> None:
+        """Sessions persisted before the v16 migration load cleanly.
+
+        Forces schema_version back to 15 with the v16 column dropped to
+        mimic an on-disk shape from before Phase 99.3, then re-opens
+        and asserts that the migration backfills the column as NULL and
+        ``load_session`` reads the row without crashing.
+        """
+        first = SessionStore(db_path)
+        first.open()
+        try:
+            state = AgentState(charm_name="legacy", charm_path=pathlib.Path("/tmp/legacy"))
+            first.save_session(state)
+            first._db.execute("UPDATE schema_version SET version = 15")
+            first._db.execute("ALTER TABLE session DROP COLUMN objective")
+            first._db.commit()
+        finally:
+            first.close()
+
+        second = SessionStore(db_path)
+        second.open()
+        try:
+            loaded = second.load_session()
+            assert loaded is not None
+            assert loaded.charm_name == "legacy"
+            assert loaded.objective is None
+        finally:
+            second.close()
+
+
 class TestCorruptDataResilience:
     """Tests for handling corrupt data in the database."""
 

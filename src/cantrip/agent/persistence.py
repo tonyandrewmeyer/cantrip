@@ -208,6 +208,14 @@ class PersistenceController:
         # over whatever ``cli.py`` stamped from CLI flags / env vars at
         # construction time, so resume is "pick up where you left off".
         self._state.goal_budget = loaded.goal_budget
+        # Phase 99.3: same idea for the user-prose objective.  A
+        # session that already had ``/goal "build a Postgres charm"``
+        # set must come back with that string after resume so Ralph
+        # re-feeds and goal-aware status surfaces keep using the
+        # user's words.  An ``--objective`` flag passed at resume
+        # time stamps state before this point and is overridden
+        # here — the persisted value wins, mirroring the budget path.
+        self._state.objective = loaded.objective
 
         # Restore compaction safety counters so per-session budgets survive
         # resume and we don't hand a fresh budget to a session that has

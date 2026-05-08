@@ -157,6 +157,17 @@ Start the agent and build or improve a charm.
     Port for the Web UI. Default: <code>8471</code>.
   </dd>
 
+  <dt>--objective TEXT</dt>
+  <dd>
+    Free-text user-prose objective for the session, e.g.
+    <code>--objective "build a Postgres charm with COS plus
+    Pebble notices"</code>. Stored on the session and used by
+    Ralph re-feed and goal-aware status surfaces in place of the
+    <code>--charm-name</code> + <code>--charm-type</code>
+    paraphrase. Update mid-session with the <code>/goal</code>
+    slash command. Persists across <code>cantrip resume</code>.
+  </dd>
+
   <dt>--theme THEME</dt>
   <dd>
     TUI colour theme. Options: <code>cantrip</code>,
@@ -1188,6 +1199,40 @@ Three checks ship by default: <code>charm-readme-coherence</code>,
 
 {#project-diagnostics}
 {#pause-resume}
+### Session objective
+
+<dl>
+  <dt><code>/goal</code></dt>
+  <dd>
+    Show the current free-text user-prose objective for the
+    session.  When no objective is set, prints a hint about
+    <code>/goal &lt;text&gt;</code>.
+  </dd>
+
+  <dt><code>/goal &lt;text&gt;</code></dt>
+  <dd>
+    Set or update the objective.  Subsequent Ralph re-feeds use
+    the user&rsquo;s words verbatim instead of the
+    <code>--charm-name</code> + <code>--charm-type</code>
+    paraphrase, so iterate-until-green loops stay anchored to
+    the original goal sentence.  Stamping an objective at startup
+    is also possible with <code>--objective</code> on
+    <code>cantrip run</code>; the persisted value wins on resume.
+  </dd>
+
+  <dt><code>/goal clear</code></dt>
+  <dd>
+    Remove the objective.  Ralph re-feeds and status surfaces
+    fall back to the spec-derived paraphrase.
+  </dd>
+</dl>
+
+The objective is persisted in the session store; <code>cantrip
+resume</code> picks up the same value without the
+<code>--objective</code> flag being re-supplied.  A
+<code>/goal</code> issued mid-Ralph takes effect on the very
+next iteration without restarting the loop.
+
 ### Pause and resume the autonomous loop
 
 <dl>

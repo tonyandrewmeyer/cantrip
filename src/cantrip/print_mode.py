@@ -372,6 +372,11 @@ async def _run_ralph_loop(
             event_bus=agent.event_bus,
             charm_path=agent.state.charm_path,
             on_iteration=_between_iterations,
+            # Phase 99.3: Ralph re-feed prefers the persisted user-prose
+            # objective over the ``--print`` argument so a ``/goal``
+            # issued mid-run (or an objective stamped at startup) drives
+            # the iteration prompt without restarting the loop.
+            objective_provider=lambda: agent.state.objective,
         )
     except _RalphAbortError:
         print(abort_message.get("error", "Ralph loop aborted."), file=sys.stderr)
@@ -473,6 +478,9 @@ def run_print(args: argparse.Namespace) -> int:
         max_iterations=getattr(args, "max_iterations", None),
         max_tokens=getattr(args, "max_tokens", None),
     )
+    objective_arg = getattr(args, "objective", None)
+    if objective_arg is not None and objective_arg.strip():
+        agent.state.objective = objective_arg.strip()
     agent.state.snapshot_enabled = snapshots_enabled(
         no_snapshots_flag=bool(getattr(args, "no_snapshots", False)),
     )

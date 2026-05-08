@@ -235,6 +235,20 @@ def _add_run_session_options(parser: argparse.ArgumentParser) -> None:
         default=8471,
         help="Port for the Web UI (default: 8471)",
     )
+    parser.add_argument(
+        "--objective",
+        type=str,
+        default=None,
+        metavar="TEXT",
+        help=(
+            "Free-text user-prose objective for the session, e.g. "
+            '``--objective "build a Postgres charm with COS plus '
+            'Pebble notices"``.  Stored on the session and used by '
+            "Ralph re-feed and goal-aware status surfaces in place of "
+            "the ``--charm-name`` + ``--charm-type`` paraphrase.  "
+            "Update mid-session with ``/goal``."
+        ),
+    )
 
 
 def _add_run_budget_options(parser: argparse.ArgumentParser) -> None:
@@ -1037,6 +1051,7 @@ def _run(args: argparse.Namespace) -> int:
             base_url=getattr(args, "base_url", None),
             max_iterations=getattr(args, "max_iterations", None),
             max_tokens=getattr(args, "max_tokens", None),
+            objective=getattr(args, "objective", None),
             no_snapshots=bool(getattr(args, "no_snapshots", False)),
             yolo=bool(getattr(args, "yolo", False)),
             no_auto_lint=bool(getattr(args, "no_auto_lint", False)),
