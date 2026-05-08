@@ -396,3 +396,41 @@ class TestSprintAutoDetect:
             charm_type="k8s",
         )
         assert state.dev_model == "k8s-dev"
+
+
+# ===================================================================
+# TestSprintRehomesCwd — sprint chdir keeps subprocess tools anchored
+# ===================================================================
+
+
+class TestSprintRehomesCwd:
+    """Sprint mode rehomes the process cwd to the scaffold subdir.
+
+    Subprocess-launching tools (``charmcraft_pack``, ``run_charm_tests``,
+    …) resolve ``path="."`` against the *process* cwd, not
+    ``state.charm_path``.  Without rehoming the cwd those tools stay
+    anchored to the launch directory and ``charmcraft pack`` 404s on
+    ``charmcraft.yaml``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sprint_chdirs_to_scaffold_subdir(self, tmp_path: pathlib.Path):
+        provider = FakeProvider()
+        state = AgentState(charm_path=tmp_path)
+        queue = WorkQueue()
+        tool = PlanTasksTool(provider=provider, state=state, queue=queue)
+
+        await tool.execute(
+            intent="Sprint to deploy",
+            charm_name="my-charm",
+            charm_type="k8s",
+        )
+
+        import os
+
+        # The chdir lands inside ``<charm_path>/<charm_name>``; both the
+        # state field and the cwd point at the new directory so
+        # subprocess tools resolve ``path="."`` correctly.
+        expected = (tmp_path / "my-charm").resolve()
+        assert state.charm_path == expected
+        assert pathlib.Path(os.getcwd()).resolve() == expected
