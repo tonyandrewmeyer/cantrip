@@ -15,6 +15,7 @@ on_this_page:
   - { anchor: "traces", label: "Traces and COS endpoints" }
   - { anchor: "status-panes", label: "Dev and COS status panes" }
   - { anchor: "confirmations", label: "Confirmation prompts" }
+  - { anchor: "shell-mode", label: "Shell mode" }
 ---
 
 {#overview}
@@ -180,3 +181,44 @@ Reply tokens for the bootstrap prompt:
 
 Tokens can be combined: `approve public org=canonical
 name=my-charm-operator desc=Runs my charm`.
+
+{#shell-mode}
+## Shell mode
+
+<kbd>Ctrl+X</kbd> on the chat input toggles **shell mode**. The
+input border tints with the warning colour and the placeholder
+changes to `$ shell command (Ctrl-X to leave shell mode)` so the
+state is visible at a glance. Pressing <kbd>Enter</kbd> in shell
+mode runs the command as a subprocess and prints the output as a
+`$ cmd` block in the chat — the agent never sees it, no tokens are
+spent, and `Ctrl+X` again returns to the normal agent input.
+
+Shell mode is a convenience pass-through to `subprocess`, not a
+full shell. Commands are tokenised with `shlex` and executed under
+the same Phase 49 sandbox the agent's `run_command` tool uses, so
+shell features that the underlying `subprocess` call cannot handle
+on its own are not supported:
+
+- No `cd` — there is no shell process to keep state.
+- No shell aliases or shell variables.
+- No pipelines (`|`), redirection (`>`/`<`), command substitution
+  (`` `…` ``, `$(…)`), or compound commands (`&&`, `;`) — the
+  command is `argv`, not a shell line.
+- Network access is disabled by the sandbox unless the running
+  Cantrip session was launched with a network-enabled policy.
+
+For interactive shell needs, drop to a real terminal in another
+window.
+
+Prefix the command with `$$` for **incognito** shell mode. The
+input still runs as a subprocess and the output still renders into
+the chat for the user to read, but the persisted row is marked
+`hidden_from_agent: true` so any future context-assembly path that
+would otherwise include shell history skips it. Useful for
+commands whose output you want visible to *you* but never to the
+LLM:
+
+- `$$ juju show-unit mycharm/0 --format json` — relation databags
+  often contain credentials.
+- `$$ kubectl get secret -o yaml` — Kubernetes secrets.
+- `$$ cat .env` — local development credentials.

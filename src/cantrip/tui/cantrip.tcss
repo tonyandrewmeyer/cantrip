@@ -68,6 +68,12 @@ Screen {
     margin-top: 1;
 }
 
+/* Phase 69.3: Ctrl-X shell mode tints the input border so it is
+ * unmistakable that Enter routes to a subprocess, not the agent. */
+#chat-input.-shell-mode {
+    border: tall $warning;
+}
+
 /* Status indicators */
 .status-active {
     color: $success;

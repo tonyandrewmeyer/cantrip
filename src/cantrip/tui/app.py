@@ -3,7 +3,9 @@
 import asyncio
 import contextlib
 import datetime
+import logging
 import pathlib
+import sqlite3
 import traceback
 
 from textual.app import App, ComposeResult
@@ -62,6 +64,9 @@ def _alltime_cost(rows: list[dict]) -> float:
             completion_tokens=int(row.get("completion_tokens") or 0),
         )
     return cost
+
+
+log = logging.getLogger(__name__)
 
 
 class CantripApp(App):
@@ -1565,6 +1570,16 @@ class CantripApp(App):
             self.query_one("#slash-suggestions", chat_widget.SlashCommandSuggestions).hide()
 
         chat = self.query_one("#chat", chat_widget.ChatWidget)
+
+        # Phase 69.3: ``Ctrl-X`` shell mode runs the input as a
+        # subprocess and never reaches the agent.  Dispatch before
+        # ``add_user_message`` so the row appears as a ``$`` block,
+        # not as a user message that would also be replayed to the
+        # LLM on next turn.
+        if isinstance(event.input, chat_widget.ChatInput) and event.input.shell_mode:
+            await self._handle_shell_command(message, chat)
+            return
+
         chat.add_user_message(message)
 
         if not self._agent:
@@ -1774,6 +1789,55 @@ class CantripApp(App):
         """Run the parliament and return the formatted markdown report."""
         result = await self._agent.run_parliament(enabled)
         return emotions.format_report(result, enabled=enabled)
+
+    async def _handle_shell_command(
+        self,
+        raw: str,
+        chat: chat_widget.ChatWidget,
+    ) -> None:
+        """Run *raw* as a Phase 69.3 shell-mode subprocess.
+
+        The submission never reaches the LLM — the rendered row uses
+        the ``SHELL`` chat role and persists with role ``"shell"``,
+        which the agent's branch-rebuild path skips because ``"shell"``
+        is not a member of :class:`cantrip.llm.base.Role`.
+        """
+        from cantrip.tui.actions import shell as shell_action
+
+        parsed = shell_action.parse_shell_input(raw)
+        if parsed.error is not None or not parsed.argv:
+            chat.add_system_message(parsed.error or "Empty command.")
+            return
+
+        cwd = str(self.charm_path) if self.charm_path is not None else "."
+        result = await asyncio.to_thread(
+            shell_action.run_shell_command,
+            parsed.argv,
+            cwd=cwd,
+        )
+        chat.add_shell_message(
+            list(result.argv),
+            output=result.output,
+            exit_code=result.exit_code,
+            hidden_from_agent=parsed.hidden_from_agent,
+        )
+
+        if self._agent is not None and self._agent.store is not None:
+            metadata = shell_action.metadata_for_persisted_row(
+                result, hidden_from_agent=parsed.hidden_from_agent
+            )
+            content = " ".join(result.argv)
+            try:
+                self._agent.store.record_message(
+                    role="shell",
+                    content=content,
+                    metadata=metadata,
+                )
+            except sqlite3.Error:
+                # Persistence is best-effort here: the user already
+                # saw the output in the chat, and a transient store
+                # error must not break shell-mode dispatch.
+                log.debug("Failed to persist shell-mode row", exc_info=True)
 
     def _handle_shared_slash_commands(self, message: str, chat: chat_widget.ChatWidget) -> bool:
         """Dispatch the shared slash commands via :mod:`slash_commands`.

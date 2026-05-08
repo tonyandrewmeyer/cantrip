@@ -58,6 +58,7 @@
       <li><a href="#traces">Traces and COS endpoints</a></li>
       <li><a href="#status-panes">Dev and COS status panes</a></li>
       <li><a href="#confirmations">Confirmation prompts</a></li>
+      <li><a href="#shell-mode">Shell mode</a></li>
     </ul>
   </aside>
 
@@ -253,6 +254,43 @@ organisation instead of your personal account.</li>
 <li><code>desc=My charm</code> sets the repository description.</li>
 </ul>
 <p>Tokens can be combined: <code>approve public org=canonical name=my-charm-operator desc=Runs my charm</code>.</p>
+<h2 id="shell-mode">Shell mode</h2>
+<p><kbd>Ctrl+X</kbd> on the chat input toggles <strong>shell mode</strong>. The
+input border tints with the warning colour and the placeholder
+changes to <code>$ shell command (Ctrl-X to leave shell mode)</code> so the
+state is visible at a glance. Pressing <kbd>Enter</kbd> in shell
+mode runs the command as a subprocess and prints the output as a
+<code>$ cmd</code> block in the chat &mdash; the agent never sees it, no tokens are
+spent, and <code>Ctrl+X</code> again returns to the normal agent input.</p>
+<p>Shell mode is a convenience pass-through to <code>subprocess</code>, not a
+full shell. Commands are tokenised with <code>shlex</code> and executed under
+the same Phase 49 sandbox the agent's <code>run_command</code> tool uses, so
+shell features that the underlying <code>subprocess</code> call cannot handle
+on its own are not supported:</p>
+<ul>
+<li>No <code>cd</code> &mdash; there is no shell process to keep state.</li>
+<li>No shell aliases or shell variables.</li>
+<li>No pipelines (<code>|</code>), redirection (<code>&gt;</code>/<code>&lt;</code>), command substitution
+(<code>`&hellip;`</code>, <code>$(&hellip;)</code>), or compound commands (<code>&amp;&amp;</code>, <code>;</code>) &mdash; the
+command is <code>argv</code>, not a shell line.</li>
+<li>Network access is disabled by the sandbox unless the running
+Cantrip session was launched with a network-enabled policy.</li>
+</ul>
+<p>For interactive shell needs, drop to a real terminal in another
+window.</p>
+<p>Prefix the command with <code>$$</code> for <strong>incognito</strong> shell mode. The
+input still runs as a subprocess and the output still renders into
+the chat for the user to read, but the persisted row is marked
+<code>hidden_from_agent: true</code> so any future context-assembly path that
+would otherwise include shell history skips it. Useful for
+commands whose output you want visible to <em>you</em> but never to the
+LLM:</p>
+<ul>
+<li><code>$$ juju show-unit mycharm/0 --format json</code> &mdash; relation databags
+often contain credentials.</li>
+<li><code>$$ kubectl get secret -o yaml</code> &mdash; Kubernetes secrets.</li>
+<li><code>$$ cat .env</code> &mdash; local development credentials.</li>
+</ul>
   </main>
 </div>
 

@@ -91,6 +91,11 @@ class HelpScreen(ModalScreen):
                     "F9        Transcript\n"
                     "Ctrl+F    Search chat\n"
                     "Ctrl+L    Clear chat\n"
+                    "Ctrl+X    Toggle shell mode (Enter runs the command\n"
+                    "          as a subprocess; bypasses the agent so no\n"
+                    "          tokens are spent — prefix with `$$` to\n"
+                    "          also keep the row out of any future\n"
+                    "          agent context)\n"
                     "Ctrl+C    Cancel operation (also: Esc)\n"
                     "q         Quit"
                 )

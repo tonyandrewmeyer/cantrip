@@ -612,36 +612,50 @@ Four Kimi features are explicitly **out of scope**:
   emission), ``help_text`` + catalogue drift, and the event
   factory payload.
 
-### 69.3 Medium — Shell command mode
+### 69.3 Medium — Shell command mode ✓
 
-- [ ] ``Ctrl-X`` keybind on the chat input toggles between
-  "send to agent" and "send to shell" mode.  The prompt
-  glyph changes (``» `` → ``$ ``) and the input field gets
-  a distinct border/colour.
-- [ ] Shell-mode submissions run through the same subprocess
+- [x] ``Ctrl-X`` keybind on the chat input toggles between
+  "send to agent" and "send to shell" mode.  The placeholder
+  swaps to ``$ shell command (Ctrl-X to leave shell mode)``
+  and the input border tints warning-coloured so the active
+  mode is unmistakable.  (The original spec called for a
+  ``» → $`` glyph swap, but Textual's ``Input`` widget renders
+  the cursor caret in place of a leading prompt — there is no
+  glyph slot to repaint.  The placeholder + border swap
+  carries the same signal at the same cost.)
+- [x] Shell-mode submissions run through the same subprocess
   machinery the ``bash`` tool uses (Phase 30, Phase 49
   sandboxing still applies) but bypass the agent: the output
-  is streamed into the chat panel as a ``$ cmd`` /
-  ``<output>`` block, *not* as a tool call, and is cheap — no
-  tokens consumed.
-- [ ] The shell-mode block is still captured in the
-  transcript (Phase 14) so audit history is complete.
-- [ ] ``$$ cmd`` incognito prefix (from Amp): even inside
-  shell mode, a leading ``$$`` runs the command but marks
-  its output as *excluded from agent context*.  The user and
-  the transcript see the result; the LLM does not.  Use
-  cases are charm-specific and real:
-  ``$$ juju show-unit mycharm/0 --format json`` (databags
-  with secrets), ``$$ kubectl get secret`` (credentials),
-  ``$$ cat .env`` (local dev config).  Implementation: a
-  per-block ``hidden_from_agent: true`` flag on the
-  transcript event so downstream context-assembly skips it.
-- [ ] Built-in shell features limited to what ``subprocess``
-  can handle — match Kimi's stance and document that ``cd``,
-  shell aliases, and shell variables are not supported.
-  Users who need them should drop to an actual shell.
-- [ ] TUI help (``?``) lists the ``Ctrl-X`` toggle, the
-  ``$$`` incognito prefix, and their limits.
+  is rendered into the chat as a ``$ cmd`` / ``<output>`` block
+  with a warning-coloured left border (``MessageRole.SHELL``),
+  *not* as a tool call.  Capture-then-display rather than live
+  streaming — cheap and matches the "no tokens" intent without
+  needing partial-update rendering on the chat widget.
+- [x] The shell-mode block is captured in the persisted
+  conversation table.  Rows are written under a literal
+  ``"shell"`` role string that is deliberately *not* in
+  ``cantrip.llm.base.Role`` — the agent's branch-rebuild path
+  (``CantripAgent._rebuild_messages_from_active_branch``) only
+  restores rows whose role parses as a ``Role`` enum member, so
+  the call and its output never re-enter the LLM context on
+  resume; the transcript view (Phase 14) still surfaces them
+  for audit.
+- [x] ``$$ cmd`` incognito prefix (from Amp): inside shell mode
+  a leading ``$$`` runs the command but marks the persisted
+  metadata with ``hidden_from_agent: true``.  The user and the
+  transcript see the result; any future context-assembly path
+  that would otherwise surface shell history filters on the
+  flag rather than re-deriving it.  Worked examples in the
+  TUI help and ``docs/src/explanation-tui-screens.md``:
+  ``$$ juju show-unit mycharm/0 --format json``, ``$$ kubectl
+  get secret``, ``$$ cat .env``.
+- [x] Built-in shell features limited to what ``subprocess``
+  can handle — ``shlex.split`` tokenises the line, no
+  pipelines, no redirection, no shell variables, no ``cd``.
+  Documented in the user docs alongside the worked examples.
+- [x] TUI help (``F1``) lists the ``Ctrl-X`` toggle and the
+  ``$$`` incognito prefix with one-line guidance on the no-
+  shell-features stance.
 
 ### 69.4 Medium — Flow skills
 

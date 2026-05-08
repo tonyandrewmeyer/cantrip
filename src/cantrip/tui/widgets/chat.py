@@ -32,6 +32,12 @@ class MessageRole(StrEnum):
     ASSISTANT = "assistant"
     SYSTEM = "system"
     TOOL = "tool"
+    # Phase 69.3: ``Ctrl-X`` shell mode submissions land as ``SHELL``
+    # messages.  They never reach the LLM — the agent's context rebuild
+    # only restores rows whose role parses as a ``cantrip.llm.Role``,
+    # and ``"shell"`` is deliberately not in that enum — so the cost is
+    # zero tokens regardless of what the user typed.
+    SHELL = "shell"
 
 
 class MessageStatus(StrEnum):
@@ -112,6 +118,22 @@ class MessageWidget(Static):
         border-left: thick $error;
     }
 
+    MessageWidget.shell {
+        color: $text-muted;
+        border-left: thick $warning;
+        margin: 0;
+        padding: 0 1;
+    }
+
+    MessageWidget.shell-failed {
+        color: $error;
+        border-left: thick $error;
+    }
+
+    MessageWidget.shell-hidden {
+        text-style: italic;
+    }
+
     MessageWidget.tool-pending {
         color: $text-muted;
         border-left: thick $primary;
@@ -176,6 +198,7 @@ class MessageWidget(Static):
             MessageRole.ASSISTANT: "",
             MessageRole.SYSTEM: "[system] ",
             MessageRole.TOOL: "",  # Caption carries its own glyph.
+            MessageRole.SHELL: "",  # Body opens with ``$``/``$$`` prefix.
         }
         header = role_display.get(self.message.role, "")
         timestamp = self.message.timestamp.strftime("%H:%M")
@@ -211,7 +234,11 @@ class MessageWidget(Static):
         # supplied caption itself before wrapping the duration suffix
         # in ``[dim]…[/dim]`` markup; escaping again here would render
         # those tags literally.
-        if self.message.role == MessageRole.TOOL:
+        if self.message.role in (MessageRole.TOOL, MessageRole.SHELL):
+            # ``add_tool_block`` and ``add_shell_message`` both pre-escape
+            # the user-supplied parts of the body and keep the dim/colour
+            # markup as live tags; escaping again here would render those
+            # tags literally.
             content = self.message.content
         else:
             content = (
@@ -707,11 +734,47 @@ class ChatInput(Input):
     conditions don't overlap.
     """
 
+    # Phase 69.3: shell-mode placeholders.  Stored as class constants so
+    # tests and the Ctrl-X handler agree on the exact prompt strings.
+    AGENT_PLACEHOLDER = "Type your message..."
+    SHELL_PLACEHOLDER = "$ shell command (Ctrl-X to leave shell mode)"
+
+    class ShellModeChanged(Message):
+        """Emitted whenever Ctrl-X flips the shell-mode flag.
+
+        Lets ``CantripApp`` refresh the status bar / styling without
+        ChatInput needing a back-reference to the surrounding screen.
+        """
+
+        def __init__(self, shell_mode: bool) -> None:
+            super().__init__()
+            self.shell_mode = shell_mode
+
     def __init__(self, *args, **kwargs) -> None:
         """Initialise with no bound suggestions widgets."""
         super().__init__(*args, **kwargs)
         self._suggestions: SlashCommandSuggestions | None = None
         self._mentions: MentionSuggestions | None = None
+        # Tracks whether Enter routes to the shell helper or the agent.
+        self.shell_mode: bool = False
+
+    def toggle_shell_mode(self) -> bool:
+        """Flip shell mode and update the prompt glyph / border in place.
+
+        Returns the new ``shell_mode`` value so callers can publish a
+        status-bar change in the same step.  Posts a
+        :class:`ShellModeChanged` message regardless of direction so
+        any listening surface stays in sync.
+        """
+        self.shell_mode = not self.shell_mode
+        if self.shell_mode:
+            self.add_class("-shell-mode")
+            self.placeholder = self.SHELL_PLACEHOLDER
+        else:
+            self.remove_class("-shell-mode")
+            self.placeholder = self.AGENT_PLACEHOLDER
+        self.post_message(self.ShellModeChanged(self.shell_mode))
+        return self.shell_mode
 
     def bind_suggestions(self, widget: SlashCommandSuggestions) -> None:
         """Attach the slash-command popup."""
@@ -759,7 +822,24 @@ class ChatInput(Input):
         return None
 
     def on_key(self, event: events.Key) -> None:
-        """Route arrow/Tab/Escape to the visible suggestion popup."""
+        """Route arrow/Tab/Escape to the visible suggestion popup.
+
+        Phase 69.3: ``Ctrl-X`` toggles shell mode regardless of any
+        suggestion popup state.  The toggle takes precedence so the
+        user can always escape back to the agent surface even with a
+        slash-suggestion popup mid-keystroke.
+        """
+        if event.key == "ctrl+x":
+            # Hide any popup before flipping — the suggestion catalogue
+            # only makes sense for agent input.
+            panel_open = self._active_panel()
+            if panel_open is not None:
+                panel_open.hide()
+            self.toggle_shell_mode()
+            event.stop()
+            event.prevent_default()
+            return
+
         panel = self._active_panel()
         key = event.key
 
@@ -1241,6 +1321,42 @@ class ChatWidget(Widget):
         # ``_rerender`` is a no-op pre-mount; the next compose pass
         # picks up the updated content from ``message.content``.
         widget._rerender()
+        return widget
+
+    def add_shell_message(
+        self,
+        argv: Sequence[str],
+        *,
+        output: str,
+        exit_code: int,
+        hidden_from_agent: bool = False,
+    ) -> MessageWidget:
+        """Add a Phase 69.3 shell-mode block to the chat.
+
+        Renders a ``$ cmd`` prompt followed by the captured output.  The
+        block is visually distinct from agent tool calls (warning-tinted
+        left border) so the user can see at a glance that this line was
+        their own keystroke, not a model action.  ``hidden_from_agent``
+        switches to the ``$$`` prompt and italicises the body so the
+        incognito state is visible — the same flag also rides on the
+        persisted metadata so future context-assembly can filter the
+        row out cleanly.
+        """
+        prompt_glyph = "$$" if hidden_from_agent else "$"
+        cmd_text = rich_escape(" ".join(argv))
+        if hidden_from_agent:
+            header = f"[dim]{prompt_glyph}[/dim] [italic]{cmd_text}[/italic]"
+        else:
+            header = f"[dim]{prompt_glyph}[/dim] {cmd_text}"
+        body = rich_escape(output.rstrip()) if output else "[dim](no output)[/dim]"
+        if exit_code != 0:
+            body = f"{body}\n[dim]exit {exit_code}[/dim]"
+        content = f"{header}\n{body}"
+        widget = self.add_message(ChatMessage(role=MessageRole.SHELL, content=content))
+        if exit_code != 0:
+            widget.add_class("shell-failed")
+        if hidden_from_agent:
+            widget.add_class("shell-hidden")
         return widget
 
     def scrub_pending_tool_blocks(self) -> int:

@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **TUI shell mode — `Ctrl+X` runs subprocess commands without
+  spending tokens (Phase 69.3).**  Pressing <kbd>Ctrl+X</kbd> on
+  the chat input toggles shell mode: the input border tints
+  warning-coloured, the placeholder swaps to `$ shell command…`,
+  and pressing <kbd>Enter</kbd> runs the input as `argv` (via
+  `shlex.split`) under the existing Phase 49 sandbox.  The output
+  renders as a `$ cmd` block with a warning-coloured left border
+  so it is visually distinct from agent tool calls; the row is
+  persisted under a `"shell"` role that the agent's branch-rebuild
+  path skips on resume, so the LLM never sees the call or its
+  output.  Prefix the command with `$$` for **incognito mode** —
+  the row still shows in the chat but its persisted metadata
+  carries `hidden_from_agent: true` for any future context-
+  assembly path that would otherwise surface shell history (`$$
+  cat .env`, `$$ juju show-unit mycharm/0 --format json`, `$$
+  kubectl get secret`).  No `cd`, no shell variables, no
+  pipelines — for full shell ergonomics, drop to a real terminal.
 - **TUI repo-stats sidebar in the charm files pane (Phase 89).**
   The right-hand portion of the <kbd>F6</kbd> file pane now carries
   four glance-and-go signals derived from the working directory:
