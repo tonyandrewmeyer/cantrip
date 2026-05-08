@@ -414,8 +414,12 @@ class CharmcraftInitTool(Tool):
             target_path = pathlib.Path(path)
             # Avoid creating a redundant ``name/name`` directory when the agent
             # passes a path that already names the charm (common in sprint mode,
-            # where ``state.charm_path`` is pre-set to ``workspace/charm_name``).
-            if target_path.name != name:
+            # where ``state.charm_path`` is pre-set to ``workspace/charm_name``
+            # and the cwd has been rehomed there too).  Compare against the
+            # *resolved* basename so ``path="."`` — which has an empty
+            # ``Path.name`` — still suppresses the nesting when cwd is already
+            # the charm dir.
+            if target_path.resolve().name != name:
                 target_path = target_path / name
             target_path.mkdir(parents=True, exist_ok=True)
 
