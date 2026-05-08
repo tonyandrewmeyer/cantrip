@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 
 from cantrip import diagnostics
 from cantrip import update as update_module
-from cantrip.agent import sandbox
+from cantrip.agent import declarative_retry, sandbox
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.commands import mcp as mcp_commands
 from cantrip.agent.commands.budget import handle_budget
@@ -357,9 +357,51 @@ def _handle_custom_command(
                 f"Queued `{command.verb}` as a {category.value} task.  "
                 "Check the task panel for progress."
             )
+        if command.retry is not None:
+            return await _run_primary_with_retry(agent, command, prompt)
         return await agent.process_message(prompt)
 
     return SlashResult(text=prelude, followup=_run())
+
+
+async def _run_primary_with_retry(
+    agent: CantripAgent,
+    command: custom_commands.CustomCommand,
+    prompt: str,
+) -> str:
+    """Drive ``agent.process_message`` through the declarative-retry runner.
+
+    Reports a one-paragraph summary at the end so the user sees how
+    many attempts ran, whether the run converged, and which checks
+    failed if it didn't.  The full final response is the body of
+    that summary so callers can still read what the model said.
+    """
+    assert command.retry is not None  # narrow for type checker
+    executor = agent.executor
+    outcome = await declarative_retry.run_with_retry(
+        agent.process_message,
+        prompt,
+        config=command.retry,
+        repo_root=agent.state.charm_path,
+        permissions=executor.permissions if executor else None,
+        permission_manager=executor.permission_manager if executor else None,
+        agent_name=command.agent,
+    )
+    if outcome.converged:
+        if outcome.attempts == 1:
+            return outcome.output
+        return outcome.output + f"\n\n_Retry: converged after {outcome.attempts} attempts._"
+
+    failure_lines = [f"  - {result.label}: {result.detail}" for result in outcome.failures]
+    summary = (
+        f"\n\n_Retry: did not converge after {outcome.attempts} attempt(s)"
+        + (" (timed out)" if outcome.timed_out else "")
+        + "; failed checks:_\n"
+        + "\n".join(failure_lines)
+    )
+    if outcome.on_failure_ran:
+        summary += "\n_on_failure cleanup ran._"
+    return outcome.output + summary
 
 
 def _coerce_task_category(name: str) -> TaskCategory:

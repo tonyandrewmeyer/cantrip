@@ -38,6 +38,11 @@ from collections.abc import Mapping
 
 import yaml
 
+from cantrip.agent.declarative_retry import (
+    RetryConfig,
+    RetryConfigError,
+    parse_retry_config,
+)
 from cantrip.agent.permissions import (
     PermissionManager,
     PermissionOutcome,
@@ -63,7 +68,9 @@ _FRONTMATTER_DELIMITER = "---"
 
 #: Permitted frontmatter keys.  Unknown keys raise so a typo doesn't
 #: silently fall back to a default — mirrors the permissions loader.
-_FRONTMATTER_KEYS: frozenset[str] = frozenset({"description", "agent", "model", "subtask", "name"})
+_FRONTMATTER_KEYS: frozenset[str] = frozenset(
+    {"description", "agent", "model", "subtask", "name", "retry"}
+)
 
 
 #: Hard limit on ``!`cmd` `` shell expansion output.  Keeps a runaway
@@ -103,6 +110,7 @@ class CustomCommand:
     agent: str = DEFAULT_AGENT
     model: str | None = None
     subtask: bool = False
+    retry: RetryConfig | None = None
     source: pathlib.Path | None = None
 
 
@@ -207,6 +215,19 @@ def load_command_file(path: pathlib.Path) -> CustomCommand:
             f"{path}: 'subtask' must be a boolean, got {type(subtask_obj).__name__}"
         )
 
+    try:
+        retry_config = parse_retry_config(frontmatter.get("retry"))
+    except RetryConfigError as exc:
+        raise CustomCommandError(f"{path}: {exc}") from exc
+    # v1 wires retry into the primary (process_message) path only.
+    # Subtask retry needs an executor-side completion hook, which
+    # is a follow-up; failing loudly here prevents silent no-ops.
+    if retry_config is not None and (subtask_obj or agent_obj != DEFAULT_AGENT):
+        raise CustomCommandError(
+            f"{path}: 'retry' is not yet supported on subtask commands; "
+            "remove 'subtask: true' / set 'agent: primary' or drop the retry block"
+        )
+
     if not body.strip():
         raise CustomCommandError(f"{path}: command body is empty; a prompt template is required")
 
@@ -217,6 +238,7 @@ def load_command_file(path: pathlib.Path) -> CustomCommand:
         agent=agent_obj,
         model=model_obj,
         subtask=subtask_obj,
+        retry=retry_config,
         source=path,
     )
 

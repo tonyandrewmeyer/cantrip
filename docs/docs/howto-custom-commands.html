@@ -130,6 +130,7 @@ description: &lt;one-line summary; shown in /help and autocomplete&gt;
 agent: primary | research | build | deploy | test | debug | infra
 model: &lt;optional model override&gt;
 subtask: &lt;optional bool; default false&gt;
+retry: &lt;optional retry block; see "Retry blocks" below&gt;
 ---
 &lt;markdown prompt template&gt;</code></pre>
 <dl>
@@ -152,6 +153,14 @@ task and a subagent of that category picks it up.</dd>
   <dd>Force work-queue dispatch even when <code>agent</code> is
 <code>primary</code>. Useful when you want a command to run
 in the background without pausing the current conversation.</dd>
+  <dt><code>retry</code></dt>
+  <dd>Optional declarative retry block. When set, Cantrip runs
+the command, evaluates a list of <em>checks</em> against the
+result, and retries with a corrective prompt if any check
+fails. See <a href="#retry">Retry blocks</a> below. Only
+supported on <code>primary</code> commands today; setting
+<code>retry</code> alongside <code>subtask: true</code> or
+a non-primary agent is rejected at load time.</dd>
 </dl>
 <p>Unknown frontmatter keys raise a clear error on load &mdash; no
 silent "typed a key wrong, command gets wrong defaults".</p>
@@ -209,6 +218,77 @@ foreground conversation unchanged.</li>
 <p>The catalogue (<code>/help</code>, slash-command autocomplete,
 the CLI startup banner) picks up every loaded command automatically.
 No config entry required.</p>
+<h2 id="retry">Retry blocks</h2>
+<p>A retry block declares a <em>success predicate</em> for the
+command: a list of checks that must all pass before Cantrip
+considers the run done. If any check fails, Cantrip re-runs the
+command with a corrective prompt that quotes the failed checks
+and the previous response. The block is the user-specified
+counterpart to Ralph Loop &mdash; Ralph stops when the
+<em>agent</em> says <code>STOP</code>; retry stops when
+<em>your</em> shell command says yes.</p>
+<pre><code>---
+description: Build the charm and pass unit tests
+retry:
+  max_retries: 3
+  timeout_seconds: 600
+  checks:
+    - type: shell
+      command: "uv run pytest tests/unit -q"
+    - type: file_exists
+      path: src/charm.py
+  on_failure: "echo 'rolled back'"
+---
+Build the charm and run the full unit suite. Fix any failures.</code></pre>
+<dl>
+  <dt><code>max_retries</code></dt>
+  <dd>Number of retries on top of the initial attempt. Default
+<code>1</code>; capped at <code>50</code>. The total attempt
+budget is <code>max_retries + 1</code>.</dd>
+  <dt><code>timeout_seconds</code></dt>
+  <dd>Total wall-clock budget across every attempt. Default
+<code>600</code> (ten minutes). When the deadline is
+reached the runner returns without starting another
+attempt.</dd>
+  <dt><code>checks</code></dt>
+  <dd>Ordered list of checks. Every check must pass for the run
+to converge. Three types ship today:
+    <ul>
+      <li><strong><code>shell</code></strong> &mdash; runs
+<code>command</code> in the repo root and passes when
+the command exits with status&nbsp;0. Routes through the
+<a href="howto-permissions.html">permission
+policy</a>: <code>deny</code> records a failure with
+the policy reason; <code>ask</code> parks on the
+CONFIRM surface and refuses if the user declines.
+Optional per-check <code>timeout_seconds</code>
+defaults to 60&nbsp;s.</li>
+      <li><strong><code>file_exists</code></strong> &mdash; passes
+when <code>path</code> resolves to an existing regular
+file. Path safety mirrors <code>@path</code>: absolute
+paths and traversals outside the repo root are rejected
+at load time.</li>
+      <li><strong><code>json_schema</code></strong> &mdash;
+validates the task's final response against the JSON
+Schema in <code>schema</code>. Markdown
+<code>```json</code> fences are stripped before
+parsing.</li>
+    </ul>
+  </dd>
+  <dt><code>on_failure</code></dt>
+  <dd>Optional shell command run once if the run exits without
+converging. Useful for cleanup ("git stash drop", "rm -rf
+build"). Goes through the same permission gate as shell
+checks; a refused or failed launch is logged but does not
+raise.</dd>
+</dl>
+<p>Each retry attempt receives the original goal verbatim plus a
+short summary of which checks failed and an excerpt of the
+previous response. The original prompt is preserved so a
+long-context model does not drift toward the failure summary.
+The chat surface reports the attempt count and any unresolved
+failures in a one-paragraph summary at the bottom of the final
+response.</p>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <ul>
   <li><em>"invalid command name"</em> &mdash; filename must be
@@ -224,6 +304,11 @@ asks about) the specific shape.</li>
   <li><em>A malformed file is silently missing</em> &mdash; check
 the agent log; the loader logs a warning per bad file
 rather than halting discovery.</li>
+  <li><em>"retry" is not yet supported on subtask commands</em>
+&mdash; v1 wires retry into the primary
+(<code>process_message</code>) path only; remove
+<code>subtask: true</code> / set <code>agent: primary</code>
+or drop the retry block.</li>
 </ul>
   </main>
 </div>

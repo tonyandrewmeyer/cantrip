@@ -1078,39 +1078,67 @@ deferred**:
 
 ### 73.4 Medium — Declarative retry with shell validators
 
-- [ ] Retry block schema, usable inside recipes (73.1) and
-  standalone on ``/task`` invocations:
-  ```
-  retry:
-    max_retries: 3
-    timeout_seconds: 600
-    checks:
-      - type: shell
-        command: "uv run pytest tests/unit -q"
-      - type: file_exists
-        path: "src/charm.py"
-    on_failure: "echo 'rolled back'"
-  ```
-- [ ] Check types: ``shell`` (command runs, exit 0 = pass),
-  ``file_exists`` (path check), ``json_schema`` (apply
-  73.3 to the task's final output).  Extensible — register
-  new check types via Phase 46 hooks.
-- [ ] Retry semantics: after the task completes, run
-  ``checks``.  If all pass → done.  If any fail → increment
-  retry count, re-run the task with the previous failure
-  summary prepended to context, until ``max_retries`` or
-  ``timeout_seconds`` exhausted.  ``on_failure`` shell
-  command runs once on final failure for cleanup.
-- [ ] Checks run through the Phase 68.2 permission layer,
-  Phase 49 sandbox, and Phase 69.3 shell-mode subprocess
-  plumbing — not a new execution path.
-- [ ] Distinct from Phase 69.1 Ralph Loop: Ralph is "keep
-  iterating the goal until the *agent* says STOP", 73.4
-  is "keep iterating this task until *my shell command*
-  says yes".  User-specified success predicate.
-- [ ] ``tests/unit/test_declarative_retry.py`` — check
-  types, retry count, timeout trip, on_failure runs on
-  final failure only, permission gate respected.
+- [x] Retry block schema, parsed by
+  ``src/cantrip/agent/declarative_retry.py:parse_retry_config``
+  out of YAML frontmatter on custom slash commands.  Top-level
+  keys: ``max_retries`` (default ``1``, capped at ``50``),
+  ``timeout_seconds`` (default ``600``), ``checks`` (ordered
+  list, every check must pass to converge), and an optional
+  ``on_failure`` shell command.  Recipe-side reuse (Phase 73.1)
+  is still pending; the standalone surface today is custom
+  commands.
+- [x] Check types: ``shell`` (subprocess exit 0 = pass, optional
+  per-check ``timeout_seconds`` defaulting to 60 s),
+  ``file_exists`` (relative-path probe rejected at load if
+  absolute or escaping the repo root), ``json_schema`` (wraps
+  :func:`cantrip.llm.structured.validate_against_schema` so
+  Phase 73.3's validator drives convergence and fence-stripped
+  JSON keeps working).  Hook-driven custom check types are not
+  in v1 — defer until a real consumer asks.
+- [x] Retry semantics: each attempt runs the task callable,
+  evaluates every check in order, and on any failure rebuilds
+  the prompt with the original goal preserved verbatim plus a
+  short summary of the failed checks and an excerpt of the
+  previous response.  ``timeout_seconds`` bounds wall time;
+  once the deadline passes the runner returns with
+  ``timed_out=True`` instead of starting another attempt.
+  ``on_failure`` runs once at the end if the run exits without
+  converging — best-effort, never raises.
+- [x] Checks run through the Phase 68.2 permission policy
+  (``DENY`` records a failed :class:`CheckResult`, ``ASK``
+  parks on :class:`PermissionManager` and refuses if the user
+  declines or no manager is wired).  ``on_failure`` honours
+  the same gate.  No new execution path — :func:`subprocess.run`
+  in the repo root with ``check=False``, identical posture to
+  :mod:`cantrip.agent.commands.custom`'s ``!`cmd` `` expansion.
+- [x] Distinct from Phase 69.1 Ralph Loop: Ralph is "keep
+  iterating the goal until the *agent* says STOP", 73.4 is
+  "keep iterating this task until *my shell command* says
+  yes".  User-specified success predicate.
+- [x] Custom-command frontmatter wires through to the runner:
+  the dispatcher in :mod:`cantrip.agent.commands.slash`
+  (``_run_primary_with_retry``) wraps ``agent.process_message``
+  with :func:`run_with_retry` when the loaded
+  :class:`CustomCommand` carries a retry config, and reports a
+  one-paragraph summary at the end of the chat response with
+  the attempt count and any unresolved failures.  v1 limits
+  retry to primary commands; ``retry`` alongside
+  ``subtask: true`` or a non-primary ``agent`` is rejected at
+  load time so the limitation surfaces with a clear error
+  rather than silently dropping the block.
+- [x] ``tests/unit/agent/test_declarative_retry.py`` — 40 cases
+  covering schema validation (defaults, unknown keys per
+  level, ``max_retries`` ceiling and bool guard,
+  ``timeout_seconds`` positivity, absolute-path rejection,
+  blank-``on_failure`` normalisation), each check type's
+  pass / fail / detail surface, retry count and convergence
+  (initial + retries, exhaustion, marker-on-second-attempt
+  with the corrective prompt verified to preserve the
+  original goal), timeout trip via an injected monotonic
+  clock, ``on_failure`` running only on final failure and
+  honouring permission denies, and the custom-command
+  frontmatter integration including the subtask-rejection
+  path.
 
 ### What this phase is *not*
 

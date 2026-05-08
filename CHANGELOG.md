@@ -39,6 +39,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   hand-off line to the work queue.
 
 ### Added
+- **Declarative `retry:` blocks on custom slash commands (Phase
+  73.4).**  A custom command's frontmatter now accepts a `retry`
+  block that declares its own success predicate as an ordered list
+  of *checks* — `shell` (command exits 0), `file_exists` (path
+  resolves to a regular file), or `json_schema` (final response
+  validates against a JSON Schema) — plus `max_retries`,
+  `timeout_seconds`, and an optional `on_failure` cleanup
+  command.  When any check fails, Cantrip re-runs the command
+  with a corrective prompt that quotes the failed checks and
+  excerpts the previous response, until the budget is
+  exhausted.  Distinct from Ralph Loop ("agent says STOP") and
+  the `wait_for` tool (one-shot predicate inside one tool call):
+  this is "user-specified shell command says yes" as a per-task
+  convergence criterion.  Shell checks and `on_failure` route
+  through the existing Phase 68.2 permission policy so denied
+  commands cannot smuggle in via a retry block.  v1 wires retry
+  into the primary (`process_message`) path only; subtask retry
+  is rejected at load time pending an executor-side completion
+  hook.  Documented at
+  `docs/docs/howto-custom-commands.html#retry`.
 - **TUI shell mode — `Ctrl+X` runs subprocess commands without
   spending tokens (Phase 69.3).**  Pressing <kbd>Ctrl+X</kbd> on
   the chat input toggles shell mode: the input border tints
