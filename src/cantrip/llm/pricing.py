@@ -63,8 +63,13 @@ _PRICES: dict[str, Price] = {
     "haiku": _claude(prompt=1.00, completion=5.00),
     # Gemini — Google publishes tiered pricing; the numbers below are
     # the low-context tier (<=200k tokens) for the text modality.
-    "gemini-3-pro": Price(prompt=1.25, completion=10.00),
-    "gemini-3-flash": Price(prompt=0.15, completion=0.60),
+    # Two ``gemini-3*-pro`` keys because ``gemini-3-pro`` (dash) is not a
+    # substring of ``gemini-3.1-pro-preview`` (dot) — without the dotted
+    # variant the default model would fall through to ``ZERO_PRICE``.
+    "gemini-3.1-pro": Price(prompt=2.00, completion=12.00),
+    "gemini-3-pro": Price(prompt=2.00, completion=12.00),
+    "gemini-3.1-flash-lite": Price(prompt=0.25, completion=1.50),
+    "gemini-3-flash": Price(prompt=0.50, completion=3.00),
     "gemini-2.5-pro": Price(prompt=1.25, completion=10.00),
     "gemini-2.5-flash": Price(prompt=0.15, completion=0.60),
     "gemini-2.0-flash": Price(prompt=0.075, completion=0.30),

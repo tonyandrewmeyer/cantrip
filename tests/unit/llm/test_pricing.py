@@ -27,12 +27,21 @@ class TestLookupPrice:
 
     def test_gemini_flash_matches_flash_tier(self):
         price = pricing.lookup_price("gemini-3-flash-preview")
-        assert price.prompt == 0.15
-        assert price.completion == 0.60
+        assert price.prompt == 0.50
+        assert price.completion == 3.00
 
     def test_gemini_pro_matches_pro_tier(self):
         price = pricing.lookup_price("gemini-3-pro")
-        assert price.prompt == 1.25
+        assert price.prompt == 2.00
+        assert price.completion == 12.00
+
+    def test_gemini_3_1_pro_preview_matches_pro_tier(self):
+        # The default Gemini model uses a dotted version string; the
+        # pricing key needs an explicit dotted variant or substring
+        # matching falls through to ZERO_PRICE.
+        price = pricing.lookup_price("gemini-3.1-pro-preview")
+        assert price.prompt == 2.00
+        assert price.completion == 12.00
 
     def test_inference_snap_is_free(self):
         price = pricing.lookup_price("gemma3")
@@ -106,8 +115,8 @@ class TestEstimateCost:
             prompt_tokens=10_000,
             completion_tokens=2_000,
         )
-        # 10k * $0.15/M = $0.0015; 2k * $0.60/M = $0.0012; total $0.0027.
-        assert cost == pytest.approx(0.0027)
+        # 10k * $0.50/M = $0.005; 2k * $3.00/M = $0.006; total $0.011.
+        assert cost == pytest.approx(0.011)
 
 
 class TestFormatCost:
