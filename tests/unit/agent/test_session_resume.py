@@ -416,6 +416,212 @@ class TestArchiveSession:
         assert reader.state.charm_name == "fresh"
 
 
+class TestResumedMustReadDirective:
+    """Tests for the Phase 103.1 ``was_resumed`` flag and prompt directive.
+
+    A resumed session has the LLM's in-conversation memory of file bytes
+    rehydrated from SQLite, but the on-disk bytes may have drifted.  The
+    flag arms a one-shot system-prompt directive telling the model to
+    ``read_file`` first; the directive clears the moment the model
+    obliges so it doesn't bloat steady-state turns.
+    """
+
+    def test_was_resumed_set_after_load_state(self, tmp_path: pathlib.Path):
+        """A successful ``load_state`` arms the must-read directive."""
+        writer = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        writer.state.charm_name = "resumed"
+        writer.save_state()
+
+        reader = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        assert reader.state.was_resumed is False  # default before load
+        loaded = reader.load_state()
+
+        assert loaded is True
+        assert reader.state.was_resumed is True
+
+    def test_was_resumed_stays_false_when_no_session(self, tmp_path: pathlib.Path):
+        """A failed ``load_state`` (no session) leaves the flag at its default."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        loaded = agent.load_state()
+        assert loaded is False
+        assert agent.state.was_resumed is False
+
+    def test_directive_in_system_prompt_when_armed(self, tmp_path: pathlib.Path):
+        """The system prompt carries the directive while ``was_resumed`` is set."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent.state.was_resumed = True
+
+        prompt = agent._build_system_prompt()
+
+        # Pin the recognisable signal — the heading and the imperative.
+        assert "Resumed session — re-read before editing" in prompt
+        assert "read_file" in prompt
+
+    def test_directive_absent_when_not_resumed(self, tmp_path: pathlib.Path):
+        """Default sessions don't carry the resume directive."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        assert agent.state.was_resumed is False
+
+        prompt = agent._build_system_prompt()
+        assert "Resumed session — re-read before editing" not in prompt
+
+    async def test_successful_read_file_clears_flag(self, tmp_path: pathlib.Path):
+        """A successful ``read_file`` clears the resume directive flag."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent.state.was_resumed = True
+
+        target = tmp_path / "x.txt"
+        target.write_text("hello")
+
+        result = await agent._execute_tool("read_file", {"path": str(target)})
+        assert result.success
+        assert agent.state.was_resumed is False
+
+        # And the directive disappears from the next prompt build.
+        assert "Resumed session — re-read before editing" not in agent._build_system_prompt()
+
+    async def test_failed_read_file_keeps_flag(self, tmp_path: pathlib.Path):
+        """A failing ``read_file`` (missing path) does *not* clear the flag.
+
+        The model hasn't actually seen on-disk bytes if the read failed,
+        so we keep the directive armed until a real successful read.
+        """
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent.state.was_resumed = True
+
+        result = await agent._execute_tool(
+            "read_file", {"path": str(tmp_path / "nonexistent.txt")}
+        )
+        assert result.success is False
+        assert agent.state.was_resumed is True
+
+    async def test_other_tools_dont_clear_flag(self, tmp_path: pathlib.Path):
+        """A non-read tool call leaves the must-read flag armed."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        agent.state.was_resumed = True
+
+        # ``list_directory`` is a successful, side-effect-free tool but
+        # it's not ``read_file`` — the model still hasn't proven it has
+        # seen the bytes of a specific file.
+        result = await agent._execute_tool("list_directory", {"path": str(tmp_path)})
+        assert result.success
+        assert agent.state.was_resumed is True
+
+
+class TestEditStringMissesCounter:
+    """Tests for the Phase 103.4 ``edit_string_misses`` counter.
+
+    The counter ticks up when ``edit_file`` / ``multi_edit`` fail their
+    ``old_string`` match and back down when a subsequent edit on the
+    same file succeeds.  Surfaced via ``/cost`` so the operator can spot
+    a session burning rounds on hallucinated edit strings.
+    """
+
+    async def test_failed_edit_increments_counter(self, tmp_path: pathlib.Path):
+        """A failed ``edit_file`` ticks the counter for the affected path."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        target = tmp_path / "f.py"
+        target.write_text("alpha\n")
+        # The miss path the tool reports is the resolved absolute path.
+        resolved = str(target.resolve())
+
+        result = await agent._execute_tool(
+            "edit_file",
+            {
+                "path": str(target),
+                "old_string": "nonexistent",
+                "new_string": "x",
+            },
+        )
+
+        assert result.success is False
+        assert agent.state.edit_string_misses.get(resolved, 0) == 1
+
+    async def test_successful_edit_decrements_counter(self, tmp_path: pathlib.Path):
+        """A subsequent successful edit on the same file decrements."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        target = tmp_path / "f.py"
+        target.write_text("alpha\n")
+        resolved = str(target.resolve())
+        agent.state.edit_string_misses[resolved] = 3  # pretend prior misses
+
+        result = await agent._execute_tool(
+            "edit_file",
+            {
+                "path": str(target),
+                "old_string": "alpha",
+                "new_string": "beta",
+            },
+        )
+
+        assert result.success
+        assert agent.state.edit_string_misses[resolved] == 2
+
+    async def test_counter_clears_when_resolved(self, tmp_path: pathlib.Path):
+        """The path drops out of the dict when its count hits zero."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        target = tmp_path / "f.py"
+        target.write_text("alpha\n")
+        resolved = str(target.resolve())
+        agent.state.edit_string_misses[resolved] = 1
+
+        await agent._execute_tool(
+            "edit_file",
+            {
+                "path": str(target),
+                "old_string": "alpha",
+                "new_string": "beta",
+            },
+        )
+
+        # Resolved cleanly; the path is gone from the dict so ``/cost``
+        # has nothing to surface.
+        assert resolved not in agent.state.edit_string_misses
+
+    async def test_decrement_floored_at_zero(self, tmp_path: pathlib.Path):
+        """Successful edits on a file with no recorded misses are no-ops."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        target = tmp_path / "f.py"
+        target.write_text("alpha\n")
+
+        result = await agent._execute_tool(
+            "edit_file",
+            {
+                "path": str(target),
+                "old_string": "alpha",
+                "new_string": "beta",
+            },
+        )
+
+        assert result.success
+        # No prior miss → the counter shouldn't go negative or seed a
+        # spurious zero entry.
+        assert agent.state.edit_string_misses == {}
+
+    async def test_other_files_untouched(self, tmp_path: pathlib.Path):
+        """A miss on file A leaves file B's counter unchanged."""
+        agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
+        a = tmp_path / "a.py"
+        a.write_text("alpha\n")
+        b = tmp_path / "b.py"
+        b.write_text("beta\n")
+        agent.state.edit_string_misses[str(b.resolve())] = 4
+
+        result = await agent._execute_tool(
+            "edit_file",
+            {
+                "path": str(a),
+                "old_string": "missing",
+                "new_string": "x",
+            },
+        )
+
+        assert result.success is False
+        # ``a`` got incremented; ``b`` is unchanged.
+        assert agent.state.edit_string_misses[str(a.resolve())] == 1
+        assert agent.state.edit_string_misses[str(b.resolve())] == 4
+
+
 class TestTranscriptTail:
     """Tests for CantripAgent.transcript_tail."""
 

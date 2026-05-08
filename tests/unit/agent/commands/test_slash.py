@@ -44,11 +44,15 @@ def _fake_agent(
     provider_model: str = "fake-model",
     cache_read: int = 0,
     cache_write: int = 0,
+    edit_string_misses: dict[str, int] | None = None,
 ) -> SimpleNamespace:
     """Build the smallest agent-shaped object the dispatcher inspects."""
     return SimpleNamespace(
         _memory_manager=memory_manager,
-        state=SimpleNamespace(charm_path=charm_path),
+        state=SimpleNamespace(
+            charm_path=charm_path,
+            edit_string_misses=edit_string_misses or {},
+        ),
         mcp_registry=mcp_registry,
         mcp_marketplace_sources=marketplace_sources or [],
         mcp_marketplace_loader=marketplace_loader,
@@ -272,6 +276,50 @@ class TestCost:
         assert build_idx < research_idx
         assert "450 tokens" in result.text  # build: 300 + 150
         assert "300 tokens" in result.text  # research: 200 + 100
+
+    def test_cost_renders_edit_string_misses(self, memory_manager: MemoryManager) -> None:
+        """Phase 103.4: ``/cost`` surfaces unresolved edit-string misses."""
+        store = MagicMock()
+        store.get_total_usage.return_value = {"prompt_tokens": 1, "completion_tokens": 1}
+        store.get_usage_by_model.return_value = []
+        store.get_usage_by_category.return_value = []
+        store.get_replay_savings.return_value = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "request_count": 0,
+        }
+        agent = _fake_agent(
+            memory_manager,
+            store=store,
+            edit_string_misses={
+                "/charm/charmcraft.yaml": 2,
+                "/charm/src/charm.py": 1,
+            },
+        )
+
+        result = dispatch(agent, "/cost")
+        assert result is not None
+        assert "Edit-string misses (unresolved)" in result.text
+        assert "3 across 2 files" in result.text
+        assert "/charm/charmcraft.yaml: 2" in result.text
+        assert "/charm/src/charm.py: 1" in result.text
+
+    def test_cost_omits_misses_block_when_empty(self, memory_manager: MemoryManager) -> None:
+        """Sessions with zero unresolved misses don't print the block."""
+        store = MagicMock()
+        store.get_total_usage.return_value = {"prompt_tokens": 1, "completion_tokens": 1}
+        store.get_usage_by_model.return_value = []
+        store.get_usage_by_category.return_value = []
+        store.get_replay_savings.return_value = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "request_count": 0,
+        }
+        agent = _fake_agent(memory_manager, store=store, edit_string_misses={})
+
+        result = dispatch(agent, "/cost")
+        assert result is not None
+        assert "Edit-string misses" not in result.text
 
 
 class TestBudget:

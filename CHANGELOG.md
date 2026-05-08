@@ -52,6 +52,36 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``design/RECIPES.md`` and ``docs/docs/howto-recipes.html`` for
   the full schema and dispatcher flow.
 
+### Added
+- **Resume-hallucination repair — re-read before editing
+  (Phase 103).**  After ``cantrip resume`` the agent's in-conversation
+  memory of file bytes is unreliable, and post-rehydrate ``edit_file``
+  calls that trust that memory commonly land ``String not found`` on
+  ``old_string`` values the model synthesised rather than re-read.
+  Four mitigations land together:
+  - **Must-read-first directive (103.1).**  ``persistence.load_state``
+    arms a one-shot system-prompt directive telling the model to
+    ``read_file`` before any ``edit_file`` / ``write_file`` /
+    ``multi_edit``.  The directive clears the moment the model performs
+    a successful ``read_file`` so it doesn't bloat steady-state turns.
+  - **Did-you-mean diff hint (103.2).**  When ``old_string`` doesn't
+    match, the tool result now pairs the existing 50-character preview
+    with a unified diff against the closest substring on disk —
+    targeted directly at the bytes the model needs to reach.
+  - **Opt-in whitespace-tolerant match (103.3).**  ``edit_file`` and
+    ``multi_edit`` accept a ``relax_whitespace`` boolean; when true and
+    the exact ``old_string`` isn't found, runs of whitespace collapse to
+    ``\\s+`` so ``"\\n\\n"`` matches ``"\\n  \\n"``, ``foo bar`` matches
+    ``foo\\tbar``, etc.  An ambiguous relaxed match is refused so the
+    fallback can't overwrite the wrong instance.
+  - **Edit-string miss counter in ``/cost`` (103.4).**  Every miss
+    increments a per-file counter on ``AgentState``; a subsequent
+    successful edit of the same file decrements (floored at zero) and
+    drops the entry when it clears.  ``/cost`` surfaces an
+    "Edit-string misses (unresolved)" block when any path has a
+    non-zero count, so an operator spots a session burning rounds on
+    hallucinations without trawling the transcript.
+
 ### Fixed
 - **ops-tracing recipe refresh — stop teaching the long-removed
   ``setup`` shorthand (Phase 101).**  The system prompt, observability /

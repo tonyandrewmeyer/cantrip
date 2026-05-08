@@ -113,6 +113,56 @@ class TestMultiEditExecution:
         assert "not found" in result.error.lower()
 
     @pytest.mark.anyio
+    async def test_string_not_found_includes_did_you_mean(self, tool):
+        """Phase 103.2: a near-miss attaches a unified-diff hint."""
+        # ``a.py`` contains ``return 'hello'`` (single quotes); request
+        # the double-quote variant to simulate post-resume drift.
+        result = await tool.execute(
+            edits=[
+                {
+                    "file": "a.py",
+                    "old": 'return "hello"',
+                    "new": 'return "world"',
+                },
+            ]
+        )
+        assert not result.success
+        assert "Did you mean" in result.error
+        # The diff should mention the actual on-disk single-quoted value.
+        assert "'hello'" in result.error
+
+    @pytest.mark.anyio
+    async def test_relax_whitespace_per_edit(self, tool, tmp_path):
+        """Phase 103.3: a per-edit ``relax_whitespace`` flag absorbs
+        whitespace drift even inside a multi-edit batch."""
+        (tmp_path / "c.py").write_text("def f():\n\treturn\t1\n")
+        result = await tool.execute(
+            edits=[
+                {
+                    "file": "c.py",
+                    "old": "return 1",
+                    "new": "return 2",
+                    "relax_whitespace": True,
+                },
+            ]
+        )
+        assert result.success
+        assert "return 2" in (tmp_path / "c.py").read_text()
+
+    @pytest.mark.anyio
+    async def test_relax_whitespace_off_by_default(self, tool, tmp_path):
+        """Without the flag, whitespace drift still fails the edit."""
+        (tmp_path / "c.py").write_text("def f():\n\treturn\t1\n")
+        result = await tool.execute(
+            edits=[
+                {"file": "c.py", "old": "return 1", "new": "return 2"},
+            ]
+        )
+        assert not result.success
+        # File unchanged.
+        assert "return\t1" in (tmp_path / "c.py").read_text()
+
+    @pytest.mark.anyio
     async def test_ambiguous_match(self, tool, tmp_path):
         (tmp_path / "c.py").write_text("foo foo foo")
         result = await tool.execute(

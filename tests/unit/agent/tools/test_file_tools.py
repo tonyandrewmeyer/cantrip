@@ -7,6 +7,7 @@ from cantrip.agent.tools.files import (
     ListDirectoryTool,
     ReadFileTool,
     WriteFileTool,
+    _did_you_mean_hint,
 )
 
 
@@ -390,6 +391,49 @@ class TestEditFileTool:
         assert "not found" in result.error.lower()
 
     @pytest.mark.asyncio
+    async def test_edit_string_not_found_includes_did_you_mean_hint(self, tmp_path):
+        """Phase 103.2: failed edit pairs the preview with a unified diff."""
+        target = tmp_path / "code.py"
+        target.write_text("def greet():\n    return 'hello world'\n")
+        tool = EditFileTool(base_path=tmp_path)
+
+        # Drift the bytes the model thinks it remembers — single-quote vs
+        # double-quote string is the classic post-resume mismatch.
+        result = await tool.execute(
+            path="code.py",
+            old_string='return "hello world"',
+            new_string='return "goodbye"',
+        )
+
+        assert result.success is False
+        assert "Did you mean" in result.error
+        # The diff should mention the actual on-disk text so the next
+        # round can target it.
+        assert "hello world" in result.error
+        # Unified-diff markers should be present.
+        assert "---" in result.error
+        assert "+++" in result.error
+
+    @pytest.mark.asyncio
+    async def test_edit_string_not_found_omits_hint_for_unrelated_text(self, tmp_path):
+        """No diff is added when the file shares nothing with the requested text."""
+        target = tmp_path / "code.py"
+        target.write_text("alpha\nbeta\ngamma\n")
+        tool = EditFileTool(base_path=tmp_path)
+
+        # ``zzz`` has no overlap whatsoever with the file content, so the
+        # closest-match search returns nothing useful.  An all-add diff
+        # in that case would be misleading rather than helpful.
+        result = await tool.execute(
+            path="code.py",
+            old_string="zzz",
+            new_string="qqq",
+        )
+
+        assert result.success is False
+        assert "Did you mean" not in result.error
+
+    @pytest.mark.asyncio
     async def test_edit_ambiguous_match(self, tmp_path):
         """Returns error when old_string appears multiple times."""
         target = tmp_path / "code.py"
@@ -462,3 +506,188 @@ class TestEditFileTool:
         assert "return 42" in target.read_text()
         # bar() should be unchanged.
         assert "def bar():\n    pass" in target.read_text()
+
+
+class TestEditFileRelaxWhitespace:
+    """Tests for the Phase 103.3 ``relax_whitespace`` fallback on EditFileTool.
+
+    The fallback is opt-in — by default ``edit_file`` still requires an
+    exact match.  When the model passes ``relax_whitespace=True``, runs
+    of whitespace in ``old_string`` collapse into ``\\s+`` so the
+    obvious drift patterns (``"\\n\\n"`` vs ``"\\n  \\n"``, tab/space,
+    extra trailing newline) match without a re-read.  An ambiguous
+    relaxed match still refuses the edit so we can't overwrite the
+    wrong instance.
+    """
+
+    @pytest.mark.asyncio
+    async def test_off_by_default(self, tmp_path):
+        """Whitespace drift is not absorbed when the flag is omitted."""
+        target = tmp_path / "f.py"
+        target.write_text("def f():\n    return    1\n")  # extra spaces
+        tool = EditFileTool(base_path=tmp_path)
+
+        result = await tool.execute(
+            path="f.py",
+            old_string="return 1",
+            new_string="return 2",
+        )
+
+        assert result.success is False
+        assert "1" in target.read_text()  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_collapses_inline_whitespace_when_enabled(self, tmp_path):
+        """Tabs / multi-space gaps in the file are absorbed by ``\\s+``."""
+        target = tmp_path / "f.py"
+        target.write_text("def f():\n\treturn\t1\n")  # tabs in file
+        tool = EditFileTool(base_path=tmp_path)
+
+        result = await tool.execute(
+            path="f.py",
+            old_string="return 1",  # single space in request
+            new_string="return 2",
+            relax_whitespace=True,
+        )
+
+        assert result.success is True
+        # The line indent (``\t``) precedes ``old_string`` so it survives
+        # the replacement; only the matched ``return\t1`` window is swapped.
+        assert target.read_text() == "def f():\n\treturn 2\n"
+
+    @pytest.mark.asyncio
+    async def test_blank_line_with_stray_whitespace(self, tmp_path):
+        """``"\\n\\n"`` matches a blank line that picked up trailing spaces."""
+        target = tmp_path / "f.py"
+        # File has trailing whitespace on the blank line.
+        target.write_text("alpha\n  \nbeta\n")
+        tool = EditFileTool(base_path=tmp_path)
+
+        result = await tool.execute(
+            path="f.py",
+            old_string="alpha\n\nbeta",
+            new_string="alpha\nGAMMA\nbeta",
+            relax_whitespace=True,
+        )
+
+        assert result.success is True
+        assert target.read_text() == "alpha\nGAMMA\nbeta\n"
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_relaxed_match_refused(self, tmp_path):
+        """Refuses the relaxed edit when the pattern matches multiple times.
+
+        ``old_string`` doesn't exist verbatim in the file, but its
+        whitespace-collapsed regex would match both lines.  The tool
+        must refuse rather than overwrite an arbitrary one.
+        """
+        target = tmp_path / "f.py"
+        # File contains two whitespace variants; ``old_string`` matches
+        # neither verbatim, but the relaxed pattern ``foo\s+bar`` would
+        # match both.
+        target.write_text("foo bar\nfoo\tbar\n")
+        tool = EditFileTool(base_path=tmp_path)
+
+        result = await tool.execute(
+            path="f.py",
+            old_string="foo  bar",  # two spaces — matches no line exactly
+            new_string="foo BAZ",
+            relax_whitespace=True,
+        )
+
+        assert result.success is False
+        assert target.read_text() == "foo bar\nfoo\tbar\n"  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_relax_does_not_match_unrelated_content(self, tmp_path):
+        """Whitespace tolerance does not bridge wholly different bytes."""
+        target = tmp_path / "f.py"
+        target.write_text("def hello():\n    return 'hello'\n")
+        tool = EditFileTool(base_path=tmp_path)
+
+        result = await tool.execute(
+            path="f.py",
+            old_string="def goodbye():",
+            new_string="def farewell():",
+            relax_whitespace=True,
+        )
+
+        assert result.success is False
+        assert "def hello" in target.read_text()  # unchanged
+
+
+class TestDidYouMeanHint:
+    """Tests for the Phase 103.2 ``_did_you_mean_hint`` helper.
+
+    The helper produces a unified-diff snippet between the model's
+    requested ``old_string`` and the closest substring on disk, so a
+    failed ``edit_file`` round comes back with directly-actionable
+    bytes rather than just a 50-character preview of what the model
+    asked for.
+    """
+
+    def test_returns_diff_for_close_match(self):
+        """A small drift produces a unified diff between expected and actual."""
+        old_string = '    return "hello world"'
+        content = "def greet():\n    return 'hello world'\n"
+
+        hint = _did_you_mean_hint(old_string, content)
+
+        assert hint is not None
+        assert "expected" in hint
+        assert "actual" in hint
+        # Should show the actual bytes the model is missing.
+        assert "'hello world'" in hint
+        # And the model's expected single-line entry should appear too,
+        # marked with a leading ``-`` in the diff.
+        assert '-    return "hello world"' in hint or '"hello world"' in hint
+
+    def test_returns_none_for_no_overlap(self):
+        """Completely unrelated text returns ``None`` rather than a useless diff."""
+        assert _did_you_mean_hint("zzz", "alpha\nbeta\ngamma\n") is None
+
+    def test_returns_none_for_empty_inputs(self):
+        """Empty arguments don't produce a hint."""
+        assert _did_you_mean_hint("", "anything") is None
+        assert _did_you_mean_hint("anything", "") is None
+
+    def test_diff_is_capped(self):
+        """The diff body is capped at the configured line budget.
+
+        Build an *almost* identical pair so the helper's minimum-overlap
+        gate passes — the only drift is on the first line — but the
+        diff itself runs many lines because the matcher emits surrounding
+        context.
+        """
+        # The first line drifts; the rest of the bytes are identical so
+        # the longest match is large relative to ``old_string``.  With
+        # ``max_lines`` set low, the truncation marker should fire on
+        # the resulting unified diff.
+        common_lines = "".join(f"line {i}\n" for i in range(20))
+        old_string = "drifted prefix\n" + common_lines
+        content = "actual prefix\n" + common_lines
+
+        hint = _did_you_mean_hint(old_string, content, max_lines=2)
+
+        assert hint is not None
+        # Cap is on body lines; truncation marker fires when the diff
+        # would have exceeded the cap.
+        assert "truncated" in hint
+
+    def test_diff_picks_window_around_match(self):
+        """Match window is anchored near the longest matching line block."""
+        old_string = "def greet():\n    return 'hi'\n"
+        content = (
+            "import logging\n\n"
+            "def unrelated():\n    pass\n\n"
+            "def greet():\n    return 'hello'\n\n"
+            "def other():\n    return None\n"
+        )
+
+        hint = _did_you_mean_hint(old_string, content)
+
+        assert hint is not None
+        # The hint should target the matching ``def greet()`` block, not
+        # the ``def unrelated`` opener.
+        assert "def greet" in hint
+        assert "'hello'" in hint

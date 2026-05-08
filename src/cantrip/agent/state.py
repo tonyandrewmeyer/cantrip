@@ -241,6 +241,27 @@ class AgentState:
     watcher_enabled: bool = False
     test_results: TestResults | None = None
 
+    # Phase 103.1: set ``True`` by ``persistence.load_state`` after a
+    # successful resume; cleared once the agent performs at least one
+    # ``read_file`` post-resume.  While set, the system prompt carries
+    # a one-shot "must read before editing" directive that suppresses
+    # the edit_file/multi_edit hallucination cascade where the model
+    # synthesises file content from its prior in-conversation memory
+    # instead of re-reading the on-disk bytes.  Never persisted —
+    # crashing mid-resume should re-arm the directive on the next
+    # ``cantrip resume``.
+    was_resumed: bool = False
+
+    # Phase 103.4: per-file count of ``edit_file`` / ``multi_edit``
+    # failures whose ``old_string`` did not match on disk.  Each miss
+    # increments the file's entry; a subsequent successful edit on the
+    # same file decrements (floored at zero) so a transient hallucination
+    # that the model recovers from doesn't stay on the books forever.
+    # Surfaced via ``/cost`` so the operator can spot a session that's
+    # burning rounds on edit-string drift without trawling the transcript.
+    # Not persisted — every fresh session starts at zero.
+    edit_string_misses: dict[str, int] = dataclasses.field(default_factory=dict)
+
     # GitHub remote — detected from git origin, e.g. "canonical/grafana-k8s".
     github_repo: str | None = None
 

@@ -137,4 +137,20 @@ def format_cost(agent: CantripAgent) -> str:
         lines.append(f"_Estimated total: {pricing.format_cost(total_cost)}_")
         lines.append("_(approximate; published list prices, may drift)_")
 
+    # Phase 103.4: surface unresolved edit-string misses so the operator
+    # can spot a session that's burning rounds on hallucinated
+    # ``old_string`` values without trawling the transcript.  Quiet when
+    # everything has resolved (the common case) — the line only fires
+    # when at least one path still has a non-zero count.
+    misses = {path: count for path, count in agent.state.edit_string_misses.items() if count > 0}
+    if misses:
+        total_misses = sum(misses.values())
+        lines.append("")
+        lines.append(
+            f"**Edit-string misses (unresolved):** {total_misses} across "
+            f"{len(misses)} file{'s' if len(misses) != 1 else ''}"
+        )
+        for path in sorted(misses):
+            lines.append(f"- {path}: {misses[path]}")
+
     return "\n".join(lines)

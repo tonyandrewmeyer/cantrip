@@ -284,6 +284,14 @@ class PersistenceController:
                 },
             )
 
+        # Phase 103.1: arm the must-read-first directive so the next turn
+        # tells the model to re-read on disk before editing.  A
+        # post-compaction or post-rehydrate ``edit_file`` that trusts
+        # in-conversation memory of file bytes loses 5+ minutes per
+        # mismatch; the directive is one-shot and self-clears once the
+        # agent performs at least one ``read_file``.
+        self._state.was_resumed = True
+
         return True
 
     # -- Resume summary --------------------------------------------------------

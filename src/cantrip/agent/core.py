@@ -169,6 +169,29 @@ _PLAN_MODE_GUIDANCE = (
 )
 
 
+#: Phase 103.1: one-shot directive prepended to the system prompt while
+#: ``state.was_resumed`` is True.  A resumed session has been
+#: serialised+rehydrated through the SQLite store, so the model's
+#: in-conversation memory of file bytes is unreliable — calling
+#: ``edit_file`` against an ``old_string`` synthesised from that memory
+#: lands a ``String not found`` error and burns a round on rediscovery.
+#: The directive forces a ``read_file`` first; ``_execute_tool`` clears
+#: the flag after the first successful ``read_file`` so the directive
+#: stops bloating subsequent turns.
+_RESUMED_MUST_READ_GUIDANCE = (
+    "## Resumed session — re-read before editing\n\n"
+    "This conversation was loaded from a prior session.  File contents "
+    "you remember from earlier turns may have drifted on disk, and "
+    "post-rehydrate ``edit_file`` calls that trust in-conversation memory "
+    "of bytes commonly fail with ``String not found``.\n"
+    "\n"
+    "Before any ``edit_file`` / ``write_file`` / ``multi_edit`` call, you "
+    "**must** first ``read_file`` to confirm the current bytes.  This "
+    "directive is one-shot — it goes away as soon as you read a file, "
+    "and from then on you can edit normally."
+)
+
+
 #: Regex that captures the body of a ``## Proposed changes`` (or similar)
 #: section at the end of an assistant response.  Intentionally flexible on
 #: heading depth and capitalisation so the LLM doesn't have to emit a
@@ -1323,6 +1346,8 @@ class CantripAgent:
         )
         if self.state.plan_mode:
             prompt = f"{prompt}\n\n{_PLAN_MODE_GUIDANCE}"
+        if self.state.was_resumed:
+            prompt = f"{prompt}\n\n{_RESUMED_MUST_READ_GUIDANCE}"
         return prompt
 
     @property
@@ -1471,13 +1496,47 @@ class CantripAgent:
         """
         from cantrip.agent.tools.base import execute_tool
 
-        return await execute_tool(
+        result = await execute_tool(
             self._tool_map,
             name,
             arguments,
             auto_lint=self.state.auto_lint,
             charm_path=self.state.charm_path,
         )
+        # Phase 103.1: a successful ``read_file`` clears the resume
+        # must-read directive — the model has now seen the on-disk
+        # bytes, so the next edit doesn't need the prompt nudge.
+        if name == "read_file" and result.success and self.state.was_resumed:
+            self.state.was_resumed = False
+        # Phase 103.4: tick the post-resume hallucination counter from
+        # the structured signals the edit tools emit.  ``edit_miss_path``
+        # increments the per-file count; ``edit_success_paths`` (or the
+        # singular ``edit_success_path`` from ``edit_file``) decrements
+        # for each file the agent successfully resolved.
+        if name in ("edit_file", "multi_edit") and result.data:
+            self._update_edit_string_misses(result.data)
+        return result
+
+    def _update_edit_string_misses(self, data: dict[str, Any]) -> None:
+        """Apply the Phase 103.4 hallucination-counter signals from *data*."""
+        miss_path = data.get("edit_miss_path")
+        if isinstance(miss_path, str):
+            current = self.state.edit_string_misses.get(miss_path, 0)
+            self.state.edit_string_misses[miss_path] = current + 1
+
+        success_path = data.get("edit_success_path")
+        success_paths = data.get("edit_success_paths") or []
+        candidates: list[str] = []
+        if isinstance(success_path, str):
+            candidates.append(success_path)
+        if isinstance(success_paths, list):
+            candidates.extend(p for p in success_paths if isinstance(p, str))
+        for path in candidates:
+            current = self.state.edit_string_misses.get(path, 0)
+            if current <= 1:
+                self.state.edit_string_misses.pop(path, None)
+            else:
+                self.state.edit_string_misses[path] = current - 1
 
     def _publish_activity(self, label: str) -> None:
         """Publish a status-bar activity update (e.g. "running: charmcraft_pack").
