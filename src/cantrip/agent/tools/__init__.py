@@ -26,6 +26,7 @@ def build_tools(
     mcp_registry: MCPRegistry | None = None,
     store_getter: Callable[[], Any] | None = None,
     role_router: Any = None,
+    invalidate_tools_cache: Callable[[], None] | None = None,
 ) -> list[Tool]:
     """Build all agent tool instances.
 
@@ -383,7 +384,14 @@ def build_tools(
         tools.append(VirtualFileReadTool(virtual_store))
         tools.append(VirtualFileSearchTool(virtual_store))
     if provider is not None and state is not None and queue is not None:
-        tools.append(PlanTasksTool(provider=provider, state=state, queue=queue))
+        tools.append(
+            PlanTasksTool(
+                provider=provider,
+                state=state,
+                queue=queue,
+                invalidate_tools_cache=invalidate_tools_cache,
+            )
+        )
         tools.append(ManageTasksTool(queue=queue))
     if state is not None:
         tools.append(OracleTool(state=state, store_getter=store_getter))

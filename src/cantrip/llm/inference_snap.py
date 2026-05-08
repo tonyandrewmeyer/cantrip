@@ -115,6 +115,19 @@ class InferenceSnapProvider(OpenAICompatBase):
         """Local models have limited context; restrict tools to a core set."""
         return 12
 
+    @property
+    def conversation_temperature(self) -> float:
+        """Clamp the conversation temperature low for reliable tool calls.
+
+        At 0.7 the qwen3-coder snap (and the gemma family) intermittently
+        breaks out of the OpenAI tool-call envelope and emits raw
+        ``<function=...>`` chat-template scaffolding inside ``content``,
+        which the conversation loop then mistakes for a final reply and
+        exits.  0.2 keeps tool-call formatting deterministic without
+        making the model parrot its own past replies.
+        """
+        return 0.2
+
     def __init__(
         self,
         snap_name: str = "gemma3",
@@ -167,7 +180,8 @@ class InferenceSnapProvider(OpenAICompatBase):
                 resp.raise_for_status()
                 data = resp.json()
                 self._apply_model_metadata(data)
-                self._probe_slot_context(client)
+                with httpx.Client(base_url=self._root_url(), timeout=10.0) as root:
+                    self._probe_slot_context(root)
         except httpx.ConnectError as e:
             raise ProviderError(
                 f"Cannot connect to inference snap '{self.snap_name}' at "
@@ -192,7 +206,8 @@ class InferenceSnapProvider(OpenAICompatBase):
                 resp.raise_for_status()
                 data = resp.json()
                 self._apply_model_metadata(data)
-                self._probe_slot_context(client)
+                with httpx.Client(base_url=self._root_url(), timeout=10.0) as root:
+                    self._probe_slot_context(root)
                 models = data.get("data", [])
                 if models:
                     return models[0]["id"]
@@ -210,8 +225,16 @@ class InferenceSnapProvider(OpenAICompatBase):
             pass
         return self.snap_name
 
-    def _probe_slot_context(self, client: httpx.Client) -> None:
-        """Tighten the context window when llama.cpp slots are smaller than the model.
+    def _root_url(self) -> str:
+        """Strip the ``/v1`` OpenAI-compat prefix to address the snap root.
+
+        ``/slots`` and ``/props`` are mounted one level above the
+        OpenAI surface; both 404 under ``/v1``.
+        """
+        return self.base_url.removesuffix("/v1")
+
+    def _probe_slot_context(self, root_client: httpx.Client) -> None:
+        """Tighten the context window when the runtime KV cache is smaller than the model.
 
         ``/v1/models`` advertises the model's *trained* context
         (``n_ctx_train``), but llama.cpp servers split their KV cache
@@ -222,37 +245,79 @@ class InferenceSnapProvider(OpenAICompatBase):
         appear to have a 128 KiB window even though each slot was
         actually 4 KiB, and Cantrip never compacted because the
         threshold was 80% of 128 KiB.
-        ``/slots`` reports the true per-slot ``n_ctx``; take the
-        minimum across slots and downgrade to it if smaller.
-        ``/slots`` is llama.cpp-specific and 404s on vLLM/OVMS — those
-        backends keep the value already set by ``_apply_model_metadata``.
+
+        ``root_client`` must be anchored at the server root, *not*
+        ``/v1`` — both ``/slots`` and ``/props`` live one level above
+        the OpenAI-compat surface, and a ``/v1/slots`` request 404s.
+
+        Two probes, in order of preference:
+
+        * ``/slots`` — llama.cpp's per-slot status feed.  When present
+          it reports the true per-slot ``n_ctx``; take the minimum
+          across slots.
+        * ``/props`` — fallback when ``/slots`` 404s (some snap builds
+          gate it behind ``--slots``); reports
+          ``default_generation_settings.n_ctx``, which is the per-slot
+          context in current llama.cpp builds.
+
+        vLLM/OVMS 404 both — those backends keep the value already set
+        by ``_apply_model_metadata``.
         """
-        try:
-            resp = client.get("/slots")
-            resp.raise_for_status()
-            slots = resp.json()
-        except (httpx.HTTPError, ValueError):
+        runtime_ctx = self._read_runtime_ctx(root_client)
+        if runtime_ctx is None:
             return
-        if not isinstance(slots, list) or not slots:
-            return
-        slot_ctxs = [
-            slot["n_ctx"]
-            for slot in slots
-            if isinstance(slot, dict) and isinstance(slot.get("n_ctx"), int) and slot["n_ctx"] > 0
-        ]
-        if not slot_ctxs:
-            return
-        per_slot = min(slot_ctxs)
-        if per_slot < self._context_window:
+        if runtime_ctx < self._context_window:
             log.info(
-                "Snap '%s' reports per-slot n_ctx=%d (was %d from /models); "
+                "Snap '%s' reports runtime n_ctx=%d (was %d from /models); "
                 "downgrading effective context window — restart the snap with a "
                 "larger --ctx-size or fewer --parallel slots to widen it.",
                 self.snap_name,
-                per_slot,
+                runtime_ctx,
                 self._context_window,
             )
-            self._context_window = per_slot
+            self._context_window = runtime_ctx
+
+    @staticmethod
+    def _read_runtime_ctx(root: httpx.Client) -> int | None:
+        """Probe ``/slots`` then ``/props`` for the runtime per-slot context.
+
+        Returns the smallest positive ``n_ctx`` we can find, or ``None``
+        when neither endpoint answers.  Kept narrow so the call sites
+        don't need to know which endpoint won.
+        """
+        try:
+            resp = root.get("/slots")
+            resp.raise_for_status()
+            slots = resp.json()
+        except (httpx.HTTPError, ValueError):
+            slots = None
+        if isinstance(slots, list) and slots:
+            slot_ctxs = [
+                slot["n_ctx"]
+                for slot in slots
+                if isinstance(slot, dict)
+                and isinstance(slot.get("n_ctx"), int)
+                and slot["n_ctx"] > 0
+            ]
+            if slot_ctxs:
+                return min(slot_ctxs)
+
+        # Fall back to /props.  Some snap builds disable /slots but
+        # still surface the runtime context here.
+        try:
+            resp = root.get("/props")
+            resp.raise_for_status()
+            props = resp.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        if not isinstance(props, dict):
+            return None
+        gen = props.get("default_generation_settings")
+        if isinstance(gen, dict):
+            ctx = gen.get("n_ctx")
+            if isinstance(ctx, int) and ctx > 0:
+                return ctx
+        return None
 
     def _apply_model_metadata(self, models_response: dict) -> None:
         """Extract context window size and capabilities from /models data."""

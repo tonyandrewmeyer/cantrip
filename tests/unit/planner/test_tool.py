@@ -92,7 +92,12 @@ class TestPlanTasksTool:
 
         assert "Task plan" in result.output
         assert "research" in result.output.lower()
-        assert "Shall I proceed" in result.output
+        # The trailer tells the conversation LLM to hand off to the
+        # work queue rather than re-implement the steps itself — the
+        # behaviour that motivated dropping the per-task description
+        # blocks (which carried imperative "Do NOT…" directives small
+        # models picked up as their own instructions).
+        assert "work queue will run these tasks autonomously" in result.output
 
     @pytest.mark.asyncio
     async def test_rejects_empty_intent(self) -> None:

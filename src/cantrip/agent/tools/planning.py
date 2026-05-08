@@ -5,6 +5,7 @@ import logging
 import pathlib
 import shutil
 import subprocess
+from collections.abc import Callable
 from typing import Any
 
 from cantrip.agent.planner import PlanningContext, TaskPlanner, is_sprint
@@ -30,10 +31,12 @@ class PlanTasksTool(Tool):
         provider: llm.LLMProvider,
         state: AgentState,
         queue: WorkQueue,
+        invalidate_tools_cache: Callable[[], None] | None = None,
     ) -> None:
         self._planner = TaskPlanner(provider)
         self._state = state
         self._queue = queue
+        self._invalidate_tools_cache = invalidate_tools_cache
 
     @property
     def name(self) -> str:
@@ -154,6 +157,12 @@ class PlanTasksTool(Tool):
                 expected_path = pathlib.Path(self._state.charm_path) / context.charm_name
                 self._state.charm_path = expected_path
                 log.info("Sprint: set charm_path to '%s'", expected_path)
+                # File tools captured the old base_path at construction;
+                # rebuild them so subsequent ``edit_file("charmcraft.yaml")``
+                # resolves against the scaffold subdir without the model
+                # having to prefix every path with ``<charm_name>/``.
+                if self._invalidate_tools_cache is not None:
+                    self._invalidate_tools_cache()
 
         summary = _format_plan_summary(tasks)
         return ToolResult(
@@ -300,7 +309,17 @@ def detect_cos_juju_model() -> str | None:
 
 
 def _format_plan_summary(tasks: list) -> str:
-    """Format a human-readable plan summary."""
+    """Format a human-readable plan summary.
+
+    Each task's full description (the imperative subagent prompt with
+    its own "Do NOT…" directives) is omitted on purpose: small models
+    occasionally read the directive list as instructions for the main
+    conversation and start racing the executor on the same files.  A
+    title-only summary keeps the conversation LLM focused on handing
+    off rather than re-implementing the build itself.  The first
+    sentence of the description is included as a hint so the user (and
+    the model) still see what each task is for.
+    """
     if not tasks:
         return "No tasks generated."
 
@@ -311,7 +330,30 @@ def _format_plan_summary(tasks: list) -> str:
             deps = f" (after: {', '.join(task.dependencies)})"
         lines.append(f"{i}. [{task.category.value}] **{task.title}**{deps}")
         if task.description:
-            lines.append(f"   {task.description}")
+            hint = _first_sentence(task.description)
+            if hint:
+                lines.append(f"   {hint}")
 
-    lines.append("\nShall I proceed with this plan?")
+    lines.append(
+        "\nThe work queue will run these tasks autonomously — do not "
+        "attempt to do the build yourself.  Acknowledge briefly and stop."
+    )
     return "\n".join(lines)
+
+
+def _first_sentence(text: str, *, max_chars: int = 200) -> str:
+    """Return the first sentence of *text*, capped at *max_chars*.
+
+    Sprint task descriptions begin with a one-liner summary ("Build a
+    minimal charm and pack it as fast as possible."); we want that to
+    travel through the plan summary while the imperative steps below
+    stay scoped to the subagent prompt.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    head = stripped.split("\n", 1)[0]
+    period = head.find(". ")
+    if 0 <= period < max_chars:
+        return head[: period + 1]
+    return head[:max_chars]

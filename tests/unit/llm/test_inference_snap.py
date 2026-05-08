@@ -118,6 +118,19 @@ class TestInferenceSnapProviderInit:
         assert provider.max_tools is not None
         assert provider.max_tools <= 15
 
+    def test_conversation_temperature_is_clamped(self):
+        """Local snaps need a low conversation temperature for stable tool calls.
+
+        The default 0.7 makes qwen3-coder fall out of the OpenAI
+        tool-call envelope at conversation rounds and emit raw
+        ``<function=...>`` chat-template scaffolding inside ``content``.
+        This test pins the override below the frontier-default 0.7 so a
+        future regression cannot silently restore the lossy default.
+        """
+        provider = self._make_provider()
+        assert provider.conversation_temperature < 0.7
+        assert 0.0 <= provider.conversation_temperature <= 0.5
+
     def test_model_name(self):
         """Model name is set from the constructor argument."""
         provider = self._make_provider(model="my-model")
@@ -1004,6 +1017,45 @@ class TestSlotContextProbe:
         client.get.return_value = mock_resp
         provider._probe_slot_context(client)
         assert provider.context_window_tokens == 32_768
+
+    def test_props_fallback_when_slots_missing(self):
+        """When /slots 404s, /props supplies the runtime n_ctx.
+
+        Some snap builds gate ``/slots`` behind a startup flag but
+        still publish ``default_generation_settings.n_ctx`` on
+        ``/props``.  The probe must consult both before giving up,
+        otherwise large stale values from ``n_ctx_train`` keep the
+        compaction threshold too high.
+        """
+        provider = self._make_provider()
+        provider._context_window = 262_144
+        slots_resp = MagicMock()
+        slots_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "not found",
+            request=httpx.Request("GET", "http://t/slots"),
+            response=httpx.Response(404, request=httpx.Request("GET", "http://t/slots")),
+        )
+        props_resp = MagicMock()
+        props_resp.raise_for_status = MagicMock()
+        props_resp.json.return_value = {
+            "default_generation_settings": {"n_ctx": 32_768},
+            "total_slots": 4,
+        }
+        client = MagicMock(spec=httpx.Client)
+        client.get.side_effect = lambda path: slots_resp if path == "/slots" else props_resp
+        provider._probe_slot_context(client)
+        assert provider.context_window_tokens == 32_768
+
+    def test_root_url_strips_v1(self):
+        """``_root_url`` peels the OpenAI-compat ``/v1`` prefix off ``base_url``.
+
+        ``/slots`` and ``/props`` live at the snap server root; without
+        the strip the probes 404 and the runtime context stays at the
+        trained value (the bug this guards against).
+        """
+        provider = self._make_provider()
+        provider.base_url = "http://test:8332/v1"
+        assert provider._root_url() == "http://test:8332"
 
 
 class TestConnectionHealth:

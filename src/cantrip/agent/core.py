@@ -1245,6 +1245,12 @@ class CantripAgent:
             mcp_registry=self._mcp.registry_if_loaded(),
             store_getter=lambda: self._store,
             role_router=self.role_router if self.role_router.has_embed() else None,
+            # Sprint mode reroots ``state.charm_path`` into a freshly
+            # scaffolded subdirectory inside ``plan_tasks``; the tool
+            # cache captured the old path, so without this invalidator
+            # subsequent ``edit_file("charmcraft.yaml")`` calls 404 until
+            # the model retries with an explicit ``<charm_name>/`` prefix.
+            invalidate_tools_cache=self._invalidate_tools_cache,
         )
 
     def _build_system_prompt(self) -> str:
@@ -1526,7 +1532,7 @@ class CantripAgent:
         self,
         messages: list[Message],
         tools: list[llm.Tool] | None,
-        temperature: float = 0.7,
+        temperature: float | None = None,
         max_tokens: int | None = None,
         provider: LLMProvider | None = None,
     ) -> Response:
@@ -1536,9 +1542,17 @@ class CantripAgent:
         by the Phase 71.2 architect/editor split to route the architect
         pass through the main provider and the editor pass through a
         cheaper one.
+
+        ``temperature`` defaults to the active provider's
+        :attr:`LLMProvider.conversation_temperature` — frontier APIs
+        keep that at 0.7, local quantised snaps clamp it down to
+        steady tool-call formatting.
         """
+        chosen_provider = provider or self.provider
+        if temperature is None:
+            temperature = chosen_provider.conversation_temperature
         return await complete_with_retry(
-            provider or self.provider,
+            chosen_provider,
             messages,
             tools,
             temperature=temperature,

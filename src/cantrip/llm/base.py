@@ -216,6 +216,22 @@ class LLMProvider(ABC):
         return None
 
     @property
+    def conversation_temperature(self) -> float:
+        """Default sampling temperature for the main conversation loop.
+
+        Frontier APIs converge on ~0.7 because they ride on top of
+        well-tuned RLHF/instruction-tuning that keeps tool-call
+        formatting reliable even at higher temperatures.  Local quantised
+        models (the inference snaps) are more brittle: small samplers
+        excursions cause them to break out of the OpenAI tool-call
+        envelope and emit raw XML / chat-template scaffolding inside
+        ``content``.  Providers can override this to clamp the
+        conversation temperature back to a level where tool calls
+        round-trip reliably.
+        """
+        return 0.7
+
+    @property
     def supports_vision(self) -> bool:
         """Whether this provider accepts image attachments on user messages.
 
