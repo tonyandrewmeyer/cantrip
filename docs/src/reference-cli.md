@@ -1164,6 +1164,52 @@ fills past 80% of the context window the budget halves; past 95%
 it drops entirely so a near-full window isn't carrying a
 bird's-eye view it can't act on.
 
+{#code-intel-cli}
+### Code intelligence
+
+Three slash commands layered on the same read-only index that
+backs the <code>code_symbols</code>, <code>code_definition</code>,
+and <code>code_references</code> agent tools.  The repo map
+answers <em>"what matters in this repo?"</em>; these commands
+answer <em>"where is this exact symbol?"</em>.
+
+<dl>
+  <dt><code>/symbols &lt;query&gt;</code></dt>
+  <dd>
+    Search workspace symbols by name.  Layered match policy:
+    exact qualified (e.g. <code>MyCharm._on_install</code>) wins,
+    then exact unqualified (every <code>_on_install</code>),
+    then prefix, then case-insensitive substring.  Each layer
+    fires only when the previous one returns nothing, so a
+    precise hit is never drowned in fuzzy candidates.
+  </dd>
+
+  <dt><code>/definition &lt;symbol&gt;</code></dt>
+  <dd>
+    Resolve a symbol to its defining file/line plus a bounded
+    snippet.  Ambiguous queries return every candidate in the
+    response so the caller can disambiguate; a missing symbol
+    returns <em>No definition</em> rather than guessing.
+  </dd>
+
+  <dt><code>/references &lt;symbol&gt;</code></dt>
+  <dd>
+    List every recorded callsite for a symbol — calls, attribute
+    access, and import sites — with file:line locations.  Honest
+    about ambiguity (notes when the name belongs to multiple
+    candidate symbols) and truncation (the rest are counted in
+    the response).
+  </dd>
+</dl>
+
+The same surface is also reachable as <code>@</code>-mention
+providers: typing <code>@symbol IngressHandler</code>,
+<code>@definition build_layer</code>, or <code>@references
+refresh</code> in the chat input expands inline before the
+message reaches the LLM.  Coverage is Python source plus charm
+metadata YAML; other languages still go through
+<code>grep</code>/<code>glob</code>.
+
 {#review-checks}
 ### Review checks
 
@@ -1356,6 +1402,23 @@ highlight, Escape dismisses.
     <a href="howto-docs-index.html">Index the charm docs</a>).
     Requires an embed provider; the mention reports the missing
     configuration if none is wired.
+  </dd>
+  <dt><code>@symbol &lt;query&gt;</code></dt>
+  <dd>
+    Workspace-symbol search via the Phase 72b code-intelligence
+    index.  Layered match policy (exact qualified > exact > prefix
+    > fuzzy) so a precise hit isn't drowned in fuzzy candidates.
+    Coverage: Python source plus charm metadata YAML.
+  </dd>
+  <dt><code>@definition &lt;symbol&gt;</code></dt>
+  <dd>
+    Resolve a symbol to its defining file/line plus a bounded
+    snippet.  Ambiguous queries surface every candidate.
+  </dd>
+  <dt><code>@references &lt;symbol&gt;</code></dt>
+  <dd>
+    List every recorded callsite for a symbol with file:line
+    locations.  Honest about ambiguity and truncation.
   </dd>
 </dl>
 

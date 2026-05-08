@@ -115,6 +115,44 @@
 </tr>
 </tbody>
 </table>
+<h2 id="code-intel">Code intelligence</h2>
+<p>Read-only structured navigation over the active charm.  All three tools share a single in-memory index that reuses the repo-map's parser; the index persists to <code>.cantrip-codeintel.json</code> and refreshes automatically when source files change.  The agent reaches for these tools when a question is exact-symbol-shaped (<code>MyCharm._on_install</code>, <code>RepoMap.render_for_prompt</code>); broad text searches still fall through to <code>grep</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>code_symbols</code></td>
+<td>Search workspace symbols by name with deterministic match policy (exact qualified &gt; exact &gt; prefix &gt; fuzzy)</td>
+</tr>
+<tr>
+<td><code>code_definition</code></td>
+<td>Resolve a symbol to its defining file/line plus a bounded snippet, with ambiguity surfaced as multiple candidates</td>
+</tr>
+<tr>
+<td><code>code_references</code></td>
+<td>List every recorded callsite for a symbol with file:line locations and an honest truncation count</td>
+</tr>
+</tbody>
+</table>
+<p>The same surface is also reachable from the chat:</p>
+<ul>
+<li><code>/symbols &lt;query&gt;</code>, <code>/definition &lt;symbol&gt;</code>, <code>/references &lt;symbol&gt;</code> &mdash; slash commands with the same output shape as the tool calls.</li>
+<li><code>@symbol &lt;query&gt;</code>, <code>@definition &lt;symbol&gt;</code>, <code>@references &lt;symbol&gt;</code> &mdash; <code>@</code>-mention providers that expand inline in a user message.</li>
+</ul>
+<p>Worked example &mdash; finding everywhere a method is called:</p>
+<blockquote>
+<p><code>code_references symbol=&quot;IngressHandler.refresh&quot;</code></p>
+<pre><code>src/charm.py:42  refresh
+tests/unit/test_charm.py:78  refresh
+</code></pre>
+<p><em>2 references to <code>IngressHandler.refresh</code> across 2 files</em></p>
+</blockquote>
+<p>Coverage starts deliberately narrow: Python source plus charm metadata YAML (<code>charmcraft.yaml</code>, <code>metadata.yaml</code>, <code>config.yaml</code>, <code>actions.yaml</code>).  Rust, Go, shell, and Terraform stay literal-text territory.</p>
 <h2 id="charm-dev">Charm development</h2>
 <table>
 <thead>

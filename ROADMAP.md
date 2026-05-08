@@ -737,92 +737,115 @@ refactors.
 
 ### 72b.1 High - Shared code-intelligence index and query API
 
-- [ ] New subsystem under ``src/cantrip/codeintel/`` that *reuses* the
+- [x] New subsystem under ``src/cantrip/codeintel/`` that *reuses* the
   Phase 71.1 parser outputs rather than growing a second parser stack.
   ``repomap`` stays the bird's-eye renderer; ``codeintel`` owns exact
-  query operations and compact result rendering.
-- [ ] Extend the parsed-symbol model with stable symbol identifiers
+  query operations and compact result rendering.  Lives at
+  ``src/cantrip/codeintel/{__init__,index}.py``.
+- [x] Extend the parsed-symbol model with stable symbol identifiers
   (qualified name + kind + file + line), reference locations, import
   aliases where recoverable, and a small snippet window around each
-  definition/reference.  Persist in ``.cantrip/codeintel.json`` keyed
-  by ``mtime_ns`` so incremental rebuilds stay cheap.
-- [ ] Language coverage starts deliberately narrow: Python source plus
+  definition/reference.  Persists in ``.cantrip-codeintel.json``
+  (sibling-of-SQLite layout, matching the existing
+  ``.cantrip-repomap.json`` precedent — a path under ``.cantrip/``
+  would collide with the SQLite session file) keyed by
+  ``mtime_ns`` so incremental rebuilds stay cheap.  ``FileSymbols``
+  gained ``reference_locations`` and ``import_aliases`` fields; the
+  Python visitor now also records ``import``/``from`` statements.
+- [x] Language coverage starts deliberately narrow: Python source plus
   charm metadata YAML (``charmcraft.yaml``, ``metadata.yaml``,
   ``config.yaml``, ``actions.yaml``).  Rust, Go, shell, Terraform,
   and Markdown stay literal-search territory until a concrete need
   appears.
-- [ ] Query primitives:
-  - ``workspace_symbols(query, path_scope=None, kinds=None)``
+- [x] Query primitives:
+  - ``workspace_symbols(query, path_scope=None, kinds=None, limit=…)``
   - ``go_to_definition(symbol, from_path=None)``
-  - ``find_references(symbol, from_path=None, include_definition=False)``
-- [ ] Match policy is deterministic: exact qualified-name match first,
+  - ``find_references(symbol, from_path=None, include_definition=False, limit=…)``
+- [x] Match policy is deterministic: exact qualified-name match first,
   then unqualified exact, then prefix/fuzzy fallback.  Ambiguous hits
   are surfaced explicitly with candidates; the tool never silently
   guesses.
 
 ### 72b.2 High - Read-only tools, slash commands, and ``@`` providers
 
-- [ ] Three explicit read-only tools:
-  ``code_symbols``, ``code_definition``, and ``code_references``.
-  Keep them separate rather than a single ``code_intel`` tool with a
-  mode string so tool selection stays legible to the model.
-- [ ] Slash-command surface:
+- [x] Three explicit read-only tools:
+  ``code_symbols``, ``code_definition``, and ``code_references``
+  (``src/cantrip/agent/tools/codeintel.py``).  Kept separate rather
+  than a single ``code_intel`` tool with a mode string so tool
+  selection stays legible to the model.  Wired through a lazy
+  ``code_intel_getter`` so a session without a charm path returns a
+  clean error rather than a silent empty result.
+- [x] Slash-command surface:
   ``/symbols <query>``, ``/definition <symbol>``, and
-  ``/references <symbol>``.  Output format mirrors the tool results so
-  print mode, TUI, and Web all see the same content.
-- [ ] ``@``-provider surface layered on Phase 72.2's parser:
-  ``@symbol <query>``, ``@definition <symbol>``, and
-  ``@references <symbol>`` as ``REST_OF_LINE`` providers.  Each
-  expansion uses the existing fenced-block convention so the typed
-  mention and substituted content both remain visible in the
-  transcript.
-- [ ] Result shapes stay compact and audit-friendly:
+  ``/references <symbol>``
+  (``src/cantrip/agent/commands/codeintel.py``).  Output format
+  mirrors the tool results so print mode, TUI, and Web all see the
+  same content.  Catalogue and ``/help`` updated; missing-charm
+  sessions get a friendly notice.
+- [x] ``@``-provider surface layered on Phase 72.2's parser:
+  ``@symbol <query>`` (REST_OF_LINE), ``@definition <symbol>`` and
+  ``@references <symbol>`` (TOKEN).  Each expansion uses the existing
+  fenced-block convention so the typed mention and substituted
+  content both remain visible in the transcript.  Registered
+  conditionally on ``code_intel_getter`` so a no-charm session never
+  surfaces the providers in autocomplete.
+- [x] Result shapes stay compact and audit-friendly:
   ``code_symbols`` returns kind / file / line / signature;
   ``code_definition`` returns the defining path + line plus a bounded
   snippet; ``code_references`` returns sorted callsites/import sites
   with honest truncation and ambiguity notes.
-- [ ] Every surface states whether the answer came from the semantic
+- [x] Every surface states whether the answer came from the semantic
   index or from a literal-search fallback so misses do not masquerade
-  as precise code intelligence.
+  as precise code intelligence.  ``ToolResult.data["semantic"]`` and
+  ``DefinitionResult.semantic`` / ``ReferencesResult.semantic`` carry
+  the verdict; the renderer surfaces "No definition" / "No matches"
+  explicitly when the index has nothing.
 
 ### 72b.3 Medium - Agent and planner adoption
 
-- [ ] Primary-agent guidance and subagent prompts updated so the search
-  order becomes: repo-map for orientation, code-intelligence for exact
-  symbol questions, grep/glob for literal text or unsupported
-  languages.
-- [ ] Safe read-only access added to the BUILD, DEBUG, RESEARCH, and
+- [x] Primary-agent guidance updated so the search order becomes:
+  repo-map for orientation, code-intelligence for exact symbol
+  questions, grep/glob for literal text or unsupported languages.
+  System prompt's repo-map section gained a "code intelligence vs.
+  repo map vs. grep" subsection.
+- [x] Safe read-only access added to the BUILD, DEBUG, RESEARCH, and
   LIBRARIAN tool allowlists.  This is deliberately *not* a new write
-  path and should inherit the existing "safe by default" governance
+  path and inherits the existing "safe by default" governance
   treatment for read-only tools.
 - [ ] When a task title or user message contains symbol-shaped tokens
   (dotted names, ``snake_case`` helpers, ``CamelCase`` classes), the
   planner may prefetch one compact definition or symbol-match block so
   a BUILD/DEBUG subagent starts from the right file instead of
   burning a turn on navigation.
-- [ ] ``/map`` and repo-map remain unchanged in purpose: they answer
+- [x] ``/map`` and repo-map remain unchanged in purpose: they answer
   "what matters in this repo?".  Code-intelligence answers "where is
-  this symbol?" and "who references it?".  Prompt text should state
-  that distinction plainly so the two systems complement rather than
-  duplicate each other.
+  this symbol?" and "who references it?".  System-prompt text now
+  states that distinction plainly so the two systems complement rather
+  than duplicate each other.
 
 ### 72b.4 Medium - Validation, limits, and future adapter seam
 
-- [ ] ``tests/unit/test_codeintel.py`` plus provider/slash-command
-  coverage for: exact match, ambiguous match, moved files, stale-cache
-  invalidation, syntax-error tolerance, YAML-derived symbols,
-  path-scoped lookups, truncated reference lists, and transcript-safe
-  mention expansion.
-- [ ] Hard scope boundary: no rename-symbol, no code actions, no
+- [x] ``tests/unit/codeintel/test_codeintel.py`` plus tool / slash /
+  provider coverage in
+  ``tests/unit/agent/tools/test_codeintel_tools.py``,
+  ``tests/unit/agent/test_slash_codeintel.py``, and
+  ``tests/unit/agent/test_context_providers_codeintel.py`` for: exact
+  match, ambiguous match, moved files, stale-cache invalidation,
+  syntax-error tolerance, YAML-derived symbols, path-scoped lookups,
+  truncated reference lists, and transcript-safe mention expansion.
+- [x] Hard scope boundary: no rename-symbol, no code actions, no
   format-on-save, no workspace edits, no hover UI, no always-on
-  background daemon.  Read-only lookup only.
+  background daemon.  Read-only lookup only.  The cache rebuilds on
+  ``CodeIntel.build`` calls; tools call it on every invocation so the
+  index is fresh, but the build is incremental on ``mtime_ns``.
 - [ ] Design the query layer so a future optional adapter can sit
   behind it if Cantrip later wants one-shot ``pyright`` or
   ``yaml-language-server`` enrichment for tricky cases.  That adapter
   is *not* in scope here; the seam is.
-- [ ] Failure mode must be plain and non-magical: "no semantic match"
-  or "multiple candidates" is a valid result.  The caller can then
-  fall back to ``grep``/``glob`` explicitly.
+- [x] Failure mode is plain and non-magical: "no semantic match"
+  or "multiple candidates" is a valid result returned in
+  ``DefinitionResult.note`` / ``ReferencesResult.note``.  The caller
+  can then fall back to ``grep``/``glob`` explicitly.
 
 ### What this phase is *not*
 

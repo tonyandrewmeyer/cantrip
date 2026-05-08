@@ -70,6 +70,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   more robust handling of fence-wrapped or off-shape replies.
 
 ### Added
+- **Read-only code intelligence — exact symbols, definitions, and
+  references (Phase 72b).**  New `cantrip.codeintel` subsystem
+  reuses the repo-map parser to answer exact queries:
+  `workspace_symbols`, `go_to_definition`, and `find_references`.
+  Match policy is layered (exact qualified > exact > prefix >
+  fuzzy) so a precise hit isn't drowned in noise; ambiguous
+  queries surface every candidate rather than silently picking
+  one.  The index persists to `.cantrip-codeintel.json` keyed by
+  `mtime_ns` so re-parses only touch files that changed.
+  Three surfaces ride on the same renderer: the `code_symbols`
+  / `code_definition` / `code_references` agent tools (added to
+  the BUILD, DEBUG, RESEARCH, and LIBRARIAN allowlists), the
+  `/symbols` / `/definition` / `/references` slash commands, and
+  the `@symbol` / `@definition` / `@references` context
+  providers.  Coverage is Python source plus charm metadata YAML
+  (`charmcraft.yaml`, `metadata.yaml`, `config.yaml`,
+  `actions.yaml`); other languages still go through `grep`.  The
+  system prompt's repo-map section now points the agent at code
+  intel for symbol-shaped questions and at `grep` only for
+  literal text or unsupported languages.
 - **Eval runner generates with the chosen provider before scoring
   (Phase 79.4).**  `tests/eval/runner.py` gains two new verbs —
   `generate <spec_dir> --provider X [--model Y]` shells out to

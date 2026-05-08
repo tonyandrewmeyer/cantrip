@@ -42,6 +42,34 @@ on_this_page:
 | `grep` | Search file contents with regex |
 | `glob` | Find files matching a glob pattern |
 
+{#code-intel}
+## Code intelligence
+
+Read-only structured navigation over the active charm.  All three tools share a single in-memory index that reuses the repo-map's parser; the index persists to `.cantrip-codeintel.json` and refreshes automatically when source files change.  The agent reaches for these tools when a question is exact-symbol-shaped (`MyCharm._on_install`, `RepoMap.render_for_prompt`); broad text searches still fall through to `grep`.
+
+| Tool | Description |
+|---|---|
+| `code_symbols` | Search workspace symbols by name with deterministic match policy (exact qualified > exact > prefix > fuzzy) |
+| `code_definition` | Resolve a symbol to its defining file/line plus a bounded snippet, with ambiguity surfaced as multiple candidates |
+| `code_references` | List every recorded callsite for a symbol with file:line locations and an honest truncation count |
+
+The same surface is also reachable from the chat:
+
+- `/symbols <query>`, `/definition <symbol>`, `/references <symbol>` — slash commands with the same output shape as the tool calls.
+- `@symbol <query>`, `@definition <symbol>`, `@references <symbol>` — `@`-mention providers that expand inline in a user message.
+
+Worked example — finding everywhere a method is called:
+
+> `code_references symbol="IngressHandler.refresh"`
+>
+> ```
+> src/charm.py:42  refresh
+> tests/unit/test_charm.py:78  refresh
+> ```
+> *2 references to `IngressHandler.refresh` across 2 files*
+
+Coverage starts deliberately narrow: Python source plus charm metadata YAML (`charmcraft.yaml`, `metadata.yaml`, `config.yaml`, `actions.yaml`).  Rust, Go, shell, and Terraform stay literal-text territory.
+
 {#charm-dev}
 ## Charm development
 

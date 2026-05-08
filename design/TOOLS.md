@@ -114,6 +114,11 @@ current list (not authoritative — read `tools/__init__.py` for the
 source of truth):
 
 - **File operations** — read, write, edit, list, grep, glob, multi-edit
+- **Code intelligence (Phase 72b)** — code_symbols, code_definition,
+  code_references; read-only structured navigation backed by
+  `cantrip.codeintel`.  Reuses the repo-map parser; also reachable
+  via `/symbols` / `/definition` / `/references` slash commands and
+  `@symbol` / `@definition` / `@references` context providers.
 - **Audit & lint** — charm_audit, charmlint, operational_readiness
 - **Charm build** — charmcraft_init, charmcraft_pack, quick_pack,
   charm_validate, fetch_libs, analyse_framework
