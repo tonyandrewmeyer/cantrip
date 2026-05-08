@@ -90,6 +90,8 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/architect", "Toggle architect/editor two-model split"),
     CommandInfo("/auto-commit", "Toggle per-turn auto-commit of agent edits"),
     CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
+    CommandInfo("/pause", "Pause the autonomous loop (chat and CONFIRM tasks keep working)"),
+    CommandInfo("/resume", "Resume a paused autonomous loop"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
     CommandInfo("/map", "Show top-ranked repository files (`/map full` for everything)"),
     CommandInfo("/map-refresh", "Rebuild the repository map and reprint"),
@@ -265,6 +267,10 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
         return SlashResult(text=handle_auto_commit(agent, args))
     if verb == "/yolo":
         return SlashResult(text=handle_yolo(agent, args))
+    if verb == "/pause":
+        return SlashResult(text=handle_pause(agent, args))
+    if verb == "/resume":
+        return SlashResult(text=handle_resume(agent, args))
     if verb == "/ralph":
         return SlashResult(text=handle_ralph(agent, args))
     if verb == "/map":
@@ -557,6 +563,10 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "permission auto-approves for the rest of the session.  "
         "`deny` rules still block.  `--yolo` on the command line "
         "enables it at startup.\n"
+        "- `/pause` — stop the autonomous loop picking new tasks.  "
+        "Chat and CONFIRM tasks keep working; in-flight tasks run "
+        "to completion.  Run `/resume` to restart.\n"
+        "- `/resume` — resume a paused autonomous loop.\n"
         "- `/ralph [N|off]` — bounded iterate-until-green loop "
         "(Ralph).  Re-feeds the goal up to N times until the agent "
         "emits `STOP` or stall detection trips.  Engages inside "
@@ -1257,6 +1267,56 @@ def handle_yolo(agent: CantripAgent, args: str) -> str:
             "Flip back with `/yolo off`."
         )
     return "**Yolo mode off.**  `ask` rules prompt again as usual."
+
+
+def handle_pause(agent: CantripAgent, args: str) -> str:
+    """Phase 99.1 ``/pause``: stop the autonomous loop picking new tasks.
+
+    The flag is sticky: chat keeps working and any CONFIRM task already
+    in flight continues to completion, but no new background tasks are
+    dispatched until the user runs ``/resume``.  Bare ``/pause`` is the
+    only accepted form — ``on``/``off`` arguments would just duplicate
+    the ``/resume`` verb.
+    """
+    if args.strip():
+        return "Usage: `/pause` takes no arguments — use `/resume` to restart the loop."
+
+    executor_ctl = getattr(agent, "_executor_ctl", None)
+    if executor_ctl is None or not hasattr(executor_ctl, "user_pause"):
+        return "Background executor is not available — nothing to pause."
+
+    changed = executor_ctl.user_pause()
+    try:
+        agent.event_bus.publish(ui_events.status_bar_changed(loop_state="paused"))
+    except (TypeError, ValueError, RuntimeError, AttributeError):
+        log.exception("status_bar_changed publish failed on /pause")
+
+    if not changed:
+        return "Already paused.  Use `/resume` to restart the autonomous loop."
+    return (
+        "**Autonomous loop paused.**  Chat and CONFIRM tasks keep working; "
+        "no new background tasks will start until you run `/resume`."
+    )
+
+
+def handle_resume(agent: CantripAgent, args: str) -> str:
+    """Phase 99.1 ``/resume``: restart a paused autonomous loop."""
+    if args.strip():
+        return "Usage: `/resume` takes no arguments — use `/pause` to stop the loop."
+
+    executor_ctl = getattr(agent, "_executor_ctl", None)
+    if executor_ctl is None or not hasattr(executor_ctl, "user_resume"):
+        return "Background executor is not available — nothing to resume."
+
+    changed = executor_ctl.user_resume()
+    try:
+        agent.event_bus.publish(ui_events.status_bar_changed(loop_state="running"))
+    except (TypeError, ValueError, RuntimeError, AttributeError):
+        log.exception("status_bar_changed publish failed on /resume")
+
+    if not changed:
+        return "Already running.  Use `/pause` to stop the autonomous loop."
+    return "**Autonomous loop resumed.**  Background tasks pick up where they left off."
 
 
 def handle_ralph(agent: CantripAgent, args: str) -> str:

@@ -26,6 +26,9 @@ class StatusBar(Widget):
         background: $error-darken-1;
         color: $text;
     }
+    StatusBar.-paused {
+        background: $warning-darken-1;
+    }
     """
 
     task_label: reactive[str] = reactive("", init=False)
@@ -37,6 +40,9 @@ class StatusBar(Widget):
     # CSS class so the bar tints distinctly.  Anything else
     # (default ``"build"``) keeps the normal theme.
     mode: reactive[str] = reactive("build", init=False)
+    # Phase 99.1: ``"paused"`` adds a PAUSED badge alongside whichever
+    # mode badge is active.  ``"running"`` (the default) hides it.
+    loop_state: reactive[str] = reactive("running", init=False)
 
     def compose(self) -> ComposeResult:
         """Compose the status bar."""
@@ -50,10 +56,12 @@ class StatusBar(Widget):
             mode_badge = "YOLO MODE — confirmations off"
         else:
             mode_badge = ""
+        loop_badge = "PAUSED" if self.loop_state == "paused" else ""
         segments = [
             s
             for s in (
                 mode_badge,
+                loop_badge,
                 self.task_label,
                 self.subagent_label,
                 self.cos_health,
@@ -67,6 +75,7 @@ class StatusBar(Widget):
             self.query_one("#status-bar-content", Static).update(text)
         self.set_class(self.mode == "plan", "-plan-mode")
         self.set_class(self.mode == "yolo", "-yolo-mode")
+        self.set_class(self.loop_state == "paused", "-paused")
 
     # Every reactive triggers the same refresh — watchers generated below.
 
@@ -78,5 +87,6 @@ for _attr in (
     "test_summary",
     "watcher_status",
     "mode",
+    "loop_state",
 ):
     setattr(StatusBar, f"watch_{_attr}", lambda self: self._refresh_content())

@@ -54,11 +54,20 @@ class ExecutorController:
         self._publish_tool_invoked = publish_tool_invoked
         self._publish_tool_invoked_pending = publish_tool_invoked_pending
         self._executor: BackgroundExecutor | None = None
+        # Phase 99.1: ``/pause`` and ``/resume`` set this flag so the
+        # transient pause/resume around each chat turn doesn't accidentally
+        # un-pause an autonomous loop the user explicitly stopped.
+        self._user_paused = False
 
     @property
     def running(self) -> bool:
         """Whether the background executor is currently running."""
         return self._executor is not None and self._executor.running
+
+    @property
+    def user_paused(self) -> bool:
+        """Whether the user has paused the autonomous loop via ``/pause``."""
+        return self._user_paused
 
     def pause(self) -> None:
         """Pause the background executor while handling a user message."""
@@ -66,9 +75,44 @@ class ExecutorController:
             self._executor.pause()
 
     def resume(self) -> None:
-        """Resume the background executor after handling a user message."""
+        """Resume the background executor after handling a user message.
+
+        Skips when the user has paused the loop via ``/pause`` so that
+        typing a chat message doesn't silently restart autonomous work
+        the user explicitly stopped.
+        """
+        if self._user_paused:
+            return
         if self._executor and self._executor.running:
             self._executor.resume()
+
+    def user_pause(self) -> bool:
+        """Phase 99.1: pause the autonomous loop on user request.
+
+        Sticky across chat turns — unlike :meth:`pause`, the conversation
+        loop's transient :meth:`resume` is a no-op while this flag is set.
+        Returns ``True`` when the call changed state, ``False`` when the
+        loop was already user-paused.
+        """
+        if self._user_paused:
+            return False
+        self._user_paused = True
+        if self._executor and self._executor.running:
+            self._executor.pause()
+        return True
+
+    def user_resume(self) -> bool:
+        """Phase 99.1: resume the autonomous loop on user request.
+
+        Returns ``True`` when the call changed state, ``False`` when the
+        loop was not user-paused.
+        """
+        if not self._user_paused:
+            return False
+        self._user_paused = False
+        if self._executor and self._executor.running:
+            self._executor.resume()
+        return True
 
     def start(
         self,
@@ -209,6 +253,11 @@ class ExecutorController:
         if self._state.yolo_mode:
             self._executor.set_yolo(True)
         self._executor.start()
+        # Phase 99.1: honour a pre-existing ``/pause`` if one fired
+        # before the executor came up — ``start()`` resets ``_paused``
+        # to ``False`` so we re-apply the user-pause here.
+        if self._user_paused:
+            self._executor.pause()
 
     async def stop(self) -> None:
         """Stop the background executor if it is running."""

@@ -1187,6 +1187,34 @@ Three checks ship by default: <code>charm-readme-coherence</code>,
 <code>action-ergonomics</code>, <code>relation-data-hygiene</code>.
 
 {#project-diagnostics}
+{#pause-resume}
+### Pause and resume the autonomous loop
+
+<dl>
+  <dt><code>/pause</code></dt>
+  <dd>
+    Stop the background executor picking new tasks.  Chat keeps
+    working and any task already in flight (including a CONFIRM
+    task waiting for your answer) runs to completion &mdash; only
+    the next task on the queue is held.  The flag is sticky across
+    chat turns: typing a regular reply after <code>/pause</code>
+    won&rsquo;t silently restart the loop.
+  </dd>
+
+  <dt><code>/resume</code></dt>
+  <dd>
+    Restart a paused autonomous loop.  Background tasks pick up
+    where they left off &mdash; the queue is preserved while paused.
+  </dd>
+</dl>
+
+Both commands are idempotent: <code>/pause</code> while already
+paused (and <code>/resume</code> while already running) reports
+the current state without touching the executor.  The TUI status
+bar surfaces a <code>PAUSED</code> badge alongside the existing
+plan/yolo badges so the loop&rsquo;s state stays visible at a
+glance.
+
 ### Project diagnostics
 
 <dl>

@@ -319,6 +319,21 @@ class TestBusCacheAndModeHandlers:
                 status_bar = pilot.app.query_one("#status-bar", statusbar_widget.StatusBar)
                 assert status_bar.mode == "plan"
 
+    @pytest.mark.asyncio
+    async def test_status_bar_loop_state_applies(self) -> None:
+        """``loop_state=paused`` lights up the bar's PAUSED badge (Phase 99.1)."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                evt = ui_events.Event(
+                    type=ui_events.EventType.STATUS_BAR_CHANGED,
+                    payload={"loop_state": "paused"},
+                )
+                pilot.app._on_bus_status_bar(evt)
+                await pilot.pause()
+                status_bar = pilot.app.query_one("#status-bar", statusbar_widget.StatusBar)
+                assert status_bar.loop_state == "paused"
+
 
 # ---------------------------------------------------------------------------
 # Small remaining helpers

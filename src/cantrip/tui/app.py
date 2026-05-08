@@ -837,6 +837,11 @@ class CantripApp(App):
             # ``mode=plan|build`` so the bar tints distinctly while
             # the read-only gate is active.
             status_bar.mode = payload["mode"]
+        if "loop_state" in payload:
+            # Phase 99.1: ``/pause`` and ``/resume`` publish
+            # ``loop_state=paused|running`` so the bar surfaces a
+            # PAUSED badge alongside whichever mode badge is active.
+            status_bar.loop_state = payload["loop_state"]
 
     def _on_bus_cache_metrics(self, event: ui_events.Event) -> None:
         """Apply a CACHE_METRICS_UPDATED event to the modelbar (Phase 78.2).

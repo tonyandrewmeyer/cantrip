@@ -1077,7 +1077,30 @@ for the schema and the boundary with <code>charmlint</code>
 is off but you can't write it as a regex&quot;).</p>
 <p>Three checks ship by default: <code>charm-readme-coherence</code>,
 <code>action-ergonomics</code>, <code>relation-data-hygiene</code>.</p>
-<h3 id="project-diagnostics">Project diagnostics</h3>
+<h3 id="pause-resume">Pause and resume the autonomous loop</h3>
+<dl>
+  <dt><code>/pause</code></dt>
+  <dd>
+    Stop the background executor picking new tasks.  Chat keeps
+    working and any task already in flight (including a CONFIRM
+    task waiting for your answer) runs to completion &mdash; only
+    the next task on the queue is held.  The flag is sticky across
+    chat turns: typing a regular reply after <code>/pause</code>
+    won&rsquo;t silently restart the loop.
+  </dd>
+  <dt><code>/resume</code></dt>
+  <dd>
+    Restart a paused autonomous loop.  Background tasks pick up
+    where they left off &mdash; the queue is preserved while paused.
+  </dd>
+</dl>
+<p>Both commands are idempotent: <code>/pause</code> while already
+paused (and <code>/resume</code> while already running) reports
+the current state without touching the executor.  The TUI status
+bar surfaces a <code>PAUSED</code> badge alongside the existing
+plan/yolo badges so the loop&rsquo;s state stays visible at a
+glance.</p>
+<h3>Project diagnostics</h3>
 <dl>
   <dt><code>/diagnostics</code></dt>
   <dd>

@@ -5,6 +5,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`/pause` and `/resume` slash commands (Phase 99.1).**  Stop and
+  restart the autonomous loop from chat without losing context.
+  Chat and any in-flight CONFIRM tasks keep working while paused —
+  only new task dispatches are held.  The pause flag is sticky: a
+  follow-up chat reply no longer accidentally restarts the loop via
+  the conversation loop's transient resume.  TUI status bar shows a
+  ``PAUSED`` badge alongside plan/yolo badges.
 - **File detail screen names Cantrip-owned artefacts.**  The TUI's
   source-viewer modal now hard-codes purpose strings for files Cantrip
   itself writes inside the charm root — ``.cantrip`` (SQLite session
