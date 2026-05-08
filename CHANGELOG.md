@@ -5,6 +5,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **TUI repo-stats sidebar in the charm files pane (Phase 89).**
+  The right-hand portion of the <kbd>F6</kbd> file pane now carries
+  four glance-and-go signals derived from the working directory:
+  the most recently changed file with a relative timestamp, the
+  short hash / subject / age of the HEAD commit, total source-line
+  counts with a top-two language breakdown, and total file plus
+  directory counts.  The sidebar refreshes on the same 3 s tick as
+  the file tree and folds away below ~46 columns so the tree keeps
+  the full pane on narrow terminals.  Test-pass and lint state are
+  deliberately not in the slate yet — they need a runner-side bus
+  event to avoid showing stale data.
 - **`wait_for` tool — typed predicates for "until X is true"
   waits (Phase 100.1).**  A single tool with a closed predicate
   set (`file_exists`, `file_absent`, `process_exited`, `port_open`,

@@ -8,6 +8,7 @@ breadcrumb_label: "TUI screens and shortcuts"
 on_this_page:
   - { anchor: "overview", label: "Overview" }
   - { anchor: "function-keys", label: "Function-key screens" }
+  - { anchor: "file-pane", label: "Charm file pane" }
   - { anchor: "file-detail", label: "File detail" }
   - { anchor: "logs", label: "Logs" }
   - { anchor: "graph", label: "Integration graph" }
@@ -35,15 +36,51 @@ and a footer listing its screen-specific shortcuts.
 | <kbd>F3</kbd> | Logs | Tail `juju debug-log` for the dev model — see [Logs](#logs) for filters. |
 | <kbd>F4</kbd> | Debug / Traces | COS endpoint URLs with Grafana deep-links — see [Traces and COS endpoints](#traces). |
 | <kbd>F5</kbd> | Watcher toggle | Toggle the always-on Juju event watcher; when on, the task pane surfaces recent hook and unit events inline. |
-| <kbd>F6</kbd> | Files toggle | Show or hide the charm file tree. Click a file to open the [File detail](#file-detail) modal. |
+| <kbd>F6</kbd> | Files toggle | Show or hide the charm file pane (tree plus repo-stats sidebar — see [Charm file pane](#file-pane)). Click a file to open the [File detail](#file-detail) modal. |
 | <kbd>F7</kbd> | Model info | Current primary and light model, cost, and token usage. |
 | <kbd>F8</kbd> | Integration graph | Deployed apps and their relations — see [Integration graph](#graph). |
 | <kbd>F9</kbd> | Transcript | Browse the persisted conversation history. |
 
+{#file-pane}
+## Charm file pane
+
+The right side of the TUI carries a **Charm files** pane, toggled
+with <kbd>F6</kbd>. Two surfaces sit side by side:
+
+- A live directory tree rooted at the charm working directory,
+  filtered to hide noise like `.git`, `__pycache__`, `.venv`,
+  `node_modules`, `.tox`, and `.cantrip`. The tree refreshes on a
+  3-second tick so files the agent writes appear without manual
+  reload. Selecting a file opens the [File detail](#file-detail)
+  modal.
+- A right-docked **repo-stats sidebar** with four glance-and-go
+  signals:
+  - **Recent** — the working-tree-newest file with a relative
+    timestamp, so you notice when the agent has touched something
+    during a long-running task.
+  - **Commit** — short hash, subject, and age of the working
+    tree's HEAD commit. Reads as `—` for non-git directories or
+    repositories with no commits.
+  - **Lines** — total source lines with a top-two language
+    breakdown (`py`, `yaml`, `toml`, `md`, `j2`, `rs`, `go`, …).
+    Files larger than 1 MB and unknown extensions do not
+    contribute to the count.
+  - **Files** — total file and directory counts inside the same
+    filtered walk used by the tree. A `(truncated)` tag appears
+    if the walk hits the defensive 5 000-file cap, which only
+    fires for an accidentally-broad working directory.
+
+The sidebar is hidden automatically when the pane is too narrow to
+host both columns; widen the terminal (or close the side panels
+with <kbd>F2</kbd>) to bring it back. Test-pass and lint state are
+deliberately not in the slate today — they need a bus event from
+the runner to avoid showing stale data and will land alongside that
+work.
+
 {#file-detail}
 ## File detail
 
-Clicking a file in the <kbd>F6</kbd> file tree opens the
+Clicking a file in the <kbd>F6</kbd> file pane opens the
 **File detail** modal. It shows the path, size,
 modification time, a best-effort summary of the file’s
 purpose derived from its contents, the five most recent

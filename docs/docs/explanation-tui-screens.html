@@ -51,6 +51,7 @@
     <ul>
       <li><a href="#overview">Overview</a></li>
       <li><a href="#function-keys">Function-key screens</a></li>
+      <li><a href="#file-pane">Charm file pane</a></li>
       <li><a href="#file-detail">File detail</a></li>
       <li><a href="#logs">Logs</a></li>
       <li><a href="#graph">Integration graph</a></li>
@@ -114,7 +115,7 @@ and a footer listing its screen-specific shortcuts.</p>
 <tr>
 <td><kbd>F6</kbd></td>
 <td>Files toggle</td>
-<td>Show or hide the charm file tree. Click a file to open the <a href="#file-detail">File detail</a> modal.</td>
+<td>Show or hide the charm file pane (tree plus repo-stats sidebar &mdash; see <a href="#file-pane">Charm file pane</a>). Click a file to open the <a href="#file-detail">File detail</a> modal.</td>
 </tr>
 <tr>
 <td><kbd>F7</kbd></td>
@@ -133,8 +134,44 @@ and a footer listing its screen-specific shortcuts.</p>
 </tr>
 </tbody>
 </table>
+<h2 id="file-pane">Charm file pane</h2>
+<p>The right side of the TUI carries a <strong>Charm files</strong> pane, toggled
+with <kbd>F6</kbd>. Two surfaces sit side by side:</p>
+<ul>
+<li>A live directory tree rooted at the charm working directory,
+filtered to hide noise like <code>.git</code>, <code>__pycache__</code>, <code>.venv</code>,
+<code>node_modules</code>, <code>.tox</code>, and <code>.cantrip</code>. The tree refreshes on a
+3-second tick so files the agent writes appear without manual
+reload. Selecting a file opens the <a href="#file-detail">File detail</a>
+modal.</li>
+<li>A right-docked <strong>repo-stats sidebar</strong> with four glance-and-go
+signals:
+<ul>
+<li><strong>Recent</strong> &mdash; the working-tree-newest file with a relative
+timestamp, so you notice when the agent has touched something
+during a long-running task.</li>
+<li><strong>Commit</strong> &mdash; short hash, subject, and age of the working
+tree's HEAD commit. Reads as <code>&mdash;</code> for non-git directories or
+repositories with no commits.</li>
+<li><strong>Lines</strong> &mdash; total source lines with a top-two language
+breakdown (<code>py</code>, <code>yaml</code>, <code>toml</code>, <code>md</code>, <code>j2</code>, <code>rs</code>, <code>go</code>, &hellip;).
+Files larger than 1 MB and unknown extensions do not
+contribute to the count.</li>
+<li><strong>Files</strong> &mdash; total file and directory counts inside the same
+filtered walk used by the tree. A <code>(truncated)</code> tag appears
+if the walk hits the defensive 5 000-file cap, which only
+fires for an accidentally-broad working directory.</li>
+</ul>
+</li>
+</ul>
+<p>The sidebar is hidden automatically when the pane is too narrow to
+host both columns; widen the terminal (or close the side panels
+with <kbd>F2</kbd>) to bring it back. Test-pass and lint state are
+deliberately not in the slate today &mdash; they need a bus event from
+the runner to avoid showing stale data and will land alongside that
+work.</p>
 <h2 id="file-detail">File detail</h2>
-<p>Clicking a file in the <kbd>F6</kbd> file tree opens the
+<p>Clicking a file in the <kbd>F6</kbd> file pane opens the
 <strong>File detail</strong> modal. It shows the path, size,
 modification time, a best-effort summary of the file&rsquo;s
 purpose derived from its contents, the five most recent

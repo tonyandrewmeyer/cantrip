@@ -1825,34 +1825,58 @@ Candidate readouts (none final; the phase decides the slate):
   ``pytest`` run via the existing test-results path.
 - **Lint state** — green / red, last run age.
 
-### 89.1 Decide the slate
+### 89.1 Decide the slate ✓
 
-- [ ] List candidate stats (above + anything else that surfaces
-  during the design pass), score each on (a) read-frequency
-  during real charm sessions, (b) cost to compute live, (c)
-  cost to keep fresh.  Pick four to ship; defer the rest behind
-  named triggers in this phase note.
+- [x] Scored the candidate stats on (a) read-frequency during a
+  real charm session, (b) cost to compute live, and (c) cost to
+  keep fresh.  Picked four cheap-to-compute, high-signal stats
+  drawn from filesystem + git only:
+  - **Most recently changed file** with a relative timestamp.
+  - **Most recent commit** (short hash, subject, age) — one cached
+    `git log -1` per tick.
+  - **Lines of code** total with a top-two language breakdown,
+    bounded by an extension allowlist and a 1 MB per-file cap.
+  - **File and directory counts** taken from the same filtered
+    walk used by the tree, with a defensive 5 000-file scan cap.
+  Test-pass count and lint state were deferred — they need a
+  runner-side bus event to avoid showing stale data.  Trigger to
+  revisit: a per-run test-results event lands on the bus from
+  pytest (and an equivalent charmlint last-run summary), at which
+  point the sidebar can subscribe to either or both.
 
-### 89.2 Layout
+### 89.2 Layout ✓
 
-- [ ] Decide whether the stats column lives:
-  - inside ``CharmTreeWidget`` as a right-docked sidebar (single
-    widget, simpler placement), or
-  - as a sibling widget next to the tree, with the parent
-    ``#charm-files`` switching to a horizontal layout.
-- [ ] Confirm the column doesn't clip the file tree at narrow
-  terminal widths — gracefully fold to "tree only" below a
-  threshold (or tie visibility to a binding the user can toggle).
+- [x] Stats column lives **inside `CharmTreeWidget`** as a
+  right-docked sibling of the directory tree
+  (`Horizontal(_FilteredTree, RepoStatsWidget)` inside a
+  `#charm-files-body` container).  Single widget keeps the layout
+  decisions and the refresh tick co-located, and the stats
+  computation can ride on the same 3 s timer that already reloads
+  the tree.
+- [x] Below ~46 columns of widget width the sidebar hides itself
+  via `display = False` on resize, so the file tree keeps the full
+  pane on narrow terminals.  The fold flips back automatically when
+  the user widens the window or closes the right side panels with
+  <kbd>F2</kbd>; no separate binding required.
 
-### 89.3 Implementation
+### 89.3 Implementation ✓
 
-- [ ] Refresh cadence — decide per-stat (some are file-system
-  watcher–driven, some are git-hook–driven, some can poll on
-  the existing 3 s tree-refresh tick).  Avoid blocking the UI
-  on a ``git log`` per tick; cache + invalidate.
-- [ ] Tests under ``tests/unit/test_tui*.py`` for the renderer
-  and a Pilot fixture that exercises a populated stats column
-  against a synthetic charm checkout.
+- [x] Refresh cadence rides the existing 3 s tree tick — every tick
+  walks the working directory once on a worker thread (via
+  `asyncio.to_thread`) so the UI loop never blocks on the walk or
+  the `git log` call.  Stats computation is a single pure function
+  (`compute_repo_stats(root) -> RepoStats`) that does the prune,
+  the line-count, and the `git log -1` invocation in one pass; the
+  widget consumes the resulting snapshot via `set_stats`.
+- [x] Tests under `tests/unit/tui/test_repo_stats.py` cover the
+  pure walk path (empty / missing / hidden-prune / oversize-skip /
+  newest-mtime / scan-cap-truncated), the `read_last_commit` git
+  interop (non-git / no-commits / populated), the `format_relative_time`
+  / `render_stats_lines` formatters (every relative-time bucket plus
+  the truncation-at-width assertion), and a Pilot integration that
+  mounts the widget against a synthetic charm checkout and asserts
+  both the populated state at wide widths and the fold at narrow
+  widths.
 
 ### What this phase is *not*
 
