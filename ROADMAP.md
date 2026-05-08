@@ -2737,23 +2737,24 @@ Three Codex ``/goal`` mechanics are explicitly **out of scope**:
 
 ### 99.1 High — ``/pause`` and ``/resume`` slash commands
 
-- [ ] Add ``/pause`` and ``/resume`` to ``COMMAND_CATALOGUE`` in
+- [x] Add ``/pause`` and ``/resume`` to ``COMMAND_CATALOGUE`` in
   ``src/cantrip/agent/commands/slash.py`` with help strings that note
   CONFIRM tasks and chat keep working while the autonomous loop is
   paused.
-- [ ] Wire dispatch handlers that call the existing
+- [x] Wire dispatch handlers that call the existing
   ``Executor.pause()`` / ``Executor.resume()`` methods.  Bare
   ``/pause`` pauses; ``/pause`` while already paused is a noop with a
   status message; mirror behaviour for ``/resume``.  Follow the
   ``/yolo`` dispatch pattern at ``src/cantrip/agent/commands/slash.py:1211``
   for tone, status messages, and `status_bar_changed` publishing.
-- [ ] Publish a ``status_bar_changed`` event so the TUI status
+- [x] Publish a ``status_bar_changed`` event so the TUI status
   indicator shows "paused" / "running" alongside the existing yolo /
   ralph badges.
-- [ ] Unit tests in ``tests/unit/agent/commands/`` covering: dispatch
-  toggles ``Executor.paused``; redundant invocation is a noop;
-  status-bar publication carries the right label.
-- [ ] Update ``docs/src/reference-cli.md`` (slash-command catalogue)
+- [x] Unit tests in ``tests/unit/agent/`` covering: dispatch
+  toggles ``ExecutorController.user_paused``; redundant invocation is a
+  noop; status-bar publication carries the right label; transient
+  resume is skipped while user-paused.
+- [x] Update ``docs/src/reference-cli.md`` (slash-command catalogue)
   and rebuild the rendered HTML via ``uv run python docs/src/_build.py``.
 
 ### 99.2 High — Persist ``goal_budget`` across ``cantrip resume``
