@@ -129,7 +129,7 @@ class FileDetailScreen(ModalScreen):
     #file-container {
         width: 90%;
         height: 90%;
-        border: thick $primary;
+        border: round $primary;
         background: $surface;
         padding: 1 2;
     }

@@ -26,7 +26,7 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion] | None]):
     #questions-container {
         width: 80;
         max-height: 80%;
-        border: thick $primary;
+        border: round $primary;
         background: $surface;
         padding: 2 3;
     }

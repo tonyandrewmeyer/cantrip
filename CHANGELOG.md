@@ -4,6 +4,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **TUI visual refresh — first batch (Phase 108.1 + 108.2).**  The
+  chat panel no longer wears a heavy ``border: solid $primary``
+  frame around its message list; the per-message left bars dropped
+  from a 3-cell ``thick`` block to a 1-cell ``tall`` coloured stripe
+  so narrow terminals stop losing wrap room to chrome.  The right
+  panel's branded ``border-left`` is now a dim ``$surface-lighten-1``
+  seam, and the ``border-bottom`` rules between Tasks / Charm Files /
+  Juju Status sub-panels are gone — section headings plus whitespace
+  carry the separation.  Every modal screen (help, logs, traces,
+  transcript, graph, file detail, resume, questions, relation, file
+  tree) swapped ``border: thick $primary`` for ``border: round
+  $primary`` so floating windows read as a single rounded line
+  instead of a block-character slab.  Help and Observability screens
+  no longer render hand-drawn ``─`` underline rows under each
+  section heading; the heading itself now shows in bold ``$primary``.
+  The welcome state opens with a 2-row block-letter ``cantrip``
+  wordmark in the brand colour instead of the plain "Welcome to
+  Cantrip" title.  See ``ROADMAP.md`` Phase 108 for the remaining
+  sub-phases (colour discipline, ModelInfoBar collapse, English
+  tool-block captions, timestamp rhythm, on-brand thinking
+  indicator, slim header, dotfile cull).
+
 ### Added
 - **Prompt ablation harness (Phase 79.5).**  ``tests/eval/ablate.py``
   drops each top-level ``## Section`` of the rendered system prompt

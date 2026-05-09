@@ -16,15 +16,18 @@ Screen {
 #right-panel {
     width: 35%;
     min-width: 30;
-    border-left: solid $primary;
+    border-left: solid $surface-lighten-1;
     padding: 1;
 }
 
+/* Phase 108.1: sub-panels separate by whitespace + a bold heading
+ * rather than by a coloured rule.  ``border-bottom`` is gone; the
+ * trailing ``padding-bottom: 1`` plus ``margin-bottom: 1`` is the
+ * gap that does the work. */
 #task-checklist {
     height: auto;
     max-height: 50%;
     overflow-y: auto;
-    border-bottom: solid $primary;
     padding-bottom: 1;
     margin-bottom: 1;
 }
@@ -38,7 +41,6 @@ Screen {
 #charm-files {
     height: 1fr;
     max-height: 50%;
-    border-bottom: solid $primary;
     padding-bottom: 1;
     margin-bottom: 1;
 }
@@ -97,9 +99,9 @@ Screen {
     margin: 1 0;
 }
 
-/* Log viewer screen */
+/* Log viewer screen — Phase 108.1: the modal already carries a
+ * frame; an inner border around the log body is double-chrome. */
 #log-output {
-    border: solid $primary;
     overflow-y: auto;
 }
 

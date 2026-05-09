@@ -19,7 +19,7 @@ class HelpScreen(ModalScreen):
         width: 80%;
         max-width: 80;
         max-height: 80%;
-        border: thick $primary;
+        border: round $primary;
         background: $surface;
         padding: 1 2;
     }
@@ -44,13 +44,12 @@ class HelpScreen(ModalScreen):
         height: 1fr;
     }
 
+    /* Phase 108.1: section headings carry weight via colour + bold,
+     * not via a hand-drawn underline row. */
     .help-section-header {
         text-style: bold;
+        color: $primary;
         padding-top: 1;
-    }
-
-    .help-separator {
-        color: $text-muted;
     }
     """
 
@@ -65,10 +64,7 @@ class HelpScreen(ModalScreen):
                 yield Static("Cantrip Help", classes="title-text")
                 yield Static("[Esc Close]", classes="title-hint")
             with ScrollableContainer(id="help-scroll"):
-                yield Static("─" * 66, classes="help-separator")
-
                 yield Static("Quick Start", classes="help-section-header")
-                yield Static("───────────", classes="help-separator")
                 yield Static(
                     "Just describe what you want to charm:\n"
                     "  > build a charm for my flask app\n"
@@ -78,7 +74,6 @@ class HelpScreen(ModalScreen):
                 )
 
                 yield Static("Keyboard Shortcuts", classes="help-section-header")
-                yield Static("──────────────────", classes="help-separator")
                 yield Static(
                     "F1        This help\n"
                     "F2        Toggle status panel\n"
@@ -101,7 +96,6 @@ class HelpScreen(ModalScreen):
                 )
 
                 yield Static("Slash commands", classes="help-section-header")
-                yield Static("──────────────", classes="help-separator")
                 yield Static(
                     "/feelings                Convene the inner parliament\n"
                     "                         (default: joy + fear)\n"
@@ -111,5 +105,4 @@ class HelpScreen(ModalScreen):
                 )
 
                 yield Static("Links", classes="help-section-header")
-                yield Static("─────", classes="help-separator")
                 yield Static("Grafana:  http://localhost:3000\nDocs:     https://juju.is/docs")

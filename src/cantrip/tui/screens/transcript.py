@@ -30,7 +30,7 @@ class TranscriptScreen(ModalScreen):
     #transcript-container {
         width: 95%;
         height: 90%;
-        border: thick $primary;
+        border: round $primary;
         background: $surface;
         padding: 1 2;
     }

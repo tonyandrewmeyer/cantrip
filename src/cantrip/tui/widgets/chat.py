@@ -83,7 +83,13 @@ class ChatMessage:
 
 
 class MessageWidget(Static):
-    """Widget for a single chat message."""
+    """Widget for a single chat message.
+
+    Phase 108.1: per-role left-bars dropped from ``thick`` (3-cell
+    block) down to ``tall`` (1-cell coloured stripe).  Halves the
+    horizontal weight, stops the bar from eating wrap room in
+    narrow terminals.
+    """
 
     DEFAULT_CSS = """
     MessageWidget {
@@ -93,41 +99,41 @@ class MessageWidget(Static):
 
     MessageWidget.user {
         background: $surface;
-        border-left: thick $primary;
+        border-left: tall $primary;
     }
 
     MessageWidget.assistant {
-        border-left: thick $secondary;
+        border-left: tall $secondary;
     }
 
     MessageWidget.system {
         color: $text-muted;
         text-style: italic;
-        border-left: thick $surface;
+        border-left: tall $surface;
     }
 
     MessageWidget.tool {
         color: $text-muted;
-        border-left: thick $accent;
+        border-left: tall $accent;
         margin: 0;
         padding: 0 1;
     }
 
     MessageWidget.tool-failed {
         color: $error;
-        border-left: thick $error;
+        border-left: tall $error;
     }
 
     MessageWidget.shell {
         color: $text-muted;
-        border-left: thick $warning;
+        border-left: tall $warning;
         margin: 0;
         padding: 0 1;
     }
 
     MessageWidget.shell-failed {
         color: $error;
-        border-left: thick $error;
+        border-left: tall $error;
     }
 
     MessageWidget.shell-hidden {
@@ -136,7 +142,7 @@ class MessageWidget(Static):
 
     MessageWidget.tool-pending {
         color: $text-muted;
-        border-left: thick $primary;
+        border-left: tall $primary;
         text-style: dim;
     }
 
@@ -987,7 +993,12 @@ class SearchBar(Widget):
 
 
 class ChatWidget(Widget):
-    """Widget for chat history and input."""
+    """Widget for chat history and input.
+
+    Phase 108.1: the chat-history frame is gone.  The per-message
+    left-bars already differentiate roles; the surrounding box was
+    pure double-chrome and stole horizontal real estate.
+    """
 
     class SearchClosed(Message):
         """Posted when the user dismisses the search bar."""
@@ -999,7 +1010,6 @@ class ChatWidget(Widget):
 
     ChatWidget #chat-history {
         height: 1fr;
-        border: solid $primary;
         padding: 1;
     }
 
@@ -1011,9 +1021,14 @@ class ChatWidget(Widget):
         padding: 1 0;
     }
 
-    ChatWidget .welcome-title {
+    /* Phase 108.2: the wordmark is the title; ``$primary`` tints
+     * it on-brand (Ubuntu orange under the default theme).  The
+     * body and examples drop down to neutral text so the eye lands
+     * on the mark first. */
+    ChatWidget .welcome-wordmark {
+        color: $primary;
         text-style: bold;
-        padding-bottom: 1;
+        padding-bottom: 0;
     }
 
     ChatWidget .welcome-body {
@@ -1021,7 +1036,6 @@ class ChatWidget(Widget):
     }
 
     ChatWidget .welcome-examples {
-        color: $primary;
         padding-bottom: 1;
     }
 
@@ -1053,11 +1067,21 @@ class ChatWidget(Widget):
         """Handle mount."""
         self._show_welcome()
 
+    # Phase 108.2: 2-row block-letter wordmark replaces the plain
+    # "Welcome to Cantrip" title.  Hand-built from the half-block
+    # character set so it renders cleanly in any monospace terminal
+    # (no figlet dependency, no font fallback) and stays under 30
+    # columns wide so the 80-column smoke snapshot does not wrap.
+    # The leading two-space indent matches the example list below
+    # for vertical alignment.
+    _WORDMARK = "  █▀▀ ▄▀█ █▄ █ ▀█▀ █▀▄ █ █▀█\n  █▄▄ █▀█ █ ▀█  █  █▀▄ █ █▀▀"
+
     def _show_welcome(self) -> None:
         """Show welcome message.
 
-        Tiered layout: a bold title, a one-line description, a short list
-        of example prompts, and a muted footer of keyboard shortcuts.
+        Tiered layout: a 2-row block-letter wordmark in ``$primary``
+        (Phase 108.2), a one-line description, a short list of
+        example prompts, and a muted footer of keyboard shortcuts.
         The examples deliberately showcase Cantrip's range — fresh
         workload, upstream source URL, and improve-an-existing-charm —
         rather than workloads that already have first-class Charmhub
@@ -1066,8 +1090,8 @@ class ChatWidget(Widget):
         scroll = self.query_one("#chat-scroll", ScrollableContainer)
         scroll.mount(
             Static(
-                "Welcome to Cantrip",
-                classes="welcome-message welcome-title",
+                self._WORDMARK,
+                classes="welcome-message welcome-wordmark",
             )
         )
         scroll.mount(

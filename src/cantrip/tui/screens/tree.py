@@ -30,7 +30,7 @@ class TreePickerScreen(ModalScreen[int | None]):
         width: 100;
         max-width: 90%;
         max-height: 80%;
-        border: thick $primary;
+        border: round $primary;
         background: $surface;
         padding: 1 2;
     }

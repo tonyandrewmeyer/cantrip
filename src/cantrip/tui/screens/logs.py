@@ -41,7 +41,7 @@ class LogScreen(ModalScreen):
     #log-container {
         width: 90%;
         height: 80%;
-        border: thick $primary;
+        border: round $primary;
         background: $surface;
         padding: 1 2;
     }

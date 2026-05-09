@@ -20,7 +20,7 @@ class TraceScreen(ModalScreen):
     #trace-container {
         width: 70;
         max-height: 60%;
-        border: thick $primary;
+        border: round $primary;
         background: $surface;
         padding: 1 2;
     }
@@ -41,13 +41,12 @@ class TraceScreen(ModalScreen):
         width: auto;
     }
 
+    /* Phase 108.1: section headings replace the older
+     * heading + ``─`` underline pattern. */
     .trace-section-header {
         text-style: bold;
+        color: $primary;
         padding-top: 1;
-    }
-
-    .trace-separator {
-        color: $text-muted;
     }
 
     .trace-link {
@@ -108,11 +107,8 @@ class TraceScreen(ModalScreen):
             with Horizontal(id="trace-title"):
                 yield Static("Observability", classes="title-text")
                 yield Static("[Esc Close]", classes="title-hint")
-            yield Static("─" * 66, classes="trace-separator")
-
             # COS status.
             yield Static("COS Model", classes="trace-section-header")
-            yield Static("─────────", classes="trace-separator")
             if self._cos_model:
                 yield Static(f"Model: {self._cos_model}")
             yield Static(self._status_line(), classes="trace-info")
@@ -120,7 +116,6 @@ class TraceScreen(ModalScreen):
             # Grafana.
             grafana_base = self._grafana_base()
             yield Static("Grafana", classes="trace-section-header")
-            yield Static("───────", classes="trace-separator")
             yield Static(f"URL: {grafana_base}", classes="trace-link")
             if self._endpoints.grafana_url is None:
                 yield Static(
@@ -135,7 +130,6 @@ class TraceScreen(ModalScreen):
 
             # Quick links.
             yield Static("Quick Links", classes="trace-section-header")
-            yield Static("───────────", classes="trace-separator")
             explore = self._endpoints.grafana_explore_url or f"{grafana_base}/explore"
             tempo = self._endpoints.tempo_explore_url
             loki = self._endpoints.loki_explore_url
@@ -156,7 +150,6 @@ class TraceScreen(ModalScreen):
 
             # Instructions.
             yield Static("Access", classes="trace-section-header")
-            yield Static("──────", classes="trace-separator")
             yield Static(
                 "If Grafana is not accessible at the URL above,\n"
                 "set up port forwarding:\n"

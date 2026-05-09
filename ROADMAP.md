@@ -2157,6 +2157,214 @@ in stderr — instead of looping for 11 minutes until manual SIGKILL.
 
 ---
 
+## Phase 108: TUI Visual Refresh — Less Chrome, More Identity
+
+**Goal:** The TUI currently reads as a competent but heavy Textual
+default skin: every panel is framed, every message has a thick
+left-bar, every modal is bounded by ``border: thick $primary``, and
+every section header in ``help.py`` and ``traces.py`` is followed by a
+hand-drawn ``─`` underline.  The combined effect is that ``$primary``
+(Ubuntu orange) is doing duty as wallpaper rather than as accent, and
+the section-header-then-underline pattern is the strongest visible
+"obviously built by AI" tell.  This phase reduces visual weight,
+restores colour discipline, and gives the welcome state an actual
+identity.
+
+A live audit (Phase 108 design pass — see ``design/UI.md`` once this
+phase commits its findings) rendered five real states (welcome, busy
+chat, thinking indicator, help modal, narrow 80×24) and ten modal
+screens (logs, traces, transcript, graph, file detail, resume,
+questions, relation, file tree).  Every modal uses the *same*
+``border: thick $primary`` rule; ``help.py`` and ``traces.py`` both
+use the section-header-plus-``─``-underline pattern; the chat panel
+nests a heavy frame around messages that already carry their own
+thick left bars.
+
+### 108.1 — Cull borders and drop section underlines
+
+The single highest-impact, lowest-risk batch.  Pure CSS plus a small
+edit to two screen files.
+
+- [ ] Remove ``border: solid $primary`` from
+  ``ChatWidget #chat-history`` (``src/cantrip/tui/widgets/chat.py``).
+  Message left-bars already differentiate roles; the outer frame is
+  redundant.
+- [ ] Downgrade per-message ``border-left: thick $primary/$secondary/
+  $accent/$surface/$warning/$error`` to a 1-cell border (``solid``
+  variants) in ``MessageWidget.DEFAULT_CSS``.  Halves the horizontal
+  weight, fixes wrapping in narrow terminals.
+- [ ] Replace ``border-left: solid $primary`` on ``#right-panel`` with
+  ``border-left: solid $surface-lighten-1`` so the seam is dim, not
+  branded (``cantrip.tcss``).
+- [ ] Replace inter-sub-panel ``border-bottom: solid $primary`` on
+  ``#task-checklist`` and ``#charm-files`` with ``padding-top: 1`` and
+  a small dim section header — separation by space, not by line.
+- [ ] On every modal screen (``help``, ``logs``, ``traces``,
+  ``transcript``, ``graph``, ``file_detail``, ``resume``,
+  ``questions``, ``relation``, ``tree``), swap
+  ``border: thick $primary`` for ``border: round $primary``.  Modal
+  containers stay framed (they are floating windows) but the frame is
+  a single rounded line instead of a block-character slab.
+- [ ] Delete every ``Static('─' * N, classes='*-separator')`` row in
+  ``screens/help.py`` and ``screens/traces.py``.  Replace each
+  section heading with bold-on-``$primary`` text via a single
+  ``.h2`` class (``text-style: bold; color: $primary;
+  padding-top: 1;``); the spacing alone provides separation.
+- [ ] Ensure ``border: solid $primary`` on ``#log-output`` in
+  ``cantrip.tcss`` follows the same demotion (or is dropped — the
+  modal already has a frame around it).
+
+**Exit criteria:** Snapshot rendering of welcome + chat + help shows
+no nested frames; help/traces screens have section headings without
+underline rows; existing TUI test suite (``tests/unit/tui/``) passes
+unchanged.
+
+### 108.2 — Welcome screen identity
+
+- [ ] Replace the plain "Welcome to Cantrip" ``Static`` in
+  ``ChatWidget._show_welcome`` with a 3-line ASCII wordmark in
+  ``$primary``, plus a one-line tagline.  Keep the existing
+  example-prompts list and footer below it.  The wordmark should
+  fit cleanly in 80 columns and **not** explode at narrower widths
+  (test 80×24 rendering).
+- [ ] Confirm the wordmark scrolls away on first message — already
+  true because ``_show_welcome`` only mounts on initial compose and
+  is cleared on first ``add_message``.
+
+**Exit criteria:** Welcome render shows a recognisable wordmark; an
+80×24 snapshot does not wrap or truncate it; existing welcome tests
+still pass.
+
+### 108.3 — Colour discipline pass
+
+Reserve ``$primary`` (Ubuntu orange) for **one** role: the focused or
+active surface.  Push everything else to ``$secondary`` (assistant),
+``$accent`` (tool blocks), and ``$surface-lighten-N`` /
+``$panel-lighten-N`` (chrome / separators).
+
+- [ ] Audit every ``$primary`` use across ``cantrip.tcss`` and the
+  per-widget ``DEFAULT_CSS`` blocks.  Document the role each instance
+  serves, then re-assign.  The catalogue lives in
+  ``design/UI.md#colour-roles``.
+- [ ] Verify the user can still pick out the focused element after
+  the change — focus shouldn't dissolve into the background.
+- [ ] Update ``themes.py`` if a new semantic colour name is needed
+  (e.g. ``focus`` distinct from ``primary``); otherwise reuse what's
+  there.
+
+**Exit criteria:** Render a screen capture; orange appears in at most
+two-to-three places per screen rather than a dozen.  ``design/UI.md``
+table of "where does ``$primary`` go" stays under twelve rows.
+
+### 108.4 — ModelInfoBar default-collapsed
+
+- [ ] Default ``#model-info`` to a single collapsed line that shows
+  only ``provider/model · NN% ctx · $X.XX`` — one row, not two.
+- [ ] Pressing F7 expands to the existing two-line form (current
+  behaviour becomes opt-in instead of default-on).
+- [ ] Persist the user's preference for the next session via the
+  same path used for theme + window size if one exists.
+
+**Exit criteria:** A fresh ``cantrip`` run gives the chat 2 more rows
+of vertical real estate; F7 still toggles to the rich form; existing
+``test_modelbar`` (or equivalent) still passes.
+
+### 108.5 — Tool-block caption format
+
+- [ ] Replace the ``🔧 read_file(path=backend/pyproject.toml)`` form
+  with ``▸ read backend/pyproject.toml``.  Glyphs: ``▸`` done, ``·``
+  running (with spinner), ``✗`` failed.  The shape is *verb +
+  target*, not *function call*.
+- [ ] Captions live on the tool's ``ToolResult`` already (Phase 81 /
+  M81 made coverage explicit).  This sub-phase changes the *default*
+  caption format, not the wire shape — tools that already populate a
+  rich caption keep theirs.
+- [ ] The full ``read_file(path=...)`` form stays available in the
+  Phase 76 transcript viewer (F9) so debugging is unaffected.
+
+**Exit criteria:** Chat reads as English not Python.  ``add_tool_block``
+test cases updated; Phase 81 caption-coverage test still passes.
+
+### 108.6 — Timestamp visual rhythm
+
+- [ ] Show ``[HH:MM]`` only when:
+  - it is the first message in the session, or
+  - the previous message is more than 5 minutes older.
+- [ ] Suppress timestamps entirely on tool / shell rows — they are
+  contiguous with the assistant turn that triggered them.
+
+**Exit criteria:** A 30-message rapid-fire session shows ≤5
+timestamps, not 30.
+
+### 108.7 — Loading indicator: lean into the brand
+
+- [ ] Replace Textual's stock ``LoadingIndicator`` (five pulsing
+  dots) with a single inline phrase: ``✦  weaving …`` styled in
+  ``$primary``, with a 3-frame braille spinner (``⠋⠙⠹⠸``) on the
+  star.
+- [ ] The verb (``weaving`` / ``scrying`` / ``binding`` / ``shaping``)
+  rotates **only** when the agent's actual phase changes, so a
+  changing verb is informative rather than decorative — re-uses the
+  Phase 62 / M62 spellcasting verbs catalogue if practical.
+
+**Exit criteria:** ``ChatWidget.show_thinking`` mounts the new
+indicator; existing thinking-indicator test asserts the new shape
+rather than ``LoadingIndicator``.
+
+### 108.8 — Header trim
+
+- [ ] Replace the default Textual ``Header`` with a slim one-row
+  custom header showing ``✦ cantrip · gemini-3-flash · ./backend ·
+  branch:main``.  Subtitle goes away; the same information lives in
+  the header text.
+- [ ] If the slim header conflicts with the F7 / 108.4 model-info
+  bar in any state, the model bar wins for token detail and the
+  header carries identity + path.
+
+**Exit criteria:** Title row no longer carries the generic ``⭘``
+glyph; the row carries actual context.
+
+### 108.9 — File-tree dotfile cull
+
+- [ ] Expand ``filetree._HIDDEN_NAMES`` to also hide every dotfile
+  directory by default (``p.name.startswith(".")``), or — preferred —
+  collapse all dotfile dirs under a single ``··· hidden (N)`` node at
+  the bottom of the tree that expands on click.
+- [ ] First six entries a user sees are charm-relevant
+  (``pyproject.toml``, ``src/``, ``tests/``), not ``.hypothesis`` /
+  ``.pytest_cache`` / ``.claude`` / ``.craft`` / ``.agents`` /
+  ``.github``.
+
+**Exit criteria:** Welcome render's right panel shows recognisable
+charm content above the fold.
+
+### What this phase is *not*
+
+- **Not a re-skin.**  The ``cantrip`` theme palette stays as-is;
+  this phase changes *where* those colours appear, not what they
+  are.
+- **Not a layout overhaul.**  Left chat / right side-panel /
+  bottom status bar / bottom input remains.  Sub-panel behaviour
+  inside the right column changes (less chrome, same semantics).
+- **Not a Textual upgrade.**  No new third-party widgets; we keep
+  to ``Static`` / ``Vertical`` / ``Horizontal`` / ``ModalScreen``.
+- **Not a Web-UI parity sweep.**  The Web UI lives under
+  ``cantrip/web``; that visual refresh is a separate follow-up
+  once these patterns settle.
+
+**Exit criteria (whole phase):** A fresh run on a 120×36 terminal
+shows: a wordmarked welcome state, no double frames around the
+chat, modal screens with rounded single-line borders and no manual
+underlines, ``$primary`` used in fewer than ten places per screen,
+a one-line ModelInfoBar, English-not-Python tool-block captions,
+timestamp-on-gap-only message rhythm, an on-brand thinking
+indicator, a slim contextual header, and a file tree that surfaces
+charm content first.  Existing ``tests/unit/tui/`` passes; any
+snapshot tests under ``tests/unit/tui/__snapshots__`` are reblessed
+under the new visuals.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -2254,3 +2462,4 @@ in stderr — instead of looping for 11 minutes until manual SIGKILL.
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
 | M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
 | M107: Tool-Call Failure Cap | 107 | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; a regression test pins the shape; smoke runs that hit a hard tool scope exit cleanly with stderr telling the operator which tool exhausted retries |
+| M108: TUI Visual Refresh | 108 | Welcome state has identity (wordmark + tagline); double frames around the chat are gone; modal screens use single rounded borders without manual ``─`` underlines; ``$primary`` is reserved for focus / accent and shows up in under ten places per screen; ModelInfoBar collapses to one line by default; tool-block captions read as English (``▸ read backend/pyproject.toml``); timestamps appear only on gaps; loading indicator is on-brand; header carries actual context; file tree surfaces charm content first |
