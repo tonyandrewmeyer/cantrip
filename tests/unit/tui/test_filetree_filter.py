@@ -83,6 +83,29 @@ def test_explicit_noise_directory_is_hidden(tmp_path: pathlib.Path, name: str) -
 @pytest.mark.parametrize(
     "name",
     [
+        ".cantrip",
+        ".cantrip-shm",
+        ".cantrip-wal",
+        ".cantrip-repomap.json",
+    ],
+)
+def test_cantrip_session_state_files_are_hidden(tmp_path: pathlib.Path, name: str) -> None:
+    """Cantrip's own SQLite/repo-map state files are hidden as files.
+
+    These are noise (session DB plus its WAL companions, and the
+    repo-map cache) — never user-edited, but they live alongside
+    real charm content as plain files, so the dotfile-dir rule
+    alone does not catch them.  ``.cantrip*`` prefix matching is
+    the carve-out.
+    """
+    target = tmp_path / name
+    target.write_text("payload")
+    assert is_hidden_path(target) is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
         "src",
         "tests",
         "lib",

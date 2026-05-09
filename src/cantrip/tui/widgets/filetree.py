@@ -24,22 +24,30 @@ _HIDDEN_NAMES = frozenset(
 def is_hidden_path(path: pathlib.Path) -> bool:
     """Return ``True`` when *path* should not appear in the file tree.
 
-    Phase 108.9: the rule is "noise dir by name *or* dotfile
-    directory".  Dotfile **files** (``.gitignore``,
-    ``.editorconfig``, ``.envrc``) stay visible — those are
-    routinely edited.  Dotfile **directories** (``.git``,
-    ``.tox``, ``.venv``, ``.mypy_cache``, ``.ruff_cache``,
-    ``.pytest_cache``, ``.hypothesis``, ``.github``, ``.claude``,
-    ``.craft``, ``.cantrip``, …) are caches, build artefacts,
-    or tool state — never things the user opens from the tree —
-    so they all collapse under one rule rather than a perpetually-
-    growing allowlist.
+    Phase 108.9 rule: "noise dir by name *or* dotfile directory".
+    Dotfile **files** the user routinely edits (``.gitignore``,
+    ``.editorconfig``, ``.envrc``, ``.python-version``) stay
+    visible.  Dotfile **directories** (``.git``, ``.tox``,
+    ``.venv``, ``.mypy_cache``, ``.ruff_cache``, ``.pytest_cache``,
+    ``.hypothesis``, ``.github``, ``.claude``, ``.craft``, …) are
+    caches, build artefacts, or tool state — never things the
+    user opens from the tree — so they collapse under the rule
+    rather than a perpetually-growing allowlist.
+
+    Also hides cantrip's own session-state files (``.cantrip``,
+    ``.cantrip-repomap.json``, ``.cantrip-shm``, ``.cantrip-wal``,
+    …) — these are SQLite databases and repo-map snapshots cantrip
+    writes into the working directory, never user-edited content.
 
     The check uses :meth:`pathlib.Path.is_dir`, which costs one
     stat per entry; the tree only ever filters one directory's
     immediate children at a time so the overhead is bounded.
     """
-    return path.name in _HIDDEN_NAMES or (path.name.startswith(".") and path.is_dir())
+    if path.name in _HIDDEN_NAMES:
+        return True
+    if path.name.startswith(".cantrip"):
+        return True
+    return path.name.startswith(".") and path.is_dir()
 
 
 # Below this widget width, hide the stats sidebar so the tree still
