@@ -1,151 +1,115 @@
-"""Planner tests: parsing."""
+"""Planner tests: parsing.
 
-import json
+The Phase 73.3 migration moved planner replies onto :func:`cantrip.llm.
+structured.complete_structured` against :data:`~cantrip.llm.schemas.
+PLANNER_BRIEFING`.  Schema enforcement covers JSON parsing, fence
+stripping, the top-level ``{"tasks": [...]}`` shape, and per-item
+required keys / category enum — those used to live in
+``_extract_json`` / ``_parse_task_list`` / ``_parse_single_task`` and
+no longer need module-level coverage here.
 
-import pytest
+What this file does cover is everything the schema does **not**:
+the conversion from a validated briefing dict into ``AgentTask``
+objects, dependency sanitisation (cycle detection, dropping
+references to unknown ids), and ``_merge_tasks``.
+"""
 
 from cantrip.agent.planner import (
-    _extract_json,
+    _briefing_to_tasks,
     _merge_tasks,
-    _parse_task_list,
 )
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 
-# ---------------------------------------------------------------------------
-# Sample JSON payloads
-# ---------------------------------------------------------------------------
-
-VALID_TASKS_JSON = json.dumps(
-    [
-        {
-            "id": "research",
-            "title": "Research the workload",
-            "category": "research",
-            "description": "Clone and analyse the source.",
-            "dependencies": [],
-        },
-        {
-            "id": "scaffold",
-            "title": "Scaffold the charm",
-            "category": "build",
-            "description": "Run charmcraft init and write charm code.",
-            "dependencies": ["research"],
-        },
-    ]
-)
-
-
-WRAPPED_TASKS_JSON = json.dumps(
-    {
-        "tasks": [
-            {
-                "id": "deploy",
-                "title": "Deploy the charm",
-                "category": "deploy",
-                "description": "Pack and deploy.",
-                "dependencies": [],
-            },
-        ]
-    }
-)
-
-
 # ===================================================================
-# TestExtractJson
+# TestBriefingToTasks
 # ===================================================================
 
 
-class TestExtractJson:
-    """Tests for _extract_json — stripping code fences."""
+class TestBriefingToTasks:
+    """Tests for ``_briefing_to_tasks`` — briefing-dict → AgentTask list."""
 
-    def test_plain_json(self) -> None:
-        assert _extract_json('[{"id": "a"}]') == '[{"id": "a"}]'
-
-    def test_json_code_fence(self) -> None:
-        raw = '```json\n[{"id": "a"}]\n```'
-        assert _extract_json(raw) == '[{"id": "a"}]'
-
-    def test_bare_code_fence(self) -> None:
-        raw = '```\n[{"id": "a"}]\n```'
-        assert _extract_json(raw) == '[{"id": "a"}]'
-
-    def test_surrounding_text_stripped(self) -> None:
-        raw = 'Here is the plan:\n```json\n[{"id": "a"}]\n```\nDone.'
-        assert _extract_json(raw) == '[{"id": "a"}]'
-
-
-# ===================================================================
-# TestParseTaskList
-# ===================================================================
-
-
-class TestParseTaskList:
-    """Tests for _parse_task_list — JSON-to-AgentTask conversion."""
-
-    def test_valid_array(self) -> None:
-        tasks = _parse_task_list(VALID_TASKS_JSON)
+    def test_valid_briefing(self) -> None:
+        briefing = {
+            "tasks": [
+                {
+                    "id": "research",
+                    "title": "Research the workload",
+                    "category": "research",
+                    "description": "Clone and analyse the source.",
+                    "dependencies": [],
+                },
+                {
+                    "id": "scaffold",
+                    "title": "Scaffold the charm",
+                    "category": "build",
+                    "description": "Run charmcraft init.",
+                    "dependencies": ["research"],
+                },
+            ]
+        }
+        tasks = _briefing_to_tasks(briefing)
         assert len(tasks) == 2
         assert tasks[0].title == "Research the workload"
         assert tasks[0].category == TaskCategory.RESEARCH
         assert tasks[0].dependencies == []
         assert tasks[1].dependencies == ["research"]
+        assert tasks[1].category == TaskCategory.BUILD
 
-    def test_code_fenced_json(self) -> None:
-        raw = f"```json\n{VALID_TASKS_JSON}\n```"
-        tasks = _parse_task_list(raw)
-        assert len(tasks) == 2
+    def test_empty_tasks_array(self) -> None:
+        """A schema-valid briefing with no tasks returns an empty list."""
+        assert _briefing_to_tasks({"tasks": []}) == []
 
-    def test_wrapped_object(self) -> None:
-        tasks = _parse_task_list(WRAPPED_TASKS_JSON)
+    def test_missing_optional_fields(self) -> None:
+        """``id``, ``description``, and ``dependencies`` default sensibly."""
+        briefing = {"tasks": [{"title": "Just a title", "category": "build"}]}
+        tasks = _briefing_to_tasks(briefing)
         assert len(tasks) == 1
-        assert tasks[0].title == "Deploy the charm"
-
-    def test_non_array_raises(self) -> None:
-        with pytest.raises(ValueError, match="JSON array"):
-            _parse_task_list('"just a string"')
-
-    def test_invalid_dict_raises(self) -> None:
-        with pytest.raises(ValueError, match="JSON array"):
-            _parse_task_list('{"foo": "bar"}')
-
-    def test_missing_title_skipped(self) -> None:
-        """A single untitled item is skipped; the whole plan then has no tasks."""
-        raw = json.dumps([{"id": "x", "category": "build"}])
-        with pytest.raises(ValueError, match="No valid tasks"):
-            _parse_task_list(raw)
-
-    def test_unknown_category_defaults_to_build(self) -> None:
-        raw = json.dumps([{"id": "x", "title": "Do stuff", "category": "banana"}])
-        tasks = _parse_task_list(raw)
-        assert tasks[0].category == TaskCategory.BUILD
-
-    def test_missing_category_defaults_to_build(self) -> None:
-        raw = json.dumps([{"id": "x", "title": "Do stuff"}])
-        tasks = _parse_task_list(raw)
-        assert tasks[0].category == TaskCategory.BUILD
-
-    def test_dependencies_preserved(self) -> None:
-        raw = json.dumps(
-            [
-                {"id": "a", "title": "First", "dependencies": []},
-                {"id": "b", "title": "Second", "dependencies": ["a"]},
-            ]
-        )
-        tasks = _parse_task_list(raw)
-        assert tasks[1].dependencies == ["a"]
-
-    def test_invalid_dependencies_defaults_to_empty(self) -> None:
-        raw = json.dumps([{"id": "a", "title": "First", "dependencies": "not-a-list"}])
-        tasks = _parse_task_list(raw)
+        # ``AgentTask.__post_init__`` fills in a uuid hex when no id is provided.
+        assert tasks[0].id
+        assert tasks[0].title == "Just a title"
+        assert tasks[0].description == ""
         assert tasks[0].dependencies == []
 
-    def test_empty_array_valid(self) -> None:
-        tasks = _parse_task_list("[]")
-        assert tasks == []
+    def test_dependencies_coerced_to_strings(self) -> None:
+        """Numeric dependencies (rare, but seen in the wild) are stringified."""
+        briefing = {
+            "tasks": [
+                {"id": "a", "title": "A", "category": "build", "dependencies": [1, 2]},
+            ]
+        }
+        tasks = _briefing_to_tasks(briefing)
+        # The numeric deps reference unknown task ids and are stripped by
+        # `_validate_dependencies` after coercion to strings.
+        assert tasks[0].dependencies == []
 
-    def test_unparseable_json_raises(self) -> None:
-        with pytest.raises(ValueError, match="Failed to parse"):
-            _parse_task_list("this is not json at all")
+    def test_unknown_dependency_stripped(self) -> None:
+        """Dependencies referencing missing task ids are dropped with a warning."""
+        briefing = {
+            "tasks": [
+                {
+                    "id": "a",
+                    "title": "First",
+                    "category": "build",
+                    "dependencies": ["nonexistent"],
+                },
+            ]
+        }
+        tasks = _briefing_to_tasks(briefing)
+        assert tasks[0].dependencies == []
+
+    def test_dependency_cycle_broken(self) -> None:
+        """A cycle is detected and broken rather than raising."""
+        briefing = {
+            "tasks": [
+                {"id": "a", "title": "A", "category": "build", "dependencies": ["b"]},
+                {"id": "b", "title": "B", "category": "build", "dependencies": ["a"]},
+            ]
+        }
+        tasks = _briefing_to_tasks(briefing)
+        assert len(tasks) == 2
+        # All cycle members shed their cyclic dependencies.
+        assert tasks[0].dependencies == []
+        assert tasks[1].dependencies == []
 
 
 # ===================================================================
@@ -154,7 +118,7 @@ class TestParseTaskList:
 
 
 class TestMergeTasks:
-    """Tests for _merge_tasks — combining existing and new tasks."""
+    """Tests for ``_merge_tasks`` — combining existing and new tasks."""
 
     def test_completed_first(self) -> None:
         existing = [

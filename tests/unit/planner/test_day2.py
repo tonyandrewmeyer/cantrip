@@ -132,15 +132,17 @@ class TestPlanFromDay2Findings:
     @pytest.mark.asyncio
     async def test_generates_tasks(self) -> None:
         impl_json = json.dumps(
-            [
-                {
-                    "id": "add-backup",
-                    "title": "Add backup action",
-                    "category": "build",
-                    "description": "Add backup and restore actions.",
-                    "dependencies": [],
-                },
-            ]
+            {
+                "tasks": [
+                    {
+                        "id": "add-backup",
+                        "title": "Add backup action",
+                        "category": "build",
+                        "description": "Add backup and restore actions.",
+                        "dependencies": [],
+                    },
+                ]
+            }
         )
         provider = FakeProvider(responses=[Response(content=impl_json)])
         planner = TaskPlanner(provider)

@@ -11,15 +11,17 @@ fallback for cases where the plan depends on free-form user input:
 - ``TaskPlanner.replan`` — adapt existing tasks when the scope changes.
 
 The guidance the LLM sees lives in Jinja2 templates under
-``cantrip.agent.prompts.planning``; this module only assembles context,
-invokes the provider, and parses the JSON response.
+``cantrip.agent.prompts.planning``; this module assembles context,
+routes the call through :func:`cantrip.llm.structured.complete_structured`
+against :data:`~cantrip.llm.schemas.PLANNER_BRIEFING`, and converts
+the schema-validated briefing into :class:`~cantrip.agent.queue.AgentTask`
+objects.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
 
 from cantrip.agent.planner.context import PlanningContext
 from cantrip.agent.planner.deterministic import (
@@ -34,6 +36,8 @@ from cantrip.agent.planner.deterministic import (
 from cantrip.agent.prompts import planning as planning_prompts
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.llm import base as llm
+from cantrip.llm.schemas import PLANNER_BRIEFING
+from cantrip.llm.structured import complete_structured
 
 log = logging.getLogger(__name__)
 
@@ -97,13 +101,15 @@ class TaskPlanner:
             llm.Message(role=llm.Role.SYSTEM, content=prompt),
             llm.Message(role=llm.Role.USER, content=user_msg),
         ]
-        response = await self._provider.complete(
-            messages=messages,
+        briefing = await complete_structured(
+            self._provider,
+            messages,
+            PLANNER_BRIEFING,
             tools=None,
             temperature=_PLANNING_TEMPERATURE,
             thinking_budget=_PLANNING_THINKING_BUDGET,
         )
-        return _parse_task_list(response.content)
+        return _briefing_to_tasks(briefing)
 
     async def replan(self, context: PlanningContext) -> list[AgentTask]:
         """Adapt existing tasks given new context or changed scope.
@@ -119,13 +125,15 @@ class TaskPlanner:
                 content=context.new_context or context.intent,
             ),
         ]
-        response = await self._provider.complete(
-            messages=messages,
+        briefing = await complete_structured(
+            self._provider,
+            messages,
+            PLANNER_BRIEFING,
             tools=None,
             temperature=_PLANNING_TEMPERATURE,
             thinking_budget=_PLANNING_THINKING_BUDGET,
         )
-        new_tasks = _parse_task_list(response.content)
+        new_tasks = _briefing_to_tasks(briefing)
         return _merge_tasks(context.existing_tasks, new_tasks)
 
     async def plan_from_day2_findings(
@@ -148,13 +156,15 @@ class TaskPlanner:
             llm.Message(role=llm.Role.SYSTEM, content=prompt),
             llm.Message(role=llm.Role.USER, content=user_msg),
         ]
-        response = await self._provider.complete(
-            messages=messages,
+        briefing = await complete_structured(
+            self._provider,
+            messages,
+            PLANNER_BRIEFING,
             tools=None,
             temperature=_PLANNING_TEMPERATURE,
             thinking_budget=_PLANNING_THINKING_BUDGET,
         )
-        return _parse_task_list(response.content)
+        return _briefing_to_tasks(briefing)
 
 
 # ---------------------------------------------------------------------------
@@ -239,124 +249,33 @@ def _format_context_block(context: PlanningContext) -> str:
 
 
 # ---------------------------------------------------------------------------
-# JSON parsing
+# Briefing → AgentTask conversion
 # ---------------------------------------------------------------------------
 
 
-def _extract_json(content: str) -> str:
-    """Strip markdown code fences from LLM output."""
-    # Match ```json ... ``` or ``` ... ``` blocks.
-    match = re.search(r"```(?:json)?\s*\n?(.*?)```", content, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return content.strip()
+def _briefing_to_tasks(briefing: dict) -> list[AgentTask]:
+    """Convert a schema-validated planner briefing into ``AgentTask`` objects.
 
-
-def _parse_task_list(content: str) -> list[AgentTask]:
-    """Parse the LLM response into a list of ``AgentTask`` objects.
-
-    Handles:
-    - Raw JSON arrays
-    - JSON wrapped in markdown code fences
-    - ``{"tasks": [...]}`` wrapper objects
-
-    Individual malformed task items are logged and skipped rather than
-    failing the whole batch — smaller LLMs (e.g. Gemini flash) occasionally
-    emit an item with no title, and dropping it preserves the rest of the
-    plan.  Raises only when the content isn't parseable JSON, the shape
-    isn't an array, or every item fails to parse.
+    The :data:`~cantrip.llm.schemas.PLANNER_BRIEFING` schema guarantees the
+    top-level shape (``{"tasks": [...]}``), required keys (``title``,
+    ``category``), and the category enum.  This helper trusts those
+    invariants and focuses on the conversion plus dependency-graph
+    sanitisation that the schema does not cover.
     """
-    raw = _extract_json(content)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        log.warning("LLM returned unparseable planning JSON: %s", _truncate(content, 1000))
-        raise ValueError(f"Failed to parse task list JSON: {exc}") from exc
-
-    # Unwrap {"tasks": [...]} if present.
-    if isinstance(data, dict):
-        if "tasks" in data and isinstance(data["tasks"], list):
-            data = data["tasks"]
-        else:
-            raise ValueError('Expected a JSON array of tasks or {"tasks": [...]}')
-
-    if not isinstance(data, list):
-        raise ValueError("Expected a JSON array of tasks")
-
-    tasks: list[AgentTask] = []
-    for idx, item in enumerate(data):
-        try:
-            tasks.append(_parse_single_task(item, idx))
-        except ValueError as exc:
-            log.warning(
-                "Skipping malformed task at index %d: %s — raw item: %r",
-                idx,
-                exc,
-                item,
-            )
-
-    # Only fail hard when the LLM tried to produce tasks but we rejected them
-    # all.  An empty list from the LLM (``[]``) is a deliberate "no tasks" and
-    # is returned as-is — some replanning calls correctly produce no new tasks.
-    if data and not tasks:
-        log.warning("LLM planning response had no usable tasks: %s", _truncate(content, 1000))
-        raise ValueError("No valid tasks in planning response")
-
+    items = briefing.get("tasks", [])
+    tasks = [_briefing_item_to_task(item) for item in items]
     _validate_dependencies(tasks)
     return tasks
 
 
-def _truncate(text: str, limit: int) -> str:
-    """Return ``text`` truncated to ``limit`` characters with an ellipsis marker."""
-    if len(text) <= limit:
-        return text
-    return text[:limit] + f"… [truncated, total {len(text)} chars]"
-
-
-# Alternate keys some models emit instead of "title".  Tried in order.
-_TITLE_FALLBACK_KEYS = ("name", "task", "summary")
-
-
-def _parse_single_task(item: dict, index: int) -> AgentTask:
-    """Validate and construct a single ``AgentTask`` from parsed JSON.
-
-    Accepts ``title`` or, as a fallback, any of ``name`` / ``task`` /
-    ``summary`` — smaller models occasionally use these keys instead.
-    Raises ``ValueError`` when none of them are present or usable.
-    """
-    if not isinstance(item, dict):
-        raise ValueError(f"Task at index {index} is not an object")
-
-    title = item.get("title")
-    if not title:
-        for key in _TITLE_FALLBACK_KEYS:
-            candidate = item.get(key)
-            if candidate:
-                title = str(candidate)
-                log.info(
-                    "Task at index %d used %r instead of 'title'",
-                    index,
-                    key,
-                )
-                break
-    if not title:
-        raise ValueError(f"Task at index {index} is missing a title")
-
-    raw_category = str(item.get("category", "build")).lower()
-    if raw_category not in _VALID_CATEGORIES:
-        log.warning("Unknown category %r in task %r — defaulting to 'build'", raw_category, title)
-        raw_category = "build"
-
-    dependencies = item.get("dependencies", [])
-    if not isinstance(dependencies, list):
-        dependencies = []
-
+def _briefing_item_to_task(item: dict) -> AgentTask:
+    """Build an ``AgentTask`` from a single PLANNER_BRIEFING ``tasks[]`` entry."""
     return AgentTask(
         id=str(item.get("id", "")),
-        title=str(title),
-        category=TaskCategory(raw_category),
+        title=str(item["title"]),
+        category=TaskCategory(item["category"]),
         description=str(item.get("description", "")),
-        dependencies=[str(d) for d in dependencies],
+        dependencies=[str(d) for d in item.get("dependencies", [])],
     )
 
 

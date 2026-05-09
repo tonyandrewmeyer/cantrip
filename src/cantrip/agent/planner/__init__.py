@@ -40,16 +40,14 @@ from cantrip.agent.planner.llm import TaskPlanner
 # Private helpers re-exported for the existing test suite.  Tests import
 # these from ``cantrip.agent.planner``; the ``X as X`` shape tells ruff the
 # aliasing is intentional (the symbols are not part of the public API).
+from cantrip.agent.planner.llm import _briefing_to_tasks as _briefing_to_tasks
 from cantrip.agent.planner.llm import _build_day2_to_build_prompt as _build_day2_to_build_prompt
 from cantrip.agent.planner.llm import (
     _build_design_to_build_prompt as _build_design_to_build_prompt,
 )
 from cantrip.agent.planner.llm import _build_planning_prompt as _build_planning_prompt
 from cantrip.agent.planner.llm import _build_replanning_prompt as _build_replanning_prompt
-from cantrip.agent.planner.llm import _extract_json as _extract_json
 from cantrip.agent.planner.llm import _merge_tasks as _merge_tasks
-from cantrip.agent.planner.llm import _parse_single_task as _parse_single_task
-from cantrip.agent.planner.llm import _parse_task_list as _parse_task_list
 from cantrip.agent.planner.llm import _validate_dependencies as _validate_dependencies
 
 __all__ = [

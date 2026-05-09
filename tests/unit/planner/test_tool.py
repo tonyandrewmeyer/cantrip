@@ -177,9 +177,11 @@ class TestPlanTasksTool:
     async def test_replans_when_tasks_exist(self) -> None:
         """When the queue already has tasks, the tool should replan via the LLM."""
         replan_json = json.dumps(
-            [
-                {"id": "new", "title": "New task", "category": "build"},
-            ]
+            {
+                "tasks": [
+                    {"id": "new", "title": "New task", "category": "build"},
+                ]
+            }
         )
         provider = FakeProvider(
             responses=[Response(content=replan_json)],

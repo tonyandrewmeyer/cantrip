@@ -52,6 +52,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``design/RECIPES.md`` and ``docs/docs/howto-recipes.html`` for
   the full schema and dispatcher flow.
 
+### Changed
+- **Planner uses structured-output schema (Phase 73.3 follow-up).**
+  ``TaskPlanner.plan_from_design`` / ``replan`` /
+  ``plan_from_day2_findings`` now route through
+  ``cantrip.llm.structured.complete_structured`` against the
+  ``PLANNER_BRIEFING`` schema, replacing the old regex +
+  ``json.loads`` fallback.  The three planning Jinja templates
+  (``full``, ``design_to_build``, ``day2_to_build``) ask for
+  ``{"tasks": [...]}`` so the response root is a JSON object — the
+  shape ``complete_structured`` requires for schema validation.
+  Slow local snaps that occasionally returned malformed JSON now
+  retry against the schema instead of crashing the planner.  Tests
+  follow the agent → planner package split:
+  ``tests/unit/agent/test_planner_parsing.py`` is replaced by the
+  focused suite under ``tests/unit/planner/``;
+  ``tests/support/providers.py``'s default ``RecordingProvider``
+  reply switches from ``[]`` to ``{"tasks": []}`` so existing
+  planner-touching tests still validate against the schema without
+  burning the retry budget.  ``design/DEFERRED.md`` records this
+  as the first of three Phase 73.3 consumer migrations; Oracle
+  (70.2) and Acceptance (17) are still deferred behind their own
+  follow-up work.
+
 ### Added
 - **Long-generation resilience for inference-snap providers (Phase 102).**
   A slow local snap dropping mid-decode used to exit the conversation

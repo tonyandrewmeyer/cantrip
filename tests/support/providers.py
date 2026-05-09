@@ -27,8 +27,13 @@ from tests.conftest import FakeProvider
 class RecordingProvider(FakeProvider):
     """:class:`FakeProvider` that records every :meth:`complete` invocation.
 
-    The provider always returns ``response`` (default: empty JSON list,
-    matching the planner's expected shape).  Past invocations live in:
+    The provider always returns ``response`` (default: an empty
+    :data:`~cantrip.llm.schemas.PLANNER_BRIEFING` payload — Phase 73.3
+    moved planner calls onto
+    :func:`~cantrip.llm.structured.complete_structured`, so the default
+    reply must validate against the briefing schema or every
+    recording-only test would burn the validation-retry budget).  Past
+    invocations live in:
 
     * :attr:`messages_seen` — flattened list of every message handed in.
     * :attr:`temperatures_seen` — one entry per call.
@@ -41,7 +46,9 @@ class RecordingProvider(FakeProvider):
 
     def __init__(self, response: llm.Response | None = None) -> None:
         super().__init__()
-        self._response = response if response is not None else llm.Response(content="[]")
+        self._response = (
+            response if response is not None else llm.Response(content='{"tasks": []}')
+        )
         self.messages_seen: list[llm.Message] = []
         self.temperatures_seen: list[float] = []
         self.thinking_budgets_seen: list[int | None] = []

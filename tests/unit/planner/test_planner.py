@@ -124,9 +124,11 @@ class TestTaskPlannerReplan:
             ),
         ]
         new_json = json.dumps(
-            [
-                {"id": "new-task", "title": "New work", "category": "build"},
-            ]
+            {
+                "tasks": [
+                    {"id": "new-task", "title": "New work", "category": "build"},
+                ]
+            }
         )
         provider = FakeProvider(responses=[Response(content=new_json)])
         planner = TaskPlanner(provider)
@@ -154,10 +156,12 @@ class TestTaskPlannerReplan:
             ),
         ]
         new_json = json.dumps(
-            [
-                {"id": "active-task", "title": "Replaced?", "category": "build"},
-                {"id": "new-one", "title": "New", "category": "test"},
-            ]
+            {
+                "tasks": [
+                    {"id": "active-task", "title": "Replaced?", "category": "build"},
+                    {"id": "new-one", "title": "New", "category": "test"},
+                ]
+            }
         )
         provider = FakeProvider(responses=[Response(content=new_json)])
         planner = TaskPlanner(provider)

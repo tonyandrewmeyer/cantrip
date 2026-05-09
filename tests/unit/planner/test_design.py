@@ -26,22 +26,24 @@ class TestPlanFromDesign:
     @pytest.mark.asyncio
     async def test_generates_build_tasks(self) -> None:
         build_json = json.dumps(
-            [
-                {
-                    "id": "scaffold",
-                    "title": "Scaffold the charm",
-                    "category": "build",
-                    "description": "Run charmcraft init.",
-                    "dependencies": [],
-                },
-                {
-                    "id": "write-tests",
-                    "title": "Write unit tests",
-                    "category": "build",
-                    "description": "Write Scenario tests.",
-                    "dependencies": ["scaffold"],
-                },
-            ]
+            {
+                "tasks": [
+                    {
+                        "id": "scaffold",
+                        "title": "Scaffold the charm",
+                        "category": "build",
+                        "description": "Run charmcraft init.",
+                        "dependencies": [],
+                    },
+                    {
+                        "id": "write-tests",
+                        "title": "Write unit tests",
+                        "category": "build",
+                        "description": "Write Scenario tests.",
+                        "dependencies": ["scaffold"],
+                    },
+                ]
+            }
         )
         provider = FakeProvider(responses=[Response(content=build_json)])
         planner = TaskPlanner(provider)
