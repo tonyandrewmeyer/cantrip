@@ -14,6 +14,7 @@ artefact.
 | [`improve.cast`](improve.cast) | `--improve` audit | ~50 s | asciicast | [`improve.sh`](improve.sh) |
 | [`cli.cast`](cli.cast) | `--print` headless | ~75 s | asciicast | [`cli.sh`](cli.sh) |
 | [`tui.gif`](tui.gif) | TUI | ~12 s | GIF (VHS) | [`tui.tape`](tui.tape) |
+| [`tui-popups.gif`](tui-popups.gif) | TUI — autocomplete + help | ~25 s | GIF (VHS) | [`tui-popups.tape`](tui-popups.tape) |
 | [`web.gif`](web.gif) | `--web` | ~28 s | GIF (Playwright) | [`web.sh`](web.sh) + [`_web_driver.py`](_web_driver.py) |
 | [`hero-ntfy.cast`](hero-ntfy.cast) | `--no-tui` interactive | ~3 min 10 s (factor 2 from a 6 min 20 s raw capture) | asciicast | [`hero-ntfy.sh`](hero-ntfy.sh) |
 | [`hero-ntfy-raw.cast`](hero-ntfy-raw.cast) | (raw capture, source for re-edits) | ~6 min 20 s | asciicast | (kept alongside hero-ntfy.cast) |
