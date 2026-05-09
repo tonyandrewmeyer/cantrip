@@ -12712,3 +12712,128 @@ bodies; ``make check`` is green; ``CHANGELOG.md`` notes the
 adoption with credit to canonical/skills PR #4.
 
 ---
+
+## Phase 51b: Team Sync — Shared Memory, Decisions, Attribution ✓
+
+**Goal:** Close the highest-leverage gaps for a small (2–5)
+charm-authoring team without standing up a shared server.  Three
+opt-in additions on top of Phase 42's existing GitHub workflow,
+all file-based and git-tracked, all reversible by removing the
+``.cantrip/shared/`` directory or flipping a setting back off.
+See [`design/TEAM_COLLABORATION.md`](design/TEAM_COLLABORATION.md)
+§5.1 for the rationale.
+
+### 51b.1 Shared memory directory
+
+- [x] Optional shared memory directory in the same Markdown-
+  frontmatter format as global memory
+  (``$XDG_CONFIG_HOME/cantrip/memory/``), committed to the repo
+  alongside the charm.  Lives at
+  ``<charm-root>/.cantrip-shared/memory/`` rather than the spec's
+  ``<charm-root>/.cantrip/shared/memory/`` because
+  ``<charm>/.cantrip`` is the SQLite session file (a single path
+  cannot be both a file and a directory) — the rename has no
+  other behavioural consequence.  New ``SharedMemoryStore`` in
+  ``src/cantrip/agent/memory/core.py`` is a thin parameterisation
+  of ``GlobalMemoryStore`` that stamps entries with
+  ``scope="charm"`` and ``source="shared"``; a ``for_charm``
+  classmethod resolves the conventional path under the charm
+  root.
+- [x] ``MemoryManager`` reads from local SQLite + the shared
+  directory and merges (``list_entries``, ``read``, ``search``,
+  ``render_prompt_index``).  Local SQLite wins on ``read`` so a
+  teammate's just-pulled entry doesn't shadow a deliberately
+  customised local copy; listings surface both rows so divergence
+  is visible.  ``update`` and ``forget`` look in SQLite first
+  then fall through to the shared directory so an operator can
+  edit or delete a shared entry through the same tool surface.
+- [x] Setting ``team_memory_writes: shared | local | ask`` (env
+  var ``CANTRIP_TEAM_MEMORY_WRITES``) controls where new
+  charm-scope writes land.  Default ``local`` preserves today's
+  behaviour; ``shared`` routes to the directory; ``ask``
+  delegates to a registered decider callback and falls back to
+  ``local`` when no callback is configured (so an unwired TUI
+  never silently drops writes).  An invalid env value falls back
+  to the default with a warning so a typo never disables
+  charm-scope writes.
+- [x] Conflict policy: textual git merge.  Documented in
+  ``docs/src/howto-team-sync.md`` ``{#conflicts}``: memory
+  conflicts surface as standard git markers in the per-key
+  Markdown file (one file per memory name, so "same key"
+  reduces to "same file"); the JSONL decisions log is append-
+  only and usually merges cleanly, with byte-coincident
+  appends getting the standard markers; no in-app conflict UI
+  — git's the reconciler.
+
+### 51b.2 Shared decisions log
+
+- [x] Optional ``<charm-root>/.cantrip-shared/decisions.jsonl``
+  append-only log mirroring the per-session ``decisions`` table.
+  Sibling-path convention matches 51b.1's ``.cantrip-shared/``
+  layout to avoid the ``.cantrip``-as-SQLite-file collision.
+  Helpers in ``src/cantrip/agent/state.py``:
+  ``shared_decisions_path``, ``append_shared_decision`` (best-
+  effort write that swallows OSError so a failed shared write
+  never unwinds the in-memory record), and
+  ``load_shared_decisions`` (skips malformed lines at DEBUG,
+  flags every returned ``Decision`` with ``source="shared"``).
+- [x] ``SessionStore.load_session()`` (``src/cantrip/agent/store.py``)
+  reads decisions from SQLite and appends shared-log entries
+  marked ``source="shared"`` whenever ``state.charm_path`` is
+  set.  ``save_session`` skips shared-source rows so the JSONL
+  file stays the canonical record and a save → load → save
+  loop never duplicates a teammate's decision into local SQLite.
+- [x] ``AgentState.add_decision()`` (``src/cantrip/agent/state.py``)
+  appends to the shared file when
+  ``CANTRIP_TEAM_DECISIONS_WRITES=shared`` and ``charm_path``
+  is set; otherwise behaves exactly as before.  Reads always
+  merge the shared log regardless of the write setting, so an
+  operator who flipped to ``shared`` last week still sees
+  teammates' decisions after toggling back to ``local``.
+- [x] ``Decision.source`` field added
+  (``src/cantrip/agent/state.py``); schema migration v14 adds
+  the matching nullable column to the ``decisions`` table
+  (``src/cantrip/agent/store.py``).  Pre-v14 rows load as
+  ``"local"`` so existing decisions retain their meaning.
+
+### 51b.3 Human co-author trailer
+
+- [x] Auto-commit trailer (``src/cantrip/agent/auto_commit.py``)
+  keeps the ``Co-Authored-By: Cantrip <noreply@aotearoa.dev>``
+  line as a marker that the agent steered the commit, and
+  *adds* a second ``Co-Authored-By:`` line built from
+  ``git config user.name`` / ``git config user.email``.
+- [x] When ``git config user.name`` / ``user.email`` is unset
+  (or returns Cantrip's own canonical), skip the second trailer
+  silently — no breakage for existing single-user setups.
+- [x] Tests cover: both trailers present, only Cantrip trailer
+  when git config absent, no duplication when git config matches
+  Cantrip's canonical.
+
+### 51b.4 Documentation
+
+- [x] New ``docs/docs/howto-team-sync.html`` covers the three
+  opt-in settings, the shared-directory format, the textual-git
+  -merge conflict policy, and a worked two-operator example.
+  Sidebar nav (``docs/src/_site.yaml``) and the docs landing
+  page card grid both surface the new how-to.
+- [x] Updates to ``docs/docs/howto-memory.html`` mention shared
+  scope alongside charm and global, with a cross-link to the
+  team-sync how-to and a ``see_also`` entry.
+- [x] CHANGELOG entry under Unreleased.
+
+**Exit criteria:** Three settings ship with sensible defaults
+(all ``local`` / off — opt-in only).  ``make check`` passes.
+Existing single-user installations see zero behavioural change.
+Two-operator integration test exercises the shared-memory and
+shared-decisions paths against a temp repo.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Shared memory (51b.1) | Phase 43 memory scopes | Adds a third scope alongside charm/global |
+| Shared decisions (51b.2) | Phase 14 decisions log | Mirrors the existing per-session log |
+| Co-author trailer (51b.3) | Phase 42 auto-commit | Extends the existing trailer assembly |
+| Docs (51b.4) | All of the above | One how-to + cross-references |
+
+---
