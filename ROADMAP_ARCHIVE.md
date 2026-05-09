@@ -13868,3 +13868,112 @@ messages persist across reconnects; the UI explains what happened
 when a reconnect lands.
 
 ---
+
+## Phase 103: Resume Hallucination Repair — Re-Read Before Editing ✓
+
+**Goal:** Stop the post-resume ``edit_file: String not found`` cascade
+that wastes 2–3 rounds re-discovering the file the model just edited
+in the previous (now persisted) session.
+
+### Why now
+
+In the improve-01 resume run, the very first ``edit_file`` after the
+session reload tried to match an ``old_string`` that bore no
+resemblance to what was actually on disk:
+
+```
+edit_file path="charmcraft.yaml"
+old_string="# Charmcraft configuration\nname: ntfy\n..."
+```
+
+The real file starts ``# This file configures Charmcraft.\ntype:
+charm\nname: ntfy\n...``.  The model was synthesising the file
+content from its prior in-conversation knowledge instead of from
+the actual bytes — a classic post-compaction confabulation pattern
+that shows up after the conversation has been compacted *or*
+serialised+rehydrated through the session store.
+
+The cost: ~5 minutes per failed edit (one big tool-call output, one
+``read_file``, one retry).  Two cycles of this and a 30-minute
+budget is gone.
+
+### 103.1 P0 — Mark the first edit after resume as "must-read-first"
+
+- [x] After ``load_state`` rehydrates the conversation, decorate the
+  next system / user turn with a one-shot directive: "Before any
+  ``edit_file`` / ``write_file`` / ``multi_edit``, you MUST first
+  ``read_file`` to confirm the current bytes — the on-disk state may
+  have drifted since the prior turn that wrote it."  Drop the
+  decoration after the first successful edit so it doesn't bloat
+  every subsequent turn.  (Implemented as ``_RESUMED_MUST_READ_GUIDANCE``
+  appended to the system prompt while ``state.was_resumed`` is set; the
+  flag clears on the first successful ``read_file`` rather than the
+  first edit so the model demonstrably *has* seen on-disk bytes before
+  the directive disappears.)
+- [x] Detection hook: ``session.was_resumed`` flag on
+  ``AgentState`` set during ``load_state``, cleared once the agent
+  performs at least one ``read_file`` after the resume.
+
+### 103.2 P0 — Best-effort confirmation before applying the edit
+
+- [x] In ``EditFileTool.execute`` and ``MultiEditTool.execute``,
+  when the resolved ``old_string`` doesn't match, before returning
+  the error, *also* compute a short character diff between the
+  ``old_string`` and the closest substring actually in the file and
+  surface that in the tool result.  Today the operator gets
+  ``"String not found in file: …"`` with a 200-char preview of the
+  expected text only — no signal at all about what's actually on
+  disk and where the model's understanding diverged.  A couple of
+  lines of context plus "did you mean: …" cuts the next-round retry
+  to a single attempt.  (Implemented as ``_did_you_mean_hint`` —
+  character-level ``SequenceMatcher`` with a similarity floor of
+  ``block.size / len(old_string) >= 0.45`` so unrelated text doesn't
+  produce a misleading all-add diff; the diff body is capped at
+  12 lines to stay proportional to the original error preview.)
+
+### 103.3 P1 — Auto-fall-back for trivial mismatches
+
+- [x] Optional whitespace-tolerant match (collapse runs of spaces,
+  ignore trailing newlines) for ``edit_file`` and ``multi_edit`` —
+  off by default, opt-in via tool argument or ``--auto-relax-edit``
+  flag.  Rough edges first, but the obvious win is the case where
+  the model emits ``"\n\n"`` and the file has ``"\n  \n"``.
+  (Per-call ``relax_whitespace`` argument lands; the
+  ``--auto-relax-edit`` CLI flag is left for a follow-up since the
+  per-call surface already gives the model a way to opt in
+  context-by-context, which is the more common need.  An ambiguous
+  relaxed match is refused outright so the fallback can't overwrite
+  the wrong instance of a repeated pattern.)
+
+### 103.4 P1 — Track the post-resume edit-failure rate
+
+- [x] Add a session-level counter that increments on every
+  ``edit_file`` / ``multi_edit`` that fails the ``old_string`` match,
+  decremented on a subsequent successful edit of the same file.
+  Surface the count via ``/cost`` so operators can spot a session
+  that's burning time on hallucinations without trawling the
+  transcript.  (Per-file ``state.edit_string_misses`` dict; the edit
+  tools now emit ``edit_miss_path`` / ``edit_success_paths`` data on
+  their results and ``CantripAgent._update_edit_string_misses``
+  drives the increment/decrement from the dispatcher.  ``/cost``
+  shows an "Edit-string misses (unresolved)" block only when at
+  least one path has a non-zero count, so steady-state sessions stay
+  quiet.)
+
+### What this phase is *not*
+
+- **Not a re-architecture of the session-store rehydration.**  The
+  store-roundtrip is fine; the problem is purely about prompting the
+  model to *not* trust its in-conversation memory of file bytes
+  after the rehydration boundary.
+- **Not a wholesale "always read before editing" rule.**  Adds noise
+  in the steady-state mid-conversation case where the model just
+  edited the same file two turns ago.
+
+**Exit criteria:** The first ``edit_file`` after a fresh
+``load_state`` no longer attempts a hallucinated ``old_string``;
+when it would, the tool's error preview includes a "did you mean"
+hint that cuts the recovery to one round; a regression test pins
+the post-resume read-before-edit prompt directive.
+
+---
