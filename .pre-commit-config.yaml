@@ -6,10 +6,13 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
-        # demos/recordings/web.gif is the published Web-UI demo asset
-        # embedded by demos/recordings/index.html; it is intentionally
-        # over the 500 KB default and excluded by path.
-        exclude: '^demos/recordings/web\.gif$'
+        # ``demos/recordings/web.gif`` is the Web-UI marketing
+        # GIF; ``hero-ntfy.cast`` and its raw companion are the
+        # hero asciicast (research → synthesis → design build of
+        # ntfy from scratch).  All three are published assets the
+        # marketing page embeds; they are intentionally over the
+        # 500 KB default and excluded by path.
+        exclude: '^demos/recordings/(web\.gif|hero-ntfy(-raw)?\.cast)$'
       - id: check-merge-conflict
       - id: check-toml
       - id: debug-statements
