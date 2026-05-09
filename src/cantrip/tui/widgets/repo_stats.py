@@ -25,20 +25,15 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
 
-# Hidden directory names matching ``filetree._HIDDEN_NAMES``; pruned
-# from the walk so the agent's own caches don't show up in the
-# stats.  ``.git`` is included so its blob storage doesn't dominate
-# the file count.
+# Specific noise dir names pruned from the walk so they don't
+# dominate the line count.  Phase 108.9: the broader rule "skip
+# every dotfile directory" lives at the walk site below; this set
+# is now just the explicit non-dotfile noise (caches, vendor dirs).
+# Mirrors the contract in :func:`cantrip.tui.widgets.filetree.is_hidden_path`.
 _HIDDEN_NAMES = frozenset(
     {
         "__pycache__",
-        ".git",
-        ".tox",
-        ".venv",
-        ".mypy_cache",
-        ".ruff_cache",
         "node_modules",
-        ".cantrip",
     }
 )
 
@@ -135,7 +130,11 @@ def compute_repo_stats(root: pathlib.Path) -> RepoStats:
     truncated = False
 
     for dirpath, dirnames, filenames in os.walk(root, topdown=True):
-        dirnames[:] = [d for d in dirnames if d not in _HIDDEN_NAMES]
+        # Phase 108.9: prune the same set the file-tree hides — the
+        # explicit allowlist plus every dotfile directory.  Keeps
+        # ``.github`` workflow YAML and ``.claude`` skill markdown
+        # out of the charm's own line count.
+        dirnames[:] = [d for d in dirnames if d not in _HIDDEN_NAMES and not d.startswith(".")]
         dir_count += len(dirnames)
         for name in filenames:
             file_count += 1

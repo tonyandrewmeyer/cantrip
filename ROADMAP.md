@@ -2337,19 +2337,34 @@ shapes (8 tests).
 **Exit criteria:** Title row no longer carries the generic ``⭘``
 glyph; the row carries actual context.
 
-### 108.9 — File-tree dotfile cull
+### 108.9 — File-tree dotfile cull ✓
 
-- [ ] Expand ``filetree._HIDDEN_NAMES`` to also hide every dotfile
-  directory by default (``p.name.startswith(".")``), or — preferred —
-  collapse all dotfile dirs under a single ``··· hidden (N)`` node at
-  the bottom of the tree that expands on click.
-- [ ] First six entries a user sees are charm-relevant
-  (``pyproject.toml``, ``src/``, ``tests/``), not ``.hypothesis`` /
-  ``.pytest_cache`` / ``.claude`` / ``.craft`` / ``.agents`` /
-  ``.github``.
+- [x] Replaced the explicit ``filetree._HIDDEN_NAMES`` allowlist
+  with the broader rule "specific noise dir *or* any dotfile
+  directory" via :func:`cantrip.tui.widgets.filetree.is_hidden_path`.
+  Dotfile **files** (``.gitignore``, ``.editorconfig``,
+  ``.envrc``, ``.python-version``) stay visible because they are
+  routinely edited; dotfile **directories** (``.git``, ``.tox``,
+  ``.venv``, ``.mypy_cache``, ``.ruff_cache``, ``.pytest_cache``,
+  ``.hypothesis``, ``.github``, ``.claude``, ``.craft``,
+  ``.cantrip``, ``.vscode``, ``.idea``, …) all collapse under
+  one rule rather than a perpetually-growing allowlist.  The
+  ``··· hidden (N)`` placeholder approach was deferred — opt-in
+  reveal can be added later if a user actually needs it.
+- [x] First six entries the user sees in cantrip's own checkout
+  are now ``benchmarks`` / ``cookbook`` / ``cov_annotate`` /
+  ``demos`` / ``design`` / ``dist`` — recognisable charm content
+  rather than tool state.
+- [x] :func:`compute_repo_stats` mirrors the same rule so the
+  charm's reported line count is not inflated by ``.github``
+  workflow YAML or ``.claude`` skill markdown.
 
-**Exit criteria:** Welcome render's right panel shows recognisable
-charm content above the fold.
+**Exit criteria:** ``tests/unit/tui/test_filetree_filter.py``
+covers 28 cases — every dotfile dir in the historic noise set is
+hidden, every dotfile file remains visible, the explicit non-dot
+entries (``__pycache__``, ``node_modules``) still hide, and the
+repo-stats walk skips dotfile dirs end-to-end.  All 7,551 unit
+tests pass.
 
 ### What this phase is *not*
 

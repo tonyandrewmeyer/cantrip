@@ -5,6 +5,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **File-tree dotfile cull (Phase 108.9).**  The Charm Files panel
+  used to surface every dotfile directory at the top — opening
+  Cantrip in its own checkout showed ``.agents``, ``.claude``,
+  ``.craft``, ``.github``, ``.hypothesis``, ``.pytest_cache`` as
+  the first six entries before any charm content.  The filter is
+  now "specific noise dirs *or* any dotfile directory"; dotfile
+  **files** (``.gitignore``, ``.editorconfig``, ``.envrc``) stay
+  visible because they are routinely edited.  The same rule
+  prunes the ``compute_repo_stats`` walk so the file count and
+  the visible tree don't drift.
+
 - **Timestamp visual rhythm (Phase 108.6).**  The chat used to
   render ``[HH:MM]`` on every message, which read as a logfile in
   busy sessions.  ``ChatWidget`` now suppresses the chip on tool

@@ -10,19 +10,37 @@ from textual.widgets import DirectoryTree, Static
 
 from cantrip.tui.widgets import repo_stats as repo_stats_widget
 
-# Directories and patterns to hide from the tree.
+# Specific noise dirs to hide regardless of how their name looks.
+# These are the long-standing entries; the dotfile-dir rule below
+# (Phase 108.9) is what actually does most of the work.
 _HIDDEN_NAMES = frozenset(
     {
         "__pycache__",
-        ".git",
-        ".tox",
-        ".venv",
-        ".mypy_cache",
-        ".ruff_cache",
         "node_modules",
-        ".cantrip",
     }
 )
+
+
+def is_hidden_path(path: pathlib.Path) -> bool:
+    """Return ``True`` when *path* should not appear in the file tree.
+
+    Phase 108.9: the rule is "noise dir by name *or* dotfile
+    directory".  Dotfile **files** (``.gitignore``,
+    ``.editorconfig``, ``.envrc``) stay visible — those are
+    routinely edited.  Dotfile **directories** (``.git``,
+    ``.tox``, ``.venv``, ``.mypy_cache``, ``.ruff_cache``,
+    ``.pytest_cache``, ``.hypothesis``, ``.github``, ``.claude``,
+    ``.craft``, ``.cantrip``, …) are caches, build artefacts,
+    or tool state — never things the user opens from the tree —
+    so they all collapse under one rule rather than a perpetually-
+    growing allowlist.
+
+    The check uses :meth:`pathlib.Path.is_dir`, which costs one
+    stat per entry; the tree only ever filters one directory's
+    immediate children at a time so the overhead is bounded.
+    """
+    return path.name in _HIDDEN_NAMES or (path.name.startswith(".") and path.is_dir())
+
 
 # Below this widget width, hide the stats sidebar so the tree still
 # fits in narrow terminals.  Picked to leave the tree at least 24
@@ -37,7 +55,7 @@ class _FilteredTree(DirectoryTree):
         self, paths: collections.abc.Iterable[pathlib.Path]
     ) -> collections.abc.Iterable[pathlib.Path]:
         """Hide hidden/noise directories from the tree."""
-        return [p for p in paths if p.name not in _HIDDEN_NAMES]
+        return [p for p in paths if not is_hidden_path(p)]
 
 
 class CharmTreeWidget(Widget):
