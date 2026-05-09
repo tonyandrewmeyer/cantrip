@@ -37,13 +37,20 @@
   edits in 8 min.  Keeps a place on the candidate list as the
   speed pick if the smoke server is already running, but not
   productionised.
-- **Other candidates** that fit at the corrected ~12 GiB budget:
-  - **DeepSeek-Coder-V2-Lite-Instruct** (16 B MoE, 2.4 B active) —
-    not yet smoked.  Lower priority now that Qwen3-14B has
-    cleared the bar; useful as a comparison data point.
-  - **Mistral Nemo 12B** — native function calling, 128 K context;
-    stays an option for long-context runs.
-- **Ruled out (or demoted) outright.**
+- **Smoked and ruled out (each on different infrastructure
+  grounds — none are model-quality failures).**
+  - **DeepSeek-Coder-V2-Lite-Instruct** (16 B MoE, §5.7.1) —
+    b8589 llama.cpp build segfaults after init via the fused
+    Gated Delta Net path with Flash Attention force-disabled.
+    Needs a newer llama.cpp build to evaluate fairly.
+  - **Mistral Nemo 12B** (§5.2.1) — Mistral's Tekken chat
+    template rejects cantrip's separate ``"tool"`` role messages
+    (strict alternation enforced); ``--chat-template chatml``
+    override breaks tool-call *generation* (model can't emit
+    ChatML tool-call markers, hallucinates inline natural-
+    language pretending to be a tool result).  Needs cantrip-side
+    per-provider message rewriting (filed as Phase 108).
+- **Ruled out outright (model- or family-level).**
   - **gemma4** — 10 K context exhausts before a real conversation
     starts.
   - **Qwen2.5-Coder family (7 B, 14 B, 32 B)** — the
@@ -307,19 +314,58 @@ Smoke artefacts retained at:
 - ``cantrip-iter-runs/qwen3-8b-improve/ntfy/`` — partial charm
   output (Run #2 final state)
 
-### 5.2 Mistral Nemo 12B *(long-context alternative)*
+### 5.2 Mistral Nemo 12B *(blocked on Phase 108 — chat-template mismatch with cantrip's tool-role messages)*
 
 - 128 K native context, native function-calling, very solid Python
-  performance per public benchmarks.
-- ~9.5 GB total with a 32 K cache — fits, but tight. With a
-  128 K cache it'd be ~13 GB and we'd be partial-offloading again.
-  We'd ship it with a default 32 K cache and document the bigger
-  cache as an opt-in.
-- ~30–40 tok/s decode is a meaningful step down from 8 B. On the
-  ntfy-improve scenario that translates to ~25 % longer wall clock.
-  Trade is "no compaction needed" against "every edit takes longer".
-- This is the model to pick if Phase 104 (short-session mode) gets
-  deferred.
+  performance per public benchmarks.  Q4_K_M ~7.5 GB
+  ([bartowski/Mistral-Nemo-Instruct-2407-GGUF](https://huggingface.co/bartowski/Mistral-Nemo-Instruct-2407-GGUF));
+  no thinking-mode overhead (97-tokens-of-reasoning vs 2 tokens
+  per "say OK" — significant per-turn time saving vs Qwen3).
+
+#### 5.2.1 Smoked, ruled out (Phase 105.1.7, 2026-05-09)
+
+Smoke server scaffold under
+``inference-snaps/mistral-nemo-12b/`` boots cleanly with
+b8589 + CUDA12.  Pre-flight ``/v1/models`` and plain-hello checks
+both pass — model loads and responds with no thinking overhead.
+
+The synthetic tool-call check passes when run in isolation
+(clean ``tool_calls`` array on the first turn).  But the *second*
+turn — where cantrip sends ``[system, user, assistant(tool_call),
+tool(result)]`` — fails with a 500 from the embedded Tekken chat
+template:
+
+```
+Error: Jinja Exception: After the optional system message,
+conversation roles must alternate user/assistant/user/assistant/...
+```
+
+Mistral's Tekken template enforces strict role alternation and
+treats cantrip's separate ``"tool"`` role messages as illegal
+mid-conversation; Mistral expects tool calls/results inline within
+assistant turns as ``[TOOL_CALLS]...[/TOOL_CALLS]`` /
+``[TOOL_RESULTS]...[/TOOL_RESULTS]`` markers.
+
+Tried ``--chat-template chatml`` as a quick override:
+- Input rendering works (no more alternation crash).
+- But the model — trained on Mistral format — **can't generate
+  ChatML-format tool calls**.  Synthetic tool-call check returns
+  ``tool_calls: null`` with the model hallucinating weather data
+  inline as natural-language text:
+
+  > *"To get the weather in Edinburgh, I'll use the get_weather
+  > tool. Here's the current weather information: Temperature:
+  > 15°C, Weather: Partly cloudy..."*
+
+Both directions are blocked.  Making Mistral Nemo work in
+cantrip needs **per-provider message rewriting** that folds
+cantrip's ``tool``-role messages into adjacent assistant turns
+with the right Mistral-format markers.  That work is filed as
+Phase 108 in ROADMAP.
+
+Until Phase 108 lands, Mistral Nemo can't be a default.  Once it
+lands, the smoke shape is preserved at
+``inference-snaps/mistral-nemo-12b/`` for re-evaluation.
 
 ### 5.3 Phi-4-Mini *(speed alternative)*
 
@@ -502,19 +548,51 @@ Smoke artefacts retained at:
   measurements above are reconstructed from the Phase 107 NDJSON
   and the doc-as-of-2026-05-10 snapshot of this section.
 
-### 5.7 DeepSeek-Coder-V2-Lite-Instruct *(MoE candidate)*
+### 5.7 DeepSeek-Coder-V2-Lite-Instruct *(blocked on infrastructure — b8589 build doesn't run this model end-to-end)*
 
 - 16 B total parameters, **2.4 B active** per inference (MoE).
-  Q4_K_M ~10 GB ([lmstudio-community GGUF](https://huggingface.co/lmstudio-community/DeepSeek-Coder-V2-Lite-Instruct-GGUF)).
-  Total VRAM with a 32 K cache ~12 GB — fits, but tight.
-- Code-tuned by DeepSeek; their reported benchmarks have it
+  Code-tuned by DeepSeek; their reported benchmarks have it
   competitive with GPT-4-Turbo on code-specific tasks.
-- 128 K native context — best long-context option in this tier.
-- **Risk:** tool-calling reliability with llama.cpp's `--jinja`
-  flag isn't documented as well as the Qwen family.  The smoke
-  must include a tool-call round-trip check before any improve-
-  scenario attempt.
-- **Smoke shape:** same as §5.6, target port 8342.
+  128 K native context, Multi-head Latent Attention (MLA).
+
+#### 5.7.1 Smoked, ruled out (Phase 105.1.6, 2026-05-09)
+
+Smoke server scaffold under
+``inference-snaps/deepseek-coder-v2-lite/``.  Hit three different
+failure modes at successive config points, all pointing at
+fragile DeepSeek-V2-Lite support in the b8589 llama.cpp build:
+
+| Attempt | Config | Failure |
+|---|---|---|
+| 1 | Q4_K_M (~10 GB), ctx=32K, parallel=4 | OOM on 8.6 GB compute buffer |
+| 2 | Q4_K_M, ctx=16K, parallel=1 | OOM on 4.3 GB KV cache (no MLA savings — Flash Attention auto-disabled because "FA tensor assigned to CPU due to missing support") |
+| 3 | IQ3_M (~7.5 GB, [bartowski](https://huggingface.co/bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF)), ctx=16K, parallel=1, q8_0 KV | **Segfault after init** — buffers all reserve cleanly ("compute buffer size = 614.27 MiB", "graph nodes = 1845, graph splits = 2"), then ``Segmentation fault (core dumped)`` on the first inference path |
+
+The third attempt is the most informative.  The trace shows the
+b8589 build resolved DeepSeek-V2-Lite via a fused "Gated Delta
+Net" path with Flash Attention forced off because the FA tensor
+binding lands on CPU instead of GPU.  That code path then
+segfaults on first use — a build-version bug, not a budget bug.
+
+Did **not** attempt the chained-p workaround or a manual pack —
+the model never served a request, so there's nothing to drive
+cantrip with.
+
+Likely fixes:
+
+1. **Newer llama.cpp build** (b9000+) with mature DeepSeek-V2
+   support.  Canonical's
+   [llama.cpp-builds](https://github.com/canonical/llama.cpp-builds/releases)
+   may already have one.  Cheapest experiment if we want to
+   re-evaluate this candidate.
+2. **Different GGUF vendor** with their own llama.cpp patches
+   (unsloth has dynamic quants for DeepSeek-V2 that ship
+   pre-tuned).  Untested.
+
+Until either lands, DeepSeek-Coder-V2-Lite stays blocked.  Smoke
+artefacts retained at
+``inference-snaps/deepseek-coder-v2-lite/`` for re-evaluation
+when the llama.cpp version changes.
 
 ## 6. Recommendation
 

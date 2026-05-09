@@ -45,6 +45,8 @@ take over without a rename.
 | [`qwen3-coder/`](qwen3-coder/) | Qwen3-Coder 30B-A3B Instruct (Q4_K_M) | chat (code) | Scaffold, not built |
 | [`qwen3-8b/`](qwen3-8b/) | Qwen3-8B Instruct (Q4_K_M) | chat (general, GPU-fit) | Phase 105.1 smoke scaffold (no `snapcraft.yaml` yet) |
 | [`qwen3-14b/`](qwen3-14b/) | Qwen3-14B (Q4_K_M) | chat (general, GPU-fit at 16 K) | Phase 105.1.5 smoke scaffold (no `snapcraft.yaml` yet) |
+| [`deepseek-coder-v2-lite/`](deepseek-coder-v2-lite/) | DeepSeek-Coder-V2-Lite-Instruct (16 B MoE Q4_K_M) | chat (code-tuned, MoE, MLA) | Phase 105.1.6 smoke scaffold (no `snapcraft.yaml` yet) |
+| [`mistral-nemo-12b/`](mistral-nemo-12b/) | Mistral Nemo 12B Instruct (Q4_K_M) | chat (general, native function calling, 128 K context) | Phase 105.1.7 smoke scaffold (no `snapcraft.yaml` yet) |
 
 ## Building a snap
 

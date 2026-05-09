@@ -50,7 +50,14 @@ _VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3", "gemma4"})
 # every llama.cpp-backed snap.  Add a snap here once you've confirmed
 # tool-call round-tripping works against it.
 _TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset(
-    {"qwen3-coder", "gemma4", "qwen3-8b", "qwen3-14b"}
+    {
+        "qwen3-coder",
+        "gemma4",
+        "qwen3-8b",
+        "qwen3-14b",
+        "deepseek-coder-v2-lite",
+        "mistral-nemo-12b",
+    }
 )
 
 

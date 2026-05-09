@@ -1,19 +1,18 @@
 #!/bin/bash
-# Phase 105.1.5 smoke-test runner: drive a stock llama.cpp
-# llama-server against the Qwen3-14B Q4_K_M GGUF, with full GPU
-# offload, 16 K context (the largest the 12 GB GPU admits with the
-# 9 GB weights), and --jinja so tool-calling round-trips through
-# the OpenAI-compatible endpoint.
+# Phase 105.1.7 smoke-test runner: drive a stock llama.cpp
+# llama-server against the Mistral Nemo 12B Instruct Q4_K_M GGUF,
+# with full GPU offload, 24 K context, and --jinja so tool-calling
+# round-trips through the OpenAI-compatible endpoint.
 #
 # Run on the **host** (the cantrip multipass VM has no GPU
 # passthrough). Foreground process; Ctrl-C kills it cleanly.
 #
 # Pairs with:
-#   - inference-snaps/qwen3-14b/prepare-models.sh   (download GGUF)
-#   - scripts/setup-vm-inference-proxy.sh 8340      (expose to VM)
+#   - inference-snaps/mistral-nemo-12b/prepare-models.sh
+#   - scripts/setup-vm-inference-proxy.sh 8344  (expose to VM)
 #
 # Once running, the cantrip-side checks live in
-# `design/LOCAL_MODELS.md` §5.6 and the Phase 105.1.5 ROADMAP entry.
+# `design/LOCAL_MODELS.md` §5.2 and the Phase 105.1.7 ROADMAP entry.
 
 set -euo pipefail
 
@@ -22,20 +21,28 @@ SNAP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SNAP_DIR"
 
 # Configuration. All overridable via env var.
-PORT="${PORT:-8340}"
+PORT="${PORT:-8344}"
 HOST="${HOST:-127.0.0.1}"
-# 16 K is the largest that fits.  KV cache for Qwen3-14B at fp16 is
-# ~170 KB/token (40 layers × 8 KV heads × 128 head_dim × 2 (K+V) ×
-# 2 bytes), so 16 K → ~2.7 GB; combined with 9 GB weights this
-# leaves ~250 MB on a 12 GB GPU for activations.  Drop to 8192 if
-# allocation fails at startup, or quantise the cache via
-# CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0 to halve KV size and reach
-# 32 K.
-CTX_SIZE="${CTX_SIZE:-16384}"
+# Mistral Nemo's KV cache is ~160 KB/token at fp16 (40 layers ×
+# 8 KV heads × 128 head_dim × 2 (K+V) × 2 bytes).  At 24 K context
+# that's ~3.8 GB; combined with the 7.5 GB Q4_K_M weights this
+# leaves ~700 MB headroom on a 12 GB GPU for compute.  Drop to
+# 16384 if allocation fails, or quantise the cache via
+# CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0 to halve KV and reach 64 K.
+# Mistral Nemo trains to 128 K natively but llama.cpp can't fit
+# that on 12 GB without aggressive KV quantisation.
+CTX_SIZE="${CTX_SIZE:-24576}"
+N_PARALLEL="${N_PARALLEL:-1}" # llama-server defaults to 4 parallel slots; we only use 1.
 CACHE_TYPE_K="${CACHE_TYPE_K:-}" # e.g. "q8_0" to quantise K cache.
 CACHE_TYPE_V="${CACHE_TYPE_V:-}" # e.g. "q8_0" to quantise V cache.
-N_GPU_LAYERS="${N_GPU_LAYERS:-99}" # 99 == "all"; Qwen3-14B has 40 layers.
-GGUF_FILE="${GGUF_FILE:-Qwen_Qwen3-14B-Q4_K_M.gguf}"
+# Chat-template override.  Mistral Nemo's embedded Tekken template
+# rejects cantrip's "tool" role messages with a strict
+# alternation check; CHAT_TEMPLATE=chatml swaps to a permissive
+# template that handles tool messages cleanly.  Empty default keeps
+# the GGUF's embedded template.
+CHAT_TEMPLATE="${CHAT_TEMPLATE:-}"
+N_GPU_LAYERS="${N_GPU_LAYERS:-99}" # 99 == "all"; Mistral Nemo has 40 layers.
+GGUF_FILE="${GGUF_FILE:-Mistral-Nemo-Instruct-2407-Q4_K_M.gguf}"
 MODEL_PATH="${MODEL_PATH:-cache/$GGUF_FILE}"
 
 # Pinned llama.cpp build — matches the version the qwen3-coder snap
@@ -56,7 +63,7 @@ LLAMA_SERVER="${LLAMA_SERVER:-$ENGINE_DIR/llama-server}"
 
 if [[ ! -f "$MODEL_PATH" ]]; then
   echo "ERROR: GGUF not found at $MODEL_PATH" >&2
-  echo "Run inference-snaps/qwen3-14b/prepare-models.sh first." >&2
+  echo "Run inference-snaps/mistral-nemo-12b/prepare-models.sh first." >&2
   exit 1
 fi
 
@@ -118,7 +125,7 @@ done
 export LD_LIBRARY_PATH="${ld_extra}:${LD_LIBRARY_PATH:-}"
 
 cat <<EOF
-Starting Qwen3-14B smoke server.
+Starting Mistral Nemo 12B smoke server.
 
   Engine:    $LLAMA_SERVER
   Model:     $MODEL_PATH
@@ -147,6 +154,7 @@ args=(
   --host "$HOST"
   --port "$PORT"
   --ctx-size "$CTX_SIZE"
+  --parallel "$N_PARALLEL"
   --n-gpu-layers "$N_GPU_LAYERS"
   --jinja
   --metrics
@@ -155,5 +163,6 @@ args=(
 )
 [[ -n "$CACHE_TYPE_K" ]] && args+=(--cache-type-k "$CACHE_TYPE_K")
 [[ -n "$CACHE_TYPE_V" ]] && args+=(--cache-type-v "$CACHE_TYPE_V")
+[[ -n "$CHAT_TEMPLATE" ]] && args+=(--chat-template "$CHAT_TEMPLATE")
 
 exec "$LLAMA_SERVER" "${args[@]}"

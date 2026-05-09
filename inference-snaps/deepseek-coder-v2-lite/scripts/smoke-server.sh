@@ -1,19 +1,20 @@
 #!/bin/bash
-# Phase 105.1.5 smoke-test runner: drive a stock llama.cpp
-# llama-server against the Qwen3-14B Q4_K_M GGUF, with full GPU
-# offload, 16 K context (the largest the 12 GB GPU admits with the
-# 9 GB weights), and --jinja so tool-calling round-trips through
-# the OpenAI-compatible endpoint.
+# Phase 105.1.6 smoke-test runner: drive a stock llama.cpp
+# llama-server against the DeepSeek-Coder-V2-Lite-Instruct Q4_K_M
+# GGUF, with full GPU offload, 32 K context (DeepSeek-V2's MLA
+# attention compresses the KV cache enough that 32 K + the 10 GB
+# weights still fits comfortably on a 12 GB GPU), and --jinja so
+# tool-calling round-trips through the OpenAI-compatible endpoint.
 #
 # Run on the **host** (the cantrip multipass VM has no GPU
 # passthrough). Foreground process; Ctrl-C kills it cleanly.
 #
 # Pairs with:
-#   - inference-snaps/qwen3-14b/prepare-models.sh   (download GGUF)
-#   - scripts/setup-vm-inference-proxy.sh 8340      (expose to VM)
+#   - inference-snaps/deepseek-coder-v2-lite/prepare-models.sh
+#   - scripts/setup-vm-inference-proxy.sh 8342  (expose to VM)
 #
 # Once running, the cantrip-side checks live in
-# `design/LOCAL_MODELS.md` §5.6 and the Phase 105.1.5 ROADMAP entry.
+# `design/LOCAL_MODELS.md` §5.7 and the Phase 105.1.6 ROADMAP entry.
 
 set -euo pipefail
 
@@ -22,20 +23,29 @@ SNAP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SNAP_DIR"
 
 # Configuration. All overridable via env var.
-PORT="${PORT:-8340}"
+PORT="${PORT:-8342}"
 HOST="${HOST:-127.0.0.1}"
-# 16 K is the largest that fits.  KV cache for Qwen3-14B at fp16 is
-# ~170 KB/token (40 layers × 8 KV heads × 128 head_dim × 2 (K+V) ×
-# 2 bytes), so 16 K → ~2.7 GB; combined with 9 GB weights this
-# leaves ~250 MB on a 12 GB GPU for activations.  Drop to 8192 if
-# allocation fails at startup, or quantise the cache via
-# CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0 to halve KV size and reach
-# 32 K.
+# Initial 32 K default OOMed with cudaMalloc failing on an 8.6 GB
+# single allocation — the compute / scratch buffer for this model
+# scales aggressively with context and the MLA-cache savings don't
+# extend to those buffers.  16 K + parallel=1 fits comfortably.
+# Bump CTX_SIZE if you confirm headroom in nvidia-smi during a
+# warm run; a 5070 Ti Laptop 12 GB might admit 24 K with quantised
+# KV (CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0).
 CTX_SIZE="${CTX_SIZE:-16384}"
-CACHE_TYPE_K="${CACHE_TYPE_K:-}" # e.g. "q8_0" to quantise K cache.
-CACHE_TYPE_V="${CACHE_TYPE_V:-}" # e.g. "q8_0" to quantise V cache.
-N_GPU_LAYERS="${N_GPU_LAYERS:-99}" # 99 == "all"; Qwen3-14B has 40 layers.
-GGUF_FILE="${GGUF_FILE:-Qwen_Qwen3-14B-Q4_K_M.gguf}"
+N_PARALLEL="${N_PARALLEL:-1}" # llama-server defaults to 4 parallel slots; we only use 1.
+# DeepSeek-V2-Lite needs quantised KV cache to fit in 12 GB on the
+# b8589 llama.cpp build.  Flash Attention auto-disables here
+# (the FA tensor lands on CPU due to missing GPU support for this
+# attention shape), and without FA the fp16 KV cache is ~4.3 GB
+# at 16 K context — too big alongside the 7.5 GB IQ3_M weights.
+# q8_0 halves that to ~2.2 GB and gives ~1.7 GB headroom for the
+# compute buffer.  Override with CACHE_TYPE_K= CACHE_TYPE_V= (empty)
+# if a future llama.cpp build re-enables FA on this model.
+CACHE_TYPE_K="${CACHE_TYPE_K-q8_0}"
+CACHE_TYPE_V="${CACHE_TYPE_V-q8_0}"
+N_GPU_LAYERS="${N_GPU_LAYERS:-99}" # 99 == "all"; DeepSeek-Coder-V2-Lite has 27 layers.
+GGUF_FILE="${GGUF_FILE:-DeepSeek-Coder-V2-Lite-Instruct-IQ3_M.gguf}"
 MODEL_PATH="${MODEL_PATH:-cache/$GGUF_FILE}"
 
 # Pinned llama.cpp build — matches the version the qwen3-coder snap
@@ -56,7 +66,7 @@ LLAMA_SERVER="${LLAMA_SERVER:-$ENGINE_DIR/llama-server}"
 
 if [[ ! -f "$MODEL_PATH" ]]; then
   echo "ERROR: GGUF not found at $MODEL_PATH" >&2
-  echo "Run inference-snaps/qwen3-14b/prepare-models.sh first." >&2
+  echo "Run inference-snaps/deepseek-coder-v2-lite/prepare-models.sh first." >&2
   exit 1
 fi
 
@@ -118,7 +128,7 @@ done
 export LD_LIBRARY_PATH="${ld_extra}:${LD_LIBRARY_PATH:-}"
 
 cat <<EOF
-Starting Qwen3-14B smoke server.
+Starting DeepSeek-Coder-V2-Lite smoke server.
 
   Engine:    $LLAMA_SERVER
   Model:     $MODEL_PATH
@@ -147,6 +157,7 @@ args=(
   --host "$HOST"
   --port "$PORT"
   --ctx-size "$CTX_SIZE"
+  --parallel "$N_PARALLEL"
   --n-gpu-layers "$N_GPU_LAYERS"
   --jinja
   --metrics

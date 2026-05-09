@@ -35,6 +35,13 @@ LLAMA_BUILD_VARIANT="${LLAMA_BUILD_VARIANT:-cuda12}" # "cuda12" / "rocm" / "" fo
 
 # Engine cache layout matches what Phase 105.3's snap will reuse.
 ENGINE_DIR="engines/llamacpp-${LLAMA_BUILD_VARIANT:-cpu}-${LLAMA_BUILD_TAG}"
+# Locate an already-extracted binary before deciding to redownload.
+# Canonical's tarballs nest under bin/ so a literal
+# ``$ENGINE_DIR/llama-server`` never matches.  Resolve once via
+# find(1) so a second run reuses the cached engine.
+if [[ -z "${LLAMA_SERVER:-}" && -d "$ENGINE_DIR" ]]; then
+  LLAMA_SERVER="$(find "$ENGINE_DIR" -name llama-server -type f -executable 2>/dev/null | head -n 1)"
+fi
 LLAMA_SERVER="${LLAMA_SERVER:-$ENGINE_DIR/llama-server}"
 
 if [[ ! -f "$MODEL_PATH" ]]; then

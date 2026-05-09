@@ -2378,6 +2378,127 @@ under the new visuals.
 
 ---
 
+## Phase 108: Per-Provider Message-Format Normalisation — Unblock Non-Qwen Local Models
+
+**Goal:** Add a per-provider message-rewriting hook so cantrip's
+internal ``Message`` representation (OpenAI/Qwen-shaped, with
+separate ``user`` / ``assistant`` / ``tool`` roles) can be
+serialised to providers whose chat templates expect different
+conventions — most notably Mistral's Tekken format
+(``[TOOL_CALLS]…[/TOOL_CALLS]`` and
+``[TOOL_RESULTS]…[/TOOL_RESULTS]`` markers folded *inline* within
+assistant turns, not as separate role messages).
+
+### Why now
+
+Phase 105.1.7 smoked Mistral Nemo 12B end-to-end and hit a
+fundamental serialisation cliff (see
+``design/LOCAL_MODELS.md`` §5.2.1):
+
+- Mistral's embedded Tekken template enforces strict
+  ``user``/``assistant`` alternation and rejects cantrip's
+  ``tool``-role messages with ``Jinja Exception: After the optional
+  system message, conversation roles must alternate ...``.
+- Override to ``--chat-template chatml`` gets past the input check
+  but the model — trained on Mistral format — can't *generate*
+  ChatML tool-call markers.  It hallucinates tool results inline
+  as natural-language text instead of emitting structured
+  ``tool_calls``.
+
+Both directions are blocked.  Mistral Nemo is the most prominent
+example, but the same shape will affect any model family trained
+on a tools-inline-in-assistant convention (Mistral's own larger
+models, Magistral, anything else built on Mistral's tokeniser
+without an OpenAI-style retrofit).
+
+The current candidate set treats Qwen-family templates as the
+only path to working tool calls.  Phase 108 widens the door so
+non-Qwen candidates can be evaluated fairly.
+
+### 108.1 P0 — Provider hook for outbound message rewriting
+
+- [ ] Add ``LLMProvider.rewrite_messages(messages: list[Message])
+  -> list[Message]`` (or equivalent) — default identity, Mistral
+  family overrides to fold consecutive ``tool``-role messages
+  into the *prior* ``assistant`` message's ``content`` /
+  ``tool_calls`` payload using Mistral's required markers.
+- [ ] Wire the hook into ``InferenceSnapProvider.complete()`` /
+  ``stream()`` so rewriting fires once per LLM call before the
+  request body is built.  Frontier providers (Gemini, Claude,
+  OpenAI-compatible) inherit the identity default — they already
+  accept the ``tool`` role natively.
+
+### 108.2 P0 — Inbound parser for Mistral-format tool calls
+
+- [ ] Mistral models emit
+  ``[TOOL_CALLS][{"name":"…","arguments":{…}}][/TOOL_CALLS]``
+  inline within assistant content rather than the OpenAI-shaped
+  ``tool_calls`` array.  Add a parser that splits
+  ``response.content`` on those markers and returns the cantrip
+  ``ToolCall`` shape.  llama.cpp's ``--jinja`` *should* handle
+  this on the server side, but Phase 105.1.7 showed it doesn't
+  always — fall back to client-side parsing when the server
+  returns ``content`` containing the markers.
+- [ ] Negative test: when no ``[TOOL_CALLS]`` markers are present,
+  treat ``content`` as a plain assistant reply.  Don't false-
+  positive on an LLM that mentions the literal token in regular
+  prose.
+
+### 108.3 P1 — Re-run the Mistral Nemo 12B smoke
+
+- [ ] With 108.1 + 108.2 landed, retry the
+  ``inference-snaps/mistral-nemo-12b/`` smoke (server scaffold
+  already in place).  Pass criterion: produce ≥ 80 % of the
+  improve-02 feature target in ≤ 30 min, OR exit cleanly with a
+  Phase 102 / 103 / 106 / 107 failure mode that doesn't imply a
+  message-format issue.
+- [ ] Document measured findings in
+  ``design/LOCAL_MODELS.md`` §5.2.2.
+
+### 108.4 P1 — Family detection + opt-in
+
+- [ ] ``InferenceSnapProvider`` should pick the right rewriter
+  based on the snap name (``mistral-nemo-*``,
+  ``magistral-*`` → Mistral path; everything else →
+  identity).
+- [ ] Operator-visible env var
+  ``CANTRIP_MESSAGE_FORMAT={openai,mistral,…}`` overrides the
+  family detection for unknown snaps (e.g. a new Mistral fine-
+  tune with a non-standard name).  Defaults to ``openai``.
+
+### 108.5 P1 — Tests
+
+- [ ] Unit test ``rewrite_messages`` for the Mistral path: a
+  conversation containing ``[user, assistant(with tool_calls),
+  tool(result)]`` rewrites to ``[user, assistant(content
+  containing the [TOOL_CALLS]/[/TOOL_CALLS] +
+  [TOOL_RESULTS]/[/TOOL_RESULTS] markers folded in)]``.
+- [ ] Unit test the inbound parser: response with
+  ``[TOOL_CALLS][...][/TOOL_CALLS]`` content splits into a
+  ``ToolCall`` array and an empty ``content`` field.
+- [ ] Recorded-trace test pinning the wire format (the same way
+  Phase 41 pins frontier-provider streaming).
+
+### What this phase is *not*
+
+- **Not a generic chat-template DSL.**  We add Mistral-shaped
+  rewriting for the cases we actually need; we don't build a
+  template-translation framework.  If a third family shows up
+  later we add another concrete rewriter.
+- **Not a fix for DeepSeek-V2-Lite's b8589 segfault.**  That's a
+  llama.cpp version issue (§5.7.1) and unrelated.
+- **Not a change to the ``Message`` dataclass.**  cantrip's
+  internal representation stays OpenAI-shaped; the rewriter
+  produces serialisation-time copies for Mistral providers.
+
+**Exit criteria:** Mistral Nemo 12B drives an end-to-end
+ntfy-improve scenario that produces a packable charm, comparable
+to Qwen3-14B Run #3 (§5.6.1); the two unit tests in 108.5 pin the
+rewrite + parse paths; ``design/LOCAL_MODELS.md`` §5.2.2 records
+the measured outcome.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -2475,4 +2596,5 @@ under the new visuals.
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
 | M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
 | M107: Tool-Call Failure Cap | 107 | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; a regression test pins the shape; smoke runs that hit a hard tool scope exit cleanly with stderr telling the operator which tool exhausted retries |
+| M108: Non-Qwen Local Models | 108 | An ``LLMProvider.rewrite_messages`` hook + Mistral-shape inbound tool-call parser unblocks providers whose chat templates expect tool calls / results inline within assistant turns (Mistral Tekken format); Mistral Nemo 12B drives the ntfy improve scenario end-to-end; ``CANTRIP_MESSAGE_FORMAT`` env var lets operators force the rewriter for unknown snaps; recorded-trace tests pin the wire format |
 | M108: TUI Visual Refresh | 108 | Welcome state has identity (wordmark + tagline); double frames around the chat are gone; modal screens use single rounded borders without manual ``─`` underlines; ``$primary`` is reserved for focus / accent and shows up in under ten places per screen; ModelInfoBar collapses to one line by default; tool-block captions read as English (``▸ read backend/pyproject.toml``); timestamps appear only on gaps; loading indicator is on-brand; header carries actual context; file tree surfaces charm content first |
