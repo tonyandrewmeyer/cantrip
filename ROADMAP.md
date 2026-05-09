@@ -2145,121 +2145,6 @@ useful guidance and without making them feel bolted on.
 
 ---
 
-## Phase 102: Long-Generation Resilience — Streaming Reconnect for Slow Local Snaps
-
-**Goal:** Stop losing 5–10 minutes of work when a single LLM
-generation outlasts the inference snap's HTTP keep-alive.  Today the
-provider raises ``ProviderError("Server disconnected without sending
-a response.")`` mid-edit, the conversation aborts, and the charm
-tree ends up partly-rewritten.
-
-### Why now
-
-Two of three ``improve`` runs against the qwen3-coder snap during the
-same 1-hour window died with this error.  Each death cost ~10 minutes
-of useful tool calls because:
-
-- The model had been actively decoding (``n_decoded`` was climbing)
-  when the connection dropped.
-- ``cantrip`` propagated the error and the conversation loop exited,
-  leaving the work-in-progress edit half-applied.
-- Resume reconstructed the message history but the next round burned
-  multiple turns re-reading files that had been read just before the
-  disconnect.
-
-The pattern is specific to slow local providers (the qwen3-coder snap
-serves ~13 tok/s peak / 2–5 tok/s effective once the conversation is
-several KB long); a 1.5–2 KB ``edit_file`` tool call lands in 10 s on
-a frontier API but takes 8–15 minutes locally and that's where the
-keep-alive trips.
-
-### 102.1 P0 — Bump the provider HTTP timeout
-
-- [x] ``InferenceSnapProvider`` constructs ``httpx.AsyncClient`` with
-  a 300 s default timeout today.  Raise the read timeout to a value
-  big enough for a worst-case big-file rewrite (15–20 minutes), and
-  expose it as ``--snap-read-timeout`` plus ``CANTRIP_SNAP_READ_TIMEOUT``
-  env var so operators on faster GPUs can keep the existing
-  defaults.  (Default is 1200 s; the knob lives at
-  ``InferenceSnapProvider.DEFAULT_READ_TIMEOUT_SECONDS`` /
-  ``READ_TIMEOUT_ENV`` with the resolver helper
-  ``_resolve_read_timeout``.  Non-numeric or non-positive values log
-  a warning and fall back to the default rather than crashing
-  provider construction.)
-- [x] Document the knob in ``docs/src/howto-provider.md`` (and
-  ``docs/src/reference-cli.md`` for the CLI flag entry).
-
-### 102.2 P0 — Switch the slow path to streaming with progress writeback
-
-- [x] When the conversation runs against an inference snap, prefer
-  ``provider.stream`` over ``provider.complete`` so partial token
-  decoding keeps a TCP-level heartbeat going, and (with
-  ``stream_options.include_usage`` already set) the per-chunk events
-  give the executor something to log and persist.  Today
-  ``_complete_with_retry`` only fires ``complete``; route the
-  inference-snap (and any provider with
-  ``conversation_temperature < 0.7``) through streaming
-  automatically.  (Implemented as ``stream_with_retry`` in
-  ``cantrip.agent.retry`` — mirrors ``complete_with_retry``'s
-  rate-limit / overloaded / connection-drop ladder, accumulates
-  chunks into a ``Response``, and exposes an ``on_partial`` hook for
-  the writeback closure below.)
-- [x] Persist the partial assistant message to the session store as
-  it streams (every N chunks or every M seconds, whichever first) so
-  a mid-stream disconnect leaves a recoverable transcript instead
-  of an empty assistant turn that the agent has to regenerate from
-  scratch.  (``_complete_with_retry`` pre-records an empty
-  ``ASSISTANT`` row stamped ``metadata.partial = True`` and hands a
-  closure that calls ``SessionStore.update_message_content`` on every
-  flush.  Default throttle: 8 chunks or 2 s, whichever first.  On
-  successful completion the placeholder is deleted so the
-  conversation loop's canonical ``_record_message`` lands a single
-  row; on retry-exhaustion the partial row is left in place so
-  resume can recover the in-flight transcript.)
-
-### 102.3 P1 — Retry on transient ``Server disconnected`` errors
-
-- [x] ``_raise_http_error`` already maps 429 → ``ProviderRateLimitError``
-  and 5xx → ``ProviderOverloadedError``.  Extend the
-  ``httpx.RemoteProtocolError`` / ``httpx.ReadTimeout`` paths to a
-  new ``ProviderConnectionError`` and let
-  ``complete_with_retry`` retry it (with exponential backoff capped
-  by an overall budget).  Treat repeated disconnects as a soft fail
-  that surfaces in chat, not a hard exit.  (Backoff ladder is
-  ``2 * 2^(attempt-1)`` seconds — separate from the rate-limit
-  ladder because TCP-level drops recover faster than cloud
-  rate-limit windows.  Both ``complete`` and ``stream`` paths in
-  ``_openai_compat`` map the relevant httpx errors.)
-- [x] Operator-facing test exercising
-  ``httpx.RemoteProtocolError`` mid-stream and asserting the next
-  turn lands without re-running file-read tool calls.  (Lives in
-  ``tests/unit/agent/test_retry.py::TestConnectionErrorRetry`` —
-  exercises the recovery path through the dispatcher rather than via
-  a real socket, which is enough to pin the contract.)
-
-### 102.4 P1 — Surface the disconnect in the UI
-
-- [x] When a stream drops, the TUI / Web chat shows a coloured
-  ``[provider reconnect]`` row with the timing context (last
-  ``n_decoded`` if known, retry count, total wall clock spent on the
-  current round).  Users today see only a stack trace and the
-  conversation exiting — they need to know whether to bump the snap's
-  ``--ctx-size`` / ``--parallel`` slot count or just rerun.
-  (Implemented as an ``on_retry`` hook on ``complete_with_retry`` that
-  publishes a ``CHAT_MESSAGE`` and ``STATUS_BAR_CHANGED`` event on
-  every retry — both rate-limit and disconnect.  The "last
-  ``n_decoded``" detail is left out for now; the message format
-  already covers attempt count and delay, which is what the operator
-  needs to decide whether to wait or rerun.)
-
-**Exit criteria:** A 90-minute soak-test against the qwen3-coder
-snap that intentionally throttles connections never exits the
-conversation loop on a transient disconnect; partial assistant
-messages persist across reconnects; the UI explains what happened
-when a reconnect lands.
-
----
-
 ## Phase 103: Resume Hallucination Repair — Re-Read Before Editing
 
 **Goal:** Stop the post-resume ``edit_file: String not found`` cascade
@@ -2910,7 +2795,7 @@ exits cleanly within ~20 minutes regardless of model behaviour.
 | M99: Goal Lifecycle | 99 ✓ | `/pause` and `/resume` toggle the autonomous loop mid-run; `cantrip resume` preserves `/budget` caps; user-prose objective is a first-class session field surfaced via `/goal`; status bar projects running / paused / done / blocked / budget-limited |
 | M100: Wait For | 100 ✓ | Typed-predicate ``wait_for`` tool with file/process/port/command/juju-app waits, hard timeouts, policy-gated commands, and reference docs; streaming-stream monitoring stays deferred behind named triggers |
 | M101: ops-tracing Refresh | 101 ✓ | System prompt, subagent guidance, and the ``_inject_ops_tracing`` injection helper teach the modern ``ops_tracing.Tracing(charm, "<rel>")`` constructor instead of the long-removed ``setup`` shorthand; a regression test exercises the recipe against the live PyPI ``ops-tracing`` API |
-| M102: Long-Generation Resilience | 102 | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
+| M102: Long-Generation Resilience | 102 ✓ | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
 | M103: Resume Hallucination Repair | 103 | Post-``load_state`` turns carry a "must-read-first" directive until the agent re-reads each file it intends to edit; ``edit_file`` / ``multi_edit`` ``old_string`` mismatches return a "did you mean" diff hint instead of the bare-error preview; an opt-in whitespace-tolerant match handles trivial drift; a session counter surfaces hallucination-rate via ``/cost`` |
 | M104: Short-Session Mode | 104 | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
