@@ -93,9 +93,12 @@ Screen {
     color: $primary;
 }
 
-/* Thinking indicator in chat */
+/* Thinking indicator (Phase 108.7) — sized for the single-line
+ * ``ThinkingIndicator`` widget rather than the stock 3-row
+ * ``LoadingIndicator`` it replaced.  Margin keeps the spinner
+ * from sitting flush against the previous chat row. */
 #thinking-indicator {
-    height: 3;
+    height: 1;
     margin: 1 0;
 }
 

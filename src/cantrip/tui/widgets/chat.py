@@ -15,10 +15,11 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Input, LoadingIndicator, Static
+from textual.widgets import Input, Static
 
 from cantrip.agent.commands.slash import CommandInfo
 from cantrip.agent.context_providers import ProviderInfo
+from cantrip.ui import flavour
 
 # Duration below which a tool-block widget does not display the
 # parenthesised timing — fast calls shouldn't clutter the chat.
@@ -992,6 +993,101 @@ class SearchBar(Widget):
             self.post_message(self.Dismissed())
 
 
+class ThinkingIndicator(Static):
+    """On-brand thinking indicator (Phase 108.7).
+
+    Replaces Textual's stock five-dot ``LoadingIndicator`` with a
+    single-line phrase ``<spinner>  <verb>…`` rendered in
+    ``$primary``.  The spinner cycles through a 10-frame braille
+    pattern at 100 ms per frame; the verb is drawn from
+    :func:`cantrip.ui.flavour.pick_activity_label` so the indicator
+    is on-theme with the rest of Cantrip's "small spell" copy
+    (Phase 62 / M62).
+
+    The verb is picked once at mount time and stays stable for the
+    lifetime of the indicator — a verb that changes mid-spin reads
+    as decorative noise and undermines the implicit promise that
+    the label tracks reality.  Per-phase verb rotation is a
+    follow-up: the caller mounts a fresh indicator each phase,
+    each fresh indicator picks a verb appropriate to its category.
+    """
+
+    # 10-frame braille spinner.  Smooth at 100 ms per frame; the
+    # rotation is symmetric so cycle wrap-around isn't visible.
+    _SPINNER_FRAMES: tuple[str, ...] = (
+        "⠋",
+        "⠙",
+        "⠹",
+        "⠸",
+        "⠼",
+        "⠴",
+        "⠦",
+        "⠧",
+        "⠇",
+        "⠏",
+    )
+
+    DEFAULT_CSS = """
+    ThinkingIndicator {
+        height: 1;
+        padding: 0 1;
+        margin: 1 0;
+        color: $primary;
+    }
+    """
+
+    def __init__(
+        self,
+        category: flavour.ActivityCategory = flavour.ActivityCategory.THINK,
+        *,
+        id: str | None = None,
+    ) -> None:
+        """Pick a verb up-front; defer mounting until ``compose``.
+
+        ``id`` lets the host (``ChatWidget.show_thinking``) tag the
+        widget so ``hide_thinking`` can find and remove it without
+        keeping a back-reference.
+        """
+        super().__init__("", id=id)
+        self._verb = flavour.pick_activity_label(category=category)
+        self._frame_index = 0
+        self._timer: object | None = None
+
+    def on_mount(self) -> None:
+        """Start the spinner timer and render the first frame.
+
+        Held on ``self._timer`` so :meth:`on_unmount` can cancel
+        it — without that, a stale timer keeps refreshing a removed
+        widget and Textual logs a noisy ``NoMatches``.
+        """
+        self._refresh()
+        self._timer = self.set_interval(0.1, self._tick)
+
+    def on_unmount(self) -> None:
+        """Cancel the spinner timer when the indicator is removed."""
+        if self._timer is not None:
+            with contextlib.suppress(Exception):
+                self._timer.stop()
+            self._timer = None
+
+    def _tick(self) -> None:
+        """Advance the spinner one frame and rerender."""
+        self._frame_index = (self._frame_index + 1) % len(self._SPINNER_FRAMES)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        """Push the current ``<spinner>  <verb>…`` content into the Static."""
+        glyph = self._SPINNER_FRAMES[self._frame_index]
+        # ``rich_escape`` keeps the verb safe in case the catalogue
+        # ever grows an entry with stray markup-look-alike brackets.
+        self.update(f"{glyph}  {rich_escape(self._verb)}…")
+
+    @property
+    def verb(self) -> str:
+        """The current verb label (for tests / drift assertions)."""
+        return self._verb
+
+
 class ChatWidget(Widget):
     """Widget for chat history and input.
 
@@ -1419,11 +1515,32 @@ class ChatWidget(Widget):
             self._messages.remove(widget.message)
         widget.remove()
 
-    def show_thinking(self) -> None:
-        """Show an animated thinking indicator in the chat area."""
-        self.hide_thinking()
+    def show_thinking(
+        self,
+        category: flavour.ActivityCategory = flavour.ActivityCategory.THINK,
+    ) -> None:
+        """Show an animated thinking indicator in the chat area.
+
+        Phase 108.7: replaces Textual's stock ``LoadingIndicator``
+        (five pulsing dots) with a single-line on-brand
+        :class:`ThinkingIndicator` — braille spinner plus a flavour
+        verb drawn from ``cantrip.ui.flavour``.  Caller passes
+        ``category`` to bias the verb pool (research / build /
+        default think); ``ChatWidget`` itself doesn't track the
+        agent's phase, so the simple shape is "fresh indicator
+        each phase = fresh verb".
+
+        Short-circuits when an indicator is already mounted: ``the
+        agent is thinking`` is a single state, so a second call
+        without an intervening :meth:`hide_thinking` is treated as
+        idempotent.  Avoids a ``DuplicateIds`` race when
+        ``widget.remove()`` (which is scheduled, not synchronous)
+        hasn't completed before the next mount.
+        """
+        if self.query(ThinkingIndicator):
+            return
         scroll = self.query_one("#chat-scroll", ScrollableContainer)
-        scroll.mount(LoadingIndicator(id="thinking-indicator"))
+        scroll.mount(ThinkingIndicator(category=category, id="thinking-indicator"))
         scroll.scroll_end(animate=False)
 
     def hide_thinking(self) -> None:

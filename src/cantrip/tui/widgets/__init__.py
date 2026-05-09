@@ -7,6 +7,7 @@ from cantrip.tui.widgets.chat import (
     MessageStatus,
     MessageWidget,
     ProgressItem,
+    ThinkingIndicator,
 )
 from cantrip.tui.widgets.filetree import CharmTreeWidget
 from cantrip.tui.widgets.status import (
@@ -32,4 +33,5 @@ __all__ = [
     "RelationLine",
     "StatusBar",
     "TaskChecklistWidget",
+    "ThinkingIndicator",
 ]

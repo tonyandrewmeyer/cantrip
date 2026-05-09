@@ -2296,20 +2296,28 @@ test cases updated; Phase 81 caption-coverage test still passes.
 **Exit criteria:** A 30-message rapid-fire session shows ≤5
 timestamps, not 30.
 
-### 108.7 — Loading indicator: lean into the brand
+### 108.7 — Loading indicator: lean into the brand ✓
 
-- [ ] Replace Textual's stock ``LoadingIndicator`` (five pulsing
-  dots) with a single inline phrase: ``✦  weaving …`` styled in
-  ``$primary``, with a 3-frame braille spinner (``⠋⠙⠹⠸``) on the
-  star.
-- [ ] The verb (``weaving`` / ``scrying`` / ``binding`` / ``shaping``)
-  rotates **only** when the agent's actual phase changes, so a
-  changing verb is informative rather than decorative — re-uses the
-  Phase 62 / M62 spellcasting verbs catalogue if practical.
+- [x] Replace Textual's stock ``LoadingIndicator`` (five pulsing
+  dots) with a single-line :class:`ThinkingIndicator` —
+  ``<spinner>  <verb>…`` styled in ``$primary``, where ``<spinner>``
+  cycles through a 10-frame braille pattern at 100 ms per frame and
+  ``<verb>`` is drawn from ``cantrip.ui.flavour.pick_activity_label``
+  (the Phase 62 / M62 catalogue).
+- [x] Verb is picked once at mount time and stays stable for the
+  indicator's lifetime — a verb that changes mid-spin reads as
+  decorative noise.  Per-phase verb rotation falls out for free
+  because the caller mounts a fresh indicator each phase
+  (``show_thinking(category=...)``).
+- [x] ``ChatWidget.show_thinking`` is idempotent: a second call
+  without an intervening ``hide_thinking`` is a no-op, sidestepping
+  a ``DuplicateIds`` race when ``widget.remove()`` (scheduled, not
+  synchronous) has not completed before the next mount.
 
 **Exit criteria:** ``ChatWidget.show_thinking`` mounts the new
-indicator; existing thinking-indicator test asserts the new shape
-rather than ``LoadingIndicator``.
+indicator; ``tests/unit/tui/test_thinking_indicator.py`` covers
+the verb-pool, spinner-advance, frame-wrap, mount, and idempotency
+shapes (8 tests).
 
 ### 108.8 — Header trim
 

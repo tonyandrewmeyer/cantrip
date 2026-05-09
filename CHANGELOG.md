@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **On-brand thinking indicator (Phase 108.7).**  Textual's stock
+  five-dot ``LoadingIndicator`` is replaced with a single-line
+  ``ThinkingIndicator`` widget — a 10-frame braille spinner
+  followed by a flavour verb drawn from the existing Phase 62
+  ``cantrip.ui.flavour`` catalogue (``Conjuring…``, ``Scrying…``,
+  ``Checking the almanac…`` etc.), styled in ``$primary``.  The
+  verb is picked once at mount and stays stable for the indicator's
+  lifetime so a verb that changes mid-spin doesn't read as
+  decorative noise.  ``ChatWidget.show_thinking`` is now
+  idempotent: a second call without an intervening
+  ``hide_thinking`` is a no-op, sidestepping the ``DuplicateIds``
+  race when ``widget.remove()`` (scheduled, not synchronous)
+  hasn't completed before the next mount.
+
 - **TUI visual refresh — first batch (Phase 108.1 + 108.2).**  The
   chat panel no longer wears a heavy ``border: solid $primary``
   frame around its message list; the per-message left bars dropped
