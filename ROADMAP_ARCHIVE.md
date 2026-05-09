@@ -13977,3 +13977,118 @@ hint that cuts the recovery to one round; a regression test pins
 the post-resume read-before-edit prompt directive.
 
 ---
+
+## Phase 106: Conversation-Loop Deadlock — Don't Park on a "Blocked" Task ✓
+
+**Goal:** Make ``CantripAgent.process_message`` return when its
+in-flight work-queue task transitions to ``BLOCKED``, so the print-
+mode drain (and its TUI / Web equivalents) can run their existing
+correct exit / escalation paths.  Today the conversation loop sits
+inside ``process_message`` indefinitely — zero CPU, no LLM calls
+in flight — and the operator has to kill the process by hand.
+
+### Why now
+
+Phase 105.1's Qwen3-8B smoke reproduced this cleanly: 6 failed
+``run_charm_tests`` rounds in a row caused the executor to flip the
+sprint-build task from ``ACTIVE`` to ``BLOCKED`` at 21:05:55, after
+which no further events emitted for 10+ minutes until manual SIGKILL.
+The same shape was a near-miss on the qwen3-coder and gemma4 runs
+in the prior session — those un-blocked themselves before the
+operator noticed.  Qwen3-8B's higher tool-call failure rate just
+exposed the deadlock more reliably; the bug is provider-agnostic.
+
+The downstream paths are all already correct:
+
+- ``cantrip/print_mode.py`` line 177 — ``_drain_queue`` treats
+  ``BLOCKED`` as non-flight and returns ``True``.
+- ``cantrip/print_mode.py`` line 195 — ``_final_exit_code`` returns
+  ``1`` when any task is left ``BLOCKED`` or ``FAILED``.
+- ``cantrip/agent/lifecycle.py`` line 103 — the lifecycle projection
+  surfaces ``"blocked"`` correctly to TUI / Web badges.
+
+Each of those waits for ``process_message`` to return.  It never does.
+
+### Findings (2026-05-10)
+
+The roadmap's "``process_message`` awaits on a task-completion event"
+hypothesis didn't survive the audit — there is no such await in the
+conversation loop or its callees.  The actual deadlock is one layer
+out, in the work-queue scheduler:
+``WorkQueue.all_ready`` (``queue.py:172``) only treats ``DONE`` and
+``FAILED`` as resolved dependencies.  When a sprint-build task flips
+to ``BLOCKED``, every dependent stays ``PENDING`` forever; the
+executor poll loop never picks them up; ``_drain_queue`` polls the
+full 30-minute ``_DRAIN_TIMEOUT_SECONDS`` for in-flight work that
+will never become ready.  The Phase 105.1 ``SIGKILL`` at "10+
+minutes" lands inside that window, which is what the operator saw
+as a hang.
+
+### 106.1 P0 — Reproduce in a unit test
+
+- [x] ``tests/unit/agent/test_queue.py``'s
+  ``test_all_ready_unblocks_after_blocked_dependency`` fails before
+  the 106.2 fix and passes after — same shape as the existing
+  ``test_all_ready_unblocks_after_failed_dependency`` regression pin.
+  (The roadmap's original "drive a fake provider through a failing
+  tool path" framing turned out to be a layer too high — the
+  deadlock isn't in ``process_message``; see Findings above.  The
+  smoke run remains the integration-level regression check.)
+
+### 106.2 P0 — Treat ``BLOCKED`` as a resolved dependency in the scheduler
+
+- [x] ``WorkQueue.all_ready`` (``queue.py:172``) now includes
+  ``BLOCKED`` alongside ``DONE`` and ``FAILED`` in ``resolved_ids``.
+  Dependents on a BLOCKED task become ready immediately; the executor
+  picks them up; ``_drain_queue``'s in-flight count clears; print
+  mode exits with the correct code-1 (because of the BLOCKED task)
+  rather than the 30-minute drain timeout.
+
+### 106.3 P1 — Diagnostic logging at the BLOCKED transition
+
+- [x] ``BackgroundExecutor._record_status_change`` (``executor/core.py:702``)
+  now logs ``log.warning("Task %r blocked: %s", task.title, reason)``
+  on every BLOCKED transition — so the reason lands in stderr without
+  ``--verbose``.  Centralised in ``_record_status_change`` rather than
+  each call site so any future BLOCKED path picks it up automatically.
+- [x] ``ui_events.task_updated`` already carries ``blocked_reason``
+  in its payload (``ui/events.py:165, 180``); ``task_updated_from_task``
+  reads ``task.blocked_reason`` (``events.py:202``).  No code change
+  needed — this part of 106.3 was already done before the phase
+  was scoped.
+
+### 106.4 Deferred — Watchdog heartbeat
+
+A second-line defence — a heartbeat that detects long zero-CPU
+periods (no events emitted, no LLM calls in flight) and forces a
+state-machine tick to confirm there's actually work — was scoped
+but deferred because 106.2 fixed the deadlock at root.  Revisit if a
+new BLOCKED-shape deadlock surfaces that 106.2's ``all_ready``
+relaxation doesn't cover, or if a long-running session shows a
+zero-CPU period that isn't traceable to a queue dependency.
+
+### What this phase is *not*
+
+- **Not a model-side fix.**  Bigger / better-tuned models will
+  block less often, but the deadlock is independent of why a task
+  transitions to ``BLOCKED``.  Even a 100 %-reliable model will
+  occasionally hit a genuinely blocked situation (a missing
+  dependency, an external tool that needs operator attention) and
+  the loop must terminate cleanly in that case too.
+- **Not a change to ``BLOCKED`` semantics.**  The
+  ``lifecycle_label`` rules, the print-mode exit code, and the
+  ``_drain_queue`` non-flight treatment of ``BLOCKED`` are all
+  already correct.  This phase doesn't touch those.
+- **Not a Phase 102 dependency.**  Phase 102's streaming reconnect
+  fixes the *generation-timeout* failure mode where cantrip is
+  stuck in an LLM call.  This phase fixes a different shape — the
+  agent is stuck *not* in an LLM call.
+
+**Exit criteria:** The 106.1 regression test passes (no longer
+``xfail``) — ``process_message`` returns within 5 s of the active
+task hitting ``BLOCKED``; print-mode runs in a "all retries failed"
+scenario exit with code 1 and a clear stderr message instead of
+hanging; the Phase 105.1 smoke can be re-run and either succeeds or
+exits cleanly within ~20 minutes regardless of model behaviour.
+
+---
