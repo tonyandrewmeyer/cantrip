@@ -143,7 +143,7 @@ class MessageWidget(Static):
 
     MessageWidget.tool-pending {
         color: $text-muted;
-        border-left: tall $primary;
+        border-left: tall $accent;
         text-style: dim;
     }
 
@@ -165,7 +165,7 @@ class MessageWidget(Static):
     }
 
     MessageWidget .progress-in-progress {
-        color: $primary;
+        color: $accent;
     }
 
     MessageWidget .progress-complete {
@@ -474,8 +474,8 @@ class SlashCommandSuggestions(Widget):
         height: auto;
         max-height: 8;
         background: $panel;
-        border-top: solid $primary;
-        border-bottom: solid $primary;
+        border-top: solid $panel-lighten-2;
+        border-bottom: solid $panel-lighten-2;
         padding: 0;
     }
 
@@ -619,8 +619,8 @@ class MentionSuggestions(Widget):
         height: auto;
         max-height: 8;
         background: $panel;
-        border-top: solid $primary;
-        border-bottom: solid $primary;
+        border-top: solid $panel-lighten-2;
+        border-bottom: solid $panel-lighten-2;
         padding: 0;
     }
 

@@ -87,6 +87,29 @@ Both interfaces use the same logical layout:
 | `✗` | Failed | Red |
 | `●` | App active | Green |
 
+### Colour Roles (Phase 108.3)
+
+`$primary` (Ubuntu orange `#E95420` under the bundled theme) is reserved for **brand
+identity**, **modal focus surfaces**, and **section headings**.  Anything else moved to
+quieter colours so the orange stops reading as wallpaper and starts reading as accent.
+
+| Theme colour          | Role                                                  | Notable call sites                                                                                                  |
+|-----------------------|-------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| `$primary`            | Brand identity, modal focus, section headings, user   | header brand mark, welcome wordmark, thinking indicator, modal `border: round`, help/trace section headings, user-message `border-left` |
+| `$secondary`          | Assistant messages                                    | `MessageWidget.assistant` `border-left` only                                                                        |
+| `$accent`             | In-flight / active / maintenance states               | tool-block left bar, tool-pending bar, progress-in-progress glyph, task-active row, task-divider, Juju maintenance |
+| `$success`            | Successful completion                                 | task-done glyph, Juju app active                                                                                    |
+| `$warning`            | User attention required (non-fatal)                   | shell-mode input border, shell-mode left bar, status-bar plan / paused / blocked tints                              |
+| `$error`              | Failure                                               | tool-failed bar, shell-failed bar, task-failed glyph, status-bar yolo / budget-limited tints                        |
+| `$panel-lighten-2`    | Suggestion-popup chrome                               | slash-command + `@`-mention popup `border-top` / `border-bottom`                                                    |
+| `$surface-lighten-1`  | Inter-panel seams                                     | right-panel `border-left`, repo-stats `border-left`                                                                 |
+| `$primary-background` | Header / status-bar / model-info-bar tint             | one-row tints under `Header`, `StatusBar`, `ModelInfoBar`                                                           |
+| `$text-muted`         | Header timestamp chip, system messages, hidden hints  | timestamp `[HH:MM]` chip, system-role text, dim row labels                                                          |
+
+The table is the source of truth for "where does that colour belong?".  A new widget that
+reaches for `$primary` for plain chrome should pick a different colour from this list
+instead — orange is for brand / focus / heading, not separators.
+
 ## Keyboard Shortcuts
 
 ### TUI

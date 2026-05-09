@@ -208,7 +208,7 @@ class TaskChecklistWidget(Widget):
     }
 
     TaskChecklistWidget .task-divider {
-        color: $primary;
+        color: $accent;
     }
 
     TaskChecklistWidget .task-pending {
@@ -216,7 +216,7 @@ class TaskChecklistWidget(Widget):
     }
 
     TaskChecklistWidget .task-active {
-        color: $primary;
+        color: $accent;
     }
 
     TaskChecklistWidget .task-done {

@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Colour discipline pass (Phase 108.3).**  ``$primary`` (Ubuntu
+  orange) was doing duty as wallpaper across the TUI — borders on
+  suggestion popups, dividers between sub-panels, in-progress
+  glyphs, the maintenance-state colour, and the multi-model
+  section title were all painted in the same brand orange that
+  also tints the welcome wordmark, the modal frames, the user-
+  message bar, and the thinking indicator.  Ten chrome / progress
+  / divider sites were demoted to ``$accent`` (in-flight states,
+  task-active row, Juju maintenance), ``$panel-lighten-2`` (slash
+  + ``@``-mention popup chrome), or ``$surface-lighten-1`` (repo-
+  stats sub-panel border).  ``$primary`` is now reserved for
+  brand identity (welcome wordmark, header brand mark, thinking
+  indicator), modal focus frames, help / trace section headings,
+  and the user-message left bar — six intentional roles total.
+  ``design/UI.md#colour-roles`` carries the canonical 10-row
+  catalogue mapping each theme colour to the roles it serves.
+
 - **Tool-block captions read as English (Phase 108.5).**  Tool
   blocks used to surface as ``🔧 read_file(path=src/foo.py)`` —
   emoji wrench plus a literal Python function-call rendering of

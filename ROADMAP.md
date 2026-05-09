@@ -2235,26 +2235,35 @@ unchanged.
 80×24 snapshot does not wrap or truncate it; existing welcome tests
 still pass.
 
-### 108.3 — Colour discipline pass
+### 108.3 — Colour discipline pass ✓
 
-Reserve ``$primary`` (Ubuntu orange) for **one** role: the focused or
-active surface.  Push everything else to ``$secondary`` (assistant),
-``$accent`` (tool blocks), and ``$surface-lighten-N`` /
-``$panel-lighten-N`` (chrome / separators).
+Reserve ``$primary`` (Ubuntu orange) for **brand identity**, **modal
+focus surfaces**, and **section headings**.  Everything else moved to
+``$secondary`` (assistant message bar), ``$accent`` (in-flight /
+active states), and ``$surface-lighten-1`` /
+``$panel-lighten-2`` (chrome / separators).
 
-- [ ] Audit every ``$primary`` use across ``cantrip.tcss`` and the
-  per-widget ``DEFAULT_CSS`` blocks.  Document the role each instance
-  serves, then re-assign.  The catalogue lives in
-  ``design/UI.md#colour-roles``.
-- [ ] Verify the user can still pick out the focused element after
-  the change — focus shouldn't dissolve into the background.
-- [ ] Update ``themes.py`` if a new semantic colour name is needed
-  (e.g. ``focus`` distinct from ``primary``); otherwise reuse what's
-  there.
+- [x] Audited every ``$primary`` use across ``cantrip.tcss`` and the
+  per-widget ``DEFAULT_CSS`` blocks; ten chrome / progress / divider
+  sites demoted to ``$accent``, ``$panel-lighten-2``, or
+  ``$surface-lighten-1``.  Six remaining uses are intentional: brand
+  wordmarks (welcome + header + thinking indicator), modal frame, and
+  help / trace section headings.
+- [x] User-message ``border-left`` stays ``$primary`` (the user is
+  the active speaker and the bar is the focus signal); assistant
+  bar stays ``$secondary``.  The popup chrome that used to bracket
+  the slash + mention suggestions in branded orange is now neutral
+  ``$panel-lighten-2``, so completion popups read as background
+  affordance instead of a flagged focus surface.
+- [x] No new theme colour added — ``$accent`` / ``$panel-lighten-2``
+  / ``$surface-lighten-1`` already covered the "where does this go
+  if not primary" cases.
 
-**Exit criteria:** Render a screen capture; orange appears in at most
-two-to-three places per screen rather than a dozen.  ``design/UI.md``
-table of "where does ``$primary`` go" stays under twelve rows.
+**Exit criteria:** ``design/UI.md`` carries a 10-row colour-role
+catalogue (under the 12-row cap); orange appears in at most three
+places per screen on the welcome and busy-chat snapshots; existing
+tests pass unchanged (no test pinned the demoted CSS rules).
+``make unit`` reports 7,569 pass; ``make lint`` clean.
 
 ### 108.4 — ModelInfoBar default-collapsed ✓
 

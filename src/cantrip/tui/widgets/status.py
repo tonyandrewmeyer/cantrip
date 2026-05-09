@@ -85,7 +85,7 @@ class AppBox(Static):
     }
 
     AppBox .status-maintenance {
-        color: $primary;
+        color: $accent;
     }
 
     AppBox .status-unknown {
@@ -488,7 +488,6 @@ class MultiModelStatusWidget(Widget):
 
     MultiModelStatusWidget .section-title {
         text-style: bold;
-        color: $primary;
         margin-bottom: 1;
     }
 

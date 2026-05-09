@@ -331,7 +331,7 @@ class RepoStatsWidget(Widget):
         min-width: 18;
         max-width: 50%;
         padding-left: 1;
-        border-left: solid $primary;
+        border-left: solid $surface-lighten-1;
     }
 
     RepoStatsWidget Static {
