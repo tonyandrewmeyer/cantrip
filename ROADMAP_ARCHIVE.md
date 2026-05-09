@@ -13540,3 +13540,126 @@ re-feeds; the status bar projects a single ``running`` / ``paused`` /
 existing field set.
 
 ---
+
+## Phase 100: ``wait_for`` Tool — Typed Predicates Over Generic Stream Monitoring ✓
+
+**Goal:** Give the agent a first-class way to block on a *condition*
+instead of either polling in a worker (burning context with each
+status read) or blocking the whole turn on a sleep.  Today the agent
+either calls ``run_command`` with a long timeout, or scripts an
+``until ...; do sleep`` loop inline — both leak shell text into the
+transcript and tie up the worker that owned the turn.  Claude Code
+splits the same problem into two shapes; Cantrip should adopt the
+useful half:
+
+1. **One-shot wait** — *one* notification when a predicate flips
+   (file appears, process exits, port opens, Juju app reaches
+   ``active/idle``, ``make integration`` returns 0).  This is the
+   high-value shape for the build/deploy loop: ``charmcraft pack``
+   finishes, ``juju deploy`` settles, ``COS`` rolls out.
+2. **Streaming watch** — *N* notifications, one per stdout line, for
+   tail-and-grep patterns.  Cantrip's TUI already streams agent
+   output and tool transcripts; the agent itself rarely needs a
+   stdout stream because the durability layer reschedules turns
+   instead of holding open connections.
+
+This phase ships shape (1) only.  Shape (2) is a known follow-up that
+requires conviction we don't yet have — defer behind named triggers
+rather than implement speculatively.
+
+A generic shell-based monitor is **explicitly out of scope** because
+it invites the agent to leave timers running and burns transcript
+context on uninteresting stdout lines.  Typed predicates avoid that
+class of failure by construction.
+
+### 100.1 High — ``wait_for`` tool with a closed predicate set
+
+- [x] New module ``src/cantrip/agent/tools/wait_for.py`` registering
+  a single ``wait_for`` tool.  Predicate is a tagged-union argument
+  so the schema is enumerable rather than free-form shell.  Initial
+  set:
+  - ``file_exists`` — path becomes readable.
+  - ``file_absent`` — path goes away (rollback / cleanup waits).
+  - ``process_exited`` — PID terminates; reports exit code (best-effort:
+    foreign PIDs return ``exit_code=None`` rather than fabricating a
+    value, since ``waitpid`` only works for our own children).
+  - ``port_open`` — TCP connect succeeds on host:port.
+  - ``command_exits_zero`` — runs a *single* whitelisted command
+    (``charmcraft``, ``juju``, ``make``, ``pytest``, ``test``)
+    repeatedly until it returns 0.  No shell pipeline; argv only.
+  - ``juju_app_active_idle`` — wraps existing
+    ``juju_subprocess.wait_for_app`` (``src/cantrip/agent/tools/juju_subprocess.py:143``)
+    so the agent stops scripting raw ``juju wait-for`` calls.
+- [x] Hard ``timeout_seconds`` argument (required, capped at 1800s);
+  the tool *always* returns within that bound with a clear
+  ``timed_out`` field rather than running indefinitely.
+- [x] Poll cadence picked by predicate type, not by the model:
+  ``port_open`` / ``process_exited`` polls every 0.5s;
+  ``command_exits_zero`` every 5s; ``juju_app_active_idle``
+  delegates to ``juju wait-for --timeout`` (no Python-side polling);
+  ``file_exists`` / ``file_absent`` every 0.5s.  No model-tuned
+  knob.
+- [x] ``ToolResult.caption`` summarises the outcome ("waited 47s for
+  ``juju app prom`` to reach active/idle"), per the Phase 81 caption
+  contract — every new tool must set a caption.  ``intro_caption``
+  also overrides per predicate so the chat shows a present-continuous
+  "Waiting for …" line while the call is in flight.
+- [x] Integration with the worker model: ``wait_for`` runs as an
+  ordinary tool inside the current turn.  No new background-task
+  primitive; if the agent needs the wait to span turns, that's a
+  scheduler concern (Phase 99 / executor pause), not a wait-for
+  concern.
+- [x] System-prompt guidance in
+  ``src/cantrip/agent/prompts/system.md.j2`` pointing at ``wait_for``
+  for "until X is true" needs, alongside a short anti-pattern note
+  ("don't loop ``run_command sleep``").
+- [x] Permission hook: ``command_exits_zero`` predicate goes through
+  the same allow/deny machinery as ``run_command`` (Phase 80
+  ``GovernancePolicy``) so a denied command in the active policy
+  cannot be smuggled in via ``wait_for``.
+
+### 100.2 Medium — Tests and reference docs
+
+- [x] Unit tests in ``tests/unit/agent/tools/test_wait_for.py``
+  covering each predicate's success, failure, and timeout paths plus
+  the policy-deny path for ``command_exits_zero``.
+- [x] One end-to-end test that drives ``wait_for(juju_app_active_idle)``
+  against a fake ``jubilant.Juju`` surface so we catch contract drift
+  if ``wait_for_app`` changes shape.  (Patches ``jubilant.Juju``
+  directly rather than reusing a ``tests/conftest`` fake — none of
+  the existing fakes covered the ``wait-for application --timeout Ns``
+  call shape.)
+- [x] ``docs/src/reference-tools.md`` gets a ``wait_for`` section with
+  the predicate enum, timeout guidance, and a worked example
+  ("wait for ``charmcraft pack`` to finish").  Rebuild HTML via
+  ``uv run python docs/src/_build.py``.
+- [x] CHANGELOG entry under Unreleased.
+
+### What this phase is *not*
+
+- **Not a generic ``monitor``-style stream tool.**  Tailing a log file
+  and emitting per-line events is a separate shape with separate
+  failure modes (silence-is-not-success, output-volume control,
+  unbounded commands); revisit only if a real use case shows up.
+  Named triggers: an agent task spends >30s scripting ``tail -f |
+  grep`` patterns inline, *or* a subagent needs to react to events
+  faster than the next turn boundary.
+- **Not a shell-loop runner.**  ``command_exits_zero`` accepts argv
+  only and gates the command name through the existing policy layer.
+  No pipelines, no quoting, no ``until ...; do`` text reaching the
+  shell.
+- **Not a replacement for ``Executor.pause``.**  ``wait_for`` blocks
+  the *current* tool call; it does not pause the autonomous loop.
+  Phase 99.1's ``/pause`` covers the cross-turn case.
+- **Not a scheduler / cron primitive.**  Recurring "every 5 minutes"
+  needs are a routine concept, not a wait-for one.
+
+**Exit criteria:** ``wait_for`` is a registered tool with the closed
+predicate set above, every predicate has unit-test coverage of
+success / failure / timeout, ``command_exits_zero`` honours the
+active permission policy, and ``docs/src/reference-tools.md``
+documents the tool with a worked example.  The system prompt nudges
+the agent toward ``wait_for`` for "until X" needs.  Streaming-style
+monitoring stays deferred behind two named triggers.
+
+---
