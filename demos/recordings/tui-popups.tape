@@ -26,7 +26,7 @@ Hide
 Type "REPO=$(pwd)"
 Enter
 Sleep 0.3s
-Type "cd ~/tui-demo && uv run --project $REPO cantrip run . --provider gemini --theme cantrip"
+Type "cd ~/tui-demo && rm -f .cantrip* && uv run --project $REPO cantrip run . --provider gemini --theme cantrip"
 Enter
 Sleep 14s
 Show

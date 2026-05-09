@@ -14,7 +14,12 @@ artefact.
 | [`improve.cast`](improve.cast) | `--improve` audit | ~50 s | asciicast | [`improve.sh`](improve.sh) |
 | [`cli.cast`](cli.cast) | `--print` headless | ~75 s | asciicast | [`cli.sh`](cli.sh) |
 | [`tui.gif`](tui.gif) | TUI | ~12 s | GIF (VHS) | [`tui.tape`](tui.tape) |
-| [`tui-popups.gif`](tui-popups.gif) | TUI — autocomplete + help | ~25 s | GIF (VHS) | [`tui-popups.tape`](tui-popups.tape) |
+| [`tui-popups.gif`](tui-popups.gif) | TUI — slash + ``@`` autocomplete + help | ~25 s | GIF (VHS) | [`tui-popups.tape`](tui-popups.tape) |
+| [`tui-shell-mode.gif`](tui-shell-mode.gif) | TUI — ``Ctrl-X`` shell mode | ~25 s | GIF (VHS) | [`tui-shell-mode.tape`](tui-shell-mode.tape) |
+| [`tui-plan-mode.gif`](tui-plan-mode.gif) | TUI — ``/plan`` read-only gate | ~25 s | GIF (VHS) | [`tui-plan-mode.tape`](tui-plan-mode.tape) |
+| [`tui-yolo-mode.gif`](tui-yolo-mode.gif) | TUI — ``--yolo`` confirmations off | ~22 s | GIF (VHS) | [`tui-yolo-mode.tape`](tui-yolo-mode.tape) |
+| [`tui-pause-resume.gif`](tui-pause-resume.gif) | TUI — ``/pause`` and ``/resume`` lifecycle | ~25 s | GIF (VHS) | [`tui-pause-resume.tape`](tui-pause-resume.tape) |
+| [`tui-feelings.gif`](tui-feelings.gif) | TUI — ``/feelings`` parliament against a real charm | ~50 s | GIF (VHS) | [`tui-feelings.tape`](tui-feelings.tape) |
 | [`web.gif`](web.gif) | `--web` | ~28 s | GIF (Playwright) | [`web.sh`](web.sh) + [`_web_driver.py`](_web_driver.py) |
 | [`hero-ntfy.cast`](hero-ntfy.cast) | `--no-tui` interactive | ~3 min 10 s (factor 2 from a 6 min 20 s raw capture) | asciicast | [`hero-ntfy.sh`](hero-ntfy.sh) |
 | [`hero-ntfy-raw.cast`](hero-ntfy-raw.cast) | (raw capture, source for re-edits) | ~6 min 20 s | asciicast | (kept alongside hero-ntfy.cast) |
