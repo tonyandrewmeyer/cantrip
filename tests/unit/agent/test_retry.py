@@ -1,6 +1,7 @@
 """Tests for the shared LLM retry logic."""
 
 import asyncio
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,6 +12,7 @@ from cantrip.agent.retry import (
     RetryEvent,
     _resolve_base_delay,
     complete_with_retry,
+    stream_with_retry,
 )
 from cantrip.agent.subagent import ProviderThrottle
 from cantrip.llm import base as llm
@@ -339,6 +341,275 @@ class TestConnectionErrorRetry:
 
         assert len(events) == 1
         assert isinstance(events[0].exception, llm.ProviderRateLimitError)
+
+
+class _ScriptedStreamProvider(llm.LLMProvider):
+    """Test double whose ``stream()`` replays scripted attempts.
+
+    Each attempt is either a list of ``Chunk`` objects (yielded in order)
+    or an exception class to raise after yielding any prefix chunks.  The
+    helper covers the cases the slow-path tests want to exercise:
+    successful single-attempt streams, mid-stream connection drops with
+    a successful retry, and exhausted-retry failures.
+    """
+
+    name = "scripted-stream"
+    context_window_tokens = 200_000
+    model_name = "scripted"
+
+    def __init__(self, attempts: list[list[llm.Chunk] | BaseException]) -> None:
+        self._attempts = list(attempts)
+        self.stream_calls = 0
+
+    async def complete(  # noqa: D401, ARG002 — abstract impl required.
+        self,
+        messages: list[llm.Message],
+        tools: list[llm.Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
+        response_schema: dict | None = None,
+    ) -> llm.Response:
+        raise AssertionError("complete() should not be called in streaming tests")
+
+    async def stream(  # noqa: ARG002
+        self,
+        messages: list[llm.Message],
+        tools: list[llm.Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
+        response_schema: dict | None = None,
+    ) -> AsyncIterator[llm.Chunk]:
+        idx = self.stream_calls
+        self.stream_calls += 1
+        if idx >= len(self._attempts):
+            raise AssertionError("stream() called more times than scripted attempts")
+        attempt = self._attempts[idx]
+        if isinstance(attempt, BaseException):
+            raise attempt
+        for chunk in attempt:
+            yield chunk
+
+
+class TestStreamWithRetry:
+    """Phase 102.2: slow-path streaming with retry + partial writeback."""
+
+    @pytest.mark.asyncio
+    async def test_accumulates_chunks_into_response(self):
+        """Concatenates content chunks and carries the final chunk's metadata."""
+        provider = _ScriptedStreamProvider(
+            [
+                [
+                    llm.Chunk(content="Hello, "),
+                    llm.Chunk(content="world!"),
+                    llm.Chunk(
+                        is_final=True,
+                        usage={"prompt_tokens": 5, "completion_tokens": 2},
+                        metadata={"finish": "stop"},
+                    ),
+                ],
+            ]
+        )
+
+        result = await stream_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+        )
+
+        assert result.content == "Hello, world!"
+        assert result.usage == {"prompt_tokens": 5, "completion_tokens": 2}
+        assert result.metadata == {"finish": "stop"}
+
+    @pytest.mark.asyncio
+    async def test_carries_tool_calls_from_final_chunk(self):
+        """Tool calls accumulated on the final chunk land on the response."""
+        tc = llm.ToolCall(id="t1", name="read_file", arguments={"path": "x.py"})
+        provider = _ScriptedStreamProvider(
+            [
+                [
+                    llm.Chunk(content=""),
+                    llm.Chunk(tool_calls=[tc], is_final=True),
+                ],
+            ]
+        )
+
+        result = await stream_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+        )
+
+        assert result.tool_calls == [tc]
+
+    @pytest.mark.asyncio
+    async def test_retries_on_mid_stream_connection_drop(self):
+        """A connection drop on the first attempt retries and succeeds."""
+        provider = _ScriptedStreamProvider(
+            [
+                llm.ProviderConnectionError("server hung up"),
+                [
+                    llm.Chunk(content="recovered"),
+                    llm.Chunk(is_final=True),
+                ],
+            ]
+        )
+
+        result = await stream_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+        )
+
+        assert result.content == "recovered"
+        assert provider.stream_calls == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_on_rate_limit(self):
+        """Rate-limit errors retry with backoff just like complete_with_retry."""
+        provider = _ScriptedStreamProvider(
+            [
+                llm.ProviderRateLimitError("slow down"),
+                [
+                    llm.Chunk(content="ok"),
+                    llm.Chunk(is_final=True),
+                ],
+            ]
+        )
+
+        result = await stream_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+        )
+
+        assert result.content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_non_transient_error_not_retried(self):
+        """Non-transient ``ProviderError`` propagates immediately."""
+        provider = _ScriptedStreamProvider(
+            [
+                llm.ProviderError("auth failed"),
+            ]
+        )
+
+        with pytest.raises(llm.ProviderError, match="auth failed"):
+            await stream_with_retry(
+                provider,
+                messages=[],
+                tools=None,
+                base_delay=0,
+            )
+
+        assert provider.stream_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_raises_after_max_retries(self):
+        """Persistent connection drops propagate once retries exhaust."""
+        provider = _ScriptedStreamProvider(
+            [
+                llm.ProviderConnectionError("drop 1"),
+                llm.ProviderConnectionError("drop 2"),
+                llm.ProviderConnectionError("drop 3"),
+            ]
+        )
+
+        with pytest.raises(llm.ProviderConnectionError, match="drop 3"):
+            await stream_with_retry(
+                provider,
+                messages=[],
+                tools=None,
+                max_retries=3,
+                base_delay=0,
+            )
+
+        assert provider.stream_calls == 3
+
+    @pytest.mark.asyncio
+    async def test_on_partial_throttled_by_chunk_count(self):
+        """``on_partial`` fires every ``partial_chunk_interval`` chunks plus a final flush."""
+        partials: list[str] = []
+        provider = _ScriptedStreamProvider(
+            [
+                [
+                    llm.Chunk(content="a"),
+                    llm.Chunk(content="b"),
+                    llm.Chunk(content="c"),
+                    llm.Chunk(content="d"),
+                    llm.Chunk(is_final=True),
+                ],
+            ]
+        )
+
+        result = await stream_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+            on_partial=partials.append,
+            partial_chunk_interval=2,
+            partial_seconds_interval=10_000,  # disable the time-based trigger
+        )
+
+        # Two interval flushes (after chunks 2 and 4) + the trailing
+        # final flush.  The last two see the same accumulated text but
+        # the duplication is a deliberately cheap idempotent SQL update.
+        assert partials == ["ab", "abcd", "abcd"]
+        assert result.content == "abcd"
+
+    @pytest.mark.asyncio
+    async def test_on_partial_runs_even_when_only_final_flush_fires(self):
+        """A short stream still gets a final-flush writeback so resume can recover."""
+        partials: list[str] = []
+        provider = _ScriptedStreamProvider(
+            [
+                [
+                    llm.Chunk(content="hi"),
+                    llm.Chunk(is_final=True),
+                ],
+            ]
+        )
+
+        await stream_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+            on_partial=partials.append,
+            partial_chunk_interval=100,
+            partial_seconds_interval=10_000,
+        )
+
+        assert partials == ["hi"]
+
+    @pytest.mark.asyncio
+    async def test_on_retry_invoked_for_connection_drop(self):
+        """The Phase 102.4 reconnect hook fires on streaming retries too."""
+        events: list[RetryEvent] = []
+        provider = _ScriptedStreamProvider(
+            [
+                llm.ProviderConnectionError("drop"),
+                [llm.Chunk(content="ok"), llm.Chunk(is_final=True)],
+            ]
+        )
+
+        await stream_with_retry(
+            provider,
+            messages=[],
+            tools=None,
+            base_delay=0,
+            on_retry=events.append,
+        )
+
+        assert len(events) == 1
+        assert isinstance(events[0].exception, llm.ProviderConnectionError)
+        assert events[0].provider_name == "scripted-stream"
 
 
 class TestResolveBaseDelay:

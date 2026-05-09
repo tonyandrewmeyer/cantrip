@@ -63,7 +63,7 @@ from cantrip.agent.preflight import (
 )
 from cantrip.agent.prompts import agents_md, build_system_prompt
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
-from cantrip.agent.retry import RetryEvent, complete_with_retry
+from cantrip.agent.retry import RetryEvent, complete_with_retry, stream_with_retry
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.snapshots import SnapshotManager
@@ -1657,7 +1657,7 @@ class CantripAgent:
         max_tokens: int | None = None,
         provider: LLMProvider | None = None,
     ) -> Response:
-        """Call provider.complete() with retry and linear backoff for transient errors.
+        """Call ``provider.complete()`` with retry and linear backoff for transient errors.
 
         ``provider`` overrides the default :attr:`self.provider`; used
         by the Phase 71.2 architect/editor split to route the architect
@@ -1669,6 +1669,16 @@ class CantripAgent:
         keep that at 0.7, local quantised snaps clamp it down to
         steady tool-call formatting.
 
+        Phase 102.2: when the chosen provider's
+        ``conversation_temperature`` is below 0.7 (i.e. an inference
+        snap or any other slow local backend), route through
+        :func:`stream_with_retry` instead of
+        :func:`complete_with_retry`.  Streaming keeps a TCP heartbeat
+        alive so a long single-turn generation doesn't trip the
+        backend's keep-alive, and partial assistant text persists to
+        the session store as it arrives so a mid-stream disconnect
+        leaves a recoverable transcript instead of an empty turn.
+
         Phase 102.4: a transient retry (rate limit, mid-stream drop)
         publishes a ``[provider reconnect]`` system message on the
         chat surface so the operator sees what's happening rather
@@ -1677,6 +1687,16 @@ class CantripAgent:
         chosen_provider = provider or self.provider
         if temperature is None:
             temperature = chosen_provider.conversation_temperature
+
+        if chosen_provider.conversation_temperature < 0.7:
+            return await self._stream_with_retry_and_writeback(
+                chosen_provider,
+                messages,
+                tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
         return await complete_with_retry(
             chosen_provider,
             messages,
@@ -1685,6 +1705,73 @@ class CantripAgent:
             max_tokens=max_tokens,
             on_retry=self._publish_provider_retry,
         )
+
+    async def _stream_with_retry_and_writeback(
+        self,
+        chosen_provider: LLMProvider,
+        messages: list[Message],
+        tools: list[llm.Tool] | None,
+        *,
+        temperature: float,
+        max_tokens: int | None,
+    ) -> Response:
+        """Slow-path streaming wrapper with partial-message persistence.
+
+        Pre-records an empty assistant row, runs
+        :func:`stream_with_retry` with a closure that updates that row
+        as chunks arrive, then deletes the placeholder on success — so
+        the conversation loop's existing canonical-record step writes
+        the final row unchanged.  On exception (retries exhausted) the
+        partial row is left in place so resume can recover the
+        in-flight transcript instead of regenerating from scratch.
+
+        The placeholder is metadata-flagged ``partial: True`` so a
+        future inspector tool (or migration) can identify rows left
+        behind by an aborted slow-path turn.
+        """
+        partial_id: int | None = None
+        if self._store is not None:
+            partial_msg = Message(
+                role=Role.ASSISTANT,
+                content="",
+                metadata={"partial": True},
+            )
+            partial_id = self._record_message(partial_msg)
+
+        on_partial: Callable[[str], None] | None = None
+        if partial_id is not None and self._store is not None:
+            store = self._store
+            row_id = partial_id
+
+            def _writeback(text: str) -> None:
+                try:
+                    store.update_message_content(row_id, text)
+                except sqlite3.Error:
+                    log.debug("partial writeback failed", exc_info=True)
+
+            on_partial = _writeback
+
+        response = await stream_with_retry(
+            chosen_provider,
+            messages,
+            tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            on_retry=self._publish_provider_retry,
+            on_partial=on_partial,
+        )
+
+        # Successful generation — clean up the placeholder so the
+        # conversation loop's canonical ``_record_message`` writes the
+        # final row without leaving a duplicate behind.  An exception
+        # above skips this, leaving the partial content on disk for
+        # resume to find.
+        if partial_id is not None and self._store is not None:
+            try:
+                self._store.delete_messages_from(partial_id)
+            except sqlite3.Error:
+                log.debug("partial-row cleanup failed", exc_info=True)
+        return response
 
     def _publish_provider_retry(self, event: RetryEvent) -> None:
         """Publish a ``[provider reconnect]`` chat row for a retry event.

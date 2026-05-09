@@ -53,31 +53,43 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Added
-- **Long-generation resilience for inference-snap providers (Phase 102 partial).**
+- **Long-generation resilience for inference-snap providers (Phase 102).**
   A slow local snap dropping mid-decode used to exit the conversation
   loop on a stack trace; a single edit-file generation outlasting the
-  HTTP keep-alive lost minutes of useful tool calls.  Three of four
-  Phase 102 mitigations land:
+  HTTP keep-alive lost minutes of useful tool calls.  All four
+  Phase 102 mitigations now land:
   - **HTTP read timeout knob (102.1).**  ``InferenceSnapProvider`` now
     exposes ``DEFAULT_READ_TIMEOUT_SECONDS`` (1200 s) plus a
     ``--snap-read-timeout`` CLI flag and ``CANTRIP_SNAP_READ_TIMEOUT``
     env var.  Operators on faster GPUs can shrink this to fail-fast on
     stuck generations; non-numeric / non-positive values fall back to
     the default with a warning rather than crashing.
+  - **Streaming with progress writeback (102.2).**  Any provider whose
+    ``conversation_temperature`` is below 0.7 — every inference snap,
+    plus any future slow local backend — now routes the main loop
+    through a new ``stream_with_retry`` helper instead of
+    ``complete_with_retry``.  Partial-token decoding keeps a
+    TCP-level heartbeat alive on connections that would otherwise
+    trip the snap's keep-alive, and an ``on_partial`` hook persists
+    the in-flight assistant text to the session store every 8 chunks
+    or 2 seconds (whichever first) via a new
+    ``SessionStore.update_message_content`` method.  On successful
+    completion the placeholder is deleted and the conversation
+    loop's existing canonical-record step lands a single transcript
+    row; on retry-exhaustion the partial row is left in place so
+    resume can recover the in-flight text.
   - **Transient-disconnect retries (102.3).**  ``ProviderConnectionError``
     is a new exception class that ``_openai_compat`` raises when
     ``httpx.RemoteProtocolError`` / ``ReadTimeout`` / ``WriteTimeout``
-    fires mid-call.  ``complete_with_retry`` now retries it with a
-    short exponential ladder (~2/4/8 s) — separate from the longer
-    rate-limit backoff because TCP-level drops recover quickly.
+    fires mid-call.  ``complete_with_retry`` (and now
+    ``stream_with_retry``) retries it with a short exponential ladder
+    (~2/4/8 s) — separate from the longer rate-limit backoff because
+    TCP-level drops recover quickly.
   - **Reconnect banner (102.4).**  An ``on_retry`` hook fires before
     each backoff sleep; ``_complete_with_retry`` wires it to publish a
     ``[provider reconnect]`` system message in chat plus a
     ``reconnecting (Ns)`` status-bar update so the operator sees what's
     happening rather than staring at a frozen UI.
-  - **Streaming with progress writeback (102.2)** is deferred to a
-    follow-up — the writeback path needs a session-store schema
-    extension and warrants its own change set.
 
 ### Added
 - **Resume-hallucination repair — re-read before editing

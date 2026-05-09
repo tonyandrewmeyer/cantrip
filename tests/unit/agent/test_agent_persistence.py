@@ -2,7 +2,10 @@
 
 import pathlib
 
+import pytest
+
 from cantrip.agent.core import CantripAgent
+from cantrip.llm import base as llm
 from tests.conftest import FakeProvider
 
 
@@ -87,3 +90,84 @@ class TestStoreBackedPersistence:
         # And it's the racing copy, not the persisted one.
         match = next(t for t in tasks if t.id == "triage-issue-150")
         assert match.title == "Fresh from triage"
+
+
+class _SlowFakeProvider(FakeProvider):
+    """:class:`FakeProvider` clamped to a slow-path ``conversation_temperature``.
+
+    Phase 102.2 routes any provider whose ``conversation_temperature`` is
+    below 0.7 through ``stream()`` instead of ``complete()`` so partial
+    tokens land on disk during a long generation.  This double inherits
+    the base streaming implementation (which yields per-word chunks) and
+    counts which path the executor took so the routing tests can pin the
+    contract.
+    """
+
+    @property
+    def conversation_temperature(self) -> float:
+        return 0.2
+
+    def __init__(self, responses: list[llm.Response] | None = None) -> None:
+        super().__init__(responses=responses)
+        self.complete_calls = 0
+        self.stream_calls = 0
+
+    async def complete(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        self.complete_calls += 1
+        return await super().complete(*args, **kwargs)
+
+    async def stream(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        self.stream_calls += 1
+        async for chunk in super().stream(*args, **kwargs):
+            yield chunk
+
+
+class TestSlowPathStreamingWriteback:
+    """Phase 102.2: slow providers route through stream() with partial writeback."""
+
+    @pytest.mark.asyncio
+    async def test_slow_provider_uses_streaming_path(self, tmp_path: pathlib.Path) -> None:
+        """A ``conversation_temperature < 0.7`` provider goes through ``stream()``."""
+        provider = _SlowFakeProvider([llm.Response(content="hello world")])
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        result = await agent.process_message("hi")
+
+        assert result == "hello world"
+        assert provider.stream_calls == 1
+        assert provider.complete_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_partial_row_cleaned_up_after_success(self, tmp_path: pathlib.Path) -> None:
+        """The placeholder partial row is removed once streaming completes.
+
+        The conversation loop's canonical ``_record_message`` writes the
+        final assistant row, so leaving the placeholder behind would
+        produce a duplicate transcript line.  After the turn we expect
+        exactly two persisted messages (user + assistant).
+        """
+        provider = _SlowFakeProvider([llm.Response(content="reply")])
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        await agent.process_message("hello")
+
+        assert agent._store is not None
+        rows = agent._store.load_active_branch()
+        assert [r["role"] for r in rows] == ["user", "assistant"]
+        # The canonical assistant row carries no ``partial`` flag.
+        assistant_row = rows[1]
+        assistant_metadata = assistant_row.get("metadata") or {}
+        assert assistant_metadata.get("partial") is None
+
+    @pytest.mark.asyncio
+    async def test_fast_provider_still_uses_complete(self, tmp_path: pathlib.Path) -> None:
+        """A frontier-temperature provider keeps the existing ``complete()`` path."""
+        provider = FakeProvider([llm.Response(content="ok")])
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+
+        await agent.process_message("hi")
+
+        # ``FakeProvider`` defaults to 0.7, so the routing skips streaming.
+        assert agent._store is not None
+        rows = agent._store.load_active_branch()
+        assert [r["role"] for r in rows] == ["user", "assistant"]

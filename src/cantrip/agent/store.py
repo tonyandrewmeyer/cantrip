@@ -905,6 +905,23 @@ class SessionStore:
         db.commit()
         return new_id
 
+    def update_message_content(self, message_id: int, content: str) -> None:
+        """Replace the content of a previously-recorded message.
+
+        Phase 102.2: streaming partial writeback updates the in-flight
+        assistant row as chunks arrive so a mid-stream disconnect leaves
+        a recoverable transcript instead of an empty assistant turn.
+        Does nothing when *message_id* doesn't exist (the partial-row
+        cleanup in ``_complete_with_retry`` may have already removed
+        it on a fast successful turn).
+        """
+        db = self._db
+        db.execute(
+            "UPDATE messages SET content = ? WHERE id = ?",
+            (_truncate(content or ""), message_id),
+        )
+        db.commit()
+
     def get_active_head(self) -> int | None:
         """Return the message id at the leaf of the active branch.
 

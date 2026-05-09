@@ -3231,7 +3231,7 @@ keep-alive trips.
 
 ### 102.2 P0 — Switch the slow path to streaming with progress writeback
 
-- [ ] When the conversation runs against an inference snap, prefer
+- [x] When the conversation runs against an inference snap, prefer
   ``provider.stream`` over ``provider.complete`` so partial token
   decoding keeps a TCP-level heartbeat going, and (with
   ``stream_options.include_usage`` already set) the per-chunk events
@@ -3239,12 +3239,23 @@ keep-alive trips.
   ``_complete_with_retry`` only fires ``complete``; route the
   inference-snap (and any provider with
   ``conversation_temperature < 0.7``) through streaming
-  automatically.
-- [ ] Persist the partial assistant message to the session store as
+  automatically.  (Implemented as ``stream_with_retry`` in
+  ``cantrip.agent.retry`` — mirrors ``complete_with_retry``'s
+  rate-limit / overloaded / connection-drop ladder, accumulates
+  chunks into a ``Response``, and exposes an ``on_partial`` hook for
+  the writeback closure below.)
+- [x] Persist the partial assistant message to the session store as
   it streams (every N chunks or every M seconds, whichever first) so
   a mid-stream disconnect leaves a recoverable transcript instead
   of an empty assistant turn that the agent has to regenerate from
-  scratch.
+  scratch.  (``_complete_with_retry`` pre-records an empty
+  ``ASSISTANT`` row stamped ``metadata.partial = True`` and hands a
+  closure that calls ``SessionStore.update_message_content`` on every
+  flush.  Default throttle: 8 chunks or 2 s, whichever first.  On
+  successful completion the placeholder is deleted so the
+  conversation loop's canonical ``_record_message`` lands a single
+  row; on retry-exhaustion the partial row is left in place so
+  resume can recover the in-flight transcript.)
 
 ### 102.3 P1 — Retry on transient ``Server disconnected`` errors
 
