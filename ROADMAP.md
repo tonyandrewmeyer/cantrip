@@ -687,11 +687,32 @@ refactors.
   LIBRARIAN tool allowlists.  This is deliberately *not* a new write
   path and inherits the existing "safe by default" governance
   treatment for read-only tools.
-- [ ] When a task title or user message contains symbol-shaped tokens
+- [x] When a task title or user message contains symbol-shaped tokens
   (dotted names, ``snake_case`` helpers, ``CamelCase`` classes), the
   planner may prefetch one compact definition or symbol-match block so
   a BUILD/DEBUG subagent starts from the right file instead of
-  burning a turn on navigation.
+  burning a turn on navigation.  (Landed in
+  ``cantrip/agent/planner/prefetch.py``.  ``extract_symbol_candidates``
+  runs three regex patterns plus a stop-list (TODO / API / URL /
+  JSON / …) and a 4-char floor; the longer enclosing dotted span
+  swallows inner fragments so ``MyCharm._on_install`` is the only
+  candidate produced by ``Reproduce MyCharm._on_install`` rather
+  than three.  ``prefetch_symbol_block`` keeps only
+  ``EXACT_QUALIFIED`` / ``EXACT`` index matches so PREFIX/FUZZY
+  noise can't sneak through; within the same precision band a
+  dotted query outranks a single-token query so the user-supplied
+  scope wins.  ``TaskPlanner`` gained an optional ``code_intel:
+  CodeIntelQuery | None`` parameter and enriches ``plan`` /
+  ``plan_from_design`` / ``replan`` / ``plan_from_day2_findings``
+  output in place — one block per task description, by design.
+  ``PlanTasksTool`` resolves the index lazily through a getter so a
+  session that opens a charm path *after* the tool was registered
+  still benefits from prefetch on the next call.  Tests in
+  ``tests/unit/planner/test_prefetch.py`` cover token detection,
+  trusted-kind filter, the qualified-vs-unqualified tie-break,
+  enclosing-span dedup, Protocol substitutability via a stub
+  adapter, and end-to-end enrichment against the deterministic
+  planner output.)
 - [x] ``/map`` and repo-map remain unchanged in purpose: they answer
   "what matters in this repo?".  Code-intelligence answers "where is
   this symbol?" and "who references it?".  System-prompt text now
@@ -2492,6 +2513,121 @@ stays the documented default.
 
 ---
 
+## Phase 107: Tool-Call Failure Cap — Stop Looping on the Same Failing Call
+
+**Goal:** Bound how many consecutive failures of the same tool call
+the autonomous loop will tolerate before treating the work-queue
+task as ``BLOCKED``.  Today the conversation continues indefinitely:
+each tool failure goes back to the model, the model decides "let me
+try again", and on small local models that retry can take 80+
+seconds while making no progress.  After N rounds the loop should
+flip the active task to ``BLOCKED`` (with a clear ``blocked_reason``)
+so Phase 106's exit/escalation paths fire.
+
+### Why now
+
+Phase 105.1.5's Qwen3-14B Run #2 reproduced this cleanly: after
+two successful ``write_file`` calls (charmcraft.yaml + src/charm.py
+both clean and packable), the model entered an **8-call retry
+loop** trying to ``write_file`` ``tests/unit/test_charm.py``.  Each
+attempt failed with ``duration_ms=0`` and a bare
+``"write_file()"`` caption — meaning the function-call envelope
+came back without arguments (almost certainly the long test-file
+content overflowed the model's tool-call generation budget mid-
+stream).  Each retry took ~80 s of model thinking; after 11
+minutes I killed the process.
+
+The downstream paths are correct (Phase 106 ✓ — task hits BLOCKED →
+loop terminates → print-mode exits with code 1).  What's missing is
+a *trigger* upstream: nothing escalates a 5-tool-failure streak
+into a BLOCKED transition.
+
+This isn't a Phase 102 / 103 / 106 dup:
+
+- **Phase 102** (long-generation resilience) covers httpx-level
+  timeouts on a *single* long generation.  Here every tool call
+  completes within seconds — the failure is at the validation
+  layer, not the network.
+- **Phase 103** (resume hallucination) covers
+  ``edit_file old_string`` mismatches with did-you-mean hints.
+  Here the failing tool is ``write_file`` — different shape, no
+  old_string to compare.
+- **Phase 106** (BLOCKED deadlock) handles tasks that *have*
+  transitioned to BLOCKED.  Here the task never gets there because
+  no one decides to mark it BLOCKED.
+
+### 107.1 P0 — Reproduce in a unit test
+
+- [ ] Test in ``tests/unit/agent/`` that drives a fake provider
+  emitting the same tool call repeatedly with arguments that fail
+  validation (use ``write_file`` with empty ``content`` to mirror
+  the smoke).  Assert that after N consecutive failures
+  (configurable, default 5) the active task transitions to
+  ``BLOCKED`` with a blocked_reason that names the offending tool
+  and the failure count.  Mark ``xfail`` until 107.2 lands.
+- [ ] The smoke artefacts at
+  ``cantrip-iter-runs/qwen3-14b-improve/run.ndjson`` are the
+  ground-truth event sequence; the loop happened from
+  12:40:11–12:48:54 with 8 failures.
+
+### 107.2 P0 — Counter + transition logic
+
+- [ ] In ``src/cantrip/agent/executor/core.py`` (or wherever the
+  tool-result branch sits), maintain a per-task counter
+  ``consecutive_tool_failures`` that increments on a failed tool
+  invocation and resets on a successful one.
+- [ ] When the counter hits a threshold (default 5; tunable via
+  ``CANTRIP_TOOL_FAILURE_CAP`` env var), call
+  ``_record_status_change(task, "blocked",
+  error="tool {name} failed {n} consecutive times: {last_reason}")``
+  so Phase 106 takes over and the loop exits cleanly.
+- [ ] Distinguish "same tool with same args" from "any tool
+  failure" — only the former should count toward the cap.  The
+  agent legitimately can recover from a one-off ``edit_file``
+  ``old_string`` mismatch by reading and retrying with a different
+  anchor; that pattern shouldn't trip the cap.
+
+### 107.3 P1 — Inform the model before giving up
+
+- [ ] Before the BLOCKED transition fires (one round earlier),
+  inject a system message into the conversation telling the model
+  it has tried the same tool ``N-1`` times unsuccessfully and
+  should either change approach or stop.  Gives the model one last
+  chance to recover (e.g. by splitting the failing payload into
+  smaller chunks) before cantrip force-blocks the task.
+
+### 107.4 P1 — Diagnostic logging
+
+- [ ] Log each consecutive-failure increment at ``warning`` level
+  (``Tool {name} has now failed N consecutive times``) so operators
+  watching ``run.stderr`` see the loop-out forming rather than
+  having to reverse-engineer it from NDJSON.
+- [ ] Surface the consecutive count in the
+  ``status_bar_changed`` / ``task_updated`` event payload so the
+  Web UI and TUI can render a "tool retrying (3/5)" badge.
+
+### What this phase is *not*
+
+- **Not a model-side fix.**  Some models (smaller local models
+  especially) will hit this loop more often, but the right answer is
+  bounding cantrip's tolerance, not requiring better models.
+- **Not a change to provider-transient retry.**  ``retry.py``'s
+  linear-backoff for HTTP 429 / 500 / network errors is a separate
+  layer and stays untouched — those are network-level retries on
+  one LLM call, not tool-call retries across conversation turns.
+- **Not "make tool failures user-visible somehow."**  The Web UI
+  and TUI already render failed tool invocations.  This phase is
+  about not letting a *streak* of those silently consume minutes.
+
+**Exit criteria:** The 107.1 regression test passes (no longer
+``xfail``); the Phase 105.1.5 smoke can be re-run with a known-
+hard scope (e.g. asking a small local model to write a 4 KB test
+file in one ``write_file`` call) and either succeeds or exits
+cleanly within ~5 minutes with ``Tool write_file failed 5 times``
+in stderr — instead of looping for 11 minutes until manual SIGKILL.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -2588,3 +2724,4 @@ stays the documented default.
 | M104: Short-Session Mode | 104 | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
 | M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
+| M107: Tool-Call Failure Cap | 107 | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; a regression test pins the shape; smoke runs that hit a hard tool scope exit cleanly with stderr telling the operator which tool exhausted retries |

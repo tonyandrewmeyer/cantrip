@@ -1,7 +1,9 @@
 """Core agent logic."""
 
 import asyncio
+import json
 import logging
+import os
 import pathlib
 import re
 import sqlite3
@@ -406,6 +408,28 @@ class CantripAgent:
         if charm_path is not None and not isinstance(charm_path, pathlib.Path):
             charm_path = pathlib.Path(charm_path)
         self.state = AgentState(charm_path=charm_path)
+        # Phase 107: tool-call failure cap is tunable via env var so
+        # operators on slow / unreliable local models can loosen it,
+        # while CI runs that need fast-fail can tighten it.  Anything
+        # outside [1, 50] is silently ignored — runaway loops are the
+        # whole point of the cap so a 500-fail budget would defeat it.
+        cap_raw = os.environ.get("CANTRIP_TOOL_FAILURE_CAP")
+        if cap_raw is not None:
+            try:
+                cap_value = int(cap_raw)
+            except ValueError:
+                log.warning(
+                    "Ignoring CANTRIP_TOOL_FAILURE_CAP=%r — expected an integer",
+                    cap_raw,
+                )
+            else:
+                if 1 <= cap_value <= 50:
+                    self.state.tool_failure_cap = cap_value
+                else:
+                    log.warning(
+                        "Ignoring CANTRIP_TOOL_FAILURE_CAP=%r — must be in [1, 50]",
+                        cap_raw,
+                    )
         self.state.github_repo = detect_github_repo(charm_path)
         if self.state.github_repo:
             log.info("Detected GitHub remote: %s", self.state.github_repo)
@@ -1802,6 +1826,70 @@ class CantripAgent:
             ui_events.status_bar_changed(task_label=f"reconnecting ({delay_str})")
         )
 
+    # ─── Phase 107: Tool-call failure cap ────────────────────────────
+
+    def _track_tool_failure_streak(
+        self, tool_name: str, arguments: dict[str, Any], success: bool
+    ) -> None:
+        """Update the consecutive same-(tool, args) failure counter.
+
+        Resets to zero on a successful call.  When the same tool with the
+        same arguments fails twice in a row, the counter increments; a
+        different signature resets to one (we're starting a new streak).
+        Looking at the *first-arg-bearing* signature lets a model
+        legitimately retry one ``edit_file`` after fixing the
+        ``old_string`` without tripping the cap.
+        """
+        if success:
+            self.state.consecutive_tool_failures = 0
+            self.state.last_failed_tool_signature = None
+            return
+        try:
+            args_repr = json.dumps(arguments, sort_keys=True, default=str)[:200]
+        except (TypeError, ValueError):
+            args_repr = "<unserialisable>"
+        signature = f"{tool_name}:{args_repr}"
+        if signature == self.state.last_failed_tool_signature:
+            self.state.consecutive_tool_failures += 1
+        else:
+            self.state.consecutive_tool_failures = 1
+            self.state.last_failed_tool_signature = signature
+        if self.state.consecutive_tool_failures >= 3:
+            log.warning(
+                "Tool %s has now failed %d consecutive times "
+                "(cap is %d; tune via CANTRIP_TOOL_FAILURE_CAP)",
+                signature,
+                self.state.consecutive_tool_failures,
+                self.state.tool_failure_cap,
+            )
+
+    def _consecutive_failure_cap_exceeded(self) -> str | None:
+        """Return a blocked-reason string when the cap has been hit.
+
+        ``None`` means "still within tolerance, keep looping".  The
+        reason string is operator-facing — it goes into the
+        ``blocked_reason`` on the work-queue task and into stderr.
+        """
+        if self.state.consecutive_tool_failures < self.state.tool_failure_cap:
+            return None
+        sig = self.state.last_failed_tool_signature or "<unknown>"
+        return f"Tool {sig} failed {self.state.consecutive_tool_failures} consecutive times"
+
+    def _mark_active_task_blocked(self, reason: str) -> None:
+        """Flip the currently-active work-queue task to ``BLOCKED``.
+
+        Used by Phase 107 to escalate a runaway tool-failure streak so
+        Phase 106's exit/escalation paths fire downstream.  No-op when
+        no task is active — that case is logged but doesn't unwind the
+        loop because the caller is already breaking out of it.
+        """
+        for task in self._work_queue.all_tasks():
+            if task.status == TaskStatus.ACTIVE:
+                self._work_queue.set_blocked(task.id, reason=reason)
+                log.info("Marked task %r BLOCKED (Phase 107): %s", task.id, reason)
+                return
+        log.info("Phase 107 cap fired with no active task (reason: %s)", reason)
+
     # ─── Phase 71.2: Architect / Editor two-model split ──────────────
 
     _ARCHITECT_INSTRUCTION = (
@@ -2296,6 +2384,7 @@ class CantripAgent:
                     duration_ms=tool_elapsed_ms,
                     tool_call_id=tc.id,
                 )
+                self._track_tool_failure_streak(tc.name, effective_arguments, result.success)
                 content = result.output if result.success else (result.error or "Unknown error")
                 # Wrap tool output in delimiters to reduce prompt injection risk.
                 content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
@@ -2317,6 +2406,17 @@ class CantripAgent:
             tool_msg = self._context_manager.virtualise_message(tool_msg)
             self.state.messages.append(tool_msg)
             self._record_message(tool_msg)
+
+            # Phase 107: bail when the cap is hit.  Marks the active
+            # work-queue task BLOCKED so Phase 106's loop-exit logic
+            # fires; ``process_message`` returns its current response
+            # text (which we accumulated through earlier rounds even
+            # if the most recent rounds all failed).
+            cap_reason = self._consecutive_failure_cap_exceeded()
+            if cap_reason is not None:
+                log.warning("Phase 107 cap fired: %s", cap_reason)
+                self._mark_active_task_blocked(cap_reason)
+                break
 
             # Compact if the context window is getting full.
             if self._context_manager.should_compact(self.state.messages):
@@ -2562,6 +2662,7 @@ class CantripAgent:
                     duration_ms=tool_elapsed_ms,
                     tool_call_id=tc.id,
                 )
+                self._track_tool_failure_streak(tc.name, effective_arguments, result.success)
                 content = result.output if result.success else (result.error or "Unknown error")
                 content = f"<tool_result name={tc.name!r}>\n{content}\n</tool_result>"
                 tool_results.append(
@@ -2581,6 +2682,13 @@ class CantripAgent:
             tool_msg = self._context_manager.virtualise_message(tool_msg)
             self.state.messages.append(tool_msg)
             self._record_message(tool_msg)
+
+            # Phase 107: same cap check as the non-streaming loop.
+            cap_reason = self._consecutive_failure_cap_exceeded()
+            if cap_reason is not None:
+                log.warning("Phase 107 cap fired (stream): %s", cap_reason)
+                self._mark_active_task_blocked(cap_reason)
+                break
 
             # Compact if the context window is getting full.
             if self._context_manager.should_compact(self.state.messages):
@@ -2729,7 +2837,7 @@ class CantripAgent:
         if is_one_shot_build(context) and not overrides:
             build_tasks = plan_one_shot_build(context, design_md)
         else:
-            planner = TaskPlanner(self.provider)
+            planner = TaskPlanner(self.provider, code_intel=self.code_intel)
             build_tasks = await planner.plan_from_design(
                 design_content=design_md,
                 context=context,
@@ -2802,7 +2910,7 @@ class CantripAgent:
             environment_ready=self.state.environment_ready,
         )
 
-        planner = TaskPlanner(self.provider)
+        planner = TaskPlanner(self.provider, code_intel=self.code_intel)
         impl_tasks = await planner.plan_from_day2_findings(
             findings=day2_text,
             context=context,

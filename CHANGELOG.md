@@ -5,6 +5,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Planner symbol prefetch (Phase 72b.3).**  When a task title,
+  user message, or design / day-2 brief mentions a symbol-shaped
+  token (dotted ``Foo.bar``, ``snake_case`` helpers, multi-segment
+  ``CamelCase`` classes) and the codeintel index has an
+  ``EXACT_QUALIFIED`` or ``EXACT`` match for it, ``TaskPlanner``
+  now appends a compact definition block to the matching task
+  descriptions so a BUILD/DEBUG subagent starts from the right
+  file instead of burning a turn on navigation.  Best-effort —
+  no charm path / no index / no trusted match means no
+  enrichment.  The prefetch consumes the Phase 72b.4 Protocol
+  seam, so a future adapter (pyright, yaml-language-server) plugs
+  in without touching the planner.
 - **CodeIntelQuery adapter seam (Phase 72b.4).**  ``cantrip.codeintel``
   now exports a ``runtime_checkable`` ``CodeIntelQuery`` Protocol
   covering ``repo_root``, ``build``, ``workspace_symbols``,

@@ -396,6 +396,7 @@ def build_tools(
                 state=state,
                 queue=queue,
                 invalidate_tools_cache=invalidate_tools_cache,
+                code_intel_getter=code_intel_getter,
             )
         )
         tools.append(ManageTasksTool(queue=queue))

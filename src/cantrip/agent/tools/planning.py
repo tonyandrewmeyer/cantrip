@@ -12,6 +12,7 @@ from cantrip.agent.planner import PlanningContext, TaskPlanner, is_sprint
 from cantrip.agent.queue import WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.codeintel import CodeIntelQuery
 from cantrip.llm import base as llm
 
 log = logging.getLogger(__name__)
@@ -32,11 +33,26 @@ class PlanTasksTool(Tool):
         state: AgentState,
         queue: WorkQueue,
         invalidate_tools_cache: Callable[[], None] | None = None,
+        code_intel_getter: Callable[[], CodeIntelQuery | None] | None = None,
     ) -> None:
-        self._planner = TaskPlanner(provider)
+        self._provider = provider
         self._state = state
         self._queue = queue
         self._invalidate_tools_cache = invalidate_tools_cache
+        # Resolve the codeintel index lazily so a session that opens a
+        # charm path *after* the tool was registered still sees the
+        # index on the next ``plan_tasks`` call (Phase 72b.3 prefetch).
+        self._code_intel_getter = code_intel_getter
+
+    def _planner_for_call(self) -> TaskPlanner:
+        ci = self._code_intel_getter() if self._code_intel_getter else None
+        if ci is not None:
+            try:
+                ci.build()
+            except (OSError, RuntimeError) as exc:
+                log.debug("plan_tasks: codeintel build failed: %s", exc)
+                ci = None
+        return TaskPlanner(self._provider, code_intel=ci)
 
     @property
     def name(self) -> str:
@@ -105,13 +121,14 @@ class PlanTasksTool(Tool):
             existing_charm_path=existing_charm_path,
         )
 
+        planner = self._planner_for_call()
         # Replan if there are already tasks in the queue.
         try:
             if context.existing_tasks:
                 context.new_context = intent
-                tasks = await self._planner.replan(context)
+                tasks = await planner.replan(context)
             else:
-                tasks = await self._planner.plan(context)
+                tasks = await planner.plan(context)
         except ValueError:
             log.exception("Failed to parse planning response")
             return ToolResult(

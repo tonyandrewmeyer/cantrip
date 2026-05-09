@@ -33,8 +33,10 @@ from cantrip.agent.planner.deterministic import (
     plan_research_phase,
     plan_sprint_deploy,
 )
+from cantrip.agent.planner.prefetch import prefetch_symbol_block
 from cantrip.agent.prompts import planning as planning_prompts
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.codeintel import CodeIntelQuery
 from cantrip.llm import base as llm
 from cantrip.llm.schemas import PLANNER_BRIEFING
 from cantrip.llm.structured import complete_structured
@@ -61,10 +63,22 @@ class TaskPlanner:
     For fresh "build a charm" requests, uses deterministic templates for
     the research phase (no LLM call).  Falls back to the LLM for
     replanning and for generating build-phase tasks from an approved design.
+
+    The optional ``code_intel`` argument enables Phase 72b.3 symbol
+    prefetch: when a task title or the user's intent mentions a
+    workspace symbol the indexer recognises, a compact definition
+    block is appended to the matching task descriptions so the
+    BUILD/DEBUG subagent does not burn a turn on navigation.  Pass
+    ``None`` (or omit) to keep the planner unchanged.
     """
 
-    def __init__(self, provider: llm.LLMProvider) -> None:
+    def __init__(
+        self,
+        provider: llm.LLMProvider,
+        code_intel: CodeIntelQuery | None = None,
+    ) -> None:
         self._provider = provider
+        self._code_intel = code_intel
 
     async def plan(self, context: PlanningContext) -> list[AgentTask]:
         """Decompose *context.intent* into an ordered list of tasks.
@@ -75,12 +89,15 @@ class TaskPlanner:
         generates the audit → confirm flow.
         """
         if is_improvement(context):
-            return plan_improvement_phase(context)
-        if is_sprint(context):
-            return plan_sprint_deploy(context)
-        if is_fast_path(context):
-            return plan_fast_path(context)
-        return plan_research_phase(context)
+            tasks = plan_improvement_phase(context)
+        elif is_sprint(context):
+            tasks = plan_sprint_deploy(context)
+        elif is_fast_path(context):
+            tasks = plan_fast_path(context)
+        else:
+            tasks = plan_research_phase(context)
+        self._enrich_with_prefetch(tasks, context)
+        return tasks
 
     async def plan_from_design(
         self,
@@ -109,7 +126,9 @@ class TaskPlanner:
             temperature=_PLANNING_TEMPERATURE,
             thinking_budget=_PLANNING_THINKING_BUDGET,
         )
-        return _briefing_to_tasks(briefing)
+        tasks = _briefing_to_tasks(briefing)
+        self._enrich_with_prefetch(tasks, context, design_content, overrides)
+        return tasks
 
     async def replan(self, context: PlanningContext) -> list[AgentTask]:
         """Adapt existing tasks given new context or changed scope.
@@ -134,6 +153,7 @@ class TaskPlanner:
             thinking_budget=_PLANNING_THINKING_BUDGET,
         )
         new_tasks = _briefing_to_tasks(briefing)
+        self._enrich_with_prefetch(new_tasks, context)
         return _merge_tasks(context.existing_tasks, new_tasks)
 
     async def plan_from_day2_findings(
@@ -164,7 +184,47 @@ class TaskPlanner:
             temperature=_PLANNING_TEMPERATURE,
             thinking_budget=_PLANNING_THINKING_BUDGET,
         )
-        return _briefing_to_tasks(briefing)
+        tasks = _briefing_to_tasks(briefing)
+        self._enrich_with_prefetch(tasks, context, findings, overrides)
+        return tasks
+
+    # -- prefetch -------------------------------------------------------
+
+    def _enrich_with_prefetch(
+        self,
+        tasks: list[AgentTask],
+        context: PlanningContext,
+        *extra_signals: str | None,
+    ) -> None:
+        """Append a symbol-prefetch block to relevant task descriptions.
+
+        Phase 72b.3.  No-op when a code-intelligence index is not
+        configured.  Each task is enriched at most once; the block
+        comes from the *task's own title and description*, falling
+        back to the planner's user-side signals (intent / new context
+        / extra signals like the design or day-2 findings) so a
+        terse title like "fix bug" still picks up the symbol the
+        user actually mentioned.
+        """
+        if self._code_intel is None or not tasks:
+            return
+        # The shared signals — intent, new_context, and any extras
+        # (design content, day-2 findings, overrides) — let a task
+        # whose own text is symbol-free still benefit from the
+        # context the user provided up-stream.
+        shared = [context.intent, context.new_context, *extra_signals]
+        shared_text = "\n".join(s for s in shared if s)
+        for task in tasks:
+            task_text = "\n".join([task.title, task.description])
+            block = prefetch_symbol_block(task_text, self._code_intel)
+            if block is None and shared_text:
+                block = prefetch_symbol_block(shared_text, self._code_intel)
+            if block is None:
+                continue
+            if task.description:
+                task.description = f"{task.description.rstrip()}\n\n{block}"
+            else:
+                task.description = block
 
 
 # ---------------------------------------------------------------------------
