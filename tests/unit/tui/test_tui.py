@@ -448,12 +448,23 @@ class TestTuiWidgets:
                 assert "COS healthy" in text
 
     @pytest.mark.asyncio
-    async def test_header_subtitle_shows_help(self):
-        """Header subtitle contains 'F1 Help' on mount."""
+    async def test_header_renders_brand_mark(self):
+        """Phase 108.8: the slim header always carries ``✦ cantrip``.
+
+        Replaces the legacy ``self.sub_title`` assertion — the
+        ``CantripHeader`` widget is the new home for header content,
+        and the F1 hint moved to the welcome body and the bottom
+        binding row (it was the least-load-bearing segment of the
+        old subtitle).
+        """
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                assert "F1 Help" in pilot.app.sub_title
+                from cantrip.tui.widgets.header import CantripHeader
+
+                header = pilot.app.query_one("#cantrip-header", CantripHeader)
+                rendered = str(header.query_one("#cantrip-header-text").render())
+                assert "✦ cantrip" in rendered
 
     @pytest.mark.asyncio
     async def test_f4_opens_trace_screen(self):

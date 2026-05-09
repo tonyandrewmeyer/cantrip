@@ -2338,18 +2338,31 @@ indicator; ``tests/unit/tui/test_thinking_indicator.py`` covers
 the verb-pool, spinner-advance, frame-wrap, mount, and idempotency
 shapes (8 tests).
 
-### 108.8 — Header trim
+### 108.8 — Header trim ✓
 
-- [ ] Replace the default Textual ``Header`` with a slim one-row
-  custom header showing ``✦ cantrip · gemini-3-flash · ./backend ·
-  branch:main``.  Subtitle goes away; the same information lives in
-  the header text.
-- [ ] If the slim header conflicts with the F7 / 108.4 model-info
-  bar in any state, the model bar wins for token detail and the
-  header carries identity + path.
+- [x] Replaced Textual's stock ``Header`` (generic ``⭘`` glyph +
+  ``Title — Subtitle`` chrome) with a custom
+  :class:`cantrip.tui.widgets.header.CantripHeader` showing
+  ``✦ cantrip · provider/model · ~/<rel> · branch:<name>``.
+  Each segment drops when its underlying value is empty so the
+  bar never displays orphan separators.
+- [x] Path renders as ``~/<rel>`` under ``$HOME`` (and ``~`` for
+  the home root itself), or absolute otherwise.  ``git_branch.current_branch``
+  drives the branch suffix when the working tree is a git repo.
+- [x] No conflict with the 108.4 ModelInfoBar: the header carries
+  identity + path + branch, the bar carries context % and cost.
+  The model name appears on both — the header for "what am I
+  using" identity, the bar for "what's it consuming".
 
 **Exit criteria:** Title row no longer carries the generic ``⭘``
-glyph; the row carries actual context.
+glyph; the row carries actual context.  ``self.sub_title`` is
+no longer wired to any visible surface — the legacy
+``_update_header_subtitle`` method now pushes brand / model /
+path / branch reactives into ``CantripHeader`` instead.
+``tests/unit/tui/test_header_widget.py`` covers nine cases
+(``_format_path`` carve-outs, brand-only render, full render,
+missing-segment dropouts, mount, and live update on agent
+state change).  All 7,569 unit tests pass.
 
 ### 108.9 — File-tree dotfile cull ✓
 
@@ -2407,7 +2420,7 @@ under the new visuals.
 
 ---
 
-## Phase 108: Per-Provider Message-Format Normalisation — Unblock Non-Qwen Local Models
+## Phase 109: Per-Provider Message-Format Normalisation — Unblock Non-Qwen Local Models
 
 **Goal:** Add a per-provider message-rewriting hook so cantrip's
 internal ``Message`` representation (OpenAI/Qwen-shaped, with
@@ -2441,10 +2454,10 @@ models, Magistral, anything else built on Mistral's tokeniser
 without an OpenAI-style retrofit).
 
 The current candidate set treats Qwen-family templates as the
-only path to working tool calls.  Phase 108 widens the door so
+only path to working tool calls.  Phase 109 widens the door so
 non-Qwen candidates can be evaluated fairly.
 
-### 108.1 P0 — Provider hook for outbound message rewriting
+### 109.1 P0 — Provider hook for outbound message rewriting
 
 - [ ] Add ``LLMProvider.rewrite_messages(messages: list[Message])
   -> list[Message]`` (or equivalent) — default identity, Mistral
@@ -2457,7 +2470,7 @@ non-Qwen candidates can be evaluated fairly.
   OpenAI-compatible) inherit the identity default — they already
   accept the ``tool`` role natively.
 
-### 108.2 P0 — Inbound parser for Mistral-format tool calls
+### 109.2 P0 — Inbound parser for Mistral-format tool calls
 
 - [ ] Mistral models emit
   ``[TOOL_CALLS][{"name":"…","arguments":{…}}][/TOOL_CALLS]``
@@ -2473,9 +2486,9 @@ non-Qwen candidates can be evaluated fairly.
   positive on an LLM that mentions the literal token in regular
   prose.
 
-### 108.3 P1 — Re-run the Mistral Nemo 12B smoke
+### 109.3 P1 — Re-run the Mistral Nemo 12B smoke
 
-- [ ] With 108.1 + 108.2 landed, retry the
+- [ ] With 109.1 + 109.2 landed, retry the
   ``inference-snaps/mistral-nemo-12b/`` smoke (server scaffold
   already in place).  Pass criterion: produce ≥ 80 % of the
   improve-02 feature target in ≤ 30 min, OR exit cleanly with a
@@ -2484,7 +2497,7 @@ non-Qwen candidates can be evaluated fairly.
 - [ ] Document measured findings in
   ``design/LOCAL_MODELS.md`` §5.2.2.
 
-### 108.4 P1 — Family detection + opt-in
+### 109.4 P1 — Family detection + opt-in
 
 - [ ] ``InferenceSnapProvider`` should pick the right rewriter
   based on the snap name (``mistral-nemo-*``,
@@ -2495,7 +2508,7 @@ non-Qwen candidates can be evaluated fairly.
   family detection for unknown snaps (e.g. a new Mistral fine-
   tune with a non-standard name).  Defaults to ``openai``.
 
-### 108.5 P1 — Tests
+### 109.5 P1 — Tests
 
 - [ ] Unit test ``rewrite_messages`` for the Mistral path: a
   conversation containing ``[user, assistant(with tool_calls),
@@ -2522,7 +2535,7 @@ non-Qwen candidates can be evaluated fairly.
 
 **Exit criteria:** Mistral Nemo 12B drives an end-to-end
 ntfy-improve scenario that produces a packable charm, comparable
-to Qwen3-14B Run #3 (§5.6.1); the two unit tests in 108.5 pin the
+to Qwen3-14B Run #3 (§5.6.1); the two unit tests in 109.5 pin the
 rewrite + parse paths; ``design/LOCAL_MODELS.md`` §5.2.2 records
 the measured outcome.
 

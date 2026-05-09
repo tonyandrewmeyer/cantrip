@@ -11,11 +11,11 @@ import traceback
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Header, Input
+from textual.widgets import Input
 from textual.worker import Worker, WorkerState
 
-from cantrip import __version__, diagnostics, notifications, update
-from cantrip.agent import context_providers, emotions
+from cantrip import diagnostics, notifications, update
+from cantrip.agent import context_providers, emotions, git_branch
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
@@ -34,6 +34,7 @@ from cantrip.tui.actions import status as status_actions
 from cantrip.tui.actions import watcher as watcher_actions
 from cantrip.tui.widgets import chat as chat_widget
 from cantrip.tui.widgets import filetree as filetree_widget
+from cantrip.tui.widgets import header as header_widget
 from cantrip.tui.widgets import modelbar as modelbar_widget
 from cantrip.tui.widgets import status as status_widgets
 from cantrip.tui.widgets import statusbar as statusbar_widget
@@ -70,9 +71,14 @@ log = logging.getLogger(__name__)
 
 
 class CantripApp(App):
-    """Cantrip TUI application."""
+    """Cantrip TUI application.
 
-    TITLE = f"Cantrip v{__version__}"
+    Phase 108.8: dropped Textual's stock ``Header``; the slim
+    :class:`cantrip.tui.widgets.header.CantripHeader` carries
+    brand + model + path + branch instead.  ``TITLE`` /
+    ``sub_title`` are no longer wired to a visible surface.
+    """
+
     CSS_PATH = "cantrip.tcss"
 
     BINDINGS = [
@@ -213,7 +219,7 @@ class CantripApp(App):
 
     def compose(self) -> ComposeResult:
         """Compose the application layout."""
-        yield Header()
+        yield header_widget.CantripHeader(id="cantrip-header")
         yield Horizontal(
             Vertical(
                 modelbar_widget.ModelInfoBar(id="model-info"),
@@ -488,21 +494,44 @@ class CantripApp(App):
         return light
 
     def _update_header_subtitle(self) -> None:
-        """Rebuild the header subtitle from agent state."""
-        parts: list[str] = []
-        if self._agent:
-            state = self._agent.state
-            if state.dev_model:
-                substrate = "lxd" if state.charm_type == "machine" else "k8s"
-                parts.append(f"[{state.dev_model}:{substrate}]")
-            if state.cos_model:
-                parts.append(f"[{state.cos_model}:k8s]")
-            if state.github_repo:
-                parts.append(f"[gh:{state.github_repo}]")
-        if self._light_model_name:
-            parts.append(f"[light: {self._light_model_name}]")
-        parts.append("[F1 Help]")
-        self.sub_title = " ".join(parts)
+        """Push the latest brand / model / path / branch into the header.
+
+        Phase 108.8: the legacy implementation built a long
+        ``[dev:k8s] [cos:k8s] [gh:repo] [light:…] [F1 Help]``
+        subtitle; the new :class:`CantripHeader` carries only the
+        four signals that *change with what the user is doing*
+        (model, path, branch).  Juju model state is already in the
+        right-panel Juju status pane, F1 hints are on the welcome
+        body and the bottom binding row, and the subtitle is no
+        longer rendered to any visible surface — so this method
+        is now a state-push into the custom header widget rather
+        than a string assemble for ``self.sub_title``.
+
+        The method name stays for the existing call sites.
+        """
+        from textual.css.query import NoMatches
+
+        try:
+            header = self.query_one("#cantrip-header", header_widget.CantripHeader)
+        except NoMatches:
+            return
+
+        model_label = ""
+        if self._agent and getattr(self._agent, "provider", None) is not None:
+            provider = self._agent.provider
+            model_name = getattr(provider, "model_name", "") or ""
+            provider_name = getattr(provider, "name", "") or ""
+            if model_name:
+                model_label = f"{provider_name}/{model_name}" if provider_name else model_name
+        header.model_name = model_label
+
+        header.charm_path = self.charm_path
+
+        branch = ""
+        if self.charm_path is not None:
+            with contextlib.suppress(OSError):
+                branch = git_branch.current_branch(str(self.charm_path)) or ""
+        header.git_branch = branch
 
     def _update_model_info(self) -> None:
         """Refresh the model info bar from current agent state."""

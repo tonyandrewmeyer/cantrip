@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Slim contextual header (Phase 108.8).**  Textual's stock
+  ``Header`` (generic ``⭘`` glyph + ``Title — Subtitle`` chrome
+  with no actual project context) is replaced by a custom
+  :class:`cantrip.tui.widgets.header.CantripHeader` that shows
+  the four signals a user actually wants at a glance: ``✦
+  cantrip`` brand mark, ``provider/model``, ``~/<rel>`` path,
+  and ``branch:<name>`` when the working tree is a git repo.
+  Each segment is dropped when its underlying value is empty,
+  so a brand-new session before any agent attaches still
+  renders a clean ``✦ cantrip`` line rather than three orphan
+  separators.  The legacy ``[dev:k8s] [cos:k8s] [gh:repo]
+  [light:…] [F1 Help]`` subtitle is gone — Juju model state
+  already lives in the right-panel status pane, F1 hints
+  already live on the welcome body and the bottom binding row,
+  and ``self.sub_title`` no longer renders to any visible
+  surface.
+
 - **ModelInfoBar default-collapsed (Phase 108.4).**  The bar used
   to claim two rows of vertical space at the top of every TUI
   session.  It now defaults to a single compact line —
