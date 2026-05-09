@@ -713,10 +713,22 @@ refactors.
   background daemon.  Read-only lookup only.  The cache rebuilds on
   ``CodeIntel.build`` calls; tools call it on every invocation so the
   index is fresh, but the build is incremental on ``mtime_ns``.
-- [ ] Design the query layer so a future optional adapter can sit
+- [x] Design the query layer so a future optional adapter can sit
   behind it if Cantrip later wants one-shot ``pyright`` or
   ``yaml-language-server`` enrichment for tricky cases.  That adapter
-  is *not* in scope here; the seam is.
+  is *not* in scope here; the seam is.  (Landed as the
+  ``CodeIntelQuery`` ``runtime_checkable`` Protocol in
+  ``cantrip.codeintel.index``: ``repo_root``, ``build``,
+  ``workspace_symbols``, ``go_to_definition``, ``find_references``.
+  ``CodeIntel`` already conforms, and the three ``CodeIntelGetter``
+  type aliases at the tool / @-provider / context-provider call
+  sites widened to ``Callable[[], CodeIntelQuery | None]`` so a
+  future adapter can substitute without touching consumer code.
+  ``TestCodeIntelQueryProtocol`` in
+  ``tests/unit/codeintel/test_codeintel.py`` pins both the concrete
+  indexer and a ``_StubQueryAdapter`` against the Protocol so a
+  future change that adds a method without updating both
+  implementations breaks at unit-test time.)
 - [x] Failure mode is plain and non-magical: "no semantic match"
   or "multiple candidates" is a valid result returned in
   ``DefinitionResult.note`` / ``ReferencesResult.note``.  The caller

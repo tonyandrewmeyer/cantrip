@@ -10,6 +10,7 @@ second symbol-extraction stack.
 Public API:
 
     CodeIntel              — orchestrator (build, query, cache)
+    CodeIntelQuery         — read-only query Protocol (adapter seam)
     SymbolMatch            — one workspace_symbols hit
     Definition             — one go_to_definition result
     ReferenceLocation      — one find_references hit (re-exported from repomap)
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 from cantrip.codeintel.index import (
     CodeIntel,
+    CodeIntelQuery,
     Definition,
     DefinitionResult,
     ReferencesResult,
@@ -32,6 +34,7 @@ from cantrip.repomap.symbols import ReferenceLocation, Symbol, SymbolKind
 
 __all__ = [
     "CodeIntel",
+    "CodeIntelQuery",
     "Definition",
     "DefinitionResult",
     "ReferenceLocation",

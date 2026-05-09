@@ -5,6 +5,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **CodeIntelQuery adapter seam (Phase 72b.4).**  ``cantrip.codeintel``
+  now exports a ``runtime_checkable`` ``CodeIntelQuery`` Protocol
+  covering ``repo_root``, ``build``, ``workspace_symbols``,
+  ``go_to_definition``, and ``find_references``.  The default
+  ``CodeIntel`` indexer already conforms; the three ``CodeIntelGetter``
+  type aliases at the tool / @-provider / context-provider call sites
+  widen to the Protocol so a future optional adapter (one-shot
+  ``pyright`` or ``yaml-language-server`` enrichment for tricky
+  cases) can substitute or wrap the indexer without touching consumer
+  code.  The adapter itself is out of scope; the seam is the
+  contract.
 - **Flow skills (Phase 69.4).**  Markdown files with
   ``type: flow`` frontmatter and a fenced ``mermaid`` diagram
   ship under ``cantrip/flows/`` (bundled),

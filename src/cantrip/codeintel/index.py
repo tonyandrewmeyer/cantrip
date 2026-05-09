@@ -28,6 +28,7 @@ import json
 import logging
 import pathlib
 import time
+import typing
 from collections.abc import Iterable, Sequence
 
 from cantrip.repomap.symbols import (
@@ -233,6 +234,57 @@ def _reflocation_from_dict(data: dict) -> ReferenceLocation:
         file=data["file"],
         line=int(data.get("line", 0)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Query protocol — Phase 72b.4 adapter seam
+# ---------------------------------------------------------------------------
+
+
+@typing.runtime_checkable
+class CodeIntelQuery(typing.Protocol):
+    """Read-only query surface shared by indexer + future adapters.
+
+    The default :class:`CodeIntel` implementation answers from the
+    in-process AST-derived index.  A future optional adapter (e.g.
+    one-shot ``pyright`` or ``yaml-language-server`` enrichment for
+    tricky cases) implements this same Protocol either as a
+    replacement for, or as a wrapper around, :class:`CodeIntel` —
+    delegating to the indexer when no semantic match is available.
+    The adapter itself is out of scope here; the seam is the contract
+    that lets one slot in without touching tool / slash / @-provider
+    call sites.
+    """
+
+    @property
+    def repo_root(self) -> pathlib.Path: ...
+
+    def build(self, *, force: bool = False) -> None: ...
+
+    def workspace_symbols(
+        self,
+        query: str,
+        *,
+        path_scope: str | None = None,
+        kinds: Sequence[SymbolKind] | None = None,
+        limit: int = _DEFAULT_RESULT_LIMIT,
+    ) -> tuple[list[SymbolMatch], int]: ...
+
+    def go_to_definition(
+        self,
+        symbol: str,
+        *,
+        from_path: str | None = None,
+    ) -> DefinitionResult: ...
+
+    def find_references(
+        self,
+        symbol: str,
+        *,
+        from_path: str | None = None,
+        include_definition: bool = False,
+        limit: int = _DEFAULT_RESULT_LIMIT,
+    ) -> ReferencesResult: ...
 
 
 # ---------------------------------------------------------------------------
@@ -784,6 +836,7 @@ def render_references(result: ReferencesResult) -> str:
 # tool / slash-command / @-provider layers can share one renderer.
 __all__ = [
     "CodeIntel",
+    "CodeIntelQuery",
     "Definition",
     "DefinitionResult",
     "ReferencesResult",

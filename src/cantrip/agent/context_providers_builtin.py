@@ -40,7 +40,7 @@ from cantrip.agent.context_providers import (
 )
 from cantrip.agent.tools import charmhub as charmhub_tools
 from cantrip.agent.tools import web as web_tools
-from cantrip.codeintel import CodeIntel
+from cantrip.codeintel import CodeIntelQuery
 from cantrip.codeintel.index import (
     render_definitions,
     render_references,
@@ -637,7 +637,7 @@ class DocsProvider:
 # ---------------------------------------------------------------------------
 
 
-CodeIntelGetter = Callable[[], CodeIntel | None]
+CodeIntelGetter = Callable[[], CodeIntelQuery | None]
 
 
 def _codeintel_unavailable(raw: str, name: str) -> ContextBlock:
@@ -648,7 +648,7 @@ def _codeintel_unavailable(raw: str, name: str) -> ContextBlock:
     )
 
 
-def _build_codeintel(getter: CodeIntelGetter) -> CodeIntel | None:
+def _build_codeintel(getter: CodeIntelGetter) -> CodeIntelQuery | None:
     """Resolve the index getter and ensure the index is current.
 
     Errors during ``build`` are swallowed — codeintel mentions are a

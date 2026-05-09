@@ -21,7 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
-from cantrip.codeintel import CodeIntel, SymbolKind
+from cantrip.codeintel import CodeIntelQuery, SymbolKind
 from cantrip.codeintel.index import (
     render_definitions,
     render_references,
@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 _TOOL_RESULT_LIMIT = 50
 
 
-CodeIntelGetter = Callable[[], CodeIntel | None]
+CodeIntelGetter = Callable[[], CodeIntelQuery | None]
 
 
 def _no_charm_result(tool_name: str) -> ToolResult:

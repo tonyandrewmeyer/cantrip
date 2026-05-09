@@ -10,6 +10,8 @@ import pytest
 
 from cantrip.codeintel import (
     CodeIntel,
+    CodeIntelQuery,
+    Definition,
     DefinitionResult,
     ReferencesResult,
     SymbolKind,
@@ -436,3 +438,102 @@ class TestRenderers:
             query="X", locations=(), truncated=0, semantic=False, candidates=()
         )
         assert "No references" in render_references(empty)
+
+
+# ---------------------------------------------------------------------------
+# CodeIntelQuery — Phase 72b.4 adapter seam
+# ---------------------------------------------------------------------------
+
+
+class _StubQueryAdapter:
+    """Minimal stand-in for the future optional adapter (pyright et al.).
+
+    The body is intentionally empty — the test only checks the seam,
+    not the answers.  An adapter that wraps :class:`CodeIntel` instead
+    of replacing it would forward each call after consulting whatever
+    semantic source it brings.
+    """
+
+    def __init__(self, repo_root: pathlib.Path) -> None:
+        self._repo_root = repo_root
+
+    @property
+    def repo_root(self) -> pathlib.Path:
+        return self._repo_root
+
+    def build(self, *, force: bool = False) -> None:
+        del force
+
+    def workspace_symbols(
+        self,
+        query: str,
+        *,
+        path_scope: str | None = None,
+        kinds=None,
+        limit: int = 50,
+    ):
+        del query, path_scope, kinds, limit
+        return ([], 0)
+
+    def go_to_definition(
+        self,
+        symbol: str,
+        *,
+        from_path: str | None = None,
+    ) -> DefinitionResult:
+        del from_path
+        return DefinitionResult(query=symbol, matches=(), semantic=False, note="stub")
+
+    def find_references(
+        self,
+        symbol: str,
+        *,
+        from_path: str | None = None,
+        include_definition: bool = False,
+        limit: int = 50,
+    ) -> ReferencesResult:
+        del from_path, include_definition, limit
+        return ReferencesResult(
+            query=symbol,
+            locations=(),
+            truncated=0,
+            semantic=False,
+            candidates=(),
+            note="stub",
+        )
+
+
+class TestCodeIntelQueryProtocol:
+    """The default :class:`CodeIntel` and a stub adapter both conform.
+
+    Pinning runtime conformance keeps the seam honest: a future change
+    that adds a new required method to :class:`CodeIntelQuery` without
+    updating both implementations breaks at unit-test time rather than
+    silently at the call site.
+    """
+
+    def test_concrete_indexer_conforms(self, charm_root: pathlib.Path) -> None:
+        ci = CodeIntel(charm_root)
+        assert isinstance(ci, CodeIntelQuery)
+
+    def test_stub_adapter_conforms(self, charm_root: pathlib.Path) -> None:
+        adapter = _StubQueryAdapter(charm_root)
+        assert isinstance(adapter, CodeIntelQuery)
+
+    def test_adapter_substitutes_at_consumer_seam(self, charm_root: pathlib.Path) -> None:
+        # A consumer that only relies on the Protocol surface accepts
+        # either the indexer or the adapter — that's the seam's whole
+        # point.  ``go_to_definition`` is exercised here because it has
+        # the most-typed return shape.
+        adapter: CodeIntelQuery = _StubQueryAdapter(charm_root)
+        adapter.build()
+        result = adapter.go_to_definition("Anything")
+        assert isinstance(result, DefinitionResult)
+        assert result.matches == ()
+        assert result.semantic is False
+        # The same call shape works against the real indexer.
+        ci: CodeIntelQuery = CodeIntel(charm_root)
+        ci.build()
+        real_result = ci.go_to_definition("MyCharm._on_install")
+        assert isinstance(real_result, DefinitionResult)
+        assert real_result.matches and isinstance(real_result.matches[0], Definition)
