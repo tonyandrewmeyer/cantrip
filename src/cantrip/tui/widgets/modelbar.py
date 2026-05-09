@@ -17,6 +17,10 @@ class ModelInfoBar(Widget):
     Updated after each agent response via reactive properties.
     """
 
+    # Phase 108.4: the bar defaults to a single compact line and
+    # hides the second row via the ``-compact`` class.  F7 (or any
+    # caller flipping ``expanded``) reveals the rich two-line form
+    # when the user wants the full breakdown.
     DEFAULT_CSS = """
     ModelInfoBar {
         height: auto;
@@ -29,7 +33,13 @@ class ModelInfoBar(Widget):
     ModelInfoBar .model-info-row {
         height: 1;
     }
+
+    ModelInfoBar.-compact #model-info-line2 {
+        display: none;
+    }
     """
+
+    expanded: reactive[bool] = reactive(False, init=False)
 
     model_name: reactive[str] = reactive("", init=False)
     light_model_name: reactive[str] = reactive("", init=False)
@@ -61,9 +71,38 @@ class ModelInfoBar(Widget):
         yield Static("", id="model-info-line1", classes="model-info-row")
         yield Static("", id="model-info-line2", classes="model-info-row")
 
+    def on_mount(self) -> None:
+        """Apply the initial ``-compact`` class so the bar starts collapsed.
+
+        Phase 108.4: the bar defaults to a single compact line.  F7
+        flips :attr:`expanded`, which the watcher converts into a
+        class change.
+        """
+        self.set_class(not self.expanded, "-compact")
+        self._refresh_content()
+
+    def watch_expanded(self, expanded: bool) -> None:
+        """Toggle the ``-compact`` class and refresh both lines."""
+        self.set_class(not expanded, "-compact")
+        self._refresh_content()
+
     def _refresh_content(self) -> None:
-        """Rebuild both lines from current reactive values."""
-        # Line 1: model, provider, thinking mode, light model.
+        """Rebuild both lines from current reactive values.
+
+        Line 2 is always populated even when collapsed — the
+        ``-compact`` class hides it via CSS, but keeping the content
+        live means F7 reveals the up-to-date breakdown immediately
+        without waiting for the next 5 s tick.
+        """
+        line1 = self._build_line1_expanded() if self.expanded else self._build_line1_compact()
+        line2 = self._build_line2_expanded()
+
+        with contextlib.suppress(NoMatches):
+            self.query_one("#model-info-line1", Static).update(line1)
+            self.query_one("#model-info-line2", Static).update(line2)
+
+    def _build_line1_expanded(self) -> str:
+        """Rich line 1: provider/model, thinking mode, light model, gh repo."""
         parts: list[str] = []
         if self.model_name:
             label = self.model_name
@@ -76,8 +115,36 @@ class ModelInfoBar(Widget):
             parts.append(f"light: {self.light_model_name}")
         if self.github_repo:
             parts.append(f"gh: {self.github_repo}")
+        return "  ".join(parts)
 
-        # Line 2: context usage, compaction distance, session tokens.
+    def _build_line1_compact(self) -> str:
+        """Compact line 1: ``provider/model · NN% ctx · $X.XX``.
+
+        Each ``·``-separated segment is dropped when its underlying
+        value is zero or unset, so a brand-new session with no model
+        wired up shows an empty bar instead of a row of ``· · ·``.
+
+        The cost segment is gated on *session activity* (prompt +
+        completion tokens > 0) — the same gate the legacy expanded
+        path uses — so a fresh session with a mock-typed cost never
+        crashes the comparison.
+        """
+        segments: list[str] = []
+        if self.model_name:
+            label = self.model_name
+            if self.provider_name:
+                label = f"{self.provider_name}/{label}"
+            segments.append(label)
+        if self.context_window > 0:
+            pct = self.context_used / self.context_window * 100
+            segments.append(f"{pct:.0f}% ctx")
+        session_total = self.session_prompt_tokens + self.session_completion_tokens
+        if session_total > 0 and self.session_cost_usd > 0:
+            segments.append(pricing.format_cost(self.session_cost_usd))
+        return " · ".join(segments)
+
+    def _build_line2_expanded(self) -> str:
+        """Rich line 2: full context + session + all-time breakdown."""
         ctx_parts: list[str] = []
         if self.context_window > 0:
             pct = (self.context_used / self.context_window * 100) if self.context_window else 0
@@ -113,9 +180,7 @@ class ModelInfoBar(Widget):
                 alltime_label += f"  est. {pricing.format_cost(self.alltime_cost_usd)}"
             ctx_parts.append(alltime_label)
 
-        with contextlib.suppress(NoMatches):
-            self.query_one("#model-info-line1", Static).update("  ".join(parts))
-            self.query_one("#model-info-line2", Static).update("  ".join(ctx_parts))
+        return "  ".join(ctx_parts)
 
     # Every reactive triggers the same refresh — generate watchers in a loop
     # rather than writing 13 identical two-line methods.

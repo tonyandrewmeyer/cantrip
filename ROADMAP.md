@@ -2256,18 +2256,32 @@ active surface.  Push everything else to ``$secondary`` (assistant),
 two-to-three places per screen rather than a dozen.  ``design/UI.md``
 table of "where does ``$primary`` go" stays under twelve rows.
 
-### 108.4 — ModelInfoBar default-collapsed
+### 108.4 — ModelInfoBar default-collapsed ✓
 
-- [ ] Default ``#model-info`` to a single collapsed line that shows
-  only ``provider/model · NN% ctx · $X.XX`` — one row, not two.
-- [ ] Pressing F7 expands to the existing two-line form (current
-  behaviour becomes opt-in instead of default-on).
-- [ ] Persist the user's preference for the next session via the
-  same path used for theme + window size if one exists.
+- [x] Default ``#model-info`` to a single compact line —
+  ``provider/model · NN% ctx · $X.XX`` — via the ``-compact`` CSS
+  class on :class:`cantrip.tui.widgets.modelbar.ModelInfoBar`.
+  Line 2 stays populated under the hood so an F7 expand is
+  instant rather than waiting for the next refresh tick.
+- [x] F7 flips :attr:`ModelInfoBar.expanded` (compact ↔ rich)
+  rather than the legacy "show / hide entirely" contract;
+  ``actions/status.py:toggle_model_info`` rewritten accordingly.
+- [ ] Persistence across sessions deferred — there is no current
+  shared "user preferences" store to plumb into.  A future
+  follow-up can persist alongside theme + window size if a
+  user surface emerges to need it.
 
-**Exit criteria:** A fresh ``cantrip`` run gives the chat 2 more rows
-of vertical real estate; F7 still toggles to the rich form; existing
-``test_modelbar`` (or equivalent) still passes.
+**Exit criteria:** A fresh ``cantrip`` run gives the chat one
+extra row of vertical real estate; F7 still toggles to the rich
+form; existing ``test_f7_toggles_model_info_bar`` updated to the
+new contract; the cost / cache regression tests
+(``test_model_info_bar_shows_estimated_cost``,
+``test_model_info_bar_shows_cache_hit_rate``) still pass because
+line 2 stays populated under the ``-compact`` class.
+``tests/unit/tui/test_modelbar_compact.py`` covers nine cases
+(compact layout, missing-segment dropouts, cost-without-activity
+gate, expanded layout, mount state, expand / collapse round-trip,
+line-2 staying populated when collapsed).
 
 ### 108.5 — Tool-block caption format
 

@@ -24,9 +24,17 @@ def toggle_files(app: CantripApp) -> None:
 
 
 def toggle_model_info(app: CantripApp) -> None:
-    """Toggle model info bar visibility."""
+    """Toggle the model info bar between compact and expanded.
+
+    Phase 108.4: the bar is *always* visible — F7 used to hard-hide
+    it, but the new contract is "compact one-liner by default,
+    flip to the rich two-line breakdown on demand".  Hiding the bar
+    entirely was rare enough that the simpler two-state contract
+    earns its keep; the compact line still surfaces the
+    glance-and-go signals (model, context %, session cost).
+    """
     bar = app.query_one("#model-info", modelbar_widget.ModelInfoBar)
-    bar.display = not bar.display
+    bar.expanded = not bar.expanded
 
 
 def show_status_panel_when_data_arrives(app: CantripApp) -> None:

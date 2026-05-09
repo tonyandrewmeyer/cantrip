@@ -69,15 +69,25 @@ class TestActionBindings:
 
     @pytest.mark.asyncio
     async def test_f7_toggles_model_info_bar(self):
-        """F7 toggles the model info bar."""
+        """F7 flips the model info bar between compact and expanded.
+
+        Phase 108.4: the contract changed from
+        ``display = not display`` (hard show/hide) to
+        ``expanded = not expanded`` (compact ↔ rich).  The bar
+        starts compact; F7 once expands; F7 again returns to
+        compact.
+        """
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 bar = pilot.app.query_one("#model-info")
-                start = bar.display
+                assert bar.expanded is False
                 await pilot.press("f7")
                 await pilot.pause()
-                assert bar.display != start
+                assert bar.expanded is True
+                await pilot.press("f7")
+                await pilot.pause()
+                assert bar.expanded is False
 
     @pytest.mark.asyncio
     async def test_f8_opens_graph_screen(self):

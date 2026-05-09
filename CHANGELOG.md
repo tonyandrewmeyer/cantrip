@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **ModelInfoBar default-collapsed (Phase 108.4).**  The bar used
+  to claim two rows of vertical space at the top of every TUI
+  session.  It now defaults to a single compact line —
+  ``provider/model · NN% ctx · $X.XX`` — and F7 expands to the
+  existing rich two-line breakdown (light model, github repo,
+  cache hit rate, all-time totals, etc.).  Line 2 stays
+  populated even when the ``-compact`` CSS class hides it, so a
+  press of F7 reveals up-to-date data without waiting for the
+  next refresh tick.  F7's old "show / hide entirely" contract
+  is gone — the bar is always visible — because the compact
+  line still surfaces the glance-and-go signals that mattered.
+  Each chat session gains one extra row of conversation space.
+
 - **File-tree dotfile cull (Phase 108.9).**  The Charm Files panel
   used to surface every dotfile directory at the top — opening
   Cantrip in its own checkout showed ``.agents``, ``.claude``,
