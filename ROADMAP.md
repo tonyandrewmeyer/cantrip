@@ -2541,6 +2541,134 @@ the measured outcome.
 
 ---
 
+## Phase 110: Phase-Aware Tool Curation — Replace the Static Core-Tools Keep-List
+
+**Goal:** Replace ``CantripAgent._CORE_TOOL_NAMES`` (a fixed 11-name
+``set``) with a *curator* that picks the right tool slice for the
+agent's active workflow phase (research / build / debug / deploy
+/ demo).  Inference-snap providers cap the LLM's tool array at
+12 — the static keep-list silently drops load-bearing tools
+(``quick_pack``, ``charmlint``, ``run_command``) when those tools
+are exactly what the current phase needs, and keeps tools the
+phase doesn't need (``analyse_framework``, ``web_fetch``) just
+because they're "always useful in some scenario".
+
+### Why now
+
+Phase 105.1.5 dry runs surfaced two concrete losses from the
+static list:
+
+- ``quick_pack`` is dropped, so even when sprint mode's recipe
+  explicitly says *"prefer ``quick_pack``"*, the model can only
+  call ``charmcraft_pack`` (slower, no LXD-free path).
+- ``charmlint`` is dropped, so when ``charmcraft_pack`` fails
+  with a YAML structure error, the model has no way to *see*
+  what's wrong — the demo dry run oscillated between two
+  near-identical broken YAMLs for 5 minutes because the
+  feedback loop was pack-fail / guess / pack-fail.
+
+Meanwhile ``analyse_framework`` (only useful when scaffolding a
+fresh charm from a host directory) and ``web_fetch`` (a context
+trap — bit the same demo dry run with a 41 KB payload that blew
+the 16 K context budget) are kept by default.
+
+A surgical short-term swap landed alongside this phase
+(``analyse_framework`` + ``web_fetch`` out, ``quick_pack`` +
+``charmlint`` in, same 11 names).  That helps the demo but
+doesn't solve the underlying problem: the keep-list isn't aware
+of *what the agent is doing right now*.
+
+This isn't a duplicate of Phase 104.5 — that sub-phase is
+specific to short-session mode (provider context window
+< 16 K).  Phase 110 generalises the same idea to *all*
+inference-snap providers (Qwen3-14B at 16 K is also tight on
+context budget) and adds explicit phase tags rather than just a
+short-session flag.
+
+### 110.1 P0 — Phase enum + tool-set table
+
+- [ ] Define a small enum ``WorkflowPhase`` with values
+  ``research`` / ``build`` / ``debug`` / ``deploy`` / ``demo``.
+  Map the existing planner task categories
+  (``BUILD`` / ``RESEARCH`` / ``DEPLOY`` / ``TEST`` /
+  ``DAY2``) onto this enum.
+- [ ] In ``cantrip/agent/core.py``, replace
+  ``_CORE_TOOL_NAMES: set[str]`` with
+  ``_CORE_TOOLS_BY_PHASE: dict[WorkflowPhase, set[str]]``.
+  Each phase's set lives at ≤ 11 names so the inference-snap
+  cap can fit one MCP tool / extension if any are loaded.
+  Suggested starting tables:
+  - **build**: ``read_file write_file edit_file list_directory
+    charmcraft_init quick_pack charmcraft_pack charmlint
+    plan_tasks run_charm_tests run_command``
+  - **debug**: ``read_file edit_file list_directory juju
+    charmlint juju_debug_log juju_status_render run_command
+    plan_tasks run_charm_tests web_fetch``
+  - **deploy**: ``juju concierge_prepare juju_status_render
+    juju_debug_log wait_for relation_smoke_test charmcraft_pack
+    run_command list_directory plan_tasks``
+  - **research**: ``read_file list_directory web_fetch
+    web_search analyse_framework code_definition
+    code_references oracle_consult plan_tasks
+    extract_design_decisions``
+  - **demo**: same as build, with ``charmlint`` swapped out for
+    ``manage_tasks`` if we want a UI-friendly default.
+
+### 110.2 P0 — Hook the curator into ``_tools_for_llm``
+
+- [ ] When the work queue's active task has a category, map it
+  to a phase and use that phase's tool set.  Otherwise (no
+  active task — the conversation is at idle) default to
+  ``WorkflowPhase.build`` so the first interaction picks
+  build-shaped tools.
+- [ ] Re-fire ``invalidate_tools_cache`` (already wired through
+  the ``PlanTasksTool`` hand-off in Phase 100.4) when the active
+  task transitions, so the next LLM call gets the new tool slice.
+
+### 110.3 P1 — Operator override
+
+- [ ] Env var ``CANTRIP_TOOL_PHASE={research|build|debug|
+  deploy|demo}`` forces a phase regardless of work-queue state.
+  Useful for operators driving cantrip in unusual flows (e.g. a
+  documentation pass through the codebase that needs
+  research-tier tools throughout).
+- [ ] Surface the active phase + its tool count in the TUI
+  status bar / Web UI badge so operators can see what's been
+  curated for the current turn.
+
+### 110.4 P1 — Tests
+
+- [ ] Unit test: ``_tools_for_llm()`` with a build-category
+  active task returns the build set.
+- [ ] Unit test: ``CANTRIP_TOOL_PHASE=research`` overrides the
+  active-task category.
+- [ ] Unit test: when an active-task category transitions
+  (e.g. build → debug because a test failed), the next call to
+  ``_tools_for_llm()`` picks the new phase's set.
+- [ ] Recorded-trace test: a synthetic build-then-deploy
+  conversation emits the right tool-array contents on each turn.
+
+### What this phase is *not*
+
+- **Not a generic plug-in framework for tool curation.**  We
+  ship five hand-curated phases; we don't build a registry that
+  third-party packages plug new phases into.
+- **Not a change to ``InferenceSnapProvider.max_tools``.**  The
+  12-tool cap stays.  This phase is about picking the *right*
+  ≤12 tools, not lifting the cap.
+- **Not a tool-routing / sub-agent feature.**  The autonomous
+  loop still has access to all phases over time as the work-
+  queue task category shifts.  This phase is just the per-turn
+  filter.
+
+**Exit criteria:** ``_CORE_TOOL_NAMES`` is gone; the build /
+debug / deploy / research / demo phases are defined and tested;
+the demo dry run that oscillated on YAML errors no longer does
+because ``charmlint`` is in the build set; ``CANTRIP_TOOL_PHASE``
+override works; ``/cost`` (or equivalent) shows the active phase.
+
+---
+
 ## Milestones
 
 | Milestone | Phase | Definition |
@@ -2638,5 +2766,6 @@ the measured outcome.
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
 | M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
 | M107: Tool-Call Failure Cap | 107 | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; a regression test pins the shape; smoke runs that hit a hard tool scope exit cleanly with stderr telling the operator which tool exhausted retries |
-| M108: Non-Qwen Local Models | 108 | An ``LLMProvider.rewrite_messages`` hook + Mistral-shape inbound tool-call parser unblocks providers whose chat templates expect tool calls / results inline within assistant turns (Mistral Tekken format); Mistral Nemo 12B drives the ntfy improve scenario end-to-end; ``CANTRIP_MESSAGE_FORMAT`` env var lets operators force the rewriter for unknown snaps; recorded-trace tests pin the wire format |
 | M108: TUI Visual Refresh | 108 | Welcome state has identity (wordmark + tagline); double frames around the chat are gone; modal screens use single rounded borders without manual ``─`` underlines; ``$primary`` is reserved for focus / accent and shows up in under ten places per screen; ModelInfoBar collapses to one line by default; tool-block captions read as English (``▸ read backend/pyproject.toml``); timestamps appear only on gaps; loading indicator is on-brand; header carries actual context; file tree surfaces charm content first |
+| M109: Non-Qwen Local Models | 109 | An ``LLMProvider.rewrite_messages`` hook + Mistral-shape inbound tool-call parser unblocks providers whose chat templates expect tool calls / results inline within assistant turns (Mistral Tekken format); Mistral Nemo 12B drives the ntfy improve scenario end-to-end; ``CANTRIP_MESSAGE_FORMAT`` env var lets operators force the rewriter for unknown snaps; recorded-trace tests pin the wire format |
+| M110: Phase-Aware Tool Curation | 110 | The static ``_CORE_TOOL_NAMES`` keep-list is replaced by a curator that picks the right tool slice for the active workflow phase (build / debug / deploy / research); inference-snap providers no longer need to drop ``quick_pack`` / ``charmlint`` / ``run_command`` to fit the 12-tool budget when they're load-bearing for the current phase; an env-var override lets operators pin a custom set; tests pin each phase's expected tool list |

@@ -1466,10 +1466,10 @@ class CantripAgent:
         "edit_file",
         "charmcraft_init",
         "charmcraft_pack",
-        "analyse_framework",
+        "quick_pack",
+        "charmlint",
         "juju",
         "run_charm_tests",
-        "web_fetch",
         "plan_tasks",
     }
 
