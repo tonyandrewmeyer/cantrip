@@ -52,6 +52,30 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``design/RECIPES.md`` and ``docs/docs/howto-recipes.html`` for
   the full schema and dispatcher flow.
 
+### Fixed
+- **Conversation-loop "deadlock" on BLOCKED dependents (Phase 106).**
+  The Phase 105.1 Qwen3-8B smoke reproduced a 10+ minute hang after
+  a sprint-build task flipped from ACTIVE to BLOCKED.  Audit of
+  ``CantripAgent.process_message`` showed no actual ``await
+  task.completion`` to fix — the deadlock is one layer out, in
+  ``WorkQueue.all_ready`` (``queue.py:172``), which treated only
+  ``DONE`` and ``FAILED`` as resolved dependencies.  When a parent
+  task flips to ``BLOCKED``, every dependent used to stay ``PENDING``
+  forever; the executor poll loop never picked them up, and
+  print-mode's ``_drain_queue`` polled the full 30-minute
+  ``_DRAIN_TIMEOUT_SECONDS`` for in-flight work that would never
+  become ready.  ``BLOCKED`` now joins ``DONE`` / ``FAILED`` in the
+  resolved-dependency set so dependents become ready immediately,
+  the executor drains them, and print mode exits with the correct
+  code-1 (because of the BLOCKED task) rather than hanging.
+  ``BackgroundExecutor._record_status_change`` (``executor/core.py``)
+  also now logs every BLOCKED transition at ``warning`` so the
+  reason lands in stderr without ``--verbose`` — Phase 105.1 had to
+  grovel through NDJSON to find which retry tipped the threshold.
+  ``tests/unit/agent/test_queue.py``'s
+  ``test_all_ready_unblocks_after_blocked_dependency`` is the
+  regression pin, mirroring the existing FAILED-dependency test.
+
 ### Changed
 - **Planner uses structured-output schema (Phase 73.3 follow-up).**
   ``TaskPlanner.plan_from_design`` / ``replan`` /

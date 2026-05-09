@@ -3775,46 +3775,53 @@ The downstream paths are all already correct:
 
 Each of those waits for ``process_message`` to return.  It never does.
 
+### Findings (2026-05-10)
+
+The roadmap's "``process_message`` awaits on a task-completion event"
+hypothesis didn't survive the audit — there is no such await in the
+conversation loop or its callees.  The actual deadlock is one layer
+out, in the work-queue scheduler:
+``WorkQueue.all_ready`` (``queue.py:172``) only treats ``DONE`` and
+``FAILED`` as resolved dependencies.  When a sprint-build task flips
+to ``BLOCKED``, every dependent stays ``PENDING`` forever; the
+executor poll loop never picks them up; ``_drain_queue`` polls the
+full 30-minute ``_DRAIN_TIMEOUT_SECONDS`` for in-flight work that
+will never become ready.  The Phase 105.1 ``SIGKILL`` at "10+
+minutes" lands inside that window, which is what the operator saw
+as a hang.
+
 ### 106.1 P0 — Reproduce in a unit test
 
-- [ ] Test in ``tests/unit/agent/`` that drives a fake provider
-  through a known-failing tool path so the executor flips the active
-  task to ``BLOCKED`` (mirror the run_charm_tests retry-then-block
-  shape from the Phase 105.1 smoke). Assert that
-  ``process_message`` returns within a small timeout (say 5 s)
-  rather than hanging.  Mark the test ``xfail`` until 106.2 lands —
-  it's the regression pin.
-- [ ] The smoke artefacts at
-  ``cantrip-iter-runs/qwen3-8b-improve/run.ndjson`` are the
-  ground-truth event sequence the test should reproduce.
+- [x] ``tests/unit/agent/test_queue.py``'s
+  ``test_all_ready_unblocks_after_blocked_dependency`` fails before
+  the 106.2 fix and passes after — same shape as the existing
+  ``test_all_ready_unblocks_after_failed_dependency`` regression pin.
+  (The roadmap's original "drive a fake provider through a failing
+  tool path" framing turned out to be a layer too high — the
+  deadlock isn't in ``process_message``; see Findings above.  The
+  smoke run remains the integration-level regression check.)
 
-### 106.2 P0 — Make ``process_message`` return on BLOCKED
+### 106.2 P0 — Treat ``BLOCKED`` as a resolved dependency in the scheduler
 
-- [ ] Audit the conversation loop (``CantripAgent.process_message``
-  and the executor wait points it depends on) for places where the
-  loop awaits on a state that no longer transitions once the active
-  task is ``BLOCKED``.  Most likely culprit: an ``await
-  task.completion`` style wait that fires for ``DONE`` / ``FAILED``
-  but not ``BLOCKED``.  Fix by treating ``BLOCKED`` as a
-  loop-terminating state at the same level as ``DONE`` / ``FAILED``.
-- [ ] When the loop terminates because of ``BLOCKED``, surface a
-  ``ProviderError``-equivalent message (``"task <id> blocked: <reason>"``)
-  to the caller rather than the empty-string return path so the
-  print-mode log / TUI banner explains what happened.
+- [x] ``WorkQueue.all_ready`` (``queue.py:172``) now includes
+  ``BLOCKED`` alongside ``DONE`` and ``FAILED`` in ``resolved_ids``.
+  Dependents on a BLOCKED task become ready immediately; the executor
+  picks them up; ``_drain_queue``'s in-flight count clears; print
+  mode exits with the correct code-1 (because of the BLOCKED task)
+  rather than the 30-minute drain timeout.
 
 ### 106.3 P1 — Diagnostic logging at the BLOCKED transition
 
-- [ ] In ``cantrip/agent/executor/core.py``, every call to
-  ``_record_status_change(task, "blocked", ...)`` already passes an
-  ``error=`` reason.  Bump the log level for that call site from
-  ``info`` (or wherever it currently sits) to ``warning`` so the
-  reason lands in stderr without ``--verbose``.  At Phase 105.1
-  debug we couldn't tell from the NDJSON which of the six failed
-  ``run_charm_tests`` rounds tipped the threshold.
-- [ ] Include the ``blocked_reason`` in the
-  ``status_bar_changed`` / ``task_updated`` event payload so the
-  Web UI and TUI can show it inline rather than just rendering the
-  badge.
+- [x] ``BackgroundExecutor._record_status_change`` (``executor/core.py:702``)
+  now logs ``log.warning("Task %r blocked: %s", task.title, reason)``
+  on every BLOCKED transition — so the reason lands in stderr without
+  ``--verbose``.  Centralised in ``_record_status_change`` rather than
+  each call site so any future BLOCKED path picks it up automatically.
+- [x] ``ui_events.task_updated`` already carries ``blocked_reason``
+  in its payload (``ui/events.py:165, 180``); ``task_updated_from_task``
+  reads ``task.blocked_reason`` (``events.py:202``).  No code change
+  needed — this part of 106.3 was already done before the phase
+  was scoped.
 
 ### 106.4 P1 — Watchdog heartbeat
 

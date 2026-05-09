@@ -700,7 +700,19 @@ class BackgroundExecutor:
         old_status: str = "active",
         error: str | None = None,
     ) -> None:
-        """Record a task status change event in the session store."""
+        """Record a task status change event in the session store.
+
+        Phase 106.3: BLOCKED transitions log at ``warning`` so the
+        reason lands in stderr without ``--verbose`` — the Phase 105.1
+        smoke had to grovel through NDJSON to find which of six failed
+        ``run_charm_tests`` rounds tipped the threshold.
+        """
+        if new_status == "blocked":
+            log.warning(
+                "Task %r blocked: %s",
+                task.title,
+                error or "<no reason>",
+            )
         if not self._state_service:
             return
         detail: dict[str, str] = {

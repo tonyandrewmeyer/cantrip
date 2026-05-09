@@ -236,6 +236,29 @@ class TestWorkQueue:
         # t2 should now be ready (not stuck forever).
         assert q.all_ready() == [t2]
 
+    def test_all_ready_unblocks_after_blocked_dependency(self) -> None:
+        """all_ready considers a BLOCKED dependency as resolved (Phase 106.2).
+
+        Without this, a sprint-build task flipping to BLOCKED leaves
+        every dependent stuck PENDING forever, so ``_drain_queue``
+        polls the full 30-minute timeout for in-flight work that will
+        never become ready — which is what the operator sees as a
+        hang.
+        """
+        q = WorkQueue()
+        t1 = _task(title="Build", id="build-1")
+        t2 = _task(title="Deploy", id="deploy-1", dependencies=["build-1"])
+        q.add_tasks([t1, t2])
+
+        assert q.all_ready() == [t1]
+
+        q.set_active(t1.id)
+        q.set_blocked(t1.id, "noop escalation")
+
+        # t2 must be ready — a BLOCKED dependency is just as
+        # terminal-from-the-scheduler's-perspective as DONE / FAILED.
+        assert q.all_ready() == [t2]
+
     def test_all_ready_skips_active(self) -> None:
         """all_ready skips tasks that are already active."""
         q = WorkQueue()

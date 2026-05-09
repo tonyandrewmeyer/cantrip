@@ -164,13 +164,18 @@ class WorkQueue:
         When *limit* is positive, return at most that many tasks.
         Tasks are returned in queue order.
 
-        A dependency is considered satisfied if the task is done, failed,
-        or has been cancelled (removed from the queue).  This prevents
-        downstream tasks from being stuck forever when the conversation
-        LLM short-circuits earlier tasks or when a dependency fails.
+        A dependency is considered satisfied if the task is done,
+        failed, blocked, or has been cancelled (removed from the
+        queue).  Treating ``BLOCKED`` as resolved (Phase 106.2) is
+        load-bearing: without it a sprint-build task flipping to
+        ``BLOCKED`` leaves every dependent stuck ``PENDING`` forever
+        and the print-mode drain hangs the full 30-minute timeout
+        polling for in-flight work that will never become ready.
         """
         resolved_ids = {
-            t.id for t in self._tasks if t.status in (TaskStatus.DONE, TaskStatus.FAILED)
+            t.id
+            for t in self._tasks
+            if t.status in (TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.BLOCKED)
         }
         all_ids = {t.id for t in self._tasks}
         ready: list[AgentTask] = []
