@@ -7,43 +7,42 @@
 
 ## TL;DR
 
-> **Status update (after Phase 105.1 smoke + chained-p, 2026-05-08):**
-> the original Qwen3-8B-as-primary recommendation didn't survive
-> measurement.  Qwen3-8B's ``edit_file`` accuracy is materially worse
-> than qwen3-coder's, and that dominates speed advantages.  The
-> revised position is below; the per-candidate sections retain the
-> earlier theoretical analysis for context, with measured updates
-> inline.
+> **Status update (after Phase 105.1.5 smoke, 2026-05-09):**
+> Qwen3-14B Run #3 produced a packable, well-structured ntfy
+> charm autonomously in 5m 19s — first time any local model has
+> matched improve-02 quality end-to-end without manual
+> intervention.  This required Phases 102 (streaming reconnect),
+> 103 (resume hallucination repair), 106 (BLOCKED-task deadlock
+> fix), 107 (tool-call failure cap), *and* the planner refactor
+> to all land first.  Qwen3-14B is now the candidate to beat for
+> Phase 105.2 / 105.3.  qwen3-coder stays the documented default
+> until 105.3 packages Qwen3-14B as a snap.
 
-- **No default switch yet.**  Keep qwen3-coder as the documented
-  local default until Phases 102 (streaming reconnect), 103
-  (edit-hint remediation) and 106 (loop-deadlock fix) ship — those
-  are also the gating issues for any *replacement* model, so fairer
-  re-evaluation lands cheaply once they do.  qwen3-coder's
-  Unsloth-fixed GGUF (already what the existing snap uses) handles
-  tool calling reliably; the gating issue for it is partial-offload
-  speed, not correctness.
-- **Smoked but not productionised — Qwen3-8B.**  Pre-flight checks
-  pass (reachability, plain hello, tool calls round-trip cleanly).
-  End-to-end: produced ~30 % of the improve-02 feature target in
-  20 min then hung; chained-p with the autonomous-loop confounds
-  removed produced *zero* successful edits in 8 min.  Useful as a
-  smoke artefact; **do not** make this the default.
-- **Better-fit candidates surfaced by the smoke.**  With the actual
-  ~12 GiB free we have (gemma4 + qwen3-coder both stopped, only
-  ~15 MiB of Xorg overhead), three previously-borderline picks now
-  fit comfortably and look better-aligned with what the smoke
-  showed matters (size + code-tuning > raw decode speed):
-  - **Qwen3-14B** (Q4_K_M ~9 GB, 32 K, same proven Qwen3 tool-call
-    family as Qwen3-8B but materially larger) — likely the
-    next-best smoke target.
-  - **DeepSeek-Coder-V2-Lite-Instruct** (16 B MoE, 2.4 B active,
-    Q4_K_M ~10 GB, 128 K) — code-tuned, GPT-4-Turbo-class on code
-    per DeepSeek's claims, MoE shape so fast despite 16 B total.
-    Tool-call reliability needs verification.
-  - **Mistral Nemo 12B** — already on the prior shortlist, native
-    function calling, 128 K context.  Stays an option for
-    long-context runs.
+- **Qwen3-14B is the new front-runner** (§5.6.1).  Q4_K_M ~9 GB
+  weights + 16 K KV cache fits in ~11.7 GB on the 12 GB GPU with
+  full offload.  Run #3 walked the full sequence
+  (read → write_file × 3 → charmcraft_pack), produced a 1.19 MB
+  charm matching improve-02's size, no manual intervention.  Phase
+  107's tool-call cap was dormant insurance — the model didn't
+  loop — but Run #2 showed why it's load-bearing.
+- **qwen3-coder remains the documented default** until 105.3
+  packages Qwen3-14B as a snap.  The Unsloth-fixed GGUF the
+  existing snap uses handles tool calling reliably; the gating
+  issue for it is partial-offload speed (5–10 tok/s decode), not
+  correctness.
+- **Demoted: Qwen3-8B**.  Pre-flight checks pass but end-to-end is
+  worse than qwen3-coder on this scenario (§5.1.1 / §5.1.2).
+  ~30 % feature completeness in 20 min before deadlock; chained-p
+  with the autonomous-loop confounds removed produced 0 successful
+  edits in 8 min.  Keeps a place on the candidate list as the
+  speed pick if the smoke server is already running, but not
+  productionised.
+- **Other candidates** that fit at the corrected ~12 GiB budget:
+  - **DeepSeek-Coder-V2-Lite-Instruct** (16 B MoE, 2.4 B active) —
+    not yet smoked.  Lower priority now that Qwen3-14B has
+    cleared the bar; useful as a comparison data point.
+  - **Mistral Nemo 12B** — native function calling, 128 K context;
+    stays an option for long-context runs.
 - **Ruled out (or demoted) outright.**
   - **gemma4** — 10 K context exhausts before a real conversation
     starts.
@@ -52,14 +51,11 @@
     aren't 7 B-specific; the [32 B emits wrong XML tags](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)
     too.  Not worth adopting until that family-wide template state
     closes.
-  - **Qwen3-8B as the default** — see TL;DR header.  Keeps a place
-    on the candidate list as the speed pick if the smoke server is
-    already running, but not productionised.
-- **Validation lessons retained.** The smoke shape (host
-  `llama-server` + socat forwarder + `--snap qwen3-8b` allowlist
-  entry + chained-p with fresh `.cantrip`) was sound and reusable.
-  The next candidate evaluation should reuse `inference-snaps/qwen3-8b/`
-  as the template — swap GGUF + bump port + retry.
+- **Validation infrastructure that paid off.** The smoke shape
+  (host `llama-server` + socat forwarder + per-model
+  ``inference-snaps/<name>/`` scaffold + ``_TOOL_CAPABLE_SNAP_NAMES``
+  allowlist entry) was sound and reusable.  Future candidate
+  evaluations should follow it.
 
 ## 1. Context: how we got here
 
@@ -369,30 +365,142 @@ Smoke artefacts retained at:
   similar end-to-end completeness, qwen3-coder stays the documented
   default.
 
-### 5.6 Qwen3-14B *(next smoke target)*
+### 5.6 Qwen3-14B *(smoked — first local model to match improve-02 autonomously)*
 
 - Same Qwen3 family as Qwen3-8B, so we know the ``--jinja``
   tool-call substrate works.  Roughly 1.75× the parameters at
-  similar quantisation; expected to be more accurate at
-  ``edit_file`` ``old_string`` matching, which §5.1.2 identified as
-  the binding constraint.
+  similar quantisation; turned out to be more accurate at
+  ``write_file`` payload generation, which is the binding
+  constraint (§5.1.2 saw an identical pattern at the smaller
+  size).
 - Q4_K_M ~9 GB ([bartowski/Qwen_Qwen3-14B-GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-14B-GGUF));
-  with a 32 K KV cache total VRAM is ~11.5 GB — fits at the
-  corrected 12 GiB budget with no headroom for a second model.
-- Decode rate estimate ~30–40 tok/s with full GPU offload.  Slower
-  than Qwen3-8B but still 4× qwen3-coder.
-- Same ``/no_think`` knob to suppress thinking-mode reasoning
-  overhead (§5.1.1 measured 124 tokens of reasoning for "say OK").
-- **Risk:** Q4_K_M might compromise instruction-following enough at
-  14 B that the size advantage doesn't fully translate.  An
-  honest evaluation would also smoke Q5_K_M (~10 GB, leaves
-  ~1.5 GB headroom for KV cache — only feasible at 16–24 K
-  context).
-- **Smoke shape:** reuse `inference-snaps/qwen3-8b/` as the
-  template — copy to `inference-snaps/qwen3-14b/`, swap the GGUF
-  URL, bump the port to 8340, allowlist the snap name in
-  `_TOOL_CAPABLE_SNAP_NAMES`, retry the ntfy improve scenario.
-  Expected effort: ~1 hour.
+  with a 16 K KV cache (KV is ~170 KB/token at fp16 for this
+  geometry) total VRAM is ~11.7 GB — fits at the corrected 12 GiB
+  budget with no headroom for a second model.  32 K context needs
+  KV-cache quantisation (``CACHE_TYPE_K=q8_0``) to fit.
+- Smoke server config under
+  ``inference-snaps/qwen3-14b/scripts/smoke-server.sh``: port
+  8340, ``--ctx-size 16384``, full GPU offload, llama.cpp ``b8589``
+  CUDA12 prebuild (the same one the qwen3-coder snap uses).
+
+#### 5.6.1 Measured (Phase 105.1.5 smoke, 2026-05-09)
+
+Three runs against the smoke server, after Phases 102 (streaming
++ reconnect), 103 (resume hallucination repair), 106 (BLOCKED-task
+deadlock fix), and the planner refactor all landed:
+
+**Pre-flight checks** (`smoke-check.sh` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, model id ``Qwen_Qwen3-14B-Q4_K_M.gguf``, ``n_ctx_train: 32768`` | pass |
+| Plain hello (512-token budget) | pass — content "OK", **97 tokens of reasoning** (vs Qwen3-8B's 124 — bigger model is *less* verbose in its thinking) |
+| Synthetic ``get_weather`` tool call | pass — clean ``tool_calls`` array, ``finish=tool_calls`` |
+
+**Run #1 — autonomous, original prompt (the same one used for
+Qwen3-8B Run #2):**
+
+- **Wall clock 7m 56s, exit code 0** (no deadlock, no kill — first
+  time for any local-model smoke).
+- 32 tool invocations, 8 successes / 1 failure on src/charm.py
+  edits = **89 % success rate** (vs Qwen3-8B's 50 %).  Phase 103's
+  did-you-mean hint helping.
+- *No* ``plan_tasks`` call — the planner refactor (post-``db21d00``)
+  evidently skipped sprint mode for this prompt shape, which
+  avoided the sprint-mode hijack that wrecked the 8B run.
+- ``charmcraft.yaml``: clean and complete (4 COS relations + 3
+  actions + OCI image — single-shot ``write_file``).
+- ``src/charm.py``: **broken**.  The model called ``edit_file``
+  seven times to incrementally add things, each anchored on a
+  stale read of the file.  End result: 3 stacked
+  ``super().__init__(framework)`` calls, 14 cumulative
+  ``framework.observe(...)`` lines (3-4 copies of each), wrong
+  import (``import ops.tracing as ops_tracing``).
+- ``charmcraft_pack`` not called — model went quiet after the last
+  edit and the conversation loop returned.
+
+**Run #2 — `write_file`-only directive added:**
+
+- **Wall clock 14 min before manual kill, exit code 144.**
+- The directive worked: ``charmcraft.yaml`` and ``src/charm.py``
+  both written cleanly via single ``write_file`` calls — the
+  duplicate-stacking pattern gone.  ``charm.py`` now passes
+  ``ast.parse`` cleanly, has exactly 1 ``super().__init__``, 4
+  ``framework.observe`` calls, 1 ``self._tracing`` block, and the
+  correct ``import ops_tracing``.
+- **New failure mode**: 8 consecutive ``write_file`` failures on
+  ``tests/unit/test_charm.py``, each with ``duration_ms=0`` and
+  caption ``"write_file()"`` (no path, no content) — the function-
+  call envelope came back empty, almost certainly because the
+  long test-file payload overflowed the model's tool-call
+  generation budget mid-stream.  Each retry took ~80 s of
+  reasoning.
+- This wasn't covered by Phases 102 / 103 / 106 — those handle
+  network timeouts, edit-hint mismatches, and
+  already-blocked-task hangs respectively.  The retry loop ran
+  for 11 minutes before manual SIGKILL.  **Filed as Phase 107**
+  (tool-call failure cap).
+- After Phase 107 and Phase 105.1.5 land, **Run #2's produced
+  charm.py + charmcraft.yaml pack cleanly via manual
+  ``charmcraft pack --destructive-mode``** (1.18 MB charm,
+  matches improve-02's 1.19 MB).  So Run #2 was structurally
+  one cap-bug away from end-to-end success.
+
+**Run #3 — Phase 107 cap implemented + softened test-file prompt
+(`3-5 simple tests, fall back to a single smoke test if the long
+write fails`):**
+
+- **Wall clock 5m 19s, exit code 0, autonomous ``charmcraft_pack``,
+  charm packed at 1.19 MB.**
+- Tool sequence (clean throughout):
+  1. ``read_file`` charmcraft.yaml ✓
+  2. ``write_file`` charmcraft.yaml (1213 bytes) ✓
+  3. ``read_file`` src/charm.py ✓
+  4. ``write_file`` src/charm.py (3255 bytes) ✓
+  5. ``read_file`` tests/unit/test_charm.py ✓
+  6. ``write_file`` tests/unit/test_charm.py (595 bytes) ✓ — *first
+     attempt success*
+  7. ``charmcraft_pack`` ✓ (3.087 s) → ``ntfy_amd64.charm`` (1.1 MB)
+- The Phase 107 cap **didn't fire** — the model didn't loop.  The
+  cap sits as dormant insurance against the failure shape Run #2
+  exhibited.
+- Test file is small (3 tests vs the prompt-asked 7) — the
+  softened prompt explicitly invited that trade.  `improve-02`
+  shipped 7 tests; for an honest comparison this is a
+  half-way-there delta on the test surface, full match on the
+  charm artefact.
+
+**Take-away (revised after the smokes):**
+
+Qwen3-14B is the **first local model to autonomously produce a
+packable, well-structured ntfy charm** comparable in quality to
+improve-02 — *but only after* Phases 102, 103, 106, 107, and the
+planner refactor all landed.  The model itself is meaningfully
+stronger than Qwen3-8B for tool-driven code-edit work; size +
+code-tuning matter more than raw decode speed (§5.1.2 already
+flagged this; §5.6.1 confirms it).
+
+The Phase 107 cap is cheap insurance — only the second smoke
+revealed the failure mode, and the third smoke didn't trigger it
+— but skipping it would mean every operator hits a runaway loop
+the first time the model can't generate a long ``write_file``
+payload.  Worth keeping.
+
+**Recommendation update:** Qwen3-14B becomes the candidate to
+beat for Phase 105.2 / 105.3.  qwen3-coder stays the documented
+default until the snap-packaging work in 105.3 lands; once it
+does, Qwen3-14B should take that slot.  Re-running 105.1.6
+(DeepSeek-Coder-V2-Lite) is still useful as a comparison data
+point but is no longer urgent.
+
+Smoke artefacts retained at:
+
+- ``cantrip-iter-runs/qwen3-14b-improve/run.ndjson`` (Run #3) —
+  full event stream
+- ``cantrip-iter-runs/qwen3-14b-improve/ntfy/`` — packed charm
+- Run #2 artefacts have been overwritten by Run #3's reset; the
+  measurements above are reconstructed from the Phase 107 NDJSON
+  and the doc-as-of-2026-05-10 snapshot of this section.
 
 ### 5.7 DeepSeek-Coder-V2-Lite-Instruct *(MoE candidate)*
 
@@ -410,30 +518,31 @@ Smoke artefacts retained at:
 
 ## 6. Recommendation
 
-> **Revised after the Phase 105.1 smoke (see §5.1.1, §5.1.2):** the
-> "switch the default to Qwen3-8B" recommendation didn't survive
-> measurement.
+> **Revised after Phase 105.1.5's Qwen3-14B Run #3 (§5.6.1,
+> 2026-05-09):** Qwen3-14B produced a packable improve-02-quality
+> charm autonomously in ~5 minutes.  The recommendation now reads:
 
-**Keep qwen3-coder as the documented local default.**  It's slow
-(partial-offload, 5–10 tok/s) but it's the only model in our
-candidate set with measured end-to-end completeness on Cantrip's
-charm-build task.  Phase 105.3's "package the new default as a
-snap" goal should remain *contingent* on a re-evaluation that
-demonstrates a candidate matches or beats qwen3-coder's end-to-end
-completeness.
+**Adopt Qwen3-14B as the next documented local default**, gated on
+Phase 105.3 packaging it as a snap.  Until that ships, qwen3-coder
+stays the documented default — operators who want the new pick can
+follow ``inference-snaps/qwen3-14b/README.md`` to run it from the
+host directly.
 
 **Next evaluations** (Phase 105.1 follow-ups, in priority order):
 
-1. **Qwen3-14B** — same proven family as the failed Qwen3-8B but
-   bigger, on the theory that size dominates speed for this task.
-   Cheapest smoke (the scaffold is already there, just bump GGUF +
-   port).
-2. **DeepSeek-Coder-V2-Lite** — 16 B MoE with 2.4 B active.  The
-   "code-tuned + fast despite size" combination the §5.1.2 chained-
-   p result suggests we want.  Tool-call reliability needs
-   verification first.
-3. **Mistral Nemo 12B** — only if the above two don't pan out.
-   Native function-calling, 128 K context.
+1. **Phase 105.2 — preset for ``--snap qwen3-14b``** (now active,
+   see ROADMAP).  Wire ``InferenceSnapProvider``'s preset table,
+   update the howto + reference-CLI docs.
+2. **Phase 105.3 — package as a snap.**  Decide between custom
+   snap and upstream contribution; ship recipe under
+   ``inference-snaps/qwen3-14b/``.
+3. **Phase 105.1.6 — DeepSeek-Coder-V2-Lite smoke** stays useful
+   as a comparison data point but is no longer urgent.  The MoE
+   shape might be faster than Qwen3-14B at similar quality;
+   measure when convenient.
+4. **Mistral Nemo 12B** — long-context fallback if Qwen3-14B's
+   16 K runtime context turns out to be a binding constraint in
+   practice.
 
 Phi-4-Mini and Qwen3-8B remain documented as opt-in *speed* picks
 for niche use cases (e.g. a planner-companion model running

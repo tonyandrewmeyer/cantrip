@@ -49,7 +49,9 @@ _VISION_SNAP_NAMES: frozenset[str] = frozenset({"qwen-vl", "gemma3", "gemma4"})
 # ``_apply_model_metadata`` would otherwise wrongly disable tools for
 # every llama.cpp-backed snap.  Add a snap here once you've confirmed
 # tool-call round-tripping works against it.
-_TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset({"qwen3-coder", "gemma4", "qwen3-8b"})
+_TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset(
+    {"qwen3-coder", "gemma4", "qwen3-8b", "qwen3-14b"}
+)
 
 
 def discover_snap_endpoint(snap_name: str) -> str:
