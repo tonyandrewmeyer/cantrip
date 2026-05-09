@@ -13293,3 +13293,97 @@ file-by-file keeps the diff comprehensible as a single
 intentional cleanup.
 
 ---
+
+## Phase 89: TUI File Pane — Repo Stats Sidebar ✓
+
+**Goal:** The TUI file pane (``CharmTreeWidget``, ``#charm-files``)
+is comfortably wide and shows a directory tree on the left with
+empty space to its right.  A live session reading "Phase 65" land
+flagged that the right-hand half of the pane is dead real estate
+that could carry quick repo signals — the kind of glance-and-go
+data a charm author asks for several times an hour and currently
+has to drop into a terminal to fetch.
+
+Candidate readouts (none final; the phase decides the slate):
+
+- **Lines of code** — total and by-language (``ops`` / Python vs
+  ``charmcraft`` YAML / Jinja).  Lines authored vs vendor.
+- **Most recently changed file** — the working-tree-newest entry
+  with a relative timestamp ("2 m ago"), so the user notices when
+  the agent has touched something during a long-running task.
+- **Most recent commit** — short hash, subject, age.  Useful as a
+  "what landed last" signal without leaving the TUI.
+- **Total files / directories** — for charms that scale into
+  many libs.
+- **Total tests / tests passing** — pulled from the most recent
+  ``pytest`` run via the existing test-results path.
+- **Lint state** — green / red, last run age.
+
+### 89.1 Decide the slate ✓
+
+- [x] Scored the candidate stats on (a) read-frequency during a
+  real charm session, (b) cost to compute live, and (c) cost to
+  keep fresh.  Picked four cheap-to-compute, high-signal stats
+  drawn from filesystem + git only:
+  - **Most recently changed file** with a relative timestamp.
+  - **Most recent commit** (short hash, subject, age) — one cached
+    `git log -1` per tick.
+  - **Lines of code** total with a top-two language breakdown,
+    bounded by an extension allowlist and a 1 MB per-file cap.
+  - **File and directory counts** taken from the same filtered
+    walk used by the tree, with a defensive 5 000-file scan cap.
+  Test-pass count and lint state were deferred — they need a
+  runner-side bus event to avoid showing stale data.  Trigger to
+  revisit: a per-run test-results event lands on the bus from
+  pytest (and an equivalent charmlint last-run summary), at which
+  point the sidebar can subscribe to either or both.
+
+### 89.2 Layout ✓
+
+- [x] Stats column lives **inside `CharmTreeWidget`** as a
+  right-docked sibling of the directory tree
+  (`Horizontal(_FilteredTree, RepoStatsWidget)` inside a
+  `#charm-files-body` container).  Single widget keeps the layout
+  decisions and the refresh tick co-located, and the stats
+  computation can ride on the same 3 s timer that already reloads
+  the tree.
+- [x] Below ~46 columns of widget width the sidebar hides itself
+  via `display = False` on resize, so the file tree keeps the full
+  pane on narrow terminals.  The fold flips back automatically when
+  the user widens the window or closes the right side panels with
+  <kbd>F2</kbd>; no separate binding required.
+
+### 89.3 Implementation ✓
+
+- [x] Refresh cadence rides the existing 3 s tree tick — every tick
+  walks the working directory once on a worker thread (via
+  `asyncio.to_thread`) so the UI loop never blocks on the walk or
+  the `git log` call.  Stats computation is a single pure function
+  (`compute_repo_stats(root) -> RepoStats`) that does the prune,
+  the line-count, and the `git log -1` invocation in one pass; the
+  widget consumes the resulting snapshot via `set_stats`.
+- [x] Tests under `tests/unit/tui/test_repo_stats.py` cover the
+  pure walk path (empty / missing / hidden-prune / oversize-skip /
+  newest-mtime / scan-cap-truncated), the `read_last_commit` git
+  interop (non-git / no-commits / populated), the `format_relative_time`
+  / `render_stats_lines` formatters (every relative-time bucket plus
+  the truncation-at-width assertion), and a Pilot integration that
+  mounts the widget against a synthetic charm checkout and asserts
+  both the populated state at wide widths and the fold at narrow
+  widths.
+
+### What this phase is *not*
+
+- Not a CI dashboard.  Stats are local-repo only; nothing in
+  this phase reaches out to GitHub Actions or external services.
+- Not a charm-quality scorecard.  We're surfacing facts, not
+  judgements; "most recently changed file" is informational, not
+  a complaint.
+
+**Exit criteria:** the right-hand portion of ``#charm-files``
+carries the chosen four stats, refreshing without UI hitches in
+a normal-size charm checkout, with a graceful fold for narrow
+terminals.  Manual walk-through during a build session confirms
+the data is helpful rather than noise.
+
+---
