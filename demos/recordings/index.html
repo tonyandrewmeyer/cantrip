@@ -77,14 +77,22 @@
 <main>
   <h1>Cantrip recordings <small>marketing-clip preview</small></h1>
   <p>
-    Eight clips covering Cantrip's modes of operation and tools. Asciicasts
-    embed via <a href="https://github.com/asciinema/asciinema-player">asciinema-player</a>
+    Fourteen clips covering Cantrip's modes of operation, the inline
+    affordances surfaced through the TUI, and the deterministic
+    helper tools.  Asciicasts embed via
+    <a href="https://github.com/asciinema/asciinema-player">asciinema-player</a>
     (CDN-loaded); GIFs render inline.
   </p>
 
   <nav>
     <a href="#hero">hero — ntfy build</a>
     <a href="#tui">TUI</a>
+    <a href="#tui-popups">· popups</a>
+    <a href="#tui-shell">· Ctrl-X shell</a>
+    <a href="#tui-plan">· /plan</a>
+    <a href="#tui-yolo">· --yolo</a>
+    <a href="#tui-pause">· /pause</a>
+    <a href="#tui-feelings">· /feelings</a>
     <a href="#web">Web UI</a>
     <a href="#cli">CLI / print</a>
     <a href="#improve">--improve audit</a>
@@ -110,6 +118,70 @@
       <code>/map</code>
     </p>
     <img class="frame" src="tui.gif" alt="Cantrip TUI walkthrough" />
+  </section>
+
+  <section id="tui-popups">
+    <h2>TUI · slash + <code>@</code> autocomplete + help</h2>
+    <p class="meta">
+      ~25 s · typing <code>/c</code> filters slash commands inline,
+      typing <code>@do</code> filters context providers, <code>/help</code>
+      opens the rounded modal — the inline affordances most users
+      discover by accident
+    </p>
+    <img class="frame" src="tui-popups.gif" alt="Cantrip TUI autocomplete popups + help modal" />
+  </section>
+
+  <section id="tui-shell">
+    <h2>TUI · <code>Ctrl-X</code> shell mode</h2>
+    <p class="meta">
+      ~25 s · <code>Ctrl-X</code> tints the input border amber and
+      routes Enter to a subprocess instead of the agent — zero
+      tokens spent, output renders as a <code>$</code>-prefixed
+      shell block in the chat
+    </p>
+    <img class="frame" src="tui-shell-mode.gif" alt="Cantrip TUI shell mode (Ctrl-X)" />
+  </section>
+
+  <section id="tui-plan">
+    <h2>TUI · <code>/plan</code> read-only gate</h2>
+    <p class="meta">
+      ~25 s · <code>/plan</code> enters the read-only mode (no file
+      edits, no shell calls); the status bar tints amber and badges
+      <em>plan mode</em> until <code>/build</code> flips back
+    </p>
+    <img class="frame" src="tui-plan-mode.gif" alt="Cantrip TUI /plan mode" />
+  </section>
+
+  <section id="tui-yolo">
+    <h2>TUI · <code>--yolo</code> confirmations off</h2>
+    <p class="meta">
+      ~22 s · the <code>--yolo</code> startup flag tints the status
+      bar red with the <em>YOLO MODE — confirmations off</em> badge
+      so the elevated trust setting is impossible to miss
+    </p>
+    <img class="frame" src="tui-yolo-mode.gif" alt="Cantrip TUI --yolo mode" />
+  </section>
+
+  <section id="tui-pause">
+    <h2>TUI · <code>/pause</code> and <code>/resume</code></h2>
+    <p class="meta">
+      ~25 s · <code>/pause</code> stops the autonomous loop picking
+      new tasks (the chat keeps working); <code>/resume</code> flips
+      it back on.  The status bar's lifecycle badge follows the
+      state.
+    </p>
+    <img class="frame" src="tui-pause-resume.gif" alt="Cantrip TUI /pause and /resume" />
+  </section>
+
+  <section id="tui-feelings">
+    <h2>TUI · <code>/feelings</code> inner parliament</h2>
+    <p class="meta">
+      ~50 s · <code>/feelings</code> convenes joy + fear (the
+      two-emotion default).  Each emotion deliberates against the
+      current charm state and contributes to a Markdown summary
+      that lands in the chat.  Run against a real charm.
+    </p>
+    <img class="frame" src="tui-feelings.gif" alt="Cantrip TUI /feelings parliament" />
   </section>
 
   <section id="web">
