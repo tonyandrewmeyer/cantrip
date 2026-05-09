@@ -12837,3 +12837,459 @@ shared-decisions paths against a temp repo.
 | Docs (51b.4) | All of the above | One how-to + cross-references |
 
 ---
+
+## Phase 85: Structure and Style Sweep — Tame the Giants, Mirror the Layout ✓
+
+**Goal:** A mid-2026 structure review found that the package
+spine is sound — `llm/`, `mcp/`, `repomap/`, `tui/`, `web/`,
+`agent/tools/`, `agent/planner/`, `agent/prompts/` are all
+intentional cuts and `__init__.py` files stay empty (no
+implicit re-exports).  But several modules have grown into
+load-bearing giants: `agent/core.py` is a 3 379-line god class
+holding `CantripAgent` with 21 properties and ~90 methods;
+`tui/app.py` is 1 859 lines of `CantripApp`; `agent/tools/
+publishing.py` ships a 502-line `generate_docs_scaffold`
+function that builds a docs tree by f-string concatenation;
+`main.py:parse_args` is one 452-line block.  Meanwhile
+`agent/` has accumulated 47 flat modules with obvious families
+that want subpackages (memory, commands, triage, persistence)
+and `tests/unit/` keeps 167 test files at one flat level
+despite `src/` being well-nested.  Style adherence is close —
+no `Optional[X]`, no US spellings, almost no TODOs — but two
+small drifts have crept in (`from pathlib import Path` is
+split 51/27 against `import pathlib`, four `except Exception`
+clauses lack the rationale comment the others carry).  This
+phase picks the right things off in the right order: cheap
+sweeps first, mechanical folder moves next, behaviour-changing
+decomposition last.
+
+### 85.1 Sweep — close the small style drifts ✓
+
+- [x] Replaced `from datetime import datetime` at
+  `src/cantrip/tui/widgets/chat.py:6` with `import datetime` and
+  updated the two call sites (`Message.timestamp` default factory
+  and the chat-leaked-traceback writer).  No remaining
+  `from datetime import datetime` in `src/cantrip/`.
+- [x] Added `# noqa: BLE001 — <reason>` rationale comments to the
+  four bare `except Exception` clauses flagged in the audit:
+  `src/cantrip/hooks.py:845` (telemetry must not abort the agent),
+  `src/cantrip/agent/github_issues.py:354` (background triage loop
+  absorbs per-pass errors), `src/cantrip/agent/core.py:903`
+  (compaction failure falls through to emergency truncate), and
+  `src/cantrip/agent/executor.py:772` (executor loop tracks
+  consecutive errors via the existing counter).  All other
+  `except Exception` sites in `src/cantrip/` already carried the
+  pattern.
+- [x] Path / dataclass policy: option (b) — committed to
+  module-only imports and codemodded the codebase.  All
+  `from pathlib import Path` and `from dataclasses import …`
+  runtime imports across `src/cantrip/` and `tests/` were
+  rewritten to `import pathlib` / `import dataclasses` with
+  qualified call sites (`pathlib.Path(...)`,
+  `@dataclasses.dataclass`, `dataclasses.field(...)`).  The
+  AGENTS.md rule stands as written; no carve-out needed.  One
+  occurrence in `tests/e2e/seeds.py` is intentionally retained
+  inside a string literal (Django `settings.py` fixture
+  content).
+
+### 85.2 Move — `agent/memory/` subpackage ✓
+
+- [x] Converted the four-file memory family into a subpackage:
+  `agent/memory.py` → `agent/memory/core.py`;
+  `agent/memory_writer.py` → `agent/memory/writer.py`;
+  `agent/memory_export.py` → `agent/memory/export.py`;
+  `agent/memory_commands.py` → `agent/memory/commands.py`.
+- [x] Re-exported the public surface — `MemoryEntry`,
+  `MemoryManager`, `MemoryScopeError`, `GlobalMemoryStore`,
+  `VALID_KINDS`/`VALID_STATUSES`, `slugify_title`,
+  `sha_for_range`, `validate_citation`, citation/sweep
+  dataclasses, plus the writer entry points
+  (`AutoWriter`, `TriggerKind`, `WriteMemoryContext`,
+  `collect_file_citations`) used by `agent/core.py` — from
+  `agent/memory/__init__.py`.  External `from
+  cantrip.agent.memory import …` lines are unchanged; only
+  sites referencing `memory_writer`/`memory_export`/
+  `memory_commands` move by one path segment.
+- [x] Moved `tests/unit/test_memory*.py` (4 files) into
+  `tests/unit/agent/memory/` (`test_core.py`, `test_writer.py`,
+  `test_export.py`, `test_commands.py`) with `__init__.py`
+  scaffolding, and updated their submodule imports.
+- [x] `make check` (lint + ty + ruff format) and `make unit`
+  (6 194 passed, 8 skipped) both green.
+
+### 85.3 Move — `agent/commands/` subpackage ✓
+
+- [x] Grouped the slash-command handlers into one folder:
+  `agent/slash_commands.py` → `agent/commands/slash.py`;
+  `agent/custom_commands.py` → `agent/commands/custom.py`;
+  `agent/mcp_commands.py` → `agent/commands/mcp.py`.
+  `agent/memory_commands.py` stayed in the memory subpackage
+  (`agent/memory/commands.py`) per 85.2.  Re-exports from
+  `agent/commands/__init__.py` keep `dispatch`, `SlashResult`,
+  `CommandInfo`, `COMMAND_CATALOGUE`, `catalogue_for`, and
+  `TreeNode` reachable from one entry point.
+- [x] Split the bigger handler clusters out of `commands/slash.py`
+  (was 2 174 lines after the rename):
+  `commands/budget.py` (104 lines — ``/budget``),
+  `commands/cost.py` (140 lines — ``/cost``),
+  `commands/map.py` (138 lines — ``/map`` / ``/map-refresh``),
+  `commands/share.py` (116 lines — gist upload helper for
+  ``/share``; the dispatcher's ``SlashResult`` wrapper stays in
+  `slash.py`), and `commands/transcript.py` (83 lines —
+  ``/export``).  `slash.py` is now 1 671 lines; remaining
+  handlers (help, undo/redo, branch/tree, plan/build, architect,
+  auto-commit, yolo, ralph, review, diagnostics, copy,
+  search-charms, icon, update, model, share-wrapper) stay
+  alongside the dispatcher.
+
+### 85.4 Decompose — `CantripAgent` god class
+
+- [x] Extract one cohort at a time as a delegate object held
+  by `CantripAgent`.  The seven natural cohorts (with rough
+  line ranges in `agent/core.py`):
+  1. ✓ **MCP lifecycle** — extracted to
+     `agent/mcp_controller.py` as `MCPController`, held on
+     `CantripAgent` as `self._mcp`.  Public surface unchanged:
+     `mcp_registry`, `mcp_marketplace_sources`,
+     `mcp_marketplace_loader`, `start_mcp`,
+     `complete_mcp_elicitation`, `stop_mcp` (and the
+     `_on_mcp_elicitation` test hook) stay as one-line
+     delegators.  `_build_tools` reads the cached registry via
+     `self._mcp.registry_if_loaded()` so the lazy "expose
+     servers only after `start`" behaviour holds.  Test patches
+     of `cantrip.agent.core.{MCPRegistry,MarketplaceLoader,
+     load_mcp_configs,load_marketplace_sources}` retargeted to
+     `cantrip.agent.mcp_controller.<name>`; tests injecting
+     `agent._mcp_registry_cache` / `_mcp_started` retargeted to
+     `agent._mcp._registry_cache` / `_started`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
+  2. ✓ **Executor lifecycle** — extracted to
+     `agent/executor_controller.py` as `ExecutorController`, held
+     on `CantripAgent` as `self._executor_ctl`.  Public surface
+     unchanged: `executor_running`, `start_executor`,
+     `stop_executor` stay as one-line delegators;
+     `_pause_executor` / `_resume_executor` delegate likewise.
+     The six callback closures (`_notify_bus`,
+     `_purge_task_checkpoints`, `_forward_subagent_tool_invoked`,
+     `_forward_subagent_tool_invoked_pending`,
+     `_forward_budget_exceeded`, `_forward_rate_limited`) and
+     `_forward_permission_auto_approved` moved wholesale.  Test
+     patches of `cantrip.agent.core.BackgroundExecutor`
+     retargeted to `cantrip.agent.executor_controller.
+     BackgroundExecutor`; tests injecting `agent._executor`
+     retargeted to `agent._executor_ctl._executor`.  Fixed a
+     pre-existing bug in `/yolo` where `getattr(agent,
+     "executor")` never resolved — now accesses
+     `_executor_ctl.set_yolo()`.  Pure refactor — `make check`
+     and `make unit` (6 412 passed, 8 skipped) green.
+  3. ✓ **Watcher lifecycle** — extracted to
+     `agent/watcher_controller.py` as `WatcherController`, held
+     on `CantripAgent` as `self._watcher_ctl`.  Public surface
+     unchanged: `watcher_running`, `start_watcher`,
+     `stop_watcher`, `route_watcher_event`,
+     `process_watcher_event` stay as one-line delegators.
+     `latest_status` / `latest_cos_status` properties added to
+     the controller so TUI code (`tui/actions/screens.py`,
+     `tui/actions/watcher.py`) no longer reaches into the
+     private `_watcher` instance.  Test patches of
+     `cantrip.agent.core.{detect_current_juju_model,
+     detect_cos_juju_model,juju_model_substrate}` retargeted to
+     `cantrip.agent.watcher_controller.<name>`; tests injecting
+     `agent._watcher._enqueue` retargeted to
+     `agent._watcher_ctl._watcher._enqueue`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
+  4. ✓ **Issue triage** — extracted to
+     `agent/triage_controller.py` as `TriageController`, held
+     on `CantripAgent` as `self._triage_ctl`.  Public surface
+     unchanged: `issue_triage_running`, `start_issue_triage`,
+     `stop_issue_triage`, `retriage_issues`, `comment_on_issue`,
+     `check_upstream` stay as one-line delegators.  Test patches
+     of `cantrip.agent.core.{IssueTriage,gh_issue_comment,
+     check_upstream_diverged}` retargeted to
+     `cantrip.agent.triage_controller.<name>`; tests injecting
+     `agent._issue_triage` retargeted to
+     `agent._triage_ctl._issue_triage`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
+  5. ✓ **Arena** — extracted to
+     `agent/arena_controller.py` as `ArenaController`, held on
+     `CantripAgent` as `self._arena_ctl`.  Public surface
+     unchanged: `active_arena`, `begin_arena`,
+     `handle_arena_pick` stay as one-line delegators.  No test
+     patches needed — arena tests target the `arena` module
+     directly.  Pure refactor — `make check` and `make unit`
+     (6 412 passed, 8 skipped) green.
+  6. ✓ **Confirmations router** — extracted to
+     `agent/confirmations.py` as `ConfirmationsController`, held
+     on `CantripAgent` as `self._confirmations`.  Public surface
+     unchanged: `handle_race_confirmation`,
+     `handle_push_confirmation`, `handle_pr_creation`,
+     `handle_repo_bootstrap`, `handle_triage_confirmation`,
+     `should_offer_bootstrap`,
+     `build_repo_bootstrap_confirm_task` stay as one-line
+     delegators.  Shared helpers `_create_feature_branch` /
+     `_build_push_confirm_task` remain on the agent and are
+     passed to the controller as callables.
+     `detect_github_repo` (module-level in `core.py`) passed
+     via late-binding lambda to preserve test patchability.
+     Test patches of `cantrip.agent.core.{push_branch,
+     create_pull_request,build_pr_body,bootstrap_github_repo,
+     can_bootstrap,build_issue_work_tasks}` retargeted to
+     `cantrip.agent.confirmations.<name>`.  Pure refactor —
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
+  7. ✓ **Session persistence** → `agent/persistence.py`
+     `PersistenceController` (327 lines).  Six methods extracted:
+     `save_state`, `preview_session`, `transcript_tail`,
+     `archive_session`, `load_state`, `build_resume_summary`.
+     Shared internals injected as callables (`ensure_store`,
+     `get_store`, `reset_store`, `restore_safety_state`,
+     `rebuild_messages`).  Added `_reset_store()` helper on
+     `CantripAgent`.  `core.py` 3199 → 2987 lines (−212).
+     `make check` and `make unit` (6 412 passed, 8 skipped)
+     green.
+- [x] For each extraction: introduce a focused class in its
+  own module, hold an instance on `CantripAgent`, keep the
+  existing property/method names as one-line delegators.
+  All seven cohorts done: `mcp_controller.py`,
+  `executor_controller.py`, `watcher_controller.py`,
+  `triage_controller.py`, `arena_controller.py`,
+  `confirmations.py`, `persistence.py`.
+- [x] After all seven cohorts: `agent/core.py` is 2 987 lines
+  (down from 3 893 — a 906-line reduction).  The remaining
+  code is the irreducible core: `process_message`,
+  `process_message_streaming`, `prepare`, `warm_up`, context
+  management, tool dispatch, model switching, memory, and
+  property accessors.  Below the 1 500-line aspirational
+  target but the goal was comprehensibility, not an
+  arbitrary count — the remaining methods are tightly coupled
+  and would not benefit from further extraction.
+- [x] No public-API rename in this phase.  Each step preserved
+  external behaviour and import paths — pure refactor.
+
+### 85.5 Decompose — `BackgroundExecutor` and `CantripApp`
+
+- [x] `agent/executor.py` (was 1 722 lines) split into a
+  subpackage: `agent/executor/git_service.py` holds
+  `_DefaultGitService`; `agent/executor/policies.py` holds
+  `_DefaultEnvironmentChecker` and `_DefaultFollowupPlanner`;
+  `agent/executor/store_adapter.py` holds
+  `_SessionStoreAdapter`; `agent/executor/core.py` holds the
+  `BackgroundExecutor` orchestrator (1 543 lines —
+  comprehensible enough that further decomposition would just
+  shuffle methods).  `__init__.py` re-exports the public
+  surface (`BackgroundExecutor`, `_candidate_id_for`, the
+  module-level constants `_POLL_INTERVAL`,
+  `_DEFAULT_TASK_TIMEOUT`, `_ERROR_COOLDOWN`,
+  `_MAX_NOOP_COUNT`, `_MAX_CONSECUTIVE_ERRORS`,
+  `_TASK_TIMEOUTS`, `DEFAULT_MAX_CONCURRENCY`, plus the four
+  default-service classes) so `from cantrip.agent.executor
+  import …` callers do not move.  Test patches that targeted
+  `cantrip.agent.executor.<name>` for module-private symbols
+  (`Subagent`, `_POLL_INTERVAL`, `_ERROR_COOLDOWN`,
+  `_DEFAULT_TASK_TIMEOUT`, `log` for `_check_uncommitted`)
+  retargeted to `cantrip.agent.executor.core.<name>`; patches
+  for git-service-private names (`subprocess`, `log` for
+  `revert_to_clean`) retargeted to
+  `cantrip.agent.executor.git_service.<name>`.  Pure refactor
+  — `make check` and `make unit` (6 412 passed, 8 skipped)
+  green.
+- [x] `tui/app.py` action handlers grouped by surface and
+  lifted into a new `tui/actions/` subpackage (was 2 053
+  lines, now 1 934).  The four named buckets each get a
+  module: `tui/actions/screens.py` (`show_help`, `show_debug`,
+  `show_logs`, `show_graph`, `show_transcript`,
+  `open_relation_detail`); `tui/actions/status.py`
+  (`toggle_status`, `toggle_files`, `toggle_model_info`,
+  `show_status_panel_when_data_arrives`); `tui/actions/chat.py`
+  (`clear_chat`, `open_search`, `search_closed`,
+  `cancel_agent`); `tui/actions/watcher.py`
+  (`subscribe_events`, `start_watcher`, `stop_watcher`,
+  `refresh_model_panes`, `on_watcher_event`, `on_juju_status`,
+  `update_status_bar`, `refresh_subagent_status_bar`,
+  `toggle_watcher`).  Each function takes the app instance as
+  its first argument; `CantripApp` keeps thin `action_*` /
+  `on_*` methods that delegate so Textual's binding discovery
+  and event-handler-by-name plumbing keep working unchanged.
+  `compose()`, `on_mount()`, the preflight integration, the
+  bus subscriber registration, the confirmation flow methods
+  (`_handle_*_response` / `_present_*_confirmation`), and the
+  chat input pipeline (`on_input_submitted`,
+  `_process_agent_message`) stay on the class — those are
+  bigger cohorts and are left for a follow-up.  Pure refactor
+  — `make check` and `make unit` (6 412 passed, 8 skipped)
+  green.
+
+### 85.6 Decompose — function-level giants
+
+- [x] `src/cantrip/agent/tools/publishing.py:1108
+  generate_docs_scaffold` (was 502 lines, now ~70 lines of
+  context assembly + a render loop).  Each generated file
+  now lives as its own template under
+  `src/cantrip/charm/docs_templates/` (one `.md.j2`,
+  `.rst.j2`, or filename-suffixed `.j2` per output, mirroring
+  the output paths).  Dynamic per-item lists (config-option
+  examples, action sections, integration entries) precompute
+  to `_block` strings via small `_build_*_block` helpers and
+  drop into templates as single placeholders, keeping the
+  templates as static skeletons.  Acceptance-artefact
+  overrides and the Phase 74.1 root-file bridges stay in the
+  renderer.  Pure refactor — every existing test in
+  `test_publishing.py`, `test_docs_from_acceptance.py`, and
+  `test_docs_bridge.py` (135 cases) still passes, and an
+  ad-hoc byte-for-byte comparison across eleven scenarios
+  (rich/bare/no-actions/no-source/bridged/artefacts/etc.)
+  matched the pre-refactor output exactly.
+- [x] `src/cantrip/main.py:46 parse_args` (was 675 lines).
+  Now a 32-line composition: nine `_add_<subcommand>_subparser`
+  helpers cover `run`, `compare`, `export-transcript`, `hooks`,
+  `skill`, `checkpoints`, `docs`, `audit`, `permissions`; six
+  `_add_run_<group>_options` helpers split the `run` subparser
+  into model / session / budget / loop / print / appearance
+  groups; argv fall-through lifted into `_normalise_argv`.  No
+  CLI behaviour change.
+- [x] `src/cantrip/agent/tools/rockcraft.py
+  _deploy_k8s_registry` (was 128 lines, now 43) decomposed
+  into per-phase helpers: `_fetch_juju_status`,
+  `_existing_registry_success`, `_deploy_registry_charm`,
+  `_wait_for_registry_active`, `_fresh_registry_success`.
+  The four `juju.py` `execute()` methods that exceeded 100
+  lines now sit at 36–48 line bodies after extracting
+  per-phase helpers: `JujuReadRelationDataTool` →
+  `_fetch_show_unit_json` + `_format_relation_block`;
+  `JujuGetAppConfigTool` → `_fetch_config_json` +
+  `_render_config_table` + `_render_validation_block`;
+  `JujuDeployTool` → `_resolve_and_stage_charm` +
+  `_build_deploy_args` + `_deploy_success_result`;
+  `CharmSyncTool` → `_collect_python_files` + `_push_file`.
+  Pure refactor — no behaviour change, all 141 tests across
+  `test_juju_tools.py`, `test_juju_introspection.py`, and
+  `test_rockcraft_tools.py` still pass.
+
+### 85.7 Move — top-level Python files into packages
+
+- [x] `src/cantrip/hooks.py` (was 1 037 lines) →
+  `src/cantrip/hooks/` package: `types.py` (HookEvent,
+  HookConfig, HookResult, helpers), `filter.py` (the AST-based
+  ``if:`` expression compiler + evaluator), `config.py`
+  (load_hooks + YAML parsers), `runner.py` (HookRunner,
+  HookStats, operator resolution).  `__init__.py` re-exports
+  every public name plus the private symbols the test suite
+  reaches for (``_FilterExpr``, ``_parse_yaml``, ``_resolve_operator``,
+  …).  Pure refactor — the only test change is that the four
+  ``_resolve_operator`` monkey-patches in ``test_hooks.py`` now
+  target ``cantrip.hooks.runner._resolve_operator`` (the actual
+  call-site lookup) instead of the package binding.
+- [x] `src/cantrip/update.py` (was 822 lines) → `update/`
+  package: `types.py` (UpdateInfo, InstallMethod), `release.py`
+  (CHANGELOG fetch + ``## <version>`` extraction), `check.py`
+  (opt-out / cache plumbing + the `check_for_update`
+  orchestrator + PyPI-payload helpers), `install.py`
+  (installer detection, upgrade-command rendering, CLI / slash
+  notice formatters).  `__init__.py` re-exports the public API,
+  the private symbols tests probe, and ``httpx`` (so
+  ``mock.patch("cantrip.update.httpx.AsyncClient")`` continues
+  to land on the live module).  ``upgrade_command`` resolves
+  ``detect_install_method`` lazily through the package so
+  external monkey-patches at the ``cantrip.update`` level still
+  reach internal callers; eight ``_SETTINGS_PATH`` patches in
+  ``test_update.py`` / ``test_slash.py`` were repointed to
+  ``cantrip.update.check._SETTINGS_PATH``.
+- [x] `src/cantrip/main.py` (was 1 575 lines after the 85.6
+  ``parse_args`` extraction — well over the ~600-line
+  defer-if-so threshold) → `src/cantrip/main/` package.
+  Argument parsing moves to `main/parser.py`; the ``_run``
+  TUI/Web/CLI dispatcher and its helpers
+  (`_install_unraisable_hook`, `_is_cantrip_source_tree`,
+  `_print_update_panel`, `_truncate_notes`,
+  `_CANTRIP_PYPROJECT_*`) move to `main/run.py`; each
+  subcommand handler gets its own module
+  (`main/transcript.py`, `main/compare.py`,
+  `main/hooks_cmd.py`, `main/skill_cmd.py`,
+  `main/checkpoints.py`, `main/audit.py`,
+  `main/permissions.py`).  `main/__init__.py` re-exports the
+  public + monkey-patchable surface (`parse_args`, `_run`,
+  `_install_unraisable_hook`, `_print_update_panel`, every
+  ``_<cmd>`` handler) so `from cantrip.main import …` lines
+  in tests keep working unchanged; the entry point
+  `cantrip.main:main` resolves to `main/__init__.py`'s
+  `main()`.  Test patches that targeted
+  `cantrip.main._install_unraisable_hook` (8) and
+  `cantrip.main._print_update_panel` (1) in
+  `tests/unit/test_main.py` retargeted to
+  `cantrip.main.run.<name>` so the patches reach the actual
+  call site rather than the package alias.  Pure refactor —
+  `make check` and `make unit` (7 172 passed, 9 skipped)
+  green.
+
+### 85.8 Mirror — `tests/unit/` folder structure
+
+- [x] Moved 171 of the 184 flat test files at the top level of
+  `tests/unit/` into folders mirroring `src/cantrip/`.  New
+  groups (in addition to the existing `agent/`, `agent/memory/`,
+  `agent/commands/`, `executor/`, `subagent/`, `planner/`,
+  `charm_tools/`, `charmlint/`, `quickpack/`): `agent/tools/`
+  (56 files), `llm/` (10), `mcp/` (7), `tui/` (12), `web/` (2),
+  `ui/` (4), `repomap/` (1), `docs_index/` (3), `transcript/`
+  (2).  13 files stay at the top level — they test top-level
+  modules (`main`, `cli`-style standalones, `clipboard`,
+  `compare`, `diagnostics`, `workspace`, `update`, `hooks`)
+  or are root-level fixtures (`test_e2e_harness`, `test_status`,
+  `test_pypi_attest`, `test_cookbook_recipes`).
+- [x] Existing sub-folders (`executor/`, `subagent/`, `planner/`,
+  `charm_tools/`, `charmlint/`, `quickpack/`) left in place;
+  they were already correctly grouped.
+- [x] Renamed the ambiguous pair: `test_tool_caption.py` →
+  `test_caption_builder.py` (helper unit tests) and
+  `test_tool_captions.py` → `test_caption_coverage.py`
+  (per-tool coverage matrix), both now under
+  `tests/unit/agent/tools/`.
+- [x] `make unit` passes after the moves (6 411 passed, 8
+  skipped).  Five `__file__`-relative path constants and two
+  cross-test imports (`tests.unit.test_tui` → `tests.unit.tui.
+  test_tui`) needed `parents[]` index updates to match the
+  new depth; otherwise pytest discovery handled the renames
+  automatically.
+
+### What this phase is *not*
+
+- Not a behaviour change.  Every step here should land as a
+  pure refactor — same public API on `CantripAgent`,
+  `CantripApp`, and the slash-command dispatcher; same CLI
+  flags; same test outcomes.
+- Not a rewrite of `agent/tools/`.  The big tool modules
+  (`publishing.py`, `juju.py`, `observability.py`,
+  `acceptance.py`, `charm.py`) are large because Cantrip
+  delegates a lot of charm work to them; their internal
+  shape is fine.  Only `generate_docs_scaffold` (a single
+  template-y function) is called out for decomposition.
+- Not a hunt for unused code.  If 85.4's delegation reveals
+  dead methods, fix them in passing; do not let it expand
+  into a wider sweep.
+- Not a renaming pass.  Symbol names stay; only file/folder
+  layout moves.
+
+**Exit criteria:** `agent/core.py` is below 1 500 lines and
+no longer holds the seven cohorts in 85.4; `agent/memory/`
+exists as a subpackage; `tests/unit/` has folders that
+mirror `src/cantrip/` for the heaviest groups; the four
+documented `except Exception` clauses carry rationale
+comments; `from datetime import datetime` is gone from
+`src/cantrip/`; the `Path` / `dataclass` import policy is
+either unified or explicitly carved out in `AGENTS.md`;
+`make check` and `make unit` pass throughout; no public
+import path on the `cantrip.agent` surface has changed.
+
+**Discovered:** Mid-2026 structure-review pass after a heavy
+run of feature phases (67–84).  The review confirmed the
+package spine is sound but flagged four specific giants
+(`agent/core.py`, `tui/app.py`, `agent/tools/publishing.py`,
+`main.py:parse_args`), one missing subpackage (`agent/
+memory/`), and a flat `tests/unit/` that no longer matches
+the layered `src/`.  Sweeping these together rather than
+file-by-file keeps the diff comprehensible as a single
+intentional cleanup.
+
+---
