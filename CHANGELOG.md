@@ -211,6 +211,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **Missing ``packaging`` dependency.**  ``cantrip.update.check`` and
+  ``cantrip.update.release`` import ``packaging.version`` for update-
+  notification version comparisons, but ``packaging`` was not declared
+  in ``pyproject.toml`` — it was only available transitively in
+  ``uv sync --dev`` environments via pytest / hatchling.  A clean
+  ``uv tool install juju-cantrip`` therefore failed at import time
+  with ``ModuleNotFoundError: No module named 'packaging'`` before
+  any subcommand could run.  ``packaging>=24.0`` is now a declared
+  runtime dependency.
+
 - **Conversation-loop "deadlock" on BLOCKED dependents (Phase 106).**
   The Phase 105.1 Qwen3-8B smoke reproduced a 10+ minute hang after
   a sprint-build task flipped from ACTIVE to BLOCKED.  Audit of
