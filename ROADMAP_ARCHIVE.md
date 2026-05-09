@@ -13663,3 +13663,93 @@ the agent toward ``wait_for`` for "until X" needs.  Streaming-style
 monitoring stays deferred behind two named triggers.
 
 ---
+
+## Phase 101: ops-tracing Recipe Refresh — Stop Teaching the Stale ``setup`` Shorthand ✓
+
+**Goal:** Bring Cantrip's system prompt and skill bodies up to date
+with the modern ``ops-tracing>=4`` API so charms the agent writes
+actually import and run, instead of failing at module load with
+``AttributeError: module 'ops_tracing' has no attribute 'setup'``.
+
+### Why now
+
+Run-final2 + the improve-01/improve-02 enhancement passes both
+emitted ``ops_tracing.setup(self)`` in ``__init__`` because the
+system prompt taught that idiom verbatim:
+
+> ops-tracing (``ops_tracing.setup(self)``) automatically instruments
+> the ops framework.
+
+The current public API in ``ops-tracing>=4`` is the ``Tracing``
+class:
+
+```python
+import ops_tracing
+
+class MyCharm(ops.CharmBase):
+    def __init__(self, framework):
+        super().__init__(framework)
+        self._tracing = ops_tracing.Tracing(self, "tracing")
+```
+
+The shorthand ``setup`` doesn't exist, hasn't existed for several
+``ops-tracing`` releases, and the charm refuses to import.  Every
+charm Cantrip writes today carries a load-time crash on the first
+hook unless the operator manually rewrites the line.
+
+### 101.1 P0 — Update the system prompt
+
+- [x] Edit ``src/cantrip/agent/prompts/system.md.j2`` (and the
+  ``system_compact.md.j2`` companion) so the tracing recipe quotes
+  the ``Tracing(charm, "<relation_name>")`` constructor, not
+  ``setup(self)``.  Mention that the relation name must match the
+  ``tracing:`` entry under ``requires:`` in ``charmcraft.yaml``.
+  (``system_compact.md.j2`` has no tracing snippet to update; the
+  observability / custom-charm / charm-improvement / identity-platform /
+  find-bugs skills were updated in the same pass.)
+- [x] Audit subagent guidance under
+  ``src/cantrip/agent/prompts/subagent/`` (``build.md``, ``demo.md``,
+  ``infra.md``) for the same stale snippet and fix in place.
+  (Only ``build.md`` mentions tracing and it does not quote ``setup``;
+  no fix needed.)
+- [x] Audit ``src/cantrip/agent/prompts/tasks/`` for any sprint /
+  one-shot template that injects ``ops_tracing.setup`` text and fix
+  in the same patch.  (Updated ``sprint_build.md.j2`` and
+  ``improvement_fill_observability.md.j2``.)
+
+### 101.2 P0 — Update the charmcraft injection helpers
+
+- [x] ``_inject_ops_tracing`` in ``src/cantrip/agent/tools/charm.py``
+  appends ``ops_tracing.setup(self)`` to scaffolded ``src/charm.py``
+  files.  Rewrite to insert
+  ``self._tracing = ops_tracing.Tracing(self, "tracing")`` instead;
+  keep the ``import ops_tracing`` line as-is.
+- [x] Unit tests in
+  ``tests/unit/charm_tools/test_charmcraft_init.py`` that load the
+  injected module under a real ``ops-tracing>=4`` import to catch a
+  future API drift the same way.  (Test landed in
+  ``tests/unit/charm_tools/test_ops_tracing_recipe.py`` alongside the
+  Scenario-based regression test from 101.3 — the helper-output import
+  check exercises the same drift.)
+
+### 101.3 P1 — Pin the API in a regression test
+
+- [x] One Scenario-based unit test that constructs a minimal charm,
+  imports ``ops_tracing``, instantiates ``Tracing``, and runs a
+  ``pebble_ready`` event — guarantees the recipe in the system prompt
+  matches what ``ops-tracing`` currently exposes on PyPI.  Skip the
+  test gracefully when ``ops-tracing`` isn't installed so it doesn't
+  block the rest of the suite on stripped CI images.  (Lives in
+  ``tests/unit/charm_tools/test_ops_tracing_recipe.py``; uses
+  ``pytest.importorskip`` for ``ops-tracing`` and ``ops-scenario`` so
+  stripped CI images skip cleanly.  Drives a ``start`` event rather
+  than ``pebble_ready`` so the charm meta stays minimal — same
+  contract guarantee.)
+
+**Exit criteria:** A fresh sprint build under any provider produces
+a charm whose ``src/charm.py`` imports cleanly under the latest
+``ops-tracing`` PyPI release, the regression test in 101.3 fails
+when the system prompt drifts back to ``setup``, and the relevant
+charm and rock skills cite the modern constructor.
+
+---
