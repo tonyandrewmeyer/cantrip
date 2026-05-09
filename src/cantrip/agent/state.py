@@ -397,6 +397,17 @@ class AgentState:
     architect_consecutive_failures: int = 0
     architect_failure_threshold: int = 2
 
+    # Phase 107: Tool-Call Failure Cap.  When the same (tool, first-arg)
+    # signature fails N consecutive times the conversation loop bails
+    # out so Phase 106's BLOCKED-task exit path fires.  Reset on any
+    # successful tool call.  ``last_failed_tool_signature`` is the
+    # ``"<name>:<first-arg>"`` string we compare against; when None,
+    # we're not tracking a current streak.  Threshold is tunable via
+    # ``CANTRIP_TOOL_FAILURE_CAP`` env var (read once at agent init).
+    consecutive_tool_failures: int = 0
+    last_failed_tool_signature: str | None = None
+    tool_failure_cap: int = 5
+
     messages: list[Message] = dataclasses.field(default_factory=list)
     decisions: list[Decision] = dataclasses.field(default_factory=list)
 
