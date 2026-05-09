@@ -5,6 +5,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Prompt ablation harness (Phase 79.5).**  ``tests/eval/ablate.py``
+  drops each top-level ``## Section`` of the rendered system prompt
+  one at a time, reruns the Phase 79.2 smoke invariants
+  (``read_file`` tool call + non-empty bare-greeting reply), and
+  prints a fixed-width report showing which sections lose a passing
+  invariant when removed.  Section parsing is fence-aware so the
+  WORKLOAD.md / DESIGN.md template examples embedded in the prompt
+  are not mistaken for prompt sections.  Exit code reflects whether
+  any regression was observed so the harness can be hooked into a
+  scripted pre-commit check later if desired.  See
+  ``docs/src/howto-eval.md`` for the recipe.
 - **Planner symbol prefetch (Phase 72b.3).**  When a task title,
   user message, or design / day-2 brief mentions a symbol-shaped
   token (dotted ``Foo.bar``, ``snake_case`` helpers, multi-segment

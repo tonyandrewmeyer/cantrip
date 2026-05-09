@@ -142,3 +142,45 @@ if result is not None and result.critical_failures:
 Tests inject a fake `runner` callable (a stub `subprocess.run`) so the
 harness exercise itself never burns tokens; see
 `tests/eval/test_runner_generate.py` for the pattern.
+
+{#prompt-ablation}
+## Ablate the system prompt to find the load-bearing sections
+
+Once a per-provider smoke gate is in place (see Phase 79.2 / 79.3), the
+next question is which sections of the system prompt actually pull
+their weight.  `tests/eval/ablate.py` is the harness that answers it:
+it drops each top-level `## Section` of the rendered prompt one at a
+time, reruns the same two smoke invariants the gate uses, and prints a
+table showing where each ablation regresses.
+
+```bash
+uv run python -m tests.eval.ablate \
+    --provider openrouter \
+    --model openai/gpt-4o-mini
+```
+
+Output is a fixed-width report with one row per section plus a
+`(baseline)` row for the unmodified prompt:
+
+```
+section                               tool_call   non_empty   delta
+------------------------------------  ----------  ----------  -----------------
+(baseline)                            ✓           ✓
+Your Purpose                          ✓           ✓           no change
+Tool Bundles                          ✗           ✓           -tool_call
+Task Planning                         ✓           ✓           no change
+…
+```
+
+`+tool_call` / `-non_empty` etc. report which invariants flipped from
+the baseline; `err: …` means the provider call itself failed (cell
+shows as `?`) and the regression should not be blamed on that section.
+
+The harness exits non-zero when at least one ablation lost a passing
+invariant — useful as a lightweight regression hint for future
+prompt-tuning sessions.
+
+Cost is bounded: ~30 sections × 2 invariants × 1 baseline ≈ 62 model
+calls, which is pennies on a cheap model.  `--list-sections` prints
+the parsed section names and exits without any provider calls — handy
+for sanity-checking the parser after a prompt rewrite.

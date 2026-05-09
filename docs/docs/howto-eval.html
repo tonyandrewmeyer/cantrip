@@ -190,6 +190,37 @@ if result is not None and result.critical_failures:
 <p>Tests inject a fake <code>runner</code> callable (a stub <code>subprocess.run</code>) so the
 harness exercise itself never burns tokens; see
 <code>tests/eval/test_runner_generate.py</code> for the pattern.</p>
+<h2 id="prompt-ablation">Ablate the system prompt to find the load-bearing sections</h2>
+<p>Once a per-provider smoke gate is in place (see Phase 79.2 / 79.3), the
+next question is which sections of the system prompt actually pull
+their weight.  <code>tests/eval/ablate.py</code> is the harness that answers it:
+it drops each top-level <code>## Section</code> of the rendered prompt one at a
+time, reruns the same two smoke invariants the gate uses, and prints a
+table showing where each ablation regresses.</p>
+<pre><code class="language-bash">uv run python -m tests.eval.ablate \
+    --provider openrouter \
+    --model openai/gpt-4o-mini
+</code></pre>
+<p>Output is a fixed-width report with one row per section plus a
+<code>(baseline)</code> row for the unmodified prompt:</p>
+<pre><code>section                               tool_call   non_empty   delta
+------------------------------------  ----------  ----------  -----------------
+(baseline)                            ✓           ✓
+Your Purpose                          ✓           ✓           no change
+Tool Bundles                          ✗           ✓           -tool_call
+Task Planning                         ✓           ✓           no change
+&hellip;
+</code></pre>
+<p><code>+tool_call</code> / <code>-non_empty</code> etc. report which invariants flipped from
+the baseline; <code>err: &hellip;</code> means the provider call itself failed (cell
+shows as <code>?</code>) and the regression should not be blamed on that section.</p>
+<p>The harness exits non-zero when at least one ablation lost a passing
+invariant &mdash; useful as a lightweight regression hint for future
+prompt-tuning sessions.</p>
+<p>Cost is bounded: ~30 sections &times; 2 invariants &times; 1 baseline ≈ 62 model
+calls, which is pennies on a cheap model.  <code>--list-sections</code> prints
+the parsed section names and exits without any provider calls &mdash; handy
+for sanity-checking the parser after a prompt rewrite.</p>
   </main>
 </div>
 

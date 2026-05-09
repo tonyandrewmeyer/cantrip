@@ -1035,12 +1035,30 @@ sanity check that can run on every prompt change.
 
 ### 79.5 Prompt ablation harness (stretch)
 
-- [ ] Tool that takes ``system.py``, drops each labelled
+- [x] Tool that takes ``system.py``, drops each labelled
   section in turn, reruns 79.2, and reports score deltas.
   Lets a human author reason about which sections pull their
   weight before a prompt change lands — matches Anthropic's
   "continue ablations to understand the impact of each line"
-  remediation.
+  remediation.  (Lives at ``tests/eval/ablate.py`` —
+  ``parse_sections`` walks the rendered prompt fence-aware so
+  the WORKLOAD.md / DESIGN.md ``## Heading`` blocks inside
+  fenced ``markdown`` examples are *not* mistaken for prompt
+  sections; ``with_section_dropped`` produces an ablated
+  variant; ``_smoke_once`` reuses the same shape as the 79.2
+  invariants (``read_file`` tool-call + non-empty bare-greeting
+  reply) so the table matches what the gate would see.
+  ``render_report`` prints a fixed-width table with one row per
+  section plus a ``(baseline)`` row, marking ``-tool_call`` /
+  ``-non_empty`` losses, ``+tool_call`` gains, or ``err: …``
+  when the provider call itself dropped.  ``--list-sections``
+  prints parsed names without calling any provider.  Exit code
+  1 on any regression, 0 otherwise, 2 when the chosen
+  provider's API key is unset.  Tests in
+  ``tests/eval/test_ablate.py`` cover parsing (incl. fence-
+  awareness), drop semantics, delta-label edge cases, and the
+  reporter; provider-call paths reuse the 79.2 live test as
+  their integration check rather than mocking the wire.)
 
 **Exit criteria:**
 
