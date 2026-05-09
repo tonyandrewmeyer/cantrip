@@ -177,11 +177,20 @@ class MessageWidget(Static):
     }
     """
 
-    def __init__(self, message: ChatMessage) -> None:
-        """Initialise with a message."""
+    def __init__(self, message: ChatMessage, *, show_timestamp: bool = True) -> None:
+        """Initialise with a message.
+
+        ``show_timestamp`` (Phase 108.6) gates the leading
+        ``[HH:MM]`` chip on the header line.  ``ChatWidget`` flips
+        this off for tool / shell rows and for any message that
+        lands within five minutes of the previous one with a
+        timestamp shown — so a rapid-fire turn reads as a single
+        conversation block rather than a logfile.
+        """
         super().__init__()
         self.message = message
         self.add_class(message.role.value)
+        self._show_timestamp = show_timestamp
         # Search highlighting state: query and which local match (0-indexed)
         # should be styled as the "active" match.  ``None`` means no search.
         self._search_query: str | None = None
@@ -207,9 +216,12 @@ class MessageWidget(Static):
             MessageRole.TOOL: "",  # Caption carries its own glyph.
             MessageRole.SHELL: "",  # Body opens with ``$``/``$$`` prefix.
         }
-        header = role_display.get(self.message.role, "")
-        timestamp = self.message.timestamp.strftime("%H:%M")
-        header = f"[dim][{timestamp}][/dim] {header}"
+        role_glyph = role_display.get(self.message.role, "")
+        if self._show_timestamp:
+            timestamp = self.message.timestamp.strftime("%H:%M")
+            header = f"[dim][{timestamp}][/dim] {role_glyph}"
+        else:
+            header = role_glyph
 
         reasoning_block = self._reasoning_markup()
 
@@ -220,7 +232,13 @@ class MessageWidget(Static):
                 f"[/progress-{item.status.value.replace('_', '-')}] {item.text}"
                 for item in self.message.progress_items
             )
-            renderables: list[RenderableType] = [header]
+            renderables: list[RenderableType] = []
+            # Phase 108.6: skip the header line entirely when the
+            # timestamp is suppressed and the role has no glyph
+            # (assistant) — otherwise Group renders a leading blank
+            # row above the markdown body.
+            if header:
+                renderables.append(header)
             if reasoning_block:
                 renderables.append(reasoning_block)
             renderables.append(RichMarkdown(self.message.content))
@@ -1140,6 +1158,16 @@ class ChatWidget(Widget):
     }
     """
 
+    # Phase 108.6: a new message renders ``[HH:MM]`` only when more
+    # than this many seconds have elapsed since the last shown
+    # timestamp (or it is the first message).  Tool / shell rows
+    # never carry a timestamp regardless.  Five minutes is a
+    # judgment call: long enough that two consecutive turns in a
+    # busy session don't both display ``[14:23]``, short enough
+    # that resuming a session after a coffee break re-anchors the
+    # reader to the new wall-clock.
+    _TIMESTAMP_GAP_SECONDS = 5 * 60
+
     def __init__(self, **kwargs) -> None:
         """Initialise the chat widget."""
         super().__init__(**kwargs)
@@ -1152,6 +1180,11 @@ class ChatWidget(Widget):
         # later TOOL_INVOKED can replace the spinner caption with the
         # post-call summary in place rather than appending a new line.
         self._pending_tool_blocks: dict[str, MessageWidget] = {}
+        # Phase 108.6: when did we last *render* a timestamp?  Drives
+        # the gap-based suppression policy in :meth:`add_message`.
+        # ``None`` means "no message has displayed a timestamp yet"
+        # so the next eligible message takes one.
+        self._last_timestamp_at: datetime.datetime | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the chat widget."""
@@ -1215,7 +1248,18 @@ class ChatWidget(Widget):
         )
 
     def add_message(self, message: ChatMessage) -> MessageWidget:
-        """Add a message to the chat."""
+        """Add a message to the chat.
+
+        Phase 108.6: a ``[HH:MM]`` timestamp is rendered on the
+        header line only when (a) it is the first message, (b) the
+        previous shown timestamp is more than
+        :attr:`_TIMESTAMP_GAP_SECONDS` ago, and never for tool /
+        shell rows (those are continuous with the assistant turn
+        that triggered them).  ``_last_timestamp_at`` tracks the
+        wall-clock of the previous *displayed* timestamp so a long
+        run of suppressed rows still re-anchors after the gap
+        elapses.
+        """
         self._messages.append(message)
 
         scroll = self.query_one("#chat-scroll", ScrollableContainer)
@@ -1224,11 +1268,32 @@ class ChatWidget(Widget):
         if len(self._messages) == 1:
             scroll.remove_children()
 
-        widget = MessageWidget(message)
+        show_timestamp = self._should_show_timestamp(message)
+        if show_timestamp:
+            self._last_timestamp_at = message.timestamp
+
+        widget = MessageWidget(message, show_timestamp=show_timestamp)
         scroll.mount(widget)
         scroll.scroll_end(animate=False)
 
         return widget
+
+    def _should_show_timestamp(self, message: ChatMessage) -> bool:
+        """Decide whether *message* renders a leading ``[HH:MM]`` chip.
+
+        Tool / shell rows never carry a timestamp — they are part of
+        the assistant turn above them, and a per-tool timestamp
+        clutters every line of a busy build.  For the remaining
+        roles, the first message in the session always shows a
+        timestamp; subsequent ones only when the gap from the last
+        shown timestamp exceeds :attr:`_TIMESTAMP_GAP_SECONDS`.
+        """
+        if message.role in (MessageRole.TOOL, MessageRole.SHELL):
+            return False
+        if self._last_timestamp_at is None:
+            return True
+        elapsed = (message.timestamp - self._last_timestamp_at).total_seconds()
+        return elapsed >= self._TIMESTAMP_GAP_SECONDS
 
     def add_user_message(self, content: str) -> MessageWidget:
         """Add a user message."""
@@ -1557,6 +1622,9 @@ class ChatWidget(Widget):
         # Any in-flight search is no longer meaningful.
         self._match_index.clear()
         self._active_match = 0
+        # Phase 108.6: reset the timestamp anchor so the next first
+        # message after Ctrl+L shows its ``[HH:MM]`` chip again.
+        self._last_timestamp_at = None
         with contextlib.suppress(NoMatches):
             self.query_one(SearchBar).hide()
 

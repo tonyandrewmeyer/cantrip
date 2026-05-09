@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Timestamp visual rhythm (Phase 108.6).**  The chat used to
+  render ``[HH:MM]`` on every message, which read as a logfile in
+  busy sessions.  ``ChatWidget`` now suppresses the chip on tool
+  and shell rows always (they belong to the assistant turn above
+  them), and on conversational rows that land within five minutes
+  of the previous shown timestamp.  The first message in a session
+  always carries a chip; the gap window re-anchors the reader after
+  a coffee break.  Ctrl+L resets the anchor so the next first
+  message after a clear shows its chip again.
+
 - **On-brand thinking indicator (Phase 108.7).**  Textual's stock
   five-dot ``LoadingIndicator`` is replaced with a single-line
   ``ThinkingIndicator`` widget — a 10-frame braille spinner

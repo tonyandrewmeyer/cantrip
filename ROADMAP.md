@@ -2285,16 +2285,21 @@ of vertical real estate; F7 still toggles to the rich form; existing
 **Exit criteria:** Chat reads as English not Python.  ``add_tool_block``
 test cases updated; Phase 81 caption-coverage test still passes.
 
-### 108.6 — Timestamp visual rhythm
+### 108.6 — Timestamp visual rhythm ✓
 
-- [ ] Show ``[HH:MM]`` only when:
+- [x] Show ``[HH:MM]`` only when:
   - it is the first message in the session, or
-  - the previous message is more than 5 minutes older.
-- [ ] Suppress timestamps entirely on tool / shell rows — they are
+  - the previous shown timestamp is more than five minutes
+    (``ChatWidget._TIMESTAMP_GAP_SECONDS``) older.
+- [x] Suppress timestamps entirely on tool / shell rows — they are
   contiguous with the assistant turn that triggered them.
+- [x] Reset the anchor on ``clear()`` so the next first message
+  after Ctrl+L re-shows its chip.
 
 **Exit criteria:** A 30-message rapid-fire session shows ≤5
-timestamps, not 30.
+timestamps, not 30.  ``tests/unit/tui/test_chat_timestamps.py``
+covers first-message, tool-suppression, gap-boundary, and
+clear-reset shapes (10 tests).
 
 ### 108.7 — Loading indicator: lean into the brand ✓
 
