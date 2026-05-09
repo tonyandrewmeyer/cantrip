@@ -1420,7 +1420,7 @@ class ChatWidget(Widget):
                 success=success,
                 duration_ms=duration_ms,
             )
-        glyph = "🔧" if success else "✗"
+        glyph = "▸" if success else "✗"
         suffix = ""
         if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
             suffix = f" [dim]({duration_ms} ms)[/dim]"
@@ -1443,8 +1443,8 @@ class ChatWidget(Widget):
     ) -> MessageWidget:
         """Add a "running now" tool block tagged with ``tool_call_id`` (Phase 82).
 
-        Mirrors :meth:`add_tool_block` but uses a spinner glyph
-        (``⟳``) and the dim ``tool-pending`` class so the user can
+        Mirrors :meth:`add_tool_block` but uses a pending glyph
+        (``·``, Phase 108.5) and the dim ``tool-pending`` class so the user can
         tell at a glance the call hasn't finished yet.  The matching
         :meth:`resolve_tool_block` call (when the post-call event
         arrives) updates this same widget in place rather than adding
@@ -1457,7 +1457,7 @@ class ChatWidget(Widget):
         existing = self._pending_tool_blocks.get(tool_call_id)
         if existing is not None:
             return existing
-        content = f"⟳ {rich_escape(caption)}"
+        content = f"· {rich_escape(caption)}"
         widget = self.add_message(
             ChatMessage(
                 role=MessageRole.TOOL,
@@ -1493,7 +1493,7 @@ class ChatWidget(Widget):
                 success=success,
                 duration_ms=duration_ms,
             )
-        glyph = "🔧" if success else "✗"
+        glyph = "▸" if success else "✗"
         suffix = ""
         if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
             suffix = f" [dim]({duration_ms} ms)[/dim]"

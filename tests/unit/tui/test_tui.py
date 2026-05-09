@@ -167,7 +167,7 @@ class TestTuiWidgets:
                 await pilot.pause()
                 assert widget.message.role == MessageRole.TOOL
                 assert "read_file" in widget.message.content
-                assert "🔧" in widget.message.content
+                assert "▸" in widget.message.content
                 assert "tool-failed" not in widget.classes
 
     @pytest.mark.asyncio

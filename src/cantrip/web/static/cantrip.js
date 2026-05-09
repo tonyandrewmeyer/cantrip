@@ -513,7 +513,9 @@ const cantrip = (() => {
 
   function _renderToolBlockBody(div, data) {
     const success = Boolean(data.success);
-    const glyph = success ? "🔧" : "✗";
+    // Phase 108.5: ``▸`` (done) replaces the older ``🔧`` so chat
+    // surfaces share a single shape; the failure glyph is unchanged.
+    const glyph = success ? "▸" : "✗";
     const caption = data.caption || data.tool_name || "(tool)";
 
     div.className = "msg msg-tool";
@@ -587,7 +589,9 @@ const cantrip = (() => {
     body.className = "msg-body";
 
     const text = document.createElement("span");
-    text.textContent = `⟳ ${caption}`;
+    // Phase 108.5: ``·`` (pending) replaces the older ``⟳``;
+    // CSS ``msg-tool-pending`` carries the in-flight cue.
+    text.textContent = `· ${caption}`;
     body.appendChild(text);
 
     div.appendChild(body);

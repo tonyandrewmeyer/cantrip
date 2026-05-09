@@ -2283,21 +2283,33 @@ line 2 stays populated under the ``-compact`` class.
 gate, expanded layout, mount state, expand / collapse round-trip,
 line-2 staying populated when collapsed).
 
-### 108.5 — Tool-block caption format
+### 108.5 — Tool-block caption format ✓
 
-- [ ] Replace the ``🔧 read_file(path=backend/pyproject.toml)`` form
-  with ``▸ read backend/pyproject.toml``.  Glyphs: ``▸`` done, ``·``
-  running (with spinner), ``✗`` failed.  The shape is *verb +
+- [x] Replaced ``🔧 read_file(path=backend/pyproject.toml)`` with
+  ``▸ read backend/pyproject.toml``.  Glyphs: ``▸`` done, ``·``
+  running (replaces ``⟳``), ``✗`` failed.  The shape is *verb +
   target*, not *function call*.
-- [ ] Captions live on the tool's ``ToolResult`` already (Phase 81 /
-  M81 made coverage explicit).  This sub-phase changes the *default*
-  caption format, not the wire shape — tools that already populate a
-  rich caption keep theirs.
-- [ ] The full ``read_file(path=...)`` form stays available in the
+- [x] Captions live on the tool's ``ToolResult`` already (Phase 81 /
+  M81 made coverage explicit).  This sub-phase changed the *default*
+  caption format via a small ``_TOOL_VERBS`` map in
+  :mod:`cantrip.agent.tools.base` — tools that already populate a
+  rich caption keep theirs unchanged.
+- [x] Phase 82 pre-call intro caption drops its ``Running …``
+  prefix and trailing ``…`` because the ``·`` glyph already
+  conveys "in flight"; the intro and post-call shapes are now
+  symmetric (same verb-target, different leading glyph).
+- [x] Web UI mirrors the same glyph swap in
+  ``cantrip/web/static/cantrip.js`` so the TUI and browser surfaces
+  share one shape.
+- [x] The full ``read_file(path=...)`` form stays available in the
   Phase 76 transcript viewer (F9) so debugging is unaffected.
 
-**Exit criteria:** Chat reads as English not Python.  ``add_tool_block``
-test cases updated; Phase 81 caption-coverage test still passes.
+**Exit criteria:** Chat reads as English not Python.  Twenty test
+cases updated across ``test_caption_builder.py`` (13),
+``test_chat_tool_blocks.py`` (2 ``startswith`` checks),
+``test_tui.py`` (1 ``in`` check), and ``test_agent_tooling.py``
+(1 emitted-event assertion).  Phase 81 caption-coverage test still
+passes.  All 7,569 unit tests pass.
 
 ### 108.6 — Timestamp visual rhythm ✓
 

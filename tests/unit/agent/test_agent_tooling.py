@@ -172,8 +172,8 @@ class TestToolInvokedEvent:
         assert payload["tool_name"] == "read_file"
         assert payload["success"] is True
         assert payload["source"] == "main"
-        # Caption falls back to the preferred-key formatter.
-        assert payload["caption"] == "read_file(path=src/foo.py)"
+        # Caption falls back to the verb-target formatter (Phase 108.5).
+        assert payload["caption"] == "read src/foo.py"
         # Duration is measured, non-negative.
         assert isinstance(payload["duration_ms"], int)
         assert payload["duration_ms"] >= 0

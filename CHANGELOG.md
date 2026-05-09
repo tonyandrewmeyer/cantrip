@@ -5,6 +5,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Tool-block captions read as English (Phase 108.5).**  Tool
+  blocks used to surface as ``🔧 read_file(path=src/foo.py)`` —
+  emoji wrench plus a literal Python function-call rendering of
+  the agent's tool invocation.  The chat now reads as ``▸ read
+  src/foo.py``: ``▸`` (done), ``·`` (running, replaces ``⟳``),
+  ``✗`` (failed) glyphs replace the wrench / spinner pair, and
+  ``cantrip.agent.tools.base.build_tool_caption`` synthesises the
+  fallback as ``verb value`` rather than ``tool_name(key=value)``.
+  A small ``_TOOL_VERBS`` map covers the high-traffic tools
+  (``read_file → read``, ``write_file → write``, ``edit_file →
+  edit``, ``run_command → run``, ``charmcraft_pack → pack``,
+  …); tools not in the map fall through to their bare name as
+  the verb, still landing in the new verb-target shape.  Tools
+  that already populate a rich ``ToolResult.caption`` keep
+  theirs unchanged.  The Phase 82 pre-call intro caption drops
+  its ``Running …`` prefix and trailing ``…`` because the ``·``
+  glyph already conveys "in flight".  Web UI mirrors the same
+  glyph swap in ``cantrip.js``.
+
 - **Slim contextual header (Phase 108.8).**  Textual's stock
   ``Header`` (generic ``⭘`` glyph + ``Title — Subtitle`` chrome
   with no actual project context) is replaced by a custom

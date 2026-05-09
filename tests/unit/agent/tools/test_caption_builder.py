@@ -4,8 +4,9 @@ by the Phase 75 inline tool blocks.
 The helper lives in ``cantrip.agent.tools.base`` and is called from
 both the main-agent and subagent emission paths.  A tool's own
 ``ToolResult.caption`` wins when set; otherwise the helper
-synthesises ``tool_name(key=value)`` from the arguments using a
-preferred-key list so the fallback stays informative without
+synthesises ``verb value`` (Phase 108.5 — formerly
+``tool_name(key=value)``) from the arguments using a verb mapping
+plus a preferred-key list so the fallback reads as English without
 per-tool configuration.
 """
 
@@ -32,50 +33,55 @@ class TestBuildToolCaption:
         assert caption == "Read 47 lines from src/foo.py"
 
     def test_path_arg_surfaces_in_fallback(self):
+        """``read_file`` maps to verb ``read``; the path becomes the target."""
         caption = build_tool_caption("read_file", {"path": "src/foo.py"})
-        assert caption == "read_file(path=src/foo.py)"
+        assert caption == "read src/foo.py"
 
     def test_file_path_arg_surfaces(self):
+        """``write_file`` maps to ``write``; ``file_path`` is in the preferred list."""
         caption = build_tool_caption("write_file", {"file_path": "src/foo.py"})
-        assert caption == "write_file(file_path=src/foo.py)"
+        assert caption == "write src/foo.py"
 
     def test_command_arg_quoted_when_it_contains_spaces(self):
+        """``run_command`` maps to ``run``; spaces in the command stay quoted."""
         caption = build_tool_caption("run_command", {"command": "make check"})
-        assert caption == 'run_command(command="make check")'
+        assert caption == 'run "make check"'
 
     def test_url_arg_surfaces(self):
+        """``web_fetch`` maps to ``fetch``; URL is the target."""
         caption = build_tool_caption("web_fetch", {"url": "https://example.com"})
-        assert caption == "web_fetch(url=https://example.com)"
+        assert caption == "fetch https://example.com"
 
     def test_falls_back_to_first_non_preferred_arg(self):
-        """A tool with a non-preferred first arg still gets a useful caption."""
+        """A tool not in the verb map keeps its bare name as the verb."""
         caption = build_tool_caption("list_items", {"category": "BUILD"})
-        assert caption == "list_items(category=BUILD)"
+        assert caption == "list_items BUILD"
 
-    def test_empty_arguments_produce_bare_call(self):
+    def test_empty_arguments_produce_bare_verb(self):
+        """No arguments → just the verb (or bare tool name when not mapped)."""
         caption = build_tool_caption("juju_status", {})
-        assert caption == "juju_status()"
+        assert caption == "juju_status"
 
-    def test_none_arguments_produce_bare_call(self):
+    def test_none_arguments_produce_bare_verb(self):
+        """``None`` arguments behave like an empty dict."""
         caption = build_tool_caption("juju_status", None)
-        assert caption == "juju_status()"
+        assert caption == "juju_status"
 
     def test_none_and_empty_values_are_skipped(self):
         """A ``None`` or ``""`` value is skipped in favour of the next arg."""
         caption = build_tool_caption("tool", {"path": None, "command": "pwd"})
-        assert caption == "tool(command=pwd)"
+        assert caption == "tool pwd"
 
     def test_long_value_is_truncated(self):
+        """Values past the cap collapse with an ellipsis but stay one line."""
         long_cmd = "x" * 200
         caption = build_tool_caption("bash", {"command": long_cmd})
-        # Caption stays on one line; suffix is an ellipsis.
-        assert caption.startswith("bash(command=")
-        assert caption.endswith(")")
-        # Surrounding quotes + ellipsis + some truncation.
+        assert caption.startswith("bash ")
         assert "…" in caption
         assert len(caption) < 90  # Rough upper bound.
 
     def test_newlines_are_collapsed(self):
+        """Multi-line commands collapse so the chat block stays one row."""
         caption = build_tool_caption("run_command", {"command": "line1\nline2"})
         assert "\n" not in caption
         # The collapse marker is visible in the caption.
@@ -87,14 +93,14 @@ class TestBuildToolCaption:
             "fake_tool",
             {"extras": "ignored", "path": "src/foo.py"},
         )
-        assert caption == "fake_tool(path=src/foo.py)"
+        assert caption == "fake_tool src/foo.py"
 
     def test_quotes_in_value_are_normalised(self):
         """Values containing quotes get wrapped + inner quotes downgraded."""
         caption = build_tool_caption("fake", {"command": 'echo "hi"'})
         # The caption must stay parseable as a one-liner — no nested
         # double-quotes confusing the reader.
-        assert caption.startswith("fake(command=")
+        assert caption.startswith("fake ")
         assert caption.count('"') <= 2  # Leading + trailing only.
 
 
@@ -131,44 +137,48 @@ class TestBuildToolIntroCaption:
     """Phase 82 — the pre-call intro caption helper."""
 
     def test_default_returns_none_so_fallback_kicks_in(self):
-        # The base class's intro_caption returns None; the helper falls
-        # back to the synthesised "Running tool_name(key=value)…" form.
+        """Phase 108.5: the fallback intro shape mirrors the post-call form.
+
+        The leading ``·`` glyph the chat surface attaches is what
+        tells the user the call is in flight, so the caption itself
+        does not need a ``Running …`` prefix.  ``stub`` is not in
+        ``_TOOL_VERBS``, so its bare name acts as the verb.
+        """
         caption = build_tool_intro_caption(_StubTool(), "stub", {"path": "src/foo.py"})
-        assert caption == "Running stub(path=src/foo.py)…"
+        assert caption == "stub src/foo.py"
 
     def test_tool_override_wins(self):
+        """A tool's own ``intro_caption`` keeps its English-prose form."""
         tool = _StubTool(override="Packing the charm…")
         caption = build_tool_intro_caption(tool, "charmcraft_pack", {"path": "."})
         assert caption == "Packing the charm…"
 
     def test_no_tool_falls_back_to_synthesised(self):
-        # When the tool object is unknown (renderer-only callers), the
-        # helper still yields a useful intro from the arguments alone.
+        """A renderer-only caller still gets a useful verb-target intro."""
         caption = build_tool_intro_caption(None, "web_fetch", {"url": "https://x"})
-        assert caption == "Running web_fetch(url=https://x)…"
+        assert caption == "fetch https://x"
 
-    def test_no_args_yields_bare_running_string(self):
+    def test_no_args_yields_bare_verb(self):
+        """No arguments → just the verb (no trailing ``…``)."""
         caption = build_tool_intro_caption(None, "juju_status", {})
-        assert caption == "Running juju_status…"
+        assert caption == "juju_status"
 
     def test_tool_intro_caption_exception_falls_back(self):
+        """Exception in the override is swallowed; fallback still fires."""
         tool = _StubTool(raises=True)
         caption = build_tool_intro_caption(tool, "stub", {"path": "x"})
-        # Exception in the override is swallowed; the fallback synthesis
-        # still produces a useful pending caption.
-        assert caption == "Running stub(path=x)…"
+        assert caption == "stub x"
 
     def test_tool_returning_empty_string_falls_back(self):
-        # An override of "" is treated as "no override" so the fallback
-        # synthesis still produces a useful caption rather than a blank
-        # spinner line.
+        """Empty-string override is treated as "no override"."""
         tool = _StubTool(override="")
         caption = build_tool_intro_caption(tool, "stub", {"path": "x"})
-        assert caption == "Running stub(path=x)…"
+        assert caption == "stub x"
 
     def test_long_value_truncated_in_intro(self):
+        """Long values still truncate cleanly under the new shape."""
         long_cmd = "x" * 200
         caption = build_tool_intro_caption(None, "bash", {"command": long_cmd})
-        assert caption.startswith("Running bash(command=")
-        assert caption.endswith("…)…")
+        assert caption.startswith("bash ")
+        assert "…" in caption
         assert len(caption) < 100

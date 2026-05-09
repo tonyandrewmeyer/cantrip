@@ -106,7 +106,7 @@ async def test_pending_then_final_updates_in_place():
             # No new line — the pending block was updated in place.
             assert len(chat._messages) == baseline + 1
             assert "tc-1" not in chat._pending_tool_blocks
-            assert resolved.message.content.startswith("🔧 ")
+            assert resolved.message.content.startswith("▸ ")
             assert "Packed redis.charm" in resolved.message.content
             assert "1234 ms" in resolved.message.content
             assert "tool-pending" not in resolved.classes
@@ -242,7 +242,7 @@ async def test_resolve_unknown_id_falls_back_to_append():
             # Falls through to append: one new chat line.
             assert len(chat._messages) == baseline + 1
             assert chat._pending_tool_blocks == {}
-            assert widget.message.content.startswith("🔧 ")
+            assert widget.message.content.startswith("▸ ")
 
 
 @pytest.mark.asyncio

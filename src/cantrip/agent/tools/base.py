@@ -125,6 +125,31 @@ _CAPTION_KEY_PREFERENCE: tuple[str, ...] = (
 # on one line even when the agent passes a multi-line command.
 _CAPTION_VALUE_MAX = 60
 
+# Phase 108.5: tool-name → English verb so the fallback caption reads
+# as ``read src/foo.py`` rather than ``read_file(path=src/foo.py)``.
+# Tools not in this map fall through to the bare tool name as the
+# verb, which still gives ``unknown_tool src/foo.py`` — verb-target
+# in shape, just less polished in vocabulary.  Add an entry only
+# when the bare name reads awkwardly; the map is *not* a complete
+# inventory of cantrip's tools.
+_TOOL_VERBS: dict[str, str] = {
+    "read_file": "read",
+    "write_file": "write",
+    "edit_file": "edit",
+    "multi_edit": "edit",
+    "list_dir": "list",
+    "run_command": "run",
+    "web_fetch": "fetch",
+    "git_clone": "clone",
+    "charmcraft_init": "scaffold",
+    "charmcraft_pack": "pack",
+    "quick_pack": "pack",
+    "charmlint": "lint",
+    "plan_tasks": "plan",
+    "juju": "juju",
+    "run_charm_tests": "test",
+}
+
 
 def build_tool_caption(
     tool_name: str,
@@ -134,32 +159,36 @@ def build_tool_caption(
     """Return a one-line human caption for a tool invocation.
 
     Prefers the tool's own ``ToolResult.caption`` when present.  Falls
-    back to ``tool_name(key=value)`` using the first matching key from
-    ``_CAPTION_KEY_PREFERENCE`` — most tools hit one of those names
-    (``path``, ``command``, ``url``, …) so the fallback is informative
-    without per-tool rules.  When no argument matches, returns
-    ``tool_name()``.  Values are truncated to :data:`_CAPTION_VALUE_MAX`
-    characters and newlines are collapsed so the caption always fits
-    one line.
+    back (Phase 108.5) to ``verb value`` — the verb is looked up in
+    :data:`_TOOL_VERBS` (or defaults to the bare tool name), and the
+    value comes from the first argument matching the
+    :data:`_CAPTION_KEY_PREFERENCE` list (``path``, ``command``,
+    ``url``, …).  This produces ``read src/foo.py`` rather than the
+    older ``read_file(path=src/foo.py)``, so the chat reads as
+    English instead of as Python source.  When no argument matches,
+    returns just the verb.  Values are truncated to
+    :data:`_CAPTION_VALUE_MAX` characters and newlines collapsed so
+    the caption always fits one line.
     """
     if result is not None and result.caption:
         return result.caption
 
+    verb = _TOOL_VERBS.get(tool_name, tool_name)
     args = arguments or {}
     for key in _CAPTION_KEY_PREFERENCE:
         if key in args and args[key] not in (None, ""):
             value = _format_caption_value(args[key])
-            return f"{tool_name}({key}={value})"
+            return f"{verb} {value}"
 
     # No preferred key; fall back to the first argument with a
     # non-empty value so the caption still carries *something*.
-    for key, raw in args.items():
+    for _key, raw in args.items():
         if raw in (None, ""):
             continue
         value = _format_caption_value(raw)
-        return f"{tool_name}({key}={value})"
+        return f"{verb} {value}"
 
-    return f"{tool_name}()"
+    return verb
 
 
 def build_tool_intro_caption(
@@ -170,11 +199,11 @@ def build_tool_intro_caption(
     """Return a pre-call "running now" caption for a tool invocation (Phase 82).
 
     Prefers :meth:`Tool.intro_caption` when the tool overrides it.
-    Falls back to ``"Running <tool_name>(<key>=<value>)…"`` using the
-    same :data:`_CAPTION_KEY_PREFERENCE` list as
-    :func:`build_tool_caption` so the fallback intro and post-call
-    fallback share their key-picking discipline.  When no argument
-    matches, returns ``"Running <tool_name>…"``.
+    Falls back (Phase 108.5) to the same ``verb value`` shape as
+    :func:`build_tool_caption` — the leading ``·`` glyph the chat
+    surface attaches is what tells the user the call is in flight,
+    so the caption itself does not need a ``Running …`` prefix and
+    a trailing ``…``.
     """
     if tool is not None:
         try:
@@ -185,19 +214,20 @@ def build_tool_intro_caption(
         if override:
             return override
 
+    verb = _TOOL_VERBS.get(tool_name, tool_name)
     args = arguments or {}
     for key in _CAPTION_KEY_PREFERENCE:
         if key in args and args[key] not in (None, ""):
             value = _format_caption_value(args[key])
-            return f"Running {tool_name}({key}={value})…"
+            return f"{verb} {value}"
 
-    for key, raw in args.items():
+    for _key, raw in args.items():
         if raw in (None, ""):
             continue
         value = _format_caption_value(raw)
-        return f"Running {tool_name}({key}={value})…"
+        return f"{verb} {value}"
 
-    return f"Running {tool_name}…"
+    return verb
 
 
 def _format_caption_value(value: Any) -> str:
