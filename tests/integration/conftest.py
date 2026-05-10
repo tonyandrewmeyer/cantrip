@@ -36,67 +36,77 @@ def make_stub_tool(name: str, result: str | None = None) -> tools_base.Tool:
 
 # ---------------------------------------------------------------------------
 # JSON fixtures — canned planner outputs
+#
+# Planner LLM calls go through ``complete_structured`` against the
+# ``PLANNER_BRIEFING`` schema (Phase 73.3), which expects a top-level
+# ``{"tasks": [...]}`` object — not a bare array.  Keep these matching
+# the live wire shape so the fixtures don't drift back into "passes a
+# value the real planner would reject".
 # ---------------------------------------------------------------------------
 
 
 RESEARCH_PLAN_JSON = json.dumps(
-    [
-        {
-            "id": "source-analysis",
-            "title": "Analyse the source repository",
-            "category": "research",
-            "description": "Clone the repo and explore the codebase.",
-            "dependencies": [],
-        },
-        {
-            "id": "web-research",
-            "title": "Research workload documentation",
-            "category": "research",
-            "description": "Fetch external docs and deployment guides.",
-            "dependencies": [],
-        },
-        {
-            "id": "operational-discovery",
-            "title": "Synthesise design proposal",
-            "category": "research",
-            "description": "Combine all research into a design proposal.",
-            "dependencies": ["source-analysis", "web-research"],
-        },
-        {
-            "id": "confirm-design",
-            "title": "Confirm design with user",
-            "category": "confirm",
-            "description": "Present the design proposal for user approval.",
-            "dependencies": ["operational-discovery"],
-        },
-    ]
+    {
+        "tasks": [
+            {
+                "id": "source-analysis",
+                "title": "Analyse the source repository",
+                "category": "research",
+                "description": "Clone the repo and explore the codebase.",
+                "dependencies": [],
+            },
+            {
+                "id": "web-research",
+                "title": "Research workload documentation",
+                "category": "research",
+                "description": "Fetch external docs and deployment guides.",
+                "dependencies": [],
+            },
+            {
+                "id": "operational-discovery",
+                "title": "Synthesise design proposal",
+                "category": "research",
+                "description": "Combine all research into a design proposal.",
+                "dependencies": ["source-analysis", "web-research"],
+            },
+            {
+                "id": "confirm-design",
+                "title": "Confirm design with user",
+                "category": "confirm",
+                "description": "Present the design proposal for user approval.",
+                "dependencies": ["operational-discovery"],
+            },
+        ]
+    }
 )
 
 
 BUILD_PLAN_JSON = json.dumps(
-    [
-        {
-            "id": "scaffold-charm",
-            "title": "Scaffold the charm project",
-            "category": "build",
-            "description": "Initialise the charm directory structure.",
-            "dependencies": [],
-        },
-        {
-            "id": "write-charm-code",
-            "title": "Write charm code",
-            "category": "build",
-            "description": "Implement the charm in src/charm.py.",
-            "dependencies": ["scaffold-charm"],
-        },
-        {
-            "id": "write-tests",
-            "title": "Write unit tests",
-            "category": "build",
-            "description": "Write Scenario-based unit tests.",
-            "dependencies": ["write-charm-code"],
-        },
-    ]
+    {
+        "tasks": [
+            {
+                "id": "scaffold-charm",
+                "title": "Scaffold the charm project",
+                "category": "build",
+                "description": "Initialise the charm directory structure.",
+                "dependencies": [],
+            },
+            {
+                "id": "write-charm-code",
+                "title": "Write charm code",
+                "category": "build",
+                "description": "Implement the charm in src/charm.py.",
+                "dependencies": ["scaffold-charm"],
+            },
+            {
+                "id": "write-tests",
+                "title": "Write unit tests",
+                "category": "build",
+                "description": "Write Scenario-based unit tests.",
+                "dependencies": ["write-charm-code"],
+            },
+        ]
+    }
 )
 
 
@@ -173,3 +183,21 @@ def fast_executor(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(executor_mod, "_POLL_INTERVAL", 0.01)
     monkeypatch.setattr(executor_mod, "_DEFAULT_TASK_TIMEOUT", 5)
+
+
+@pytest.fixture
+def fast_retry(monkeypatch: pytest.MonkeyPatch):
+    """Collapse the transient-error backoff so retry paths run instantly.
+
+    :func:`cantrip.agent.retry.complete_with_retry` bakes
+    ``TRANSIENT_RETRIES`` into its default argument, so the retry
+    *count* can't be changed after import — but the backoff *delays*
+    are read at call time, so zeroing them is enough to keep a
+    three-attempt retry loop fast.  ``_PROVIDER_BASE_DELAY`` is emptied
+    so per-provider overrides (``claude``) don't reintroduce a wait.
+    """
+    from cantrip.agent import retry as retry_mod
+
+    monkeypatch.setattr(retry_mod, "TRANSIENT_BASE_DELAY", 0)
+    monkeypatch.setattr(retry_mod, "_CONNECTION_BASE_DELAY", 0)
+    monkeypatch.setattr(retry_mod, "_PROVIDER_BASE_DELAY", {})

@@ -942,7 +942,17 @@ class BackgroundExecutor:
         except TimeoutError as exc:
             log.warning("Task '%s' timed out after %.1fs", task.title, time.monotonic() - t0)
             self._fail_task(task, "Task timed out", exc, snapshot)
-        except (llm.ProviderError, llm.ProviderRateLimitError) as exc:
+        except (
+            llm.ProviderError,
+            llm.ProviderRateLimitError,
+            llm.ProviderOverloadedError,
+            llm.ProviderConnectionError,
+        ) as exc:
+            # Transient errors only reach here when ``complete_with_retry``
+            # has already exhausted its budget — re-raised as the original
+            # type, which is *not* a ``ProviderError`` subclass.  Without
+            # this clause the task coroutine would die unhandled and the
+            # task stay stuck in ``IN_PROGRESS`` instead of going FAILED.
             log.warning(
                 "Task '%s' failed (provider) after %.1fs: %s",
                 task.title,

@@ -34,7 +34,12 @@ from cantrip.agent.queue import TaskCategory, TaskStatus
 from cantrip.agent.ralph import RalphConfig, RalphOutcome, run_ralph
 from cantrip.hooks import HookRunner
 from cantrip.llm import create_provider, resolve_light_provider
-from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
+from cantrip.llm.base import (
+    ProviderConnectionError,
+    ProviderError,
+    ProviderOverloadedError,
+    ProviderRateLimitError,
+)
 from cantrip.ui import events as ui_events
 
 if TYPE_CHECKING:
@@ -251,7 +256,7 @@ async def _run_async(
 
         try:
             response = await agent.process_message(goal)
-        except (ProviderRateLimitError, ProviderOverloadedError) as exc:
+        except (ProviderRateLimitError, ProviderOverloadedError, ProviderConnectionError) as exc:
             # Transient errors only land here when the retry loop has
             # already exhausted its budget — at that point further
             # retries inside print mode wouldn't help.  Surface a
@@ -381,7 +386,7 @@ async def _run_ralph_loop(
     except _RalphAbortError:
         print(abort_message.get("error", "Ralph loop aborted."), file=sys.stderr)
         return 1
-    except (ProviderRateLimitError, ProviderOverloadedError) as exc:
+    except (ProviderRateLimitError, ProviderOverloadedError, ProviderConnectionError) as exc:
         print(f"Provider unavailable after retries: {exc}", file=sys.stderr)
         return 1
     except ProviderError as exc:

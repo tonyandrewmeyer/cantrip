@@ -1002,21 +1002,64 @@ confidence that Cantrip keeps working when reality is messy.
 
 ### 93.2 High — Add failure-injection integration tests
 
-- [ ] Add a first-class integration harness for **LLM/provider failures**:
+- [x] Add a first-class integration harness for **LLM/provider failures**:
   timeout, rate-limit, malformed response, provider 5xx, and tool-call shape
   violations.  Assert user-visible failure handling, retry behaviour, and
   queue/task state transitions rather than only that an exception bubbles.
-- [ ] Add **tool execution failure** integration coverage: subprocess exits
+  *(Done — ``tests/integration/test_failure_injection.py`` plus the reusable
+  ``FailingProvider`` / ``FlakyProvider`` doubles (``tests/support/providers.py``)
+  and the ``fast_retry`` fixture.  Provider 5xx / overload / mid-stream
+  disconnect → transient-retry budget burned, then the task goes FAILED with a
+  one-line cause; non-transient ``ProviderError`` → no retry, task FAILED; one
+  failing task doesn't block an independent one; the planner recovers from a
+  malformed-then-valid reply via the structured retry and raises
+  ``StructuredOutputError`` when every reply is malformed.  Surfaced + fixed a
+  real bug along the way: a retry-exhausted ``ProviderOverloadedError`` /
+  ``ProviderConnectionError`` used to stall the work loop because the
+  executor's task-failure handler caught only ``ProviderError`` /
+  ``ProviderRateLimitError`` — now widened, with matching
+  ``ProviderConnectionError`` handling added to ``print_mode`` and the REPL.
+  Also refreshed the canned planner-output fixtures to the ``{"tasks": [...]}``
+  shape the structured-output planner actually expects.  Tool-call *shape*
+  violations — calling a tool that raises or returns failure — are covered
+  under tool execution failure below.)*
+- [x] Add **tool execution failure** integration coverage: subprocess exits
   non-zero, partial output + timeout, missing binaries, Juju command failures,
   export/write failures, and cleanup hooks that should still run on final
   failure.
-- [ ] Exercise the existing retry / recovery surfaces under pressure:
+  *(Mostly done — ``run_command`` real-subprocess tests cover non-zero exit,
+  timeout, a missing binary, and an off-allowlist refusal (forced to the no-op
+  sandbox so they're deterministic in CI); a crashing subagent tool
+  (``make_raising_tool``) and a tool returning ``success=False`` both become
+  ``is_error`` results the subagent reports and steps past without the task
+  failing; the ``/export`` path is exercised against an unwritable
+  destination.  Deferred: Juju-command failures (the live-juju
+  ``test_e2e_tools.py`` cases already cover ``juju status`` against a bad
+  model — no deterministic stand-in was added) and an explicit "cleanup hook
+  runs on final failure" assertion, which belongs with 93.5's git-automation
+  work where the hook surfaces are.)*
+- [x] Exercise the existing retry / recovery surfaces under pressure:
   transient failure that later succeeds, retry budget exhausted, and "final
   failure produces a crisp summary instead of hanging the loop".
-- [ ] Cover degraded-environment paths that are realistic in operator use:
+  *(Done — ``FlakyProvider`` (two rate-limit blips then success) recovers the
+  task end to end; a persistently-failing provider drives three independent
+  tasks to FAILED and the work loop *terminates* within the wait budget rather
+  than spinning; ``set_failed`` puts the error string on the task so the queue
+  carries a one-line cause rather than an empty terminal state.)*
+- [x] Cover degraded-environment paths that are realistic in operator use:
   controller unreachable, model missing, missing API key, network blip during
   export or provider call, and partial state already written when the failure
   hits.
+  *(Mostly done — missing API key → ``create_provider`` raises a
+  caller-handled error; no ``juju`` (and no concierge) on PATH → preflight
+  reports ``juju_available=False`` instead of throwing; the store-backed
+  persistent-failure test shows FAILED status + cause landing in the
+  ``.cantrip`` file, i.e. partial state already persisted when the failure
+  hits; a mid-stream provider disconnect is the "network blip during provider
+  call" case above.  "Model missing" is left to 93.3's resume/durability work
+  where the model-detection paths live; "network blip during export" is
+  approximated by the unwritable-destination test rather than a true mid-write
+  failure.)*
 
 ### 93.3 High — Test durability, resume, and long-running-session recovery
 

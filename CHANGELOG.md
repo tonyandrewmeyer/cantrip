@@ -5,6 +5,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Failure-injection integration tests (Phase 93.2).**  A new
+  ``tests/integration/test_failure_injection.py`` exercises what the
+  agent does when reality is messy: a provider returning 5xx / overload /
+  a mid-stream disconnect (the transient-retry budget is burned, then the
+  task goes FAILED with a one-line cause), a malformed planner reply that
+  the structured-output retry corrects — or exhausts and surfaces — real
+  tool failures via ``run_command`` (non-zero exit, timeout, missing
+  binary, off-allowlist), a crashing or refusing subagent tool that the
+  loop reports and steps past, a persistent outage that *terminates* the
+  work loop instead of hanging it, a transient blip that recovers, and
+  degraded-environment paths (missing API key, no ``juju`` on PATH, an
+  unwritable transcript export).  Reusable doubles keep each scenario a
+  few lines: ``FailingProvider`` / ``FlakyProvider``
+  (``tests/support/providers.py``), ``make_raising_tool``
+  (``tests/support/tools.py``), and the ``fast_retry`` fixture.  (Also
+  refreshed the canned planner-output fixtures to the
+  ``{"tasks": [...]}`` shape the structured-output planner actually
+  expects, so ``test_design_flow`` / ``test_day2_and_improvement`` stop
+  feeding it a value the real planner would reject.)
 - **F5 now pauses/resumes the watcher's reactions instead of
   stopping it.**  The Juju event watcher always keeps observing the
   model — the status panes and `[Watcher]` chat notices stay
@@ -292,6 +311,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **A retry-exhausted ``ProviderOverloadedError`` /
+  ``ProviderConnectionError`` now fails the task cleanly instead of
+  stalling the work loop.**  Both are siblings of ``ProviderError``,
+  not subclasses, so the executor's task-failure handler never caught
+  them — when ``complete_with_retry`` re-raised one after burning its
+  retry budget, the task coroutine died unhandled and the task stayed
+  ``IN_PROGRESS`` indefinitely.  The executor now treats every
+  retry-exhausted transient error as a task failure, and ``cantrip run
+  --print`` / the REPL surface a ``ProviderConnectionError`` with the
+  same "provider unavailable" message they already gave for rate-limit
+  and overload errors.
 - **Modal-screen footer "buttons" were invisible and inert.**  The
   bracketed key hints at the bottom (and top-right) of the log,
   relation, transcript, observability, help, and tool-error modals

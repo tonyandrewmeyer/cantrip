@@ -82,6 +82,7 @@ class TestDesignConfirmation:
                 temperature=0.7,  # noqa: ARG002
                 max_tokens=None,  # noqa: ARG002
                 thinking_budget=None,  # noqa: ARG002
+                response_schema=None,  # noqa: ARG002
             ):
                 for msg in messages:
                     if msg.role.value == "user":
