@@ -944,6 +944,29 @@ class TestPresentConfirmations:
                 )
                 assert triage_msg.markdown is True
 
+    @pytest.mark.asyncio
+    async def test_present_bootstrap_confirmation_renders_markdown(self):
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                task = MagicMock()
+                task.description = (
+                    "No GitHub remote detected.  Create a repository?\n\n"
+                    "Reply **approve** to create **my-charm-operator**."
+                )
+                pilot.app._present_bootstrap_confirmation(task)
+                await pilot.pause()
+                # The bootstrap prompt is full of ``**bold**`` tokens; the
+                # system message must be flagged ``markdown=True`` so the
+                # chat renders emphasis instead of dumping literal asterisks.
+                chat = pilot.app.query_one("#chat", chat_widget.ChatWidget)
+                msg = next(
+                    m
+                    for m in chat._messages
+                    if m.role == chat_widget.MessageRole.SYSTEM and "Repo bootstrap" in m.content
+                )
+                assert msg.markdown is True
+
 
 # ---------------------------------------------------------------------------
 # Watcher action + bus event

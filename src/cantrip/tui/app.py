@@ -1039,7 +1039,7 @@ class CantripApp(App):
         :meth:`_handle_bootstrap_response`.
         """
         chat = self.query_one("#chat", chat_widget.ChatWidget)
-        chat.add_system_message(f"**Repo bootstrap:**\n\n{task.description}")
+        chat.add_system_message(f"**Repo bootstrap:**\n\n{task.description}", markdown=True)
 
     def _handle_bootstrap_response(self, message: str) -> bool:
         """Handle approve / skip / customised reply for the bootstrap CONFIRM.
@@ -1093,7 +1093,8 @@ class CantripApp(App):
             description = desc_match.group(1).strip()
 
         chat.add_system_message(
-            f"Creating {'private' if private else 'public'} repository **{repo_name}**..."
+            f"Creating {'private' if private else 'public'} repository **{repo_name}**...",
+            markdown=True,
         )
         result = self._agent.handle_repo_bootstrap(
             repo_name,
@@ -1101,7 +1102,7 @@ class CantripApp(App):
             description=description,
             org=org,
         )
-        chat.add_system_message(result)
+        chat.add_system_message(result, markdown=True)
 
         if self._agent.state.github_repo:
             self._update_header_subtitle()
