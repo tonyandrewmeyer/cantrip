@@ -929,3 +929,233 @@ class TestTerraformModuleVerifier:
         code = verifier.main(["x", "y", "z"])
         assert code == 2
         assert "Usage" in capsys.readouterr().err
+
+
+class TestAddObservabilityVerifier:
+    """Verifier for ``cookbook/add-observability/``.
+
+    Builds an in-process charm tree that's been wired into COS and
+    exercises the verifier's happy path (both the K8s three-relation
+    layout and the machine ``cos-agent`` layout) plus every failure
+    mode.  No real charmcraft / juju runs.
+    """
+
+    RECIPE = COOKBOOK_ROOT / "add-observability"
+
+    _CHARMCRAFT = textwrap.dedent("""\
+        name: my-charm
+        type: charm
+        base: ubuntu@24.04
+        requires:
+          tracing:
+            interface: tracing
+            limit: 1
+          logging:
+            interface: loki_push_api
+        provides:
+          metrics-endpoint:
+            interface: prometheus_scrape
+          grafana-dashboard:
+            interface: grafana_dashboard
+        """)
+    _CHARM_PY = textwrap.dedent("""\
+        import ops
+        import ops_tracing
+        from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+        from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+        from charms.loki_k8s.v1.loki_push_api import LogForwarder
+
+
+        class MyCharm(ops.CharmBase):
+            def __init__(self, framework: ops.Framework):
+                super().__init__(framework)
+                self._tracing = ops_tracing.Tracing(self, "tracing")
+                self._metrics = MetricsEndpointProvider(self, relation_name="metrics-endpoint")
+                self._dashboards = GrafanaDashboardProvider(self)
+                self._logs = LogForwarder(self)
+        """)
+    _PYPROJECT = textwrap.dedent("""\
+        [project]
+        name = "my-charm"
+        version = "0.1.0"
+        dependencies = ["ops>=3,<4", "ops-tracing", "cosl"]
+        """)
+
+    _COS_AGENT_CHARMCRAFT = textwrap.dedent("""\
+        name: my-machine-charm
+        type: charm
+        base: ubuntu@24.04
+        requires:
+          tracing:
+            interface: tracing
+        provides:
+          cos-agent:
+            interface: cos_agent
+        """)
+    _COS_AGENT_CHARM_PY = textwrap.dedent("""\
+        import ops
+        import ops_tracing
+        from charms.grafana_agent.v0.cos_agent import COSAgentProvider
+
+
+        class MyMachineCharm(ops.CharmBase):
+            def __init__(self, framework: ops.Framework):
+                super().__init__(framework)
+                self._tracing = ops_tracing.Tracing(self, "tracing")
+                self._cos = COSAgentProvider(self)
+        """)
+
+    @pytest.fixture
+    def verifier(self):
+        return _load_verifier(self.RECIPE / "verify.py")
+
+    @staticmethod
+    def _write_observable_charm(
+        root: pathlib.Path,
+        *,
+        charmcraft_yaml: str | None = None,
+        charm_py: str | None = None,
+        pyproject_toml: str | None = None,
+        dashboards: bool = True,
+        write_charmcraft: bool = True,
+        write_charm_py: bool = True,
+    ) -> pathlib.Path:
+        """Write a COS-instrumented charm tree into *root*."""
+        cls = TestAddObservabilityVerifier
+        if write_charmcraft:
+            (root / "charmcraft.yaml").write_text(
+                charmcraft_yaml if charmcraft_yaml is not None else cls._CHARMCRAFT,
+                encoding="utf-8",
+            )
+        (root / "pyproject.toml").write_text(
+            pyproject_toml if pyproject_toml is not None else cls._PYPROJECT, encoding="utf-8"
+        )
+        if write_charm_py:
+            (root / "src").mkdir(exist_ok=True)
+            (root / "src" / "charm.py").write_text(
+                charm_py if charm_py is not None else cls._CHARM_PY, encoding="utf-8"
+            )
+        if dashboards:
+            (root / "src" / "grafana_dashboards").mkdir(parents=True, exist_ok=True)
+            (root / "src" / "grafana_dashboards" / "overview.json").write_text(
+                "{}\n", encoding="utf-8"
+            )
+        return root
+
+    def test_happy_path_k8s_layout(self, tmp_path: pathlib.Path, verifier) -> None:
+        verifier.verify(self._write_observable_charm(tmp_path))
+
+    def test_happy_path_cos_agent_layout(self, tmp_path: pathlib.Path, verifier) -> None:
+        charm_dir = self._write_observable_charm(
+            tmp_path,
+            charmcraft_yaml=self._COS_AGENT_CHARMCRAFT,
+            charm_py=self._COS_AGENT_CHARM_PY,
+        )
+        verifier.verify(charm_dir)
+
+    def test_missing_charmcraft_yaml_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_observable_charm(tmp_path, write_charmcraft=False)
+        with pytest.raises(verifier.VerifyError, match="charmcraft.yaml"):
+            verifier.verify(tmp_path)
+
+    def test_charmcraft_without_name_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_observable_charm(tmp_path, charmcraft_yaml="type: charm\n")
+        with pytest.raises(verifier.VerifyError, match="no 'name'"):
+            verifier.verify(tmp_path)
+
+    def test_missing_src_charm_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_observable_charm(tmp_path, write_charm_py=False)
+        with pytest.raises(verifier.VerifyError, match="src/charm.py"):
+            verifier.verify(tmp_path)
+
+    def test_no_ops_tracing_dep_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_observable_charm(
+            tmp_path, pyproject_toml='[project]\nname = "x"\ndependencies = ["ops>=3,<4"]\n'
+        )
+        with pytest.raises(verifier.VerifyError, match="ops-tracing dependency"):
+            verifier.verify(tmp_path)
+
+    def test_charm_py_without_ops_tracing_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_observable_charm(
+            tmp_path, charm_py="import ops\n\nclass C(ops.CharmBase):\n    pass\n"
+        )
+        with pytest.raises(verifier.VerifyError, match="ops_tracing module"):
+            verifier.verify(tmp_path)
+
+    def test_no_tracing_relation_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        no_tracing = textwrap.dedent("""\
+            name: x
+            type: charm
+            base: ubuntu@24.04
+            requires:
+              logging:
+                interface: loki_push_api
+            provides:
+              metrics-endpoint:
+                interface: prometheus_scrape
+              grafana-dashboard:
+                interface: grafana_dashboard
+            """)
+        self._write_observable_charm(tmp_path, charmcraft_yaml=no_tracing)
+        with pytest.raises(verifier.VerifyError, match="tracing relation"):
+            verifier.verify(tmp_path)
+
+    def test_missing_one_cos_pillar_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        # tracing + metrics + dashboards present, logging missing.
+        no_logging = textwrap.dedent("""\
+            name: x
+            type: charm
+            base: ubuntu@24.04
+            requires:
+              tracing:
+                interface: tracing
+            provides:
+              metrics-endpoint:
+                interface: prometheus_scrape
+              grafana-dashboard:
+                interface: grafana_dashboard
+            """)
+        self._write_observable_charm(tmp_path, charmcraft_yaml=no_logging)
+        with pytest.raises(verifier.VerifyError, match=r"missing COS relation.*logs"):
+            verifier.verify(tmp_path)
+
+    def test_no_dashboard_assets_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_observable_charm(tmp_path, dashboards=False)
+        with pytest.raises(verifier.VerifyError, match="src/grafana_dashboards"):
+            verifier.verify(tmp_path)
+
+    def test_providers_not_wired_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        bare = textwrap.dedent("""\
+            import ops
+            import ops_tracing
+
+
+            class MyCharm(ops.CharmBase):
+                def __init__(self, framework: ops.Framework):
+                    super().__init__(framework)
+                    self._tracing = ops_tracing.Tracing(self, "tracing")
+            """)
+        self._write_observable_charm(tmp_path, charm_py=bare)
+        with pytest.raises(verifier.VerifyError, match="references none of"):
+            verifier.verify(tmp_path)
+
+    def test_verifier_cli_returns_0_on_success(
+        self, tmp_path: pathlib.Path, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main([str(self._write_observable_charm(tmp_path))])
+        assert code == 0
+        assert "OK" in capsys.readouterr().out
+
+    def test_verifier_cli_returns_1_on_failure(
+        self, tmp_path: pathlib.Path, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main([str(tmp_path)])  # Empty dir → missing charmcraft.yaml.
+        assert code == 1
+        assert "FAIL" in capsys.readouterr().err
+
+    def test_verifier_cli_returns_2_on_wrong_argv(
+        self, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main(["one", "two"])
+        assert code == 2
+        assert "Usage" in capsys.readouterr().err
