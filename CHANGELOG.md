@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase-aware tool curation (Phase 110).**  Tight-context providers
+  (inference snaps cap the LLM's tool array at 12; short-session mode
+  has a similar squeeze) no longer get a fixed 11-name "core tools"
+  keep-list that silently dropped load-bearing tools.  Instead the
+  toolbox is curated to the *active workflow phase* — `build` ships
+  `quick_pack` / `charmcraft_pack` / `charmlint` / `run_command`,
+  `debug` swaps in `juju_debug_log` / `juju_status_render`, `deploy`
+  brings `concierge_prepare` / `wait_for` / `relation_smoke_test`,
+  `research` is navigation + `web_search` / `analyse_framework` /
+  `oracle_consult` / `extract_design_decisions` — so the model gets
+  the tools its current task needs rather than a one-size-fits-all
+  slice.  The phase follows the work-queue task category (a test
+  failing flips `build → debug`, reshaping the next turn's tools);
+  `CANTRIP_TOOL_PHASE={research|build|debug|deploy|demo}` pins it for
+  unusual flows.  `/cost` names the active phase, and the TUI status
+  bar / Web header show a `[build · 11]`-style chip when curation is
+  active.  Roomy providers (Claude, Gemini) are unaffected — they
+  still see the full toolset.
 - **Failure-injection integration tests (Phase 93.2).**  A new
   ``tests/integration/test_failure_injection.py`` exercises what the
   agent does when reality is messy: a provider returning 5xx / overload /

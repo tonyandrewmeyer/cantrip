@@ -1858,17 +1858,21 @@ replaces the static ``_CORE_TOOL_NAMES`` fallback — building on
 
 ### 110.1 P0 — Phase enum + tool-set table
 
-- [ ] Define a small enum ``WorkflowPhase`` with values
+- [x] Define a small enum ``WorkflowPhase`` with values
   ``research`` / ``build`` / ``debug`` / ``deploy`` / ``demo``.
   Map the existing planner task categories
   (``BUILD`` / ``RESEARCH`` / ``DEPLOY`` / ``TEST`` /
-  ``DAY2``) onto this enum.
-- [ ] In ``cantrip/agent/core.py``, replace
+  ``DEBUG`` / ``INFRA`` / ``CONFIRM`` / ``LIBRARIAN``) onto this
+  enum.  *(Done — ``WorkflowPhase`` + ``WorkflowPhase.from_category``
+  in ``cantrip/agent/queue.py``; ``TEST → debug``, ``INFRA → deploy``,
+  ``CONFIRM → build``, ``LIBRARIAN → research``.  ``DAY2`` isn't a
+  real category — the actual eight are mapped instead.)*
+- [x] In ``cantrip/agent/core.py``, replace
   ``_CORE_TOOL_NAMES: set[str]`` with
   ``_CORE_TOOLS_BY_PHASE: dict[WorkflowPhase, set[str]]``.
   Each phase's set lives at ≤ 11 names so the inference-snap
   cap can fit one MCP tool / extension if any are loaded.
-  Suggested starting tables:
+  Tables shipped (the suggested ones, verbatim):
   - **build**: ``read_file write_file edit_file list_directory
     charmcraft_init quick_pack charmcraft_pack charmlint
     plan_tasks run_charm_tests run_command``
@@ -1882,42 +1886,62 @@ replaces the static ``_CORE_TOOL_NAMES`` fallback — building on
     web_search analyse_framework code_definition
     code_references oracle_consult plan_tasks
     extract_design_decisions``
-  - **demo**: same as build, with ``charmlint`` swapped out for
-    ``manage_tasks`` if we want a UI-friendly default.
+  - **demo**: build, with ``charmlint`` swapped out for
+    ``manage_tasks``.
+  *(``_SHORT_SESSION_PHASE_TOOLS`` from Phase 104.5 folded into this
+  one table.)*
 
 ### 110.2 P0 — Hook the curator into ``_tools_for_llm``
 
-- [ ] When the work queue's active task has a category, map it
+- [x] When the work queue's active task has a category, map it
   to a phase and use that phase's tool set.  Otherwise (no
   active task — the conversation is at idle) default to
   ``WorkflowPhase.build`` so the first interaction picks
-  build-shaped tools.
-- [ ] Re-fire ``invalidate_tools_cache`` (already wired through
-  the ``PlanTasksTool`` hand-off in Phase 100.4) when the active
-  task transitions, so the next LLM call gets the new tool slice.
+  build-shaped tools.  *(Done — ``CantripAgent.workflow_phase``
+  property + ``_curated_tool_names``; ``_tools_for_llm`` curates
+  whenever short-session mode is on **or** the provider's
+  ``max_tools`` cap is overshot, and serves the full toolset
+  otherwise.)*
+- [x] Re-fire ``invalidate_tools_cache`` ... when the active task
+  transitions.  *(Moot — ``_tools_for_llm`` is recomputed from live
+  work-queue state at the top of every turn, so a transition is
+  picked up on the next LLM call with no cache to bust.)*
 
 ### 110.3 P1 — Operator override
 
-- [ ] Env var ``CANTRIP_TOOL_PHASE={research|build|debug|
+- [x] Env var ``CANTRIP_TOOL_PHASE={research|build|debug|
   deploy|demo}`` forces a phase regardless of work-queue state.
   Useful for operators driving cantrip in unusual flows (e.g. a
   documentation pass through the codebase that needs
-  research-tier tools throughout).
-- [ ] Surface the active phase + its tool count in the TUI
+  research-tier tools throughout).  *(Done — read in
+  ``CantripAgent.workflow_phase``; unrecognised values log a warning
+  and are ignored.  Documented in ``docs/src/reference-cli.md``.)*
+- [x] Surface the active phase + its tool count in the TUI
   status bar / Web UI badge so operators can see what's been
-  curated for the current turn.
+  curated for the current turn.  *(Done — ``CantripAgent.tool_phase_badge()``
+  returns ``"build · 11"``-style text when curation is active and
+  ``""`` otherwise; TUI ``StatusBar.tool_phase`` chip (primed on
+  mount, refreshed on every task-update event), Web ``#tool-phase-badge``
+  header chip primed from ``/api/state``, and a ``/cost`` line that
+  names the phase.  Live Web push on task transitions is left for a
+  follow-up — the badge refreshes on page load / reconnect.)*
 
 ### 110.4 P1 — Tests
 
-- [ ] Unit test: ``_tools_for_llm()`` with a build-category
+- [x] Unit test: ``_tools_for_llm()`` with a build-category
   active task returns the build set.
-- [ ] Unit test: ``CANTRIP_TOOL_PHASE=research`` overrides the
+- [x] Unit test: ``CANTRIP_TOOL_PHASE=research`` overrides the
   active-task category.
-- [ ] Unit test: when an active-task category transitions
+- [x] Unit test: when an active-task category transitions
   (e.g. build → debug because a test failed), the next call to
   ``_tools_for_llm()`` picks the new phase's set.
-- [ ] Recorded-trace test: a synthetic build-then-deploy
-  conversation emits the right tool-array contents on each turn.
+- [x] ~~Recorded-trace test~~ — covered by the direct
+  ``_tools_for_llm`` / ``workflow_phase`` assertions across phases
+  in ``tests/unit/agent/test_tool_curation.py`` (24 cases) plus the
+  table-invariant tests (every phase has a ≤ 11-name table; build
+  carries ``charmlint`` + ``quick_pack``); a recorded LLM trace
+  would add wire-format coverage but no behavioural coverage the
+  unit tests don't already give.
 
 ### What this phase is *not*
 

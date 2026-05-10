@@ -148,8 +148,10 @@ header h1 {
 
 /* Phase 104: short-session-mode chip — mirrors the TUI status-bar
    ``[short-session]`` segment.  Hidden unless the active provider runs
-   the tight-context flow. */
-.short-session-badge {
+   the tight-context flow.  Phase 110: the tool-phase chip shares the
+   same muted styling and sits next to it. */
+.short-session-badge,
+.tool-phase-badge {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   color: var(--text-muted);

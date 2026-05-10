@@ -138,8 +138,14 @@ Start the agent and build or improve a charm.
     system prompt plus tool schemas already fill a third of the
     window. The status bar shows a <code>[short-session]</code> chip
     while it is on, and <code>/cost</code> reports the compaction
-    strategy in use. Falls back to the
-    <code>CANTRIP_SHORT_SESSION</code> environment variable when
+    strategy in use. Tight-context providers (this mode, or any
+    provider that caps its tool array — inference snaps cap at 12)
+    are also offered a <em>curated</em> tool slice scoped to the
+    active workflow phase rather than the full toolbox; the status
+    bar shows a <code>[build · 11]</code>-style chip and
+    <code>/cost</code> names the phase. See
+    <code>CANTRIP_TOOL_PHASE</code> below to pin it. Falls back to
+    the <code>CANTRIP_SHORT_SESSION</code> environment variable when
     omitted.
   </dd>
 </dl>
@@ -1513,6 +1519,7 @@ and not duplicated elsewhere.
 | `CANTRIP_SNAPSHOTS` | optional | Set to `0`, `false`, `no`, or `off` (case-insensitive) to disable per-turn working-tree snapshots backing `/undo` and `/redo`. Equivalent to passing `--no-snapshots`. Defaults to on; the snapshot repo lives at `$XDG_STATE_HOME/cantrip/snapshots/<hash>/`. |
 | `CANTRIP_SHORT_SESSION` | optional | Force short-session mode `on` or `off`, or `auto` (the default) to enable it only for providers below ~16 K usable context. Equivalent to `--short-session`; see that flag for what the mode changes. |
 | `CANTRIP_TOOL_FAILURE_CAP` | optional | How many times the same tool call (same name **and** same arguments) may fail in a row before the active task is marked `BLOCKED` and the run stops. Default `5`; clamped to `[1, 50]`; non-integer or out-of-range values log a warning and fall back to the default. One round before the cap the agent injects a message telling the model to change approach. A different tool call (or different arguments) resets the streak. Raise it for flaky environments, lower it to fail fast on small local models that loop on oversized `write_file` payloads. |
+| `CANTRIP_TOOL_PHASE` | optional | Pin the curated tool slice to one of `research`, `build`, `debug`, `deploy`, or `demo`, regardless of what the work queue is doing. Tight-context providers (inference-snap's 12-tool cap, short-session mode) only ever see the tools the active workflow phase needs; normally that phase is derived from the running task's category, but this var forces it — useful for driving Cantrip through an unusual flow (e.g. a documentation pass that wants research-tier tools throughout). Unrecognised values log a warning and are ignored. Roomy providers (Claude, Gemini) are unaffected — they get the full toolset either way. |
 
 The `inference-snap` provider does not require an API key
 as it runs models locally.

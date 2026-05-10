@@ -69,7 +69,13 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import agents_md, build_system_prompt
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.queue import (
+    AgentTask,
+    TaskCategory,
+    TaskStatus,
+    WorkflowPhase,
+    WorkQueue,
+)
 from cantrip.agent.retry import RetryEvent, complete_with_retry, stream_with_retry
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
@@ -1522,81 +1528,89 @@ class CantripAgent:
             return None
         return rendered or None
 
-    # Tools that are always included when the provider has a tool limit.
-    # Names match LLM-facing entries — Juju leaves are now bundled
-    # behind the single ``juju`` tool, so the core set references the
-    # bundle name; the leaf still dispatches via the subcommand
-    # rewrite at the executor entry.
-    _CORE_TOOL_NAMES: set[str] = {
-        "read_file",
-        "write_file",
-        "list_directory",
-        "edit_file",
-        "charmcraft_init",
-        "charmcraft_pack",
-        "quick_pack",
-        "charmlint",
-        "juju",
-        "run_charm_tests",
-        "plan_tasks",
-    }
-
-    # Phase 104.5: in short-session mode the curated set is narrowed
-    # further to just the tools the active task's phase needs, because
-    # tool schemas eat a big slice of a ~10 K window before a
-    # conversation starts.  ``read_file`` / ``list_directory`` are in
-    # every phase (basic navigation).  An unknown phase, or no active
-    # task, falls back to ``_CORE_TOOL_NAMES``.
-    _SHORT_SESSION_PHASE_TOOLS: dict[str, set[str]] = {
-        TaskCategory.BUILD.value: {
+    # Phase 110: phase-aware tool curation.  Each :class:`WorkflowPhase`
+    # gets a hand-curated ≤11-name set so an inference-snap provider's
+    # 12-tool cap can still fit one MCP tool / extension on top.  The
+    # active phase is derived from the work-queue task category (or the
+    # ``CANTRIP_TOOL_PHASE`` override); see :meth:`workflow_phase`.
+    # Names match LLM-facing entries — Juju leaves are bundled behind the
+    # single ``juju`` tool, so the sets reference the bundle name; the
+    # leaf still dispatches via the subcommand rewrite at the executor.
+    _CORE_TOOLS_BY_PHASE: dict[WorkflowPhase, set[str]] = {
+        WorkflowPhase.BUILD: {
             "read_file",
-            "list_directory",
-            "edit_file",
             "write_file",
+            "edit_file",
+            "list_directory",
             "charmcraft_init",
-            "charmcraft_pack",
             "quick_pack",
-        },
-        TaskCategory.DEBUG.value: {
-            "read_file",
-            "list_directory",
-            "edit_file",
-            "write_file",
             "charmcraft_pack",
             "charmlint",
+            "plan_tasks",
             "run_charm_tests",
+            "run_command",
         },
-        TaskCategory.TEST.value: {
+        WorkflowPhase.DEBUG: {
             "read_file",
-            "list_directory",
             "edit_file",
+            "list_directory",
+            "juju",
+            "charmlint",
+            "juju_debug_log",
+            "juju_status_render",
+            "run_command",
+            "plan_tasks",
             "run_charm_tests",
-            "charm_validate",
+            "web_fetch",
         },
-        TaskCategory.DEPLOY.value: {
-            "read_file",
-            "list_directory",
+        WorkflowPhase.DEPLOY: {
             "juju",
-            "charm_sync",
-            "charm_validate",
-        },
-        TaskCategory.INFRA.value: {
-            "read_file",
-            "list_directory",
-            "juju",
-            "charm_sync",
-        },
-        TaskCategory.RESEARCH.value: {
-            "read_file",
+            "concierge_prepare",
+            "juju_status_render",
+            "juju_debug_log",
+            "wait_for",
+            "relation_smoke_test",
+            "charmcraft_pack",
+            "run_command",
             "list_directory",
             "plan_tasks",
         },
+        WorkflowPhase.RESEARCH: {
+            "read_file",
+            "list_directory",
+            "web_fetch",
+            "web_search",
+            "analyse_framework",
+            "code_definition",
+            "code_references",
+            "oracle_consult",
+            "plan_tasks",
+            "extract_design_decisions",
+        },
+        WorkflowPhase.DEMO: {
+            "read_file",
+            "write_file",
+            "edit_file",
+            "list_directory",
+            "charmcraft_init",
+            "quick_pack",
+            "charmcraft_pack",
+            "manage_tasks",
+            "plan_tasks",
+            "run_charm_tests",
+            "run_command",
+        },
     }
 
-    def _active_task_phase(self) -> str | None:
-        """Phase tag of the currently-running queue task, or ``None``.
+    #: ``CANTRIP_TOOL_PHASE={research|build|debug|deploy|demo}`` pins the
+    #: curated tool slice regardless of work-queue state — useful for
+    #: operators driving cantrip through an unusual flow (e.g. a
+    #: documentation pass that wants research-tier tools throughout).
+    _TOOL_PHASE_ENV = "CANTRIP_TOOL_PHASE"
 
-        Used by short-session mode to pick a phase-scoped tool set.
+    def _active_task_category(self) -> TaskCategory | None:
+        """Category of the currently-running queue task, or ``None``.
+
         Falls back to the next ready task so an interactive turn between
         executor picks still gets a sensible scope.
         """
@@ -1606,34 +1620,67 @@ class CantripAgent:
         )
         if active is None:
             active = self._work_queue.next_ready()
-        return active.category.value if active is not None else None
+        return active.category if active is not None else None
 
-    def _short_session_tool_names(self) -> set[str]:
-        """Curated tool-name set for the active phase in short-session mode."""
-        phase = self._active_task_phase()
-        if phase is not None:
-            scoped = self._SHORT_SESSION_PHASE_TOOLS.get(phase)
-            if scoped is not None:
-                return scoped
-        return self._CORE_TOOL_NAMES
+    @property
+    def workflow_phase(self) -> WorkflowPhase:
+        """Active workflow phase used to curate the LLM tool slice.
+
+        ``CANTRIP_TOOL_PHASE`` wins if set to a recognised value;
+        otherwise the active (or next-ready) work-queue task's category
+        maps onto a phase, defaulting to :attr:`WorkflowPhase.BUILD`
+        when the conversation is idle.
+        """
+        override = os.environ.get(self._TOOL_PHASE_ENV, "").strip().lower()
+        if override:
+            try:
+                return WorkflowPhase(override)
+            except ValueError:
+                log.warning(
+                    "%s=%r is not a valid workflow phase; ignoring",
+                    self._TOOL_PHASE_ENV,
+                    override,
+                )
+        return WorkflowPhase.from_category(self._active_task_category())
+
+    def _curated_tool_names(self) -> set[str]:
+        """Tool-name set for the active workflow phase."""
+        return self._CORE_TOOLS_BY_PHASE[self.workflow_phase]
+
+    def tool_phase_badge(self) -> str:
+        """Short badge text for status surfaces, or ``""`` when uncurated.
+
+        Returns e.g. ``"build · 11"`` when the LLM tool slice has been
+        narrowed to the active phase's curated set; empty when the full
+        toolset is offered (roomy providers), so the badge stays quiet in
+        the common case.
+        """
+        full = len(self._tools)
+        offered = len(self._tools_for_llm())
+        return f"{self.workflow_phase.value} · {offered}" if offered < full else ""
 
     def _tools_for_llm(self) -> list[llm.Tool]:
-        """Convert tools to LLM format, trimming for tight-context providers.
+        """Convert tools to LLM format, curating for tight-context providers.
 
-        Short-session mode (Phase 104.5): always narrow to a phase-aware
-        curated set so the tool schemas don't crowd out the conversation
-        in a ~10 K window.  Otherwise: only fall back to the curated
-        core set when the provider declares a ``max_tools`` limit and
-        the toolset overshoots it (e.g. lots of MCP servers on top of an
-        OpenAI-compatible provider whose API caps the array at 128).
-        Either way the trim is logged with the dropped names so
-        operators can see what disappeared.
+        The full toolset is offered unchanged to roomy providers (Claude,
+        Gemini, …).  When the provider runs in short-session mode
+        (tight context window) *or* declares a ``max_tools`` cap that the
+        toolset overshoots (inference-snap's 12, or lots of MCP servers
+        on an OpenAI-compatible API), the slice is narrowed to the
+        :meth:`workflow_phase`'s curated set — that's the ≤11 tools the
+        agent's current activity actually needs.  The curated set is
+        recomputed every turn, so a work-queue task transition (build →
+        debug because a test failed) is picked up on the next LLM call.
+        The trim is logged with the dropped names so operators can see
+        what disappeared.
         """
         tools = self._tools
         limit = self.provider.max_tools
+        short_session = self._context_manager.short_session_mode
+        overshoots = limit is not None and len(tools) > limit
 
-        if self._context_manager.short_session_mode:
-            keep_names = self._short_session_tool_names()
+        if short_session or overshoots:
+            keep_names = self._curated_tool_names()
             kept = [t for t in tools if t.name in keep_names]
             if limit is not None and len(kept) > limit:
                 kept = kept[:limit]
@@ -1641,26 +1688,13 @@ class CantripAgent:
                 kept_names = {t.name for t in kept}
                 dropped = sorted(t.name for t in tools if t.name not in kept_names)
                 log.info(
-                    "Short-session (%s phase): trimmed %d tools to %d; dropped: %s",
-                    self._active_task_phase() or "no-task",
+                    "Tool curation (%s phase%s): %d tools → %d; dropped: %s",
+                    self.workflow_phase.value,
+                    ", short-session" if short_session else "",
                     len(tools),
                     len(kept),
                     ", ".join(dropped) if dropped else "(none)",
                 )
-            tools = kept
-        elif limit is not None and len(tools) > limit:
-            kept = [t for t in tools if t.name in self._CORE_TOOL_NAMES][:limit]
-            kept_names = {t.name for t in kept}
-            dropped = sorted(t.name for t in tools if t.name not in kept_names)
-            log.warning(
-                "Tool count %d exceeds provider %r limit %d — "
-                "trimmed to %d core tools; dropped: %s",
-                len(tools),
-                self.provider.name,
-                limit,
-                len(kept),
-                ", ".join(dropped) if dropped else "(none)",
-            )
             tools = kept
 
         return [

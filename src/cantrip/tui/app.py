@@ -774,9 +774,13 @@ class CantripApp(App):
         from textual.css.query import NoMatches
 
         with contextlib.suppress(NoMatches):
-            self.query_one("#status-bar", statusbar_widget.StatusBar).short_session = (
+            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+            status_bar.short_session = (
                 "[short-session]" if self._agent.context_manager.short_session_mode else ""
             )
+            # Phase 110: prime the curated-tool-phase chip (quiet unless
+            # the provider's tool slice is actually being trimmed).
+            status_bar.tool_phase = self._agent.tool_phase_badge()
 
     def _on_bus_task_updated(self, event: ui_events.Event) -> None:
         """Handle a task-updated event from the bus.
@@ -803,6 +807,12 @@ class CantripApp(App):
         # to BUDGET LIMITED on the next paint; a queue draining to empty
         # flips it to DONE without /pause needing to fire.
         self._refresh_lifecycle_badge()
+        # Phase 110: a task transition (build → debug because a test
+        # failed) reshapes the curated tool slice — keep the chip current.
+        with contextlib.suppress(NoMatches):
+            self.query_one(
+                "#status-bar", statusbar_widget.StatusBar
+            ).tool_phase = self._agent.tool_phase_badge()
 
         # Detect when a confirm task becomes blocked.
         payload = event.payload

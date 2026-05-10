@@ -296,6 +296,9 @@ async def _api_state(request: web.Request) -> web.Response:
             "loop_state": agent.lifecycle_label(),
             # Phase 104: prime the [short-session] header chip.
             "short_session": agent.context_manager.short_session_mode,
+            # Phase 110: prime the curated-tool-phase header chip
+            # (empty string unless the LLM tool slice is being trimmed).
+            "tool_phase": agent.tool_phase_badge(),
         }
     )
 

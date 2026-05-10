@@ -64,7 +64,10 @@ def format_cost(agent: CantripAgent) -> str:
     full_tools = len(agent._tools)
     active_tools = len(agent._tools_for_llm() or [])
     if active_tools < full_tools:
-        lines.append(f"- Tools offered to model: {active_tools} of {full_tools} (trimmed)")
+        lines.append(
+            f"- Tools offered to model: {active_tools} of {full_tools} "
+            f"(curated for {agent.workflow_phase.value} phase)"
+        )
     else:
         lines.append(f"- Tools offered to model: {active_tools}")
 

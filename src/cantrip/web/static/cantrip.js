@@ -304,6 +304,10 @@ const cantrip = (() => {
     if (data.short_session !== undefined) {
       _setShortSessionBadge(data.short_session);
     }
+    // Phase 110: curated-tool-phase chip, if a publisher ever pushes it.
+    if (data.tool_phase !== undefined) {
+      _setToolPhaseBadge(data.tool_phase);
+    }
   }
 
   // Phase 104: header chip mirroring the TUI status bar's
@@ -314,6 +318,21 @@ const cantrip = (() => {
     const el = document.getElementById("short-session-badge");
     if (!el) return;
     el.hidden = !value;
+  }
+
+  // Phase 110: header chip mirroring the TUI status bar's curated
+  // tool-phase segment.  ``value`` is a label like ``"build · 11"`` (or
+  // an empty string when the full toolset is offered, which hides it).
+  function _setToolPhaseBadge(value) {
+    const el = document.getElementById("tool-phase-badge");
+    if (!el) return;
+    if (value) {
+      el.textContent = `[${value}]`;
+      el.hidden = false;
+    } else {
+      el.textContent = "";
+      el.hidden = true;
+    }
   }
 
   // Phase 99.4: header lifecycle badge.  Mirrors the TUI status-bar
@@ -1078,6 +1097,10 @@ const cantrip = (() => {
       // Phase 104: prime the [short-session] chip on page load.
       if (state.short_session !== undefined) {
         _setShortSessionBadge(state.short_session);
+      }
+      // Phase 110: prime the curated-tool-phase chip on page load.
+      if (state.tool_phase !== undefined) {
+        _setToolPhaseBadge(state.tool_phase);
       }
     } catch { /* ignore */ }
   }

@@ -14,6 +14,7 @@ from cantrip.agent.commands import share as share_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.slash import SlashResult, dispatch
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
+from cantrip.agent.queue import WorkflowPhase
 from cantrip.agent.store import SessionStore
 
 
@@ -69,6 +70,8 @@ def _fake_agent(
         ),
         _tools=[],
         _tools_for_llm=lambda: [],
+        # Phase 110: ``/cost`` reads the active workflow phase.
+        workflow_phase=WorkflowPhase.BUILD,
     )
 
 

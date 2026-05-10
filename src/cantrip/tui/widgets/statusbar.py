@@ -47,6 +47,10 @@ class StatusBar(Widget):
     # provider runs the tight-context short-session flow, so the
     # operator knows why the conversation feels forgetful.
     short_session: reactive[str] = reactive("", init=False)
+    # Phase 110: non-empty (``"[build · 11]"``) when the LLM tool slice
+    # has been curated down to the active workflow phase, so the operator
+    # can see what's been offered to the model this turn.
+    tool_phase: reactive[str] = reactive("", init=False)
     # Phase 68.4 / 69.2: ``"plan"`` and ``"yolo"`` flip the corresponding
     # CSS class so the bar tints distinctly.  Anything else
     # (default ``"build"``) keeps the normal theme.
@@ -71,7 +75,10 @@ class StatusBar(Widget):
 
     def compose(self) -> ComposeResult:
         """Compose the status bar."""
-        yield Static("", id="status-bar-content")
+        # ``markup=False`` — the segments are data (labels like
+        # ``[short-session]`` / ``[build · 11]``, file names, emoji),
+        # not Textual markup, so ``[`` must not open a style tag.
+        yield Static("", id="status-bar-content", markup=False)
 
     def _refresh_content(self) -> None:
         """Rebuild the bar text from current reactive values."""
@@ -88,6 +95,7 @@ class StatusBar(Widget):
                 mode_badge,
                 loop_badge,
                 self.short_session,
+                f"[{self.tool_phase}]" if self.tool_phase else "",
                 self.task_label,
                 self.subagent_label,
                 self.cos_health,
@@ -115,6 +123,7 @@ for _attr in (
     "test_summary",
     "watcher_status",
     "short_session",
+    "tool_phase",
     "mode",
     "loop_state",
 ):
