@@ -1063,17 +1063,48 @@ confidence that Cantrip keeps working when reality is messy.
 
 ### 93.3 High — Test durability, resume, and long-running-session recovery
 
-- [ ] Add integration tests for **checkpoint → stop → restart → resume** on
+All four bullets land in ``tests/integration/test_durability_resume.py``
+(7 tests, three classes — ``TestCheckpointStopRestartResume``,
+``TestSessionResumeWithActiveWork``, ``TestContextBudgetLifecycle``).
+
+- [x] Add integration tests for **checkpoint → stop → restart → resume** on
   active sessions, including queued work, decisions, transcript state, and any
-  pending follow-up tasks.
-- [ ] Add crash-recovery tests for the executor / store boundary: interrupted
+  pending follow-up tasks.  *(Done — ``test_partial_task_resumes_without_replaying_cached_steps``
+  force-stops a subagent mid-LLM-call (``_HangAfterProvider``), then a fresh
+  executor + store handle at the same ``.cantrip`` replays the persisted
+  ``llm_turn#1`` + ``tool:read_file#1`` checkpoints and finishes the task with a
+  single fresh provider call and zero re-runs of the counting tool;
+  ``test_active_task_and_pending_followup_survive_resume`` round-trips charm
+  metadata, a decision, the conversation history, a DONE task's result, an
+  ACTIVE→PENDING reset, and a pending follow-up's ``dependencies`` through
+  ``CantripAgent.save_state()`` / ``load_state()``.)*
+- [x] Add crash-recovery tests for the executor / store boundary: interrupted
   task execution, partially-persisted task results, and replay after restart
-  without duplicate work or corrupted queue state.
-- [ ] Cover the context-budget lifecycle end to end: budget exhaustion,
+  without duplicate work or corrupted queue state.  *(Done — the partial-resume
+  test above covers the interrupted-task + partial-checkpoint + no-duplicate-work
+  path through ``force_stop()`` and verifies checkpoints are purged once the task
+  reaches DONE via the real ``on_task_done`` wiring; ``test_completed_task_is_not_re_run_after_restart``
+  proves a DONE task isn't re-dispatched after a restart (an exploding provider
+  asserts no subagent runs); ``test_interrupted_task_finishes_after_resume_via_executor``
+  drives an ACTIVE-when-saved task through ``load_state()`` and ``start_executor()``
+  to completion.)*
+- [x] Cover the context-budget lifecycle end to end: budget exhaustion,
   compaction trigger, compaction failure, and recovery once the session
-  continues.
-- [ ] Add explicit persistence/resume coverage for long-running flows that are
-  currently unit-tested in pieces but not exercised as a whole.
+  continues.  *(Done — ``test_compaction_fires_and_counter_survives_resume``
+  drives two ``read_file`` rounds against a fat file under a 400-token window so
+  compaction fires in the conversation loop, then confirms ``compactions_attempted``
+  is persisted and restored on a fresh agent; ``test_summariser_failure_falls_back_to_emergency_truncate``
+  makes the ``temperature=0.3`` summary call raise (``_SummaryFailingProvider``)
+  and asserts the emergency-truncation fallback ran and the turn still returned;
+  ``test_exhausted_compaction_budget_survives_resume_and_session_continues`` seeds
+  ``budget_exhausted=True`` + the counters, reloads them, and shows the resumed
+  session keeps answering without retrying compaction.)*
+- [x] Add explicit persistence/resume coverage for long-running flows that are
+  currently unit-tested in pieces but not exercised as a whole.  *(Done —
+  ``TestSessionResumeWithActiveWork`` exercises decisions + transcript + the
+  three task states (done-with-result / active→pending / pending-with-deps)
+  together as one save→reload flow rather than as the per-table unit round-trips
+  in ``test_store.py`` / ``test_agent_persistence.py``.)*
 
 ### 93.4 High — Add isolation and security-oriented system tests
 

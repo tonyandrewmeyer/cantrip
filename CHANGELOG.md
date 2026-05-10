@@ -42,6 +42,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``{"tasks": [...]}`` shape the structured-output planner actually
   expects, so ``test_design_flow`` / ``test_day2_and_improvement`` stop
   feeding it a value the real planner would reject.)
+- **Durability / resume integration tests (Phase 93.3).**  A new
+  ``tests/integration/test_durability_resume.py`` exercises the whole
+  checkpoint → stop → restart → resume path rather than the per-table
+  unit round-trips: a subagent force-stopped mid-LLM-call (the prior
+  turn and tool call are durably checkpointed, the in-flight one isn't)
+  is picked up by a fresh executor at the same ``.cantrip`` and finished
+  with one fresh provider call and no re-run of the cached tool — and
+  its checkpoints are purged once it reaches DONE; a DONE task isn't
+  re-dispatched after a restart; an ACTIVE-when-saved task comes back
+  PENDING and runs to completion; ``CantripAgent.load_state()`` restores
+  decisions + conversation history + the work queue (done-with-result,
+  active→pending, pending-with-dependencies) together; and the
+  context-budget lifecycle survives — compaction fires under a tiny
+  window and its counter is restored on resume, a summariser failure
+  falls back to emergency truncation without wedging the loop, and an
+  already-exhausted compaction budget carries through resume and keeps
+  the conversation answering.
 - **F5 now pauses/resumes the watcher's reactions instead of
   stopping it.**  The Juju event watcher always keeps observing the
   model — the status panes and `[Watcher]` chat notices stay
