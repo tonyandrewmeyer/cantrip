@@ -534,6 +534,7 @@ class AgentState:
 
     environment_ready: bool             # Transient
     watcher_enabled: bool               # Transient
+    watcher_reacting: bool              # Transient — False ⇒ observe only, don't queue tasks
     test_results: TestResults | None    # Transient
 
     messages: list[Message]             # Conversation history

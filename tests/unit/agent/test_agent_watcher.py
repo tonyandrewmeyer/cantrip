@@ -321,3 +321,84 @@ class TestWatcherIntegration:
         prompt = agent._build_system_prompt()
 
         assert "Event Watcher" not in prompt
+
+    def test_paused_watcher_not_in_system_prompt(self):
+        """The Event Watcher section is suppressed while reactions are paused."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        agent.state.watcher_enabled = True
+        agent.state.watcher_reacting = False
+
+        prompt = agent._build_system_prompt()
+
+        assert "Event Watcher" not in prompt
+
+    def test_toggle_watcher_reacting_flips_flag(self):
+        """toggle_watcher_reacting flips state.watcher_reacting and returns it."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+
+        assert agent.watcher_reacting is True
+        assert agent.toggle_watcher_reacting() is False
+        assert agent.watcher_reacting is False
+        assert agent.toggle_watcher_reacting() is True
+        assert agent.watcher_reacting is True
+
+    @pytest.mark.asyncio
+    async def test_paused_watcher_does_not_route_events(self):
+        """While reactions are paused the watcher still observes — fires the
+        external callback — but does not queue tasks.
+        """
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+        agent.state.watcher_reacting = False
+
+        events_received: list[WatcherEvent] = []
+        agent.start_watcher(on_event=lambda e: events_received.append(e))
+
+        event = WatcherEvent(
+            source="status",
+            category="hook_failure",
+            summary="Hook failure on myapp/0",
+            detail="hook failed: install",
+            app="myapp",
+            unit="myapp/0",
+        )
+        agent._watcher_ctl._watcher._enqueue(event)
+
+        assert len(agent.work_queue.all_tasks()) == 0
+        assert len(events_received) == 1
+
+        # Resuming makes the next event route normally.
+        agent.toggle_watcher_reacting()
+        event2 = WatcherEvent(
+            source="status",
+            category="hook_failure",
+            summary="Hook failure on myapp/1",
+            detail="hook failed: start",
+            app="myapp",
+            unit="myapp/1",
+        )
+        agent._watcher_ctl._watcher._enqueue(event2)
+        assert len(agent.work_queue.all_tasks()) == 1
+
+        await agent.stop_watcher()
+
+    @pytest.mark.asyncio
+    async def test_watcher_can_restart_after_stop(self):
+        """A stopped watcher restarts cleanly (dev_model is retained)."""
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider)
+        agent.state.dev_model = "dev"
+
+        assert agent.start_watcher() is True
+        assert agent.watcher_running
+        await agent.stop_watcher()
+        assert not agent.watcher_running
+
+        assert agent.start_watcher() is True
+        assert agent.watcher_running
+        assert agent.state.dev_model == "dev"
+        await agent.stop_watcher()

@@ -119,8 +119,14 @@ class WatcherController:
                 self._state.cos_model = cos
 
         def _auto_route(event: WatcherEvent) -> None:
-            """Route the event to the task queue, then publish to the bus."""
-            self.route_event(event)
+            """Route the event to the task queue, then publish to the bus.
+
+            When ``state.watcher_reacting`` is ``False`` the routing step
+            is skipped — the event is still published so the UI shows it,
+            but no task is queued and the agent does not act on it.
+            """
+            if self._state.watcher_reacting:
+                self.route_event(event)
             self._event_bus.publish(
                 ui_events.watcher_event(
                     source=event.source,

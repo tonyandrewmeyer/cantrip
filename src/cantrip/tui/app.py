@@ -1591,7 +1591,7 @@ class CantripApp(App):
         status_bar.loop_state = self._agent.lifecycle_label()
 
     def action_toggle_watcher(self) -> None:
-        """Toggle the event watcher on or off."""
+        """Pause or resume the watcher's autonomous reactions."""
         watcher_actions.toggle_watcher(self)
 
     # -- Chat -----------------------------------------------------------------

@@ -977,26 +977,30 @@ class TestWatcher:
     """``action_toggle_watcher`` and ``_on_bus_watcher_event``."""
 
     @pytest.mark.asyncio
-    async def test_toggle_watcher_stops_when_running(self):
+    async def test_toggle_watcher_pauses_reactions(self):
         p1, p2, mock_agent = _patch_app()
         mock_agent.watcher_running = True
-        mock_agent.stop_watcher = AsyncMock()
+        mock_agent.watcher_reacting = True
+        mock_agent.toggle_watcher_reacting = MagicMock(return_value=False)
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app.action_toggle_watcher()
                 await pilot.pause(delay=0.3)
-                assert "Watcher stopped." in _system_messages(pilot)
+                mock_agent.toggle_watcher_reacting.assert_called_once()
+                assert "paused" in _system_messages(pilot)
 
     @pytest.mark.asyncio
-    async def test_toggle_watcher_starts_when_stopped(self):
+    async def test_toggle_watcher_resumes_reactions(self):
         p1, p2, mock_agent = _patch_app()
-        mock_agent.watcher_running = False
-        mock_agent.start_watcher = MagicMock(return_value=True)
+        mock_agent.watcher_running = True
+        mock_agent.watcher_reacting = False
+        mock_agent.toggle_watcher_reacting = MagicMock(return_value=True)
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app.action_toggle_watcher()
-                await pilot.pause()
-                mock_agent.start_watcher.assert_called()
+                await pilot.pause(delay=0.3)
+                mock_agent.toggle_watcher_reacting.assert_called_once()
+                assert "resumed" in _system_messages(pilot)
 
     @pytest.mark.asyncio
     async def test_toggle_watcher_without_agent_is_noop(self):

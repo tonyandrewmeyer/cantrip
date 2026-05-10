@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **F5 now pauses/resumes the watcher's reactions instead of
+  stopping it.**  The Juju event watcher always keeps observing the
+  model — the status panes and `[Watcher]` chat notices stay
+  current — and <kbd>F5</kbd> toggles only whether detected events
+  queue tasks for the agent.  Pause it when you want to hand-debug
+  the model without the agent acting on every status blip; resume
+  to hand control back.  The status bar shows `👁 Watching` or
+  `👁 Watching (paused)`.  (Previously <kbd>F5</kbd> stopped the
+  watcher entirely — which also blanked the model panes — and gave
+  no feedback when toggled back on.)
 - **F8 integration graph: edges as objects, focus/fade, layer
   hints (Phase 90.3).**  The F8 screen no longer renders a static
   block with a flat relation list at the bottom; its body is now a

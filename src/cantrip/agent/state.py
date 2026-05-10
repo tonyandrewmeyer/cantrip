@@ -240,6 +240,11 @@ class AgentState:
     # Transient — not persisted to SQLite, re-determined each startup.
     environment_ready: bool = False
     watcher_enabled: bool = False
+    # When ``False`` the watcher keeps observing the model (status panes
+    # and ``[Watcher]`` chat notices still update) but detected events are
+    # not turned into work-queue tasks — i.e. the agent stops reacting
+    # autonomously.  Toggled from the TUI with F5.
+    watcher_reacting: bool = True
     test_results: TestResults | None = None
 
     # Phase 103.1: set ``True`` by ``persistence.load_state`` after a

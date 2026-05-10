@@ -36,7 +36,7 @@ and a footer listing its screen-specific shortcuts.
 | <kbd>F2</kbd> | Status toggle | Show or hide the Dev / COS status panes on the right. |
 | <kbd>F3</kbd> | Logs | Tail `juju debug-log` for the dev model — see [Logs](#logs) for filters. |
 | <kbd>F4</kbd> | Debug / Traces | COS endpoint URLs with Grafana deep-links — see [Traces and COS endpoints](#traces). |
-| <kbd>F5</kbd> | Watcher toggle | Toggle the always-on Juju event watcher; when on, the task pane surfaces recent hook and unit events inline. |
+| <kbd>F5</kbd> | Watcher reactions | Pause/resume the watcher's autonomous reactions. The watcher always keeps observing — the model panes and `[Watcher]` chat notices stay current — but while paused, detected events don't queue tasks for the agent. |
 | <kbd>F6</kbd> | Files toggle | Show or hide the charm file pane (tree plus repo-stats sidebar — see [Charm file pane](#file-pane)). Click a file to open the [File detail](#file-detail) modal. |
 | <kbd>F7</kbd> | Model info | Current primary and light model, cost, and token usage. |
 | <kbd>F8</kbd> | Integration graph | Deployed apps and their relations — see [Integration graph](#graph). |

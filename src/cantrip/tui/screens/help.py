@@ -93,7 +93,7 @@ class HelpScreen(ModalScreen):
                     "F2        Toggle status panel\n"
                     "F3        View logs\n"
                     "F4        Debug mode\n"
-                    "F5        Watcher\n"
+                    "F5        Watcher (pause/resume auto-reactions)\n"
                     "F6        Files\n"
                     "F7        Model info\n"
                     "F8        Integration graph\n"

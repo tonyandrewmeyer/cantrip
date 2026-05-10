@@ -1432,7 +1432,7 @@ class CantripAgent:
             skills_index=skills_index,
             memory_index=memory_index,
             environment_ready=self.state.environment_ready,
-            watcher_enabled=self.state.watcher_enabled,
+            watcher_enabled=self.state.watcher_enabled and self.state.watcher_reacting,
             repo_map=repo_map,
             compact=compact,
         )
@@ -3325,6 +3325,21 @@ class CantripAgent:
     async def stop_watcher(self) -> None:
         """Stop the event watcher if it is running."""
         await self._watcher_ctl.stop()
+
+    @property
+    def watcher_reacting(self) -> bool:
+        """Whether watcher events are routed to the work queue.
+
+        When ``False`` the watcher keeps observing (status panes and
+        ``[Watcher]`` chat notices still update) but detected events do
+        not become tasks, so the agent stops reacting autonomously.
+        """
+        return self.state.watcher_reacting
+
+    def toggle_watcher_reacting(self) -> bool:
+        """Flip whether watcher events queue tasks; return the new value."""
+        self.state.watcher_reacting = not self.state.watcher_reacting
+        return self.state.watcher_reacting
 
     def route_watcher_event(self, event: WatcherEvent) -> AgentTask | None:
         """Convert a watcher event into a task and add it to the work queue."""

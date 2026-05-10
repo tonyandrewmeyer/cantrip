@@ -33,11 +33,18 @@ def _fake_app(*, agent: object | None = None) -> MagicMock:
     return app
 
 
-def _fake_agent(*, running: bool = False) -> MagicMock:
+def _fake_agent(*, running: bool = False, reacting: bool = True) -> MagicMock:
     agent = MagicMock()
     agent.watcher_running = running
+    agent.watcher_reacting = reacting
     agent.start_watcher = MagicMock(return_value=True)
     agent.stop_watcher = AsyncMock()
+
+    def _toggle() -> bool:
+        agent.watcher_reacting = not agent.watcher_reacting
+        return agent.watcher_reacting
+
+    agent.toggle_watcher_reacting = MagicMock(side_effect=_toggle)
     agent.event_bus = MagicMock()
     agent._watcher_ctl = MagicMock()
     agent.work_queue.all_tasks = MagicMock(return_value=[])
@@ -112,6 +119,16 @@ class TestStopWatcher:
         await watcher_actions.stop_watcher(app)
         agent.stop_watcher.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_stop_clears_pending_retry_timer(self) -> None:
+        agent = _fake_agent(running=True)
+        app = _fake_app(agent=agent)
+        timer = MagicMock()
+        app._watcher_retry_timer = timer
+        await watcher_actions.stop_watcher(app)
+        timer.stop.assert_called_once()
+        assert app._watcher_retry_timer is None
+
 
 # ---------------------------------------------------------------------------
 # model panes / bus handlers
@@ -176,6 +193,14 @@ class TestStatusBar:
         watcher_actions.update_status_bar(app)
         assert bar.watcher_status == "👁 Watching"
 
+    def test_update_status_bar_shows_paused_when_not_reacting(self) -> None:
+        agent = _fake_agent(running=True, reacting=False)
+        bar = MagicMock()
+        app = _fake_app(agent=agent)
+        app.query_one.side_effect = lambda *_a, **_k: bar
+        watcher_actions.update_status_bar(app)
+        assert bar.watcher_status == "👁 Watching (paused)"
+
     def test_update_status_bar_clears_indicator_when_idle(self) -> None:
         bar = MagicMock()
         app = _fake_app(agent=_fake_agent(running=False))
@@ -224,18 +249,29 @@ class TestToggleWatcher:
     def test_no_agent_is_a_noop(self) -> None:
         watcher_actions.toggle_watcher(_fake_app(agent=None))
 
-    def test_toggle_off_when_running(self) -> None:
-        agent = _fake_agent(running=True)
+    def test_pause_when_reacting(self) -> None:
+        agent = _fake_agent(running=True, reacting=True)
         chat = MagicMock()
         app = _fake_app(agent=agent)
         app.query_one.side_effect = lambda *_a, **_k: chat
         watcher_actions.toggle_watcher(app)
-        app.run_worker.assert_called_once()
-        chat.add_system_message.assert_called_once_with("Watcher stopped.")
+        agent.toggle_watcher_reacting.assert_called_once()
+        assert agent.watcher_reacting is False
+        assert "paused" in chat.add_system_message.call_args[0][0]
 
-    def test_toggle_on_when_idle(self) -> None:
-        agent = _fake_agent(running=False)
-        agent.start_watcher.return_value = True
+    def test_resume_when_paused(self) -> None:
+        agent = _fake_agent(running=True, reacting=False)
+        chat = MagicMock()
+        app = _fake_app(agent=agent)
+        app.query_one.side_effect = lambda *_a, **_k: chat
+        watcher_actions.toggle_watcher(app)
+        agent.toggle_watcher_reacting.assert_called_once()
+        assert agent.watcher_reacting is True
+        assert "resumed" in chat.add_system_message.call_args[0][0]
+
+    def test_toggle_does_not_start_or_stop_the_watcher(self) -> None:
+        agent = _fake_agent(running=True)
         app = _fake_app(agent=agent)
         watcher_actions.toggle_watcher(app)
-        agent.start_watcher.assert_called_once()
+        agent.start_watcher.assert_not_called()
+        agent.stop_watcher.assert_not_called()

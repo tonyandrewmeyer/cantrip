@@ -50,6 +50,9 @@ async def stop_watcher(app: CantripApp) -> None:
     """Stop the event watcher."""
     if not app._agent:
         return
+    if app._watcher_retry_timer is not None:
+        app._watcher_retry_timer.stop()
+        app._watcher_retry_timer = None
     await app._agent.stop_watcher()
     update_status_bar(app)
 
@@ -83,7 +86,10 @@ def update_status_bar(app: CantripApp) -> None:
     """Update the status bar watcher indicator."""
     status_bar = app.query_one("#status-bar", statusbar_widget.StatusBar)
     if app._agent and app._agent.watcher_running:
-        status_bar.watcher_status = "👁 Watching"
+        if app._agent.watcher_reacting:
+            status_bar.watcher_status = "👁 Watching"
+        else:
+            status_bar.watcher_status = "👁 Watching (paused)"
     else:
         status_bar.watcher_status = ""
 
@@ -111,12 +117,19 @@ def refresh_subagent_status_bar(app: CantripApp) -> None:
 
 
 def toggle_watcher(app: CantripApp) -> None:
-    """Toggle the event watcher on or off."""
+    """Pause or resume the watcher's autonomous reactions.
+
+    The watcher keeps observing the model either way — only whether
+    detected events queue tasks for the agent changes.
+    """
     if not app._agent:
         return
-    if app._agent.watcher_running:
-        app.run_worker(stop_watcher(app), name="stop_watcher", exclusive=False)
-        chat = app.query_one("#chat", chat_widget.ChatWidget)
-        chat.add_system_message("Watcher stopped.")
+    reacting = app._agent.toggle_watcher_reacting()
+    chat = app.query_one("#chat", chat_widget.ChatWidget)
+    if reacting:
+        chat.add_system_message("Watcher reactions resumed — detected events will queue tasks.")
     else:
-        start_watcher(app)
+        chat.add_system_message(
+            "Watcher reactions paused — still observing the model, but events won't queue tasks."
+        )
+    update_status_bar(app)
