@@ -10,8 +10,8 @@ working `.charm` file in under a minute. It's the right recipe for:
   take the full path.
 
 Not right for anything you'd deploy beyond a dev environment. Use
-`build-a-stateful-charm/` (proposed) when you're ready for tests and
-observability.
+[`build-a-stateful-charm/`](../build-a-stateful-charm/README.md) when
+you're ready for tests and observability.
 
 ## What you need
 

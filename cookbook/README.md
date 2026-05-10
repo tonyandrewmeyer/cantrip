@@ -30,8 +30,8 @@ shape.
 | Status | Recipe | What it shows |
 |--------|--------|---------------|
 | ✅ shipped | [`build-a-sprint-charm/`](build-a-sprint-charm/README.md) | The fastest path — sprint mode, no tests, ops-only deps, packs in under a minute |
+| ✅ shipped | [`build-a-stateful-charm/`](build-a-stateful-charm/README.md) | The full path — Scenario unit tests, ops-tracing, COS integration, Jubilant integration tests |
 | ✅ shipped | [`migrate-harness-to-scenario/`](migrate-harness-to-scenario/README.md) | Drive the `harness-migration` skill to rewrite an existing Harness suite as Scenario tests |
-| 🗓️ proposed | `build-a-stateful-charm/` | Stateful workload with Scenario tests, COS integration, ops-tracing |
 | 🗓️ proposed | `add-observability/` | Wire COS into an existing charm — Tempo + Loki + Grafana |
 | 🗓️ proposed | `generate-a-terraform-module/` | Produce a Terraform module that consumes the charm |
 | 🗓️ proposed | `deploy-with-juju-and-cos/` | End-to-end deploy + dashboard-ready observability |
