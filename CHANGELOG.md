@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Right-panel topology sketch (Phase 90.2).**  The expanded
+  per-model view in the right panel used to be a stack of
+  ``AppBox`` rows (each with its unit / subordinate breakdown)
+  followed by a flat relation list.  At a wide-enough terminal it
+  now renders as a compact topology sketch instead: one
+  status-coloured node line per app — clicking it opens the F8
+  integration graph focused on that app — and a "Relations"
+  section that lists one line per related app-pair, grouped under
+  ``[interface]`` sub-headers.  A narrow pane (≈ 80-column
+  terminal or smaller) keeps the verbose ``AppBox`` list as a
+  fall-back, and the widget flips between the two when a terminal
+  resize crosses the threshold.  The collapsed COS summary line
+  gained a relation count: ``6 apps · 10 relations · 5 active, 1
+  blocked · 4 offers (click to expand)``.  Shared glyph/colour
+  tables and the relation-dedup logic moved into a new
+  ``cantrip.tui.topology`` module so the pane and the F8 screen
+  stay consistent.
 - **Colour discipline pass (Phase 108.3).**  ``$primary`` (Ubuntu
   orange) was doing duty as wallpaper across the TUI — borders on
   suggestion popups, dividers between sub-panels, in-progress

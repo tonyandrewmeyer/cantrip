@@ -12,6 +12,7 @@ from cantrip.tui.widgets.chat import (
 from cantrip.tui.widgets.filetree import CharmTreeWidget
 from cantrip.tui.widgets.status import (
     AppBox,
+    AppNode,
     JujuStatusWidget,
     MultiModelStatusWidget,
     RelationLine,
@@ -21,6 +22,7 @@ from cantrip.tui.widgets.tasks import TaskChecklistWidget
 
 __all__ = [
     "AppBox",
+    "AppNode",
     "CharmTreeWidget",
     "ChatMessage",
     "ChatWidget",

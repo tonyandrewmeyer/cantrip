@@ -17,6 +17,7 @@ from textual.widgets import Input, Static
 
 from cantrip.tui.widgets.status import (
     AppBox,
+    AppNode,
     JujuStatusWidget,
     MultiModelStatusWidget,
     OfferLine,
@@ -25,7 +26,11 @@ from cantrip.tui.widgets.status import (
 
 pytestmark = pytest.mark.tui
 
+# Wide enough that the expanded body renders the compact topology
+# sketch (``AppNode`` rows); the narrow variant forces the verbose
+# ``AppBox`` + ``RelationLine`` fall-back.
 _TERMINAL = (100, 40)
+_TERMINAL_NARROW = (26, 20)
 
 
 def _status(
@@ -178,20 +183,41 @@ class TestRefreshDisplay:
             assert "No applications deployed." in texts
 
     @pytest.mark.asyncio
-    async def test_apps_relations_and_offers_render(self) -> None:
+    async def test_sketch_renders_nodes_edges_and_offers(self) -> None:
         st = _status(
-            apps={"web": _app(relations={"db": _relation("postgresql")})},
+            apps={
+                "web": _app(relations={"db": _relation("postgresql", "postgresql_client")}),
+                "postgresql": _app(relations={"db": _relation("web", "postgresql_client")}),
+            },
             offers={"prom": _offer()},
         )
         widget = JujuStatusWidget(status=st, current_app="web", role="Dev")
         async with _Host(widget).run_test(size=_TERMINAL) as pilot:
             await pilot.pause()
+            assert widget._rendered_sketch is True
+            assert {n.app_name for n in widget.query(AppNode)} == {"web", "postgresql"}
+            assert not widget.query(AppBox)
+            assert widget.query(OfferLine)
+            texts = " ".join(str(s.render()) for s in widget.query(Static))
+            assert "[postgresql_client]" in texts
+            assert "postgresql ─ web" in texts
+            header = " ".join(str(s.render()) for s in widget.query(".model-header"))
+            assert "Dev: dev (localhost)" in header
+
+    @pytest.mark.asyncio
+    async def test_narrow_terminal_falls_back_to_app_list(self) -> None:
+        st = _status(
+            apps={"web": _app(relations={"db": _relation("postgresql")})},
+            offers={"prom": _offer()},
+        )
+        widget = JujuStatusWidget(status=st, current_app="web", role="Dev")
+        async with _Host(widget).run_test(size=_TERMINAL_NARROW) as pilot:
+            await pilot.pause()
+            assert widget._rendered_sketch is False
             assert widget.query(AppBox)
             assert widget.query(RelationLine)
             assert widget.query(OfferLine)
-            header = " ".join(str(s.render()) for s in widget.query(".model-header"))
-            assert "Dev: dev (localhost)" in header
-            assert "1 app" in header
+            assert not widget.query(AppNode)
 
     @pytest.mark.asyncio
     async def test_filter_no_matches_shows_notice(self) -> None:
@@ -212,9 +238,9 @@ class TestRefreshDisplay:
             await pilot.pause()
             widget.set_current_app("db")
             await pilot.pause()
-            boxes = list(widget.query(AppBox))
-            assert len(boxes) == 2
-            here = [b for b in boxes if b.highlight]
+            nodes = list(widget.query(AppNode))
+            assert {n.app_name for n in nodes} == {"web", "db"}
+            here = [n for n in nodes if n.highlight]
             assert len(here) == 1 and here[0].app_name == "db"
 
 

@@ -2040,6 +2040,10 @@ class CantripApp(App):
         """Open the relation detail screen when a relation line is clicked."""
         screens_actions.open_relation_detail(self, event)
 
+    def on_app_node_selected(self, event: status_widgets.AppNode.Selected) -> None:
+        """Open the F8 graph focused on the app picked in the sketch."""
+        screens_actions.show_graph(self, focus_app=event.app_name)
+
     def on_juju_status_widget_status_available(self) -> None:
         """Show the status panel when status data first arrives."""
         status_actions.show_status_panel_when_data_arrives(self)

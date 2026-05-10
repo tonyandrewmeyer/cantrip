@@ -804,20 +804,30 @@ concrete "agent re-derives databag shapes every turn" signal.
 
 ### 90.2 Rethink the right-panel multi-model pane
 
-- [ ] ``MultiModelStatusWidget`` today renders each model as a
-  collapsed/expanded text block of unit lines.  Replace the
-  expanded-model body with a compact topology sketch: nodes
-  for apps (single-glyph + name + status colour), edges for
-  relations (one line per pair, regardless of how many
-  endpoints), grouped by relation interface where it reduces
-  clutter.  The collapsed summary stays text — a one-line
-  ``model · N apps · M relations · status`` line.
-- [ ] Honour terminal width: below a threshold, fall back to
-  the current text view.  Above it, the sketch should fit the
-  pane without horizontal scroll for a typical COS-Lite-sized
-  model (≈6 apps, ≈10 relations).
-- [ ] Selecting an app in the sketch is the entry point to the
-  full F8 view focused on that app — not a modal of its own.
+- [x] ``JujuStatusWidget``'s expanded body now renders a compact
+  topology sketch: an ``AppNode`` per app (single-glyph + name,
+  both status-coloured; ``← you are here`` on the charm under
+  construction), then a "Relations" section with one line per
+  app-pair, grouped under ``[interface]`` sub-headers.  The
+  unit-level breakdown is intentionally dropped (F8 and ``juju
+  status`` carry it).  The collapsed COS summary stays text and
+  now reads ``N apps · M relations · <status mix> · K offers
+  (click to expand)``.
+- [x] Width-guarded: below ``_SKETCH_MIN_WIDTH`` (≈ 28 content
+  cells — roughly an ≤ 80-column terminal once the panel's
+  35 %-min-30 width and the nested padding come off) the body
+  falls back to the verbose ``AppBox`` + ``RelationLine`` list;
+  above it the sketch renders without horizontal scroll for a
+  COS-Lite-sized model.  An ``on_resize`` handler flips the body
+  when a terminal resize crosses the threshold, gated on the
+  mode actually changing so a height change doesn't loop.
+- [x] Clicking an ``AppNode`` posts ``AppNode.Selected``; the
+  app handles it by opening the F8 graph focused on that app
+  (``show_graph(app, focus_app=...)``) — the sketch is the
+  entry point to the full view, not a modal of its own.
+- [x] Shared ``cantrip.tui.topology`` module holds the
+  status-glyph/colour tables and ``dedup_edges`` so the pane and
+  the F8 screen can't drift apart on glyphs or dedup rules.
 
 ### 90.3 Rethink the F8 graph screen
 

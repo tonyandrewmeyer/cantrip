@@ -5,36 +5,57 @@ import collections
 from jubilant import statustypes
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
-from textual.events import Click
+from textual.events import Click, Resize
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Input, Static
+
+from cantrip.tui import topology
 
 # Status values ranked by "worth surfacing first" when a model has a mix —
 # error before blocked before waiting before active keeps the problem
 # states visible even when the summary line is short.
 _STATUS_ORDER = ("error", "blocked", "waiting", "maintenance", "active", "unknown")
 
+# Below this content width (in cells) the expanded-model body falls back
+# to the verbose ``AppBox`` + ``RelationLine`` list — there isn't room
+# for the topology sketch's interface sub-headers and indented edge
+# lines without wrapping.  At the right-panel ``min-width: 30`` (≈ 26
+# content cells once the panel's and the widget's padding come off) we
+# are below the threshold; a typical ≥ 88-column terminal clears it.
+_SKETCH_MIN_WIDTH = 28
+
+
+def _relation_pair_count(status: statustypes.Status) -> int:
+    """Number of distinct app-pairs related in *status* (interface-agnostic)."""
+    pairs: set[tuple[str, str]] = set()
+    for app_name, app in status.apps.items():
+        for related_list in app.relations.values():
+            for rel in related_list:
+                pairs.add(tuple(sorted((app_name, rel.related_app))))
+    return len(pairs)
+
 
 def _cos_collapsed_summary(status: statustypes.Status) -> str:
     """Render the one-line summary shown when the COS section is collapsed.
 
-    Replaces the older "Apps: 6  ○ 3/6" string that didn't say what
-    the fraction meant or hint at offers.  The new form looks like
-    ``6 apps · 3 active, 2 waiting, 1 blocked · 4 offers (click to expand)``
-    — every number is labelled, non-active status buckets are listed
-    explicitly so "3/6" isn't a mystery, and offers show the number of
-    integration points the dev charm could consume.
+    Looks like ``6 apps · 10 relations · 3 active, 2 waiting · 4 offers
+    (click to expand)`` — every number is labelled, the relation count
+    gives a sense of how wired-up the model is without expanding it,
+    non-active status buckets are listed explicitly, and offers show how
+    many integration points the dev charm could consume.
     """
     counts = collections.Counter(app.app_status.current for app in status.apps.values())
     total = sum(counts.values())
+    if total == 0:
+        return "no apps  (click to expand)"
+
+    rel_count = _relation_pair_count(status)
     offers_count = len(getattr(status, "offers", None) or {})
 
-    if total == 0:
-        health = "no apps"
-    elif len(counts) == 1 and "active" in counts:
-        health = f"{total} apps · all active"
+    if len(counts) == 1 and "active" in counts:
+        health = "all active"
     else:
         parts = []
         for name in _STATUS_ORDER:
@@ -45,10 +66,15 @@ def _cos_collapsed_summary(status: statustypes.Status) -> str:
         for name, n in counts.items():
             if name not in _STATUS_ORDER and n:
                 parts.append(f"{n} {name}")
-        health = f"{total} apps · " + ", ".join(parts)
+        health = ", ".join(parts)
 
-    offers_suffix = f" · {offers_count} offers" if offers_count else ""
-    return f"{health}{offers_suffix}  (click to expand)"
+    bits = [f"{total} app{'s' if total != 1 else ''}"]
+    if rel_count:
+        bits.append(f"{rel_count} relation{'s' if rel_count != 1 else ''}")
+    bits.append(health)
+    if offers_count:
+        bits.append(f"{offers_count} offers")
+    return " · ".join(bits) + "  (click to expand)"
 
 
 class AppBox(Static):
@@ -146,14 +172,54 @@ class AppBox(Static):
 
     def _status_char(self, status: str) -> str:
         """Get status indicator character."""
-        return {
-            "active": "●",
-            "waiting": "○",
-            "blocked": "◌",
-            "maintenance": "◐",
-            "unknown": "○",
-            "error": "✗",
-        }.get(status, "○")
+        return topology.status_glyph(status)
+
+
+class AppNode(Static):
+    """A single app in the compact topology sketch — ``● app-name``.
+
+    Glyph and name both carry the app's status colour, so a blocked app
+    jumps out of an otherwise-green list.  Clicking (or pressing Enter)
+    opens the F8 integration graph focused on this app — the sketch is
+    the *entry point* to the full view, not a competing detail surface.
+    """
+
+    DEFAULT_CSS = """
+    AppNode {
+        height: 1;
+        padding: 0 1;
+    }
+
+    AppNode:hover {
+        background: $surface-darken-1;
+    }
+    """
+
+    class Selected(Message):
+        """Posted when the user picks an app node in the sketch."""
+
+        def __init__(self, app_name: str) -> None:
+            super().__init__()
+            self.app_name = app_name
+
+    def __init__(self, app_name: str, status: str, *, highlight: bool = False) -> None:
+        super().__init__()
+        self.app_name = app_name
+        self.app_status = status
+        self.highlight = highlight
+
+    def compose(self) -> ComposeResult:
+        """Render ``<glyph> <name>`` in the status colour."""
+        glyph = topology.status_glyph(self.app_status)
+        colour = topology.status_colour(self.app_status)
+        line = f"[{colour}]{glyph} {self.app_name}[/{colour}]"
+        if self.highlight:
+            line += " [dim]← you are here[/dim]"
+        yield Static(line)
+
+    def on_click(self) -> None:
+        """Open the F8 graph focused on this app."""
+        self.post_message(self.Selected(self.app_name))
 
 
 class RelationLine(Static):
@@ -310,6 +376,13 @@ class JujuStatusWidget(Widget):
         self.status = status
         self.current_app = current_app
         self.role = role
+        # Which body is currently mounted (sketch vs verbose list), or
+        # ``None`` before the first render.  ``on_resize`` consults this
+        # so it only re-renders when the width crosses the sketch
+        # threshold — mounting children grows the widget's *height*,
+        # which would otherwise bounce ``on_resize`` into a re-render
+        # loop.
+        self._rendered_sketch: bool | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the status display."""
@@ -378,6 +451,27 @@ class JujuStatusWidget(Widget):
                     return True
         return False
 
+    def _sketch_mode(self) -> bool:
+        """True when there is room for the compact topology sketch.
+
+        Width 0 means the widget hasn't been laid out yet — treat that
+        as "not enough room" so the first paint (driven by ``on_resize``
+        once the real width lands) settles on the right body.
+        """
+        return self.size.width >= _SKETCH_MIN_WIDTH
+
+    def on_resize(self, _event: Resize) -> None:
+        """Re-render only when the width crosses the sketch threshold.
+
+        Re-rendering on *every* resize would loop: mounting the body's
+        children grows the widget height, which fires another resize.
+        Gating on the sketch-mode flip means a height change is a no-op
+        while a genuine terminal-width change still flips the body.
+        """
+        if self._rendered_sketch is not None and self._sketch_mode() == self._rendered_sketch:
+            return
+        self._refresh_display()
+
     def _refresh_display(self) -> None:
         """Refresh the status display."""
         results = self.query("#status-container")
@@ -420,15 +514,26 @@ class JujuStatusWidget(Widget):
             container.mount(Static("No applications deployed.", classes="no-apps"))
             return
 
-        # Apps with relations, filtered by search text.
-        matched = False
-        for app_name, app in self.status.apps.items():
-            if not self._app_matches_filter(app_name, app):
-                continue
-            matched = True
-            highlight = app_name == self.current_app
-            container.mount(AppBox(app_name, app, highlight=highlight))
+        visible = {
+            name: app
+            for name, app in self.status.apps.items()
+            if self._app_matches_filter(name, app)
+        }
+        sketch = self._sketch_mode()
+        self._rendered_sketch = sketch
+        if not visible and self.filter_text:
+            container.mount(Static(f"No matches for '{self.filter_text}'.", classes="no-apps"))
+        elif sketch:
+            self._render_sketch(container, visible)
+        else:
+            self._render_list(container, visible)
 
+        self._render_offers(container)
+
+    def _render_list(self, container: Vertical, visible: dict[str, statustypes.AppStatus]) -> None:
+        """The verbose fallback — an ``AppBox`` + ``RelationLine`` per app."""
+        for app_name, app in visible.items():
+            container.mount(AppBox(app_name, app, highlight=app_name == self.current_app))
             # Pick the first unit for relation detail lookups.
             first_unit = next(iter(app.units), f"{app_name}/0")
             for rel_name, related_apps in app.relations.items():
@@ -442,22 +547,58 @@ class JujuStatusWidget(Widget):
                         )
                     )
 
-        if not matched and self.filter_text:
-            container.mount(Static(f"No matches for '{self.filter_text}'.", classes="no-apps"))
+    def _render_sketch(
+        self, container: Vertical, visible: dict[str, statustypes.AppStatus]
+    ) -> None:
+        """The compact topology sketch — app nodes, then interface-grouped edges.
 
-        # Offers (cross-model endpoints exposed to other models).
-        # Empty when a model has no ``juju offer ...`` declarations; in a
-        # Cantrip-managed COS model the typical set is
-        # prometheus/loki/grafana/traefik-api, which is exactly what a
-        # dev charm would consume to wire up observability.
-        offers = getattr(self.status, "offers", None) or {}
-        if offers:
-            container.mount(Static("Offers", classes="model-header"))
-            for offer_name, offer in offers.items():
-                endpoints = ", ".join(
-                    f"{ep_name} ({ep.interface})" for ep_name, ep in offer.endpoints.items()
+        App nodes carry their status colour and open the F8 graph when
+        clicked; the unit-level breakdown is intentionally dropped (F8
+        and ``juju status`` carry it).  Edges are one line per app-pair
+        per interface, grouped under a ``[interface]`` sub-header so a
+        model with three ``ingress`` relations reads as a cluster rather
+        than three unrelated lines.
+        """
+        for app_name, app in visible.items():
+            container.mount(
+                AppNode(
+                    app_name,
+                    app.app_status.current,
+                    highlight=app_name == self.current_app,
                 )
-                container.mount(OfferLine(f"│ {offer_name} ({offer.app}) — {endpoints}"))
+            )
+
+        edges = topology.dedup_edges(self.status, visible=set(visible))
+        if not edges:
+            return
+        container.mount(Static("Relations", classes="model-header"))
+        # Group by interface for the sub-headers; within an interface,
+        # ``dedup_edges`` already sorted by (a, b).
+        by_interface: dict[str, list[topology.Edge]] = {}
+        for edge in edges:
+            by_interface.setdefault(edge.interface, []).append(edge)
+        for interface in sorted(by_interface):
+            container.mount(Static(f"[dim]\\[{interface}][/dim]"))
+            for edge in by_interface[interface]:
+                container.mount(Static(f"[dim]  {edge.a} ─ {edge.b}[/dim]"))
+
+    def _render_offers(self, container: Vertical) -> None:
+        """Cross-model endpoints this model exposes via ``juju offer``.
+
+        Empty when a model has no ``juju offer ...`` declarations; in a
+        Cantrip-managed COS model the typical set is
+        prometheus/loki/grafana/traefik-api, which is exactly what a dev
+        charm would consume to wire up observability.
+        """
+        offers = getattr(self.status, "offers", None) or {}
+        if not offers:
+            return
+        container.mount(Static("Offers", classes="model-header"))
+        for offer_name, offer in offers.items():
+            endpoints = ", ".join(
+                f"{ep_name} ({ep.interface})" for ep_name, ep in offer.endpoints.items()
+            )
+            container.mount(OfferLine(f"│ {offer_name} ({offer.app}) — {endpoints}"))
 
     def update_status(self, status: statustypes.Status) -> None:
         """Update the displayed status."""
