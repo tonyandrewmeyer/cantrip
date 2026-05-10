@@ -191,6 +191,25 @@ cantrip --help
     Falls back to the <code>CANTRIP_SNAP_READ_TIMEOUT</code>
     environment variable when omitted.
   </dd>
+  <dt>--short-session {on,off,auto}</dt>
+  <dd>
+    Short-session mode for tight-context models. <code>auto</code>
+    (the default) turns it on for providers with less than ~16&nbsp;K
+    usable context &mdash; small local inference snaps such as gemma4 &mdash;
+    and off for everything else; <code>on</code> / <code>off</code>
+    force it. When active, Cantrip compacts at 50&nbsp;% of the
+    window (instead of 80&nbsp;%), replaces the prose-summary
+    compaction with a one-line-per-tool-call <em>history ledger</em>
+    that drops the raw older messages, and treats each turn as a
+    near-fresh conversation &mdash; trading some cross-edit memory for the
+    ability to actually finish a multi-edit task on a model whose
+    system prompt plus tool schemas already fill a third of the
+    window. The status bar shows a <code>[short-session]</code> chip
+    while it is on, and <code>/cost</code> reports the compaction
+    strategy in use. Falls back to the
+    <code>CANTRIP_SHORT_SESSION</code> environment variable when
+    omitted.
+  </dd>
 </dl>
 <h3>Light model (cost routing)</h3>
 <dl>
@@ -1451,6 +1470,11 @@ and not duplicated elsewhere.</p>
 <td><code>CANTRIP_SNAPSHOTS</code></td>
 <td>optional</td>
 <td>Set to <code>0</code>, <code>false</code>, <code>no</code>, or <code>off</code> (case-insensitive) to disable per-turn working-tree snapshots backing <code>/undo</code> and <code>/redo</code>. Equivalent to passing <code>--no-snapshots</code>. Defaults to on; the snapshot repo lives at <code>$XDG_STATE_HOME/cantrip/snapshots/&lt;hash&gt;/</code>.</td>
+</tr>
+<tr>
+<td><code>CANTRIP_SHORT_SESSION</code></td>
+<td>optional</td>
+<td>Force short-session mode <code>on</code> or <code>off</code>, or <code>auto</code> (the default) to enable it only for providers below ~16 K usable context. Equivalent to <code>--short-session</code>; see that flag for what the mode changes.</td>
 </tr>
 </tbody>
 </table>

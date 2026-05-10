@@ -129,6 +129,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   indicator, slim header, dotfile cull).
 
 ### Added
+- **Short-session mode for tight-context models (Phase 104).**
+  Providers below ~16 K usable context (small local inference snaps
+  such as gemma4, whose system prompt plus tool schemas already fill a
+  third of the window) now auto-flip into a short-session flow: the
+  context manager compacts at 50 % of the window instead of 80 %,
+  replaces the prose-summary compaction with a one-line-per-tool-call
+  *history ledger* that drops the raw older messages rather than
+  virtualising them, trims the toolset to a phase-aware curated set,
+  and treats each turn as a near-fresh conversation (the working set
+  collapses into the ledger between turns, and a turn that builds up
+  more than a couple of tool rounds folds the oldest into the ledger
+  immediately).  The status bar shows a ``[short-session]`` chip and
+  ``/cost`` reports the compaction strategy in use.  Frontier APIs are
+  unchanged — they keep the rich-history summarise flow.  Override the
+  auto-detect with ``--short-session=on|off|auto`` /
+  ``CANTRIP_SHORT_SESSION`` to opt a borderline ~16–32 K provider in
+  or out.  See ``docs/src/howto-provider.md`` and
+  ``docs/src/reference-cli.md``.
 - **Click a failed tool block for the full error.**  When a tool
   call fails, the chat block now carries a dim ``(details)`` hint;
   clicking it opens a modal showing the captured error summary plus

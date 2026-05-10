@@ -122,6 +122,26 @@ Start the agent and build or improve a charm.
     Falls back to the <code>CANTRIP_SNAP_READ_TIMEOUT</code>
     environment variable when omitted.
   </dd>
+
+  <dt>--short-session {on,off,auto}</dt>
+  <dd>
+    Short-session mode for tight-context models. <code>auto</code>
+    (the default) turns it on for providers with less than ~16&nbsp;K
+    usable context — small local inference snaps such as gemma4 —
+    and off for everything else; <code>on</code> / <code>off</code>
+    force it. When active, Cantrip compacts at 50&nbsp;% of the
+    window (instead of 80&nbsp;%), replaces the prose-summary
+    compaction with a one-line-per-tool-call <em>history ledger</em>
+    that drops the raw older messages, and treats each turn as a
+    near-fresh conversation — trading some cross-edit memory for the
+    ability to actually finish a multi-edit task on a model whose
+    system prompt plus tool schemas already fill a third of the
+    window. The status bar shows a <code>[short-session]</code> chip
+    while it is on, and <code>/cost</code> reports the compaction
+    strategy in use. Falls back to the
+    <code>CANTRIP_SHORT_SESSION</code> environment variable when
+    omitted.
+  </dd>
 </dl>
 
 ### Light model (cost routing)
@@ -1480,6 +1500,7 @@ and not duplicated elsewhere.
 | `CANTRIP_NO_RESUME` | optional | Disable step-checkpoint replay for the next run. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). Subagents skip the checkpoint lookup and re-execute every LLM turn and tool call live; fresh results still land in the store so the next run without the var sees a clean cache. Useful when hunting a bug that might itself be cached in a stale checkpoint. |
 | `CANTRIP_KEEP_CHECKPOINTS` | optional | Preserve step checkpoints after a task reaches `DONE`. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). By default, checkpoints are purged on successful task completion; setting this flips the purge into a no-op so rows can be inspected via `SELECT * FROM step_checkpoints` in the `.cantrip` SQLite file. Intended for debugging; leave unset in normal use. |
 | `CANTRIP_SNAPSHOTS` | optional | Set to `0`, `false`, `no`, or `off` (case-insensitive) to disable per-turn working-tree snapshots backing `/undo` and `/redo`. Equivalent to passing `--no-snapshots`. Defaults to on; the snapshot repo lives at `$XDG_STATE_HOME/cantrip/snapshots/<hash>/`. |
+| `CANTRIP_SHORT_SESSION` | optional | Force short-session mode `on` or `off`, or `auto` (the default) to enable it only for providers below ~16 K usable context. Equivalent to `--short-session`; see that flag for what the mode changes. |
 
 The `inference-snap` provider does not require an API key
 as it runs models locally.

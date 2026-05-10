@@ -1707,158 +1707,6 @@ useful guidance and without making them feel bolted on.
 
 ---
 
-## Phase 104: Short-Session Mode — Provider-Driven Behaviour for Tight-Context Models
-
-**Goal:** Make the chained ``cantrip run -p`` pattern that fell out
-of the gemma4 enhancement run a first-class behaviour the agent
-adopts automatically when a provider's context budget is too small
-to carry a long multi-turn conversation, while frontier providers
-keep the existing rich-history flow.
-
-### Why now
-
-Two enhancement passes against the same charm — one with
-qwen3-coder (32 K per-slot), one with gemma4 (10 K per-slot) —
-landed on completely different workflows:
-
-- **qwen3-coder (32 K):** one long conversation, many file reads,
-  multiple ``edit_file`` rounds, occasional context overflow that
-  Phase 102's streaming-reconnect work covers.
-- **gemma4 (10 K):** the system prompt + tool schemas + 2 file
-  reads exhausts the budget; multi-turn conversations error with
-  ``exceed_context_size_error`` after ~5 messages.  What worked in
-  practice was running each scoped edit as a *fresh* ``cantrip run
-  -p`` invocation — no carryover, ~10 s per edit.
-
-That "fresh session per edit" pattern is sound but ergonomically
-broken: the operator has to chain shell commands and remember which
-edit comes next.  Cantrip should drive the same shape from inside a
-single conversation when it knows the provider can't hold more.
-
-### What "short-session mode" means
-
-A boolean knob on ``LLMProvider`` that flips two behaviours:
-
-1. **Aggressive compaction.**  Drop the
-   ``ContextManager`` threshold from 0.80 of the window to ~0.50.
-   ``ops`` chat templates and tool schemas eat 30–40 % of a 10 K
-   window before the conversation starts; the existing 0.80
-   threshold leaves no room for a single big tool result.
-2. **Ephemeral checkpoint compaction.**  Today's compaction asks
-   the *light* model to summarise the conversation; for short-
-   session mode the summary is *terser* (one line per past tool
-   call: "edited charmcraft.yaml: added COS relations", "ran
-   pytest: 7 passed") and the *raw* tool messages older than the
-   protected tail get *dropped* rather than virtualised.
-
-Conceptually each user-message → tool-loop becomes a near-fresh
-session: at the start of every new user turn, the conversation is
-already squashed back to system + objective + a short "history
-ledger" + the new user message.
-
-### 104.1 P0 — Provider-side declaration
-
-- [ ] Add ``short_session_mode: bool`` to the ``LLMProvider`` ABC
-  with a default ``False``.
-- [ ] ``InferenceSnapProvider`` returns ``True`` when its detected
-  ``context_window_tokens`` falls below a 16 K threshold; otherwise
-  ``False``.  Gemma4 (10 K) flips on; qwen3-coder (32 K) stays
-  off.
-- [ ] Cloud providers (``GeminiProvider``, ``ClaudeProvider``,
-  ``FireworksProvider`` …) inherit the default ``False`` — frontier
-  APIs run the existing rich-history flow unchanged.
-
-### 104.2 P0 — Agent-core wiring
-
-- [ ] ``ContextManager.__init__`` reads
-  ``provider.short_session_mode`` and uses ``compaction_threshold =
-  0.50`` when set.  Today the threshold is hardcoded at 0.80.
-- [ ] A new ``compaction_strategy`` enum (``"summarise"`` /
-  ``"ledger-and-drop"``).  ``ledger-and-drop`` mode replaces the
-  prose-summary compaction with a structured ledger: one bullet per
-  past tool call carrying ``{tool, args-fingerprint, success,
-  one-line-result}``.  Older raw messages are deleted from
-  ``state.messages`` rather than virtualised, so the next round's
-  prompt is genuinely shorter.
-- [ ] CLI flag ``--short-session=on|off|auto`` (env
-  ``CANTRIP_SHORT_SESSION``) overrides the auto-detect for
-  operators who want to opt their own ~16–32 K provider in or out.
-
-### 104.3 P0 — Per-turn ephemeral mode (the "fresh session per
-edit" shape)
-
-- [ ] When ``short_session_mode`` is on, every *new user turn*
-  starts a fresh conversation: ``state.messages`` collapses to
-  ``[system_prompt, ledger_summary, new_user_message]`` and any
-  in-flight tool-loop persists ``ledger`` entries as it goes.  The
-  ledger lives on ``AgentState`` so a resume picks up where the
-  prior turn left off.
-- [ ] Detection: if a single user-turn tool-loop accumulates more
-  than ~2 successful tool calls, fold the oldest into the ledger
-  immediately rather than waiting for compaction.  Keeps the
-  in-conversation working set small.
-
-### 104.4 P0 — UI signalling
-
-- [ ] TUI status bar shows a ``[short-session]`` chip when the mode
-  is active so the operator knows why the conversation feels
-  forgetful.  Web UI mirrors.
-- [ ] ``/cost`` reports compaction events with the strategy used
-  (``"ledger-and-drop"`` vs ``"summarise"``) so the operator can
-  see the trade-off they're paying for.
-
-### 104.5 P1 — Tool-trim coordination with the existing ``max_tools``
-
-- [ ] ``provider.max_tools`` already trims to 12 for inference snaps.
-  In short-session mode, drop further to a phase-aware set (e.g.
-  *editing phase* → ``read_file``, ``edit_file``, ``write_file``,
-  ``list_directory``, ``charmcraft_pack``; *deploy phase* →
-  ``juju``, ``charm_sync``, ``charm_validate``).  Phase tag derives
-  from the active task category in the queue.
-- [ ] Surfaces tool counts in ``/cost`` so operators see the
-  current trim.
-
-### 104.6 P1 — Tests
-
-- [ ] Unit test for ``ContextManager.compaction_threshold`` honouring
-  ``short_session_mode``.
-- [ ] Unit test for ``ledger-and-drop`` strategy: feed a 6-tool
-  conversation, run compaction, assert the ledger entries land in
-  ``AgentState`` and the raw-message count drops below the
-  protected-tail floor.
-- [ ] End-to-end test under a 4 K-context fake provider: drive
-  three ``user → tool-loop → user`` cycles and assert the
-  per-cycle prompt token estimate stays bounded.
-
-### What this phase is *not*
-
-- **Not a hard cap on conversation length.**  The agent can still
-  chain tool calls within one turn; the ledger only fires once the
-  rolling token count crosses the new threshold.
-- **Not a separate "scripted" mode.**  Operators who want literal
-  one-shot ``cantrip run -p`` invocations keep that today.  This
-  phase is about not making them stitch the script themselves.
-- **Not a replacement for Phase 102's streaming reconnect.**  Both
-  ship; short-session keeps the budget healthy *between* turns,
-  streaming reconnect rescues a single large generation that
-  outlasts a keep-alive.
-- **Not magical context recovery.**  When the agent does forget
-  cross-edit context, debugging loops that span several files will
-  be worse than the qwen3-coder case.  The trade is "make small
-  models actually finish a multi-edit task" against "lose some
-  cross-edit memory" — for providers below ~16 K that's the right
-  side of the trade.
-
-**Exit criteria:** Running the gemma4 enhancement scenario from a
-single ``cantrip run`` invocation (no operator-side shell chaining)
-produces the same multi-edit-charm result that the manually-chained
-``-p`` runs produced; ``state.messages`` token count between turns
-stays below the configured threshold; the TUI / Web UI label the
-short-session mode and per-turn token spend; existing frontier-API
-tests continue to pass with the long-history strategy unchanged.
-
----
-
 ## Phase 105: Local Model Refresh — Find a Replacement for Qwen3-Coder
 
 > **Update 2026-05-08:** the original framing of this phase
@@ -2315,12 +2163,15 @@ A surgical short-term swap landed alongside this phase
 doesn't solve the underlying problem: the keep-list isn't aware
 of *what the agent is doing right now*.
 
-This isn't a duplicate of Phase 104.5 — that sub-phase is
-specific to short-session mode (provider context window
-< 16 K).  Phase 110 generalises the same idea to *all*
-inference-snap providers (Qwen3-14B at 16 K is also tight on
-context budget) and adds explicit phase tags rather than just a
-short-session flag.
+This isn't a duplicate of Phase 104.5 (shipped) — that sub-phase
+added a phase-scoped tool set (``CantripAgent._SHORT_SESSION_PHASE_TOOLS``,
+keyed on the active queue task's category) that fires *only* in
+short-session mode (provider context window < 16 K).  Phase 110
+generalises the same idea to *all* inference-snap providers
+(Qwen3-14B at 16 K is also tight on context budget), promotes the
+ad-hoc dict into a proper ``WorkflowPhase`` enum + curator, and
+replaces the static ``_CORE_TOOL_NAMES`` fallback — building on
+104.5's table rather than re-doing it.
 
 ### 110.1 P0 — Phase enum + tool-set table
 
@@ -2499,7 +2350,7 @@ override works; ``/cost`` (or equivalent) shows the active phase.
 | M101: ops-tracing Refresh | 101 ✓ | System prompt, subagent guidance, and the ``_inject_ops_tracing`` injection helper teach the modern ``ops_tracing.Tracing(charm, "<rel>")`` constructor instead of the long-removed ``setup`` shorthand; a regression test exercises the recipe against the live PyPI ``ops-tracing`` API |
 | M102: Long-Generation Resilience | 102 ✓ | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
 | M103: Resume Hallucination Repair | 103 ✓ | Post-``load_state`` turns carry a "must-read-first" directive until the agent re-reads each file it intends to edit; ``edit_file`` / ``multi_edit`` ``old_string`` mismatches return a "did you mean" diff hint instead of the bare-error preview; an opt-in whitespace-tolerant match handles trivial drift; a session counter surfaces hallucination-rate via ``/cost`` |
-| M104: Short-Session Mode | 104 | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
+| M104: Short-Session Mode | 104 ✓ | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
 | M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
 | M107: Tool-Call Failure Cap | 107 | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; a regression test pins the shape; smoke runs that hit a hard tool scope exit cleanly with stderr telling the operator which tool exhausted retries |

@@ -118,6 +118,29 @@ retries with a short exponential backoff (~2/4/8 s) before giving up.
 The conversation loop stays alive across the retry — no need to
 re-launch.
 
+### Short-session mode for tight-context snaps
+
+Some snaps run with a small per-slot context window — gemma4 (Gemma 3n
+E4B) gives roughly 10&nbsp;K tokens per slot, and the system prompt plus
+tool schemas already fill a third of that before a conversation starts.
+Cantrip detects this at startup: when the usable window is below
+~16&nbsp;K it switches into **short-session mode**, which compacts at
+50&nbsp;% of the window instead of 80&nbsp;%, replaces the prose-summary
+compaction with a one-line-per-tool-call *history ledger* (dropping the
+raw older messages rather than keeping them around), trims the toolset to
+just what the current phase needs, and treats each turn as a near-fresh
+conversation. The status bar shows a <code>[short-session]</code> chip
+while it is active, and <code>/cost</code> reports the compaction
+strategy. The trade-off is real — the agent loses some cross-edit memory,
+so a debugging loop that spans several files will be weaker than it would
+be on a roomier model — but it lets a 10&nbsp;K model actually finish a
+multi-edit charm without erroring on <code>exceed_context_size</code>.
+
+Force the mode with `--short-session=on|off` (or `CANTRIP_SHORT_SESSION`)
+to opt a borderline ~16–32&nbsp;K provider in or out:
+
+<pre><code><span class="prompt">$</span> cantrip --provider inference-snap --snap qwen3-coder --short-session on</code></pre>
+
 {#gemini}
 ## Use Gemini (default)
 
