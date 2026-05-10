@@ -412,6 +412,7 @@ class TestJujuProvider:
         registry = context_providers_builtin.build_default_registry()
         result = await expand_mentions("@juju destroy-model foo", registry, ExpansionContext())
         assert "not a read-only verb" in result.expanded
+        assert "`juju` tool" in result.expanded
         assert result.blocks[0].ok is False
 
     @pytest.mark.asyncio

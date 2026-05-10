@@ -206,6 +206,30 @@ class TestJujuRejected:
         assert not result.success
         assert "not on the allowlist" in result.error
 
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("command", "expected_hint"),
+        [
+            ("juju status", "`juju` tool"),
+            ("git status", "`git` tool"),
+            ("gh pr list", "`gh` tool"),
+        ],
+    )
+    async def test_allowlist_miss_hints_at_the_dedicated_tool(self, tool, command, expected_hint):
+        """An allowlist miss for a command with a typed tool points at that tool."""
+        result = await tool.execute(command=command)
+        assert not result.success
+        assert "not on the allowlist" in result.error
+        assert expected_hint in result.error
+
+    @pytest.mark.anyio
+    async def test_allowlist_miss_without_a_tool_has_no_hint(self, tool):
+        """Commands with no dedicated tool just report the plain allowlist miss."""
+        result = await tool.execute(command="rm -rf /tmp/x")
+        assert not result.success
+        assert "not on the allowlist" in result.error
+        assert "tool" not in result.error
+
 
 class TestRunCommandConstants:
     """Tests for module-level constants."""

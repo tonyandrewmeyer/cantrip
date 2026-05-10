@@ -528,7 +528,10 @@ class JujuProvider:
             allowed = ", ".join(sorted(_JUJU_READONLY_VERBS))
             return ContextBlock(
                 raw=raw,
-                rendered=f"[@juju {verb}: not a read-only verb. Allowed: {allowed}]",
+                rendered=(
+                    f"[@juju {verb}: not a read-only verb. Allowed: {allowed}. "
+                    "For anything that changes the model, use the `juju` tool.]"
+                ),
                 error="not read-only",
             )
         if verb == "config" and not _juju_config_is_readonly(rest):

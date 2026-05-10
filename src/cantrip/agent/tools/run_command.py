@@ -70,6 +70,16 @@ _WRAPPER_COMMANDS: frozenset[str] = frozenset(
 # reason as ``env`` — they mask what's actually being invoked.
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
+# Base commands that are deliberately kept off the ``run_command``
+# allowlist because a dedicated tool covers them with proper argument
+# parsing, audit and policy gating.  When the LLM reaches for the raw
+# binary, point it at the tool it should have used instead.
+_DEDICATED_TOOL_HINTS: dict[str, str] = {
+    "juju": "Use the `juju` tool (its `cli` subcommand for raw arguments) instead.",
+    "git": "Use the `git` tool (it has a subcommand per git operation) instead.",
+    "gh": "Use the `gh` tool (repo/PR/issue subcommands) instead.",
+}
+
 # Package names that must never be installed by the agent.  System
 # Docker (and its bundled containerd) actively breaks the ``k8s`` snap
 # on dev machines: both ship a containerd that uses
@@ -308,10 +318,14 @@ class RunCommandTool(Tool):
 
         if base not in self._allowlist:
             allowed = ", ".join(sorted(self._allowlist))
+            error = f"Command '{base}' is not on the allowlist. Allowed: {allowed}"
+            hint = _DEDICATED_TOOL_HINTS.get(base)
+            if hint is not None:
+                error = f"{error} {hint}"
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Command '{base}' is not on the allowlist. Allowed: {allowed}",
+                error=error,
             )
 
         # Phase 80.5: destructive-argument gate.  Even when the base
