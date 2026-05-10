@@ -299,6 +299,21 @@ const cantrip = (() => {
     if (data.loop_state !== undefined) {
       _setLifecycleBadge(data.loop_state);
     }
+    // Phase 104: keep the [short-session] header chip in sync with the
+    // active provider (flips on a runtime /model swap).
+    if (data.short_session !== undefined) {
+      _setShortSessionBadge(data.short_session);
+    }
+  }
+
+  // Phase 104: header chip mirroring the TUI status bar's
+  // ``[short-session]`` segment.  Accepts a truthy value (a non-empty
+  // string from a status_bar_changed event, or ``true`` from
+  // ``/api/state``); the badge text itself lives in the template.
+  function _setShortSessionBadge(value) {
+    const el = document.getElementById("short-session-badge");
+    if (!el) return;
+    el.hidden = !value;
   }
 
   // Phase 99.4: header lifecycle badge.  Mirrors the TUI status-bar
@@ -1059,6 +1074,10 @@ const cantrip = (() => {
       // until the first status_bar_changed event lands.
       if (state.loop_state !== undefined) {
         _setLifecycleBadge(state.loop_state);
+      }
+      // Phase 104: prime the [short-session] chip on page load.
+      if (state.short_session !== undefined) {
+        _setShortSessionBadge(state.short_session);
       }
     } catch { /* ignore */ }
   }

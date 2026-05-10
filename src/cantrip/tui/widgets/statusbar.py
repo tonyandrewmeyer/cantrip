@@ -43,6 +43,10 @@ class StatusBar(Widget):
     cos_health: reactive[str] = reactive("", init=False)
     test_summary: reactive[str] = reactive("", init=False)
     watcher_status: reactive[str] = reactive("", init=False)
+    # Phase 104: non-empty (``"[short-session]"``) when the active
+    # provider runs the tight-context short-session flow, so the
+    # operator knows why the conversation feels forgetful.
+    short_session: reactive[str] = reactive("", init=False)
     # Phase 68.4 / 69.2: ``"plan"`` and ``"yolo"`` flip the corresponding
     # CSS class so the bar tints distinctly.  Anything else
     # (default ``"build"``) keeps the normal theme.
@@ -83,6 +87,7 @@ class StatusBar(Widget):
             for s in (
                 mode_badge,
                 loop_badge,
+                self.short_session,
                 self.task_label,
                 self.subagent_label,
                 self.cos_health,
@@ -109,6 +114,7 @@ for _attr in (
     "cos_health",
     "test_summary",
     "watcher_status",
+    "short_session",
     "mode",
     "loop_state",
 ):

@@ -60,6 +60,15 @@ def _fake_agent(
         provider=SimpleNamespace(model_name=provider_model),
         cache_read_tokens=cache_read,
         cache_creation_tokens=cache_write,
+        # Phase 104: ``/cost`` reads the context-management rollup.
+        context_manager=SimpleNamespace(
+            compactions_attempted=0,
+            emergencies_attempted=0,
+            compaction_strategy="summarise",
+            short_session_mode=False,
+        ),
+        _tools=[],
+        _tools_for_llm=lambda: [],
     )
 
 

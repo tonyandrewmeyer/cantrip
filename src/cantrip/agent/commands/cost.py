@@ -45,6 +45,29 @@ def format_cost(agent: CantripAgent) -> str:
         hit_pct = agent.cache_read_tokens / cache_total * 100 if cache_total else 0
         lines.append(f"- Cache hit:  {hit_pct:>9.0f}%")
 
+    # Phase 104: context-management rollup — which compaction strategy is
+    # running, how often it has fired, and the live tool count (small
+    # local models trim hard, so the operator wants to see what's
+    # actually being offered to the model).
+    cm = agent.context_manager
+    compactions = cm.compactions_attempted
+    emergencies = cm.emergencies_attempted
+    lines.append("")
+    lines.append("**Context**")
+    mode_note = " (short-session)" if cm.short_session_mode else ""
+    lines.append(f"- Compaction strategy: {cm.compaction_strategy}{mode_note}")
+    if compactions or emergencies:
+        lines.append(
+            f"- Compactions: {compactions}"
+            + (f", emergency truncations: {emergencies}" if emergencies else "")
+        )
+    full_tools = len(agent._tools)
+    active_tools = len(agent._tools_for_llm() or [])
+    if active_tools < full_tools:
+        lines.append(f"- Tools offered to model: {active_tools} of {full_tools} (trimmed)")
+    else:
+        lines.append(f"- Tools offered to model: {active_tools}")
+
     # Phase 52.6: tokens avoided via step-checkpoint replay.  These are
     # billed zero this session (the live provider never fired) but the
     # sum is worth showing so the user can see the cost-savings headroom

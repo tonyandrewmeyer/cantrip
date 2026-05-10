@@ -953,6 +953,10 @@ def _make_agent(response: str = "ok") -> MagicMock:
     # so the response shape is always JSON-serialisable; tests that
     # care override this explicitly.
     agent.lifecycle_label = MagicMock(return_value="running")
+    # Phase 104: ``/api/state`` projects ``context_manager.short_session_mode``
+    # for the [short-session] header chip — keep it a real bool so the
+    # response stays JSON-serialisable.
+    agent.context_manager.short_session_mode = False
     return agent
 
 
@@ -1373,6 +1377,7 @@ class TestApiState:
                     "charm_name": "mycharm",
                     "tasks": [],
                     "loop_state": "running",
+                    "short_session": False,
                 }
 
         asyncio.run(_run())

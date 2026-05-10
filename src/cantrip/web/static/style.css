@@ -146,6 +146,19 @@ header h1 {
 .lifecycle-blocked { color: var(--yellow); border-color: var(--yellow); }
 .lifecycle-budget-limited { color: var(--red); border-color: var(--red); }
 
+/* Phase 104: short-session-mode chip — mirrors the TUI status-bar
+   ``[short-session]`` segment.  Hidden unless the active provider runs
+   the tight-context flow. */
+.short-session-badge {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
 main {
   display: grid;
   grid-template-columns: 1fr 340px;

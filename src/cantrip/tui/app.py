@@ -769,6 +769,14 @@ class CantripApp(App):
         # session resumed mid-block doesn't render as ``running`` until
         # the first task event arrives.
         self._refresh_lifecycle_badge()
+        # Phase 104: prime the [short-session] chip so it shows from the
+        # start when a tight-context provider is in play.
+        from textual.css.query import NoMatches
+
+        with contextlib.suppress(NoMatches):
+            self.query_one("#status-bar", statusbar_widget.StatusBar).short_session = (
+                "[short-session]" if self._agent.context_manager.short_session_mode else ""
+            )
 
     def _on_bus_task_updated(self, event: ui_events.Event) -> None:
         """Handle a task-updated event from the bus.
@@ -895,6 +903,10 @@ class CantripApp(App):
             status_bar.test_summary = payload["test_summary"]
         if "watcher_status" in payload:
             status_bar.watcher_status = payload["watcher_status"]
+        if "short_session" in payload:
+            # Phase 104: non-empty when the active provider runs the
+            # tight-context short-session flow.
+            status_bar.short_session = payload["short_session"]
         if "mode" in payload:
             # Phase 68.4: ``/plan`` and ``/build`` publish
             # ``mode=plan|build`` so the bar tints distinctly while

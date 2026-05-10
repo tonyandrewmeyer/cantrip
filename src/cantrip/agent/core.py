@@ -1358,8 +1358,19 @@ class CantripAgent:
                     context_window=new_provider.context_window_tokens,
                 )
             )
+            self._publish_short_session_status()
         except Exception:  # noqa: BLE001 - UI hook must not break the swap.
             log.debug("model_switched event publish failed", exc_info=True)
+
+    def _publish_short_session_status(self) -> None:
+        """Publish the ``[short-session]`` status-bar chip (empty when inactive).
+
+        Fired on a runtime ``/model`` swap so the bar tracks whichever
+        provider is now active; the UI also primes the chip directly from
+        :attr:`context_manager` at startup.
+        """
+        chip = "[short-session]" if self._context_manager.short_session_mode else ""
+        self._event_bus.publish(ui_events.status_bar_changed(short_session=chip))
 
     def _invalidate_tools_cache(self) -> None:
         """Drop the cached tool list and tool map; next access rebuilds."""

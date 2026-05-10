@@ -294,6 +294,8 @@ async def _api_state(request: web.Request) -> web.Response:
             # never disagree about whether the loop is paused / done /
             # blocked / budget-limited.
             "loop_state": agent.lifecycle_label(),
+            # Phase 104: prime the [short-session] header chip.
+            "short_session": agent.context_manager.short_session_mode,
         }
     )
 
