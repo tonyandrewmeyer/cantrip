@@ -1121,20 +1121,27 @@ confidence that Cantrip keeps working when reality is messy.
 
 ### 93.1 High — Backfill the highest-value unit-coverage holes
 
-- [ ] Turn the current zero-coverage deterministic repo scan helper
+- [x] Turn the current zero-coverage deterministic repo scan helper
   (``src/cantrip/agent/tools/_scan.py``) into a fully-tested module once
   Phase 92.1 lands.  The helper should not remain both architecturally
-  important *and* entirely uncovered.
-- [ ] Add focused unit coverage for the current "important but thinly covered"
+  important *and* entirely uncovered.  *(Done — ``_scan.py`` at 100%
+  via ``tests/unit/test_scan.py``.)*
+- [x] Add focused unit coverage for the current "important but thinly covered"
   modules surfaced by the review: ``executor_controller.py``,
   ``preflight.py``, ``context_providers_builtin.py``,
   ``github_issues.py``, ``watcher.py``, ``auto_commit.py``,
   ``git_branch.py``, and the higher-branching paths in
   ``agent/tools/acceptance.py`` and ``agent/tools/charm.py``.
-- [ ] Reduce the TUI blind spots in ``src/cantrip/tui/app.py`` and adjacent
+  *(Done — all now 97–100%.)*
+- [~] Reduce the TUI blind spots in ``src/cantrip/tui/app.py`` and adjacent
   screens/widgets by promoting the highest-value flows to behaviour tests:
   screen switching, resume/restart affordances, task/status updates, modal
   transitions, and failure states that currently live only in manual use.
+  *(In progress — ``screens/tree.py`` 65→100%, ``screens/transcript.py``
+  71→95%, ``screens/logs.py`` 71→99%, ``widgets/status.py`` 72→93%,
+  ``actions/watcher.py`` 81→100%; surfaced + fixed a real ``/tree`` crash
+  (``_nodes`` shadowing).  Still thin: ``tui/app.py`` (~89%) and
+  ``widgets/chat.py`` (~85%).)*
 - [ ] When a module remains below the surrounding package average after this
   sweep, record *why* in the test or roadmap text instead of letting the gap
   look accidental.
