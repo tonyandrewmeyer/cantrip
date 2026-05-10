@@ -764,7 +764,7 @@ relation list with no edge interaction).
 
 ### 90.1 Decide the surface mix
 
-- [ ] Score the three borrowable ideas against Cantrip's
+- [x] Score the three borrowable ideas against Cantrip's
   agent-driven (not click-to-build) shape:
   - **Edge-as-object** — clicking a relation reveals interface
     name, direction, sample databag keys, prose description.
@@ -775,15 +775,32 @@ relation list with no edge interaction).
     *agent* can reference when composing relations; the user
     sees them as an overlay on the topology view, not as a
     palette to drag from.
-- [ ] Decide which of the three lands in 90.x and which is
+- [x] Decide which of the three lands in 90.x and which is
   deferred behind named triggers.  The agent-driven framing is
   the deciding question — drag-from-palette UX is explicitly
   out of scope; surfacing structure the agent already reasons
   about is in scope.
-- [ ] Side-finding: capture the "edge data is the interesting
+- [x] Side-finding: capture the "edge data is the interesting
   data" insight as a context-provider candidate (``@relation
   prometheus:alertmanager``) for ``design/CONTEXT_PROVIDERS.md``
   if the survey shows the agent re-derives this every turn.
+
+**Decision (90.1):** all three borrowable ideas land in 90.x —
+none earns a deferral.  *Edge-as-object* and *focus + fade* are
+pure read-surface improvements over data Cantrip already holds
+(``app.relations`` plus cached ``juju show-unit``); both ship in
+90.3 on the F8 screen.  *Preset solutions* lands as **knowledge,
+not UX**: a structured catalogue (90.4) the agent consults when
+composing relations, plus a layer-grouping hint the F8 screen
+reads — never a drag-from-palette editor.  Drag-from-palette and
+any new graph-layout dependency stay out of scope (the latter is
+the named Phase 90b trigger).  The right-panel sketch (90.2) is a
+condensed projection of the same model, with a width-guarded
+fall-back to today's text view.  Side-finding actioned: ``@relation``
+recorded as a deferred provider candidate in
+``design/CONTEXT_PROVIDERS.md`` — the preset catalogue's per-edge
+prose covers the common case for now, so the provider waits on a
+concrete "agent re-derives databag shapes every turn" signal.
 
 ### 90.2 Rethink the right-panel multi-model pane
 
@@ -824,21 +841,27 @@ relation list with no edge interaction).
 
 ### 90.4 Preset bundle library (knowledge, not UX)
 
-- [ ] Author a small JSON/YAML catalogue of known bundles
-  under ``src/cantrip/agent/skills/`` (or the closest existing
-  skill home — confirm with ``design/SKILLS.md``) that records
-  for each preset: the apps, their semantic layer, the
-  expected relation edges with interface names, and a one-line
-  description per edge.  Initial set: COS Lite, Charmed
-  Kubeflow (subset), 12-Factor + COS, Identity Platform
-  (cross-reference Phase 88).
-- [ ] Expose the catalogue to the agent as a context provider
-  or tool — when the agent is composing relations or
-  diagnosing a deployment, it can fetch the canonical edge
-  list rather than rebuilding it from web docs every turn.
-- [ ] The graph screen uses the catalogue *only* for layer
-  grouping and edge prose; it does not prescribe deployment
-  steps.
+- [x] Author a small catalogue of known bundles.  Lives as a
+  data module (``src/cantrip/agent/presets.py`` — frozen
+  dataclasses + the catalogue, mirroring ``cos_endpoints.py``)
+  rather than under the skills tree, because the F8 screen needs
+  it machine-readable; a thin ``preset-bundles`` skill points
+  the agent at it.  Records for each preset: the apps, each
+  app's semantic layer (and whether it is optional / typically
+  cross-model), the relation edges with interface names, and a
+  one-line description per edge.  Initial set: COS Lite, Charmed
+  Kubeflow (core subset), 12-Factor + COS, Canonical Identity
+  Platform (cross-reference Phase 88).
+- [x] Expose the catalogue to the agent as the ``@preset``
+  context provider (bare ``@preset`` lists the shapes,
+  ``@preset <slug>`` expands one) plus the ``preset-bundles``
+  skill — so when composing relations or diagnosing a
+  deployment it fetches the canonical edge list rather than
+  rebuilding it from web docs every turn.
+- [x] ``presets.match_preset(status)`` matches a live model to a
+  preset (required-app fraction, ignoring optional apps) so the
+  graph screen can use the catalogue *only* for layer grouping
+  and edge prose; it does not prescribe deployment steps.
 
 ### What this phase is *not*
 

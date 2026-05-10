@@ -129,6 +129,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   indicator, slim header, dotfile cull).
 
 ### Added
+- **Preset bundle catalogue and `@preset` mention (Phase 90.4).**
+  Cantrip now ships a small curated catalogue of known-good Juju
+  deployment shapes — COS Lite, a 12-Factor app + COS, the Canonical
+  Identity Platform, and the auth-and-routing core of Charmed Kubeflow
+  — recording each shape's apps, the semantic layer each belongs to,
+  and every relation edge with its interface name and a one-line
+  description.  Type `@preset` in the chat for the index or
+  `@preset cos-lite` for the full layout; the agent consults the same
+  data (and a new `preset-bundles` skill points it there) when
+  composing relations instead of re-deriving the shape from web docs.
+  The catalogue (`cantrip.agent.presets`) also backs the integration
+  graph's layer grouping.  It is knowledge, not a deployment recipe —
+  it prescribes no steps and emits no `bundle.yaml`.
 - **Short-session mode for tight-context models (Phase 104).**
   Providers below ~16 K usable context (small local inference snaps
   such as gemma4, whose system prompt plus tool schemas already fill a
