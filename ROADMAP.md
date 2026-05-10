@@ -981,18 +981,24 @@ confidence that Cantrip keeps working when reality is messy.
   ``git_branch.py``, and the higher-branching paths in
   ``agent/tools/acceptance.py`` and ``agent/tools/charm.py``.
   *(Done — all now 97–100%.)*
-- [~] Reduce the TUI blind spots in ``src/cantrip/tui/app.py`` and adjacent
+- [x] Reduce the TUI blind spots in ``src/cantrip/tui/app.py`` and adjacent
   screens/widgets by promoting the highest-value flows to behaviour tests:
   screen switching, resume/restart affordances, task/status updates, modal
   transitions, and failure states that currently live only in manual use.
-  *(In progress — ``screens/tree.py`` 65→100%, ``screens/transcript.py``
-  71→95%, ``screens/logs.py`` 71→99%, ``widgets/status.py`` 72→93%,
-  ``actions/watcher.py`` 81→100%; surfaced + fixed a real ``/tree`` crash
-  (``_nodes`` shadowing).  Still thin: ``tui/app.py`` (~89%) and
-  ``widgets/chat.py`` (~85%).)*
-- [ ] When a module remains below the surrounding package average after this
+  *(Done — ``screens/tree.py`` 65→100%, ``screens/transcript.py`` 71→95%,
+  ``screens/logs.py`` 71→99%, ``screens/resume.py`` 83→88%,
+  ``widgets/status.py`` 72→93%, ``widgets/chat.py`` 83→92%,
+  ``actions/watcher.py`` 81→100%, ``tui/app.py`` 92→95%; surfaced + fixed
+  two real bugs along the way — the ``/tree`` crash (``_nodes`` shadowing)
+  and the invisible/inert modal footer "buttons" (Rich markup ate the
+  ``[…]`` key hints).  The remaining ``app.py`` gap is the ``_fatal_error``
+  crash handler, the streaming reasoning-attach block, and a cluster of
+  ``NoMatches`` shutdown guards — all deliberately exercised only in
+  manual / crash paths.)*
+- [x] When a module remains below the surrounding package average after this
   sweep, record *why* in the test or roadmap text instead of letting the gap
-  look accidental.
+  look accidental.  *(Done — see the ``app.py`` note above and the
+  module-level docstrings on the new ``tests/unit/tui/test_*.py`` files.)*
 
 ### 93.2 High — Add failure-injection integration tests
 
