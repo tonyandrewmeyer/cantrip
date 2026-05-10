@@ -211,6 +211,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **Repo-stats sidebar wrapped its own rows.**  The Charm Files
+  stats column rendered each line to a width inflated past the
+  column's actual text area (an 18-col floor applied on top of an
+  ``auto``-width widget that had already collapsed to its minimum),
+  so "Recent:", "Lines:", and "Files:" rows visibly wrapped.  The
+  column is now a fixed 30-col panel, rows are rendered to the real
+  content width, and the fold-away threshold moved to 48 cols so
+  the file tree keeps a usable share when the sidebar is shown.
+
 - **Missing ``packaging`` dependency.**  ``cantrip.update.check`` and
   ``cantrip.update.release`` import ``packaging.version`` for update-
   notification version comparisons, but ``packaging`` was not declared

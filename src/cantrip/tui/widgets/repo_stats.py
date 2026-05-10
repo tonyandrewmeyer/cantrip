@@ -115,7 +115,10 @@ def compute_repo_stats(root: pathlib.Path) -> RepoStats:
     """Walk ``root`` and return a :class:`RepoStats` snapshot.
 
     Cheap enough for a 3 s refresh tick on a typical charm
-    checkout.  Hidden directories and oversized files are skipped;
+    checkout.  Hidden directories, cantrip's own session-state
+    files, and oversized files are skipped — the same exclusions
+    the file tree applies (see
+    :func:`cantrip.tui.widgets.filetree.is_hidden_path`) — and
     line counts cover the languages in :data:`_LANGUAGE_EXTS` only.
     """
     if not root.exists() or not root.is_dir():
@@ -136,6 +139,11 @@ def compute_repo_stats(root: pathlib.Path) -> RepoStats:
         # out of the charm's own line count.
         dirnames[:] = [d for d in dirnames if d not in _HIDDEN_NAMES and not d.startswith(".")]
         dir_count += len(dirnames)
+        # Drop cantrip's own session-state files (``.cantrip``,
+        # ``.cantrip-repomap.json``, ``.cantrip-shm``, …) so they
+        # neither inflate the file/line counts nor surface as the
+        # "Recent" file — the file tree hides them the same way.
+        filenames = [n for n in filenames if not n.startswith(".cantrip")]
         for name in filenames:
             file_count += 1
             if file_count > _MAX_FILES_SCANNED:
@@ -325,11 +333,16 @@ class RepoStatsWidget(Widget):
     and stat computation can ride on a single thread call.
     """
 
+    # Fixed-width column rather than ``auto``: the rendered rows are
+    # truncated to the *content* width (see :meth:`set_stats`), so an
+    # ``auto`` width and the content width chase each other and the
+    # panel collapses to its minimum.  A fixed 30 cols leaves a usable
+    # text area (28 after the border + padding gutter) and is only
+    # shown above :data:`~cantrip.tui.widgets.filetree._STATS_FOLD_WIDTH`,
+    # which guarantees the tree keeps a sensible share alongside it.
     DEFAULT_CSS = """
     RepoStatsWidget {
-        width: auto;
-        min-width: 18;
-        max-width: 50%;
+        width: 30;
         padding-left: 1;
         border-left: solid $surface-lighten-1;
     }
@@ -354,7 +367,12 @@ class RepoStatsWidget(Widget):
             return
         self._stats = stats
         body = self.query_one("#repo-stats-body", Static)
-        width = max(self.size.width or 30, 18)
+        # ``self.size`` is the content region (border + padding already
+        # subtracted), so this is exactly the column the text gets.
+        # Render to that width directly — inflating it here is what made
+        # the rows wrap.  The ``or`` covers the pre-layout call where
+        # the size is still zero.
+        width = self.size.width or 28
         body.update("\n".join(render_stats_lines(stats, width=width)))
 
 

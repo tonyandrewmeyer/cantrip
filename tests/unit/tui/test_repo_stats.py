@@ -1,6 +1,7 @@
 """Tests for the repo-stats sidebar (Phase 89)."""
 
 import datetime
+import os
 import pathlib
 import subprocess
 
@@ -99,6 +100,26 @@ class TestComputeRepoStats:
         assert stats.files == 1
         assert stats.most_recent_file == pathlib.PurePath("src/charm.py")
 
+    def test_cantrip_session_files_excluded(self, tmp_path: pathlib.Path):
+        """Root-level ``.cantrip*`` state files are hidden like in the tree."""
+        _write_tree(
+            tmp_path,
+            {
+                "src/charm.py": "x = 1\n",
+                ".cantrip-repomap.json": "{}\n",
+                ".cantrip-shm": "binary",
+                ".cantrip-wal": "binary",
+            },
+        )
+        # Make a ``.cantrip*`` file the newest so a regression that
+        # stopped filtering them would surface it as "Recent".
+        cantrip_file = tmp_path / ".cantrip-repomap.json"
+        future = (datetime.datetime.now() + datetime.timedelta(hours=1)).timestamp()
+        os.utime(cantrip_file, (future, future))
+        stats = compute_repo_stats(tmp_path)
+        assert stats.files == 1
+        assert stats.most_recent_file == pathlib.PurePath("src/charm.py")
+
     def test_oversized_files_excluded_from_line_count(self, tmp_path: pathlib.Path):
         """Files larger than the cap still count, but not their lines."""
         big = tmp_path / "huge.json"
@@ -118,8 +139,6 @@ class TestComputeRepoStats:
         old = tmp_path / "old.py"
         old.write_text("a\n")
         old_time = (datetime.datetime.now() - datetime.timedelta(hours=1)).timestamp()
-        import os
-
         os.utime(old, (old_time, old_time))
         new = tmp_path / "new.py"
         new.write_text("b\n")
@@ -361,8 +380,8 @@ class TestRepoStatsWidgetIntegration:
         _write_tree(tmp_path, {"src/charm.py": "import ops\n"})
         p1, p2, _ = _patch_app()
         with p1, p2:
-            # 80 cols × 35% right panel = ~28 cols; below the
-            # ``_STATS_FOLD_WIDTH`` threshold of 46 cols inside the
+            # 80 cols × 35% right panel ≈ 25 cols of file pane; below
+            # the ``_STATS_FOLD_WIDTH`` threshold of 48 cols inside the
             # widget, so the sidebar should fold away.
             async with CantripApp(charm_path=tmp_path).run_test(size=(80, 30)) as pilot:
                 tree = pilot.app.query_one(

@@ -51,9 +51,9 @@ def is_hidden_path(path: pathlib.Path) -> bool:
 
 
 # Below this widget width, hide the stats sidebar so the tree still
-# fits in narrow terminals.  Picked to leave the tree at least 24
-# cols when the sidebar is showing at its 18-col minimum.
-_STATS_FOLD_WIDTH = 46
+# fits in narrow terminals.  Picked to leave the tree at least ~18
+# cols when the sidebar is showing at its fixed 30-col width.
+_STATS_FOLD_WIDTH = 48
 
 
 class _FilteredTree(DirectoryTree):
