@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **F8 integration graph: edges as objects, focus/fade, layer
+  hints (Phase 90.3).**  The F8 screen no longer renders a static
+  block with a flat relation list at the bottom; its body is now a
+  selectable list.  Picking a relation row (`a:ep ──[interface]──
+  b:ep`) opens an inline detail strip with the endpoint names, the
+  interface, and — when the model matches a known bundle shape —
+  the provider/requirer roles and a one-line description from the
+  preset catalogue.  Picking an app *focuses* it: unconnected apps
+  and edges that don't touch it fade out; Escape, re-picking the
+  same app, or the `c` binding clears the focus.  When the model
+  matches a preset (COS Lite, 12-Factor + COS, …) the app panels
+  are grouped under `▸ <Layer>` headers in the preset's declared
+  order; otherwise the layout stays flat and alphabetical — no
+  layer is invented.  Clicking an app in the right-panel sketch
+  opens F8 already focused on that app.
 - **Right-panel topology sketch (Phase 90.2).**  The expanded
   per-model view in the right panel used to be a stack of
   ``AppBox`` rows (each with its unit / subordinate breakdown)

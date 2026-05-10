@@ -1278,6 +1278,17 @@ highlight, Escape dismisses.</p>
   </dd>
   <dt><code>@charm &lt;name&gt;</code></dt>
   <dd>Charmhub metadata (relations, config, revision) for the named charm.</dd>
+  <dt><code>@preset [slug]</code></dt>
+  <dd>
+    A known-good bundle shape from the built-in catalogue.  Bare
+    <code>@preset</code> lists the shapes (<code>cos-lite</code>,
+    <code>twelve-factor-cos</code>, <code>identity-platform</code>,
+    <code>charmed-kubeflow</code>); <code>@preset cos-lite</code>
+    expands one &mdash; the apps grouped by semantic layer, then every
+    relation edge with its interface name and a one-line description.
+    Knowledge only: it prescribes no deployment steps and emits no
+    <code>bundle.yaml</code>.
+  </dd>
   <dt><code>@juju &lt;subcmd&gt;</code></dt>
   <dd>
     Run a read-only <code>juju</code> subcommand.  The first token is

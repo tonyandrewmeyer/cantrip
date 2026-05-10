@@ -1,9 +1,23 @@
-"""Integration graph modal screen for Cantrip TUI."""
+"""Integration graph modal screen for Cantrip TUI.
+
+The F8 graph is built around the *edges*: a relation is a clickable
+object that opens an inline detail strip (interface, the endpoint names
+on both ends, and — when the model matches a known preset — the
+provider/requirer roles and a one-line description from the preset
+catalogue).  Selecting an *app* focuses it: unconnected apps and edges
+that don't touch it fade out; Escape, or re-selecting the same app,
+clears the focus.  When the model matches a preset the app panels are
+grouped under that preset's semantic layers; otherwise they fall back
+to a flat alphabetical list — no layer is ever invented.
+"""
+
+from __future__ import annotations
 
 import contextlib
+import dataclasses
 
 from jubilant import statustypes
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 from textual.app import ComposeResult
@@ -11,7 +25,11 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.events import Click
 from textual.screen import ModalScreen
-from textual.widgets import RichLog, Static
+from textual.widgets import OptionList, Static
+from textual.widgets.option_list import Option
+
+from cantrip.agent import presets
+from cantrip.tui import topology
 
 # Cycle order for the ``f`` binding; ``None`` means show every app.
 _FILTER_CYCLE: tuple[frozenset[str] | None, ...] = (
@@ -29,37 +47,24 @@ _FILTER_LABELS: dict[frozenset[str] | None, str] = {
     frozenset({"blocked", "waiting"}): "blocked+waiting",
 }
 
-# Status indicator characters and Rich style names.
-_STATUS_STYLE: dict[str, tuple[str, str]] = {
-    "active": ("●", "green"),
-    "waiting": ("○", "yellow"),
-    "blocked": ("◌", "red"),
-    "maintenance": ("◐", "blue"),
-    "unknown": ("○", "yellow"),
-    "error": ("✗", "red"),
-}
+# Border colour per status (Rich colour names — the RichLog-style
+# panels render Rich renderables, not Textual markup).
+_BORDER_COLOUR = topology.STATUS_RICH_COLOUR
 
-# Border colour per status.
-_BORDER_COLOUR: dict[str, str] = {
-    "active": "green",
-    "waiting": "yellow",
-    "blocked": "red",
-    "maintenance": "blue",
-    "error": "red",
-}
+_DIM_BORDER = "grey42"
 
 
 def _status_indicator(status: str) -> Text:
-    """Return a coloured status indicator."""
-    char, style = _STATUS_STYLE.get(status, ("○", "yellow"))
-    return Text.assemble((f"{char} {status}", style))
+    """Return a coloured ``● status`` indicator."""
+    char = topology.status_glyph(status)
+    return Text.assemble((f"{char} {status}", topology.status_rich_colour(status)))
 
 
 def _has_catalogue_relation(app: statustypes.AppStatus) -> bool:
     """True iff the app has registered itself with COS Catalogue.
 
-    Used to surface a badge on the integration graph so users can
-    spot at a glance which apps appear on the COS landing page.
+    Surfaced as a ``[cat]`` badge so users can spot at a glance which
+    apps appear on the COS landing page.
     """
     for related_list in app.relations.values():
         for rel in related_list:
@@ -68,33 +73,45 @@ def _has_catalogue_relation(app: statustypes.AppStatus) -> bool:
     return False
 
 
-def _app_panel(name: str, app: statustypes.AppStatus, highlight: bool = False) -> Panel:
-    """Build a Rich Panel for a single application."""
+def _app_panel(
+    name: str,
+    app: statustypes.AppStatus,
+    *,
+    highlight: bool = False,
+    dim: bool = False,
+) -> Panel:
+    """Build a Rich Panel for a single application.
+
+    ``highlight`` marks the app under construction with a ``★``.  ``dim``
+    fades the panel when another app is focused and this one isn't a
+    neighbour.
+    """
     status = app.app_status.current
     unit_count = len(app.units)
     message = app.app_status.message or ""
     if len(message) > 40:
         message = message[:37] + "..."
 
-    lines: list[Text | str] = []
-    lines.append(_status_indicator(status))
+    lines: list[Text | str] = [_status_indicator(status)]
     if message:
         lines.append(Text(f"  {message}", style="dim"))
     lines.append(f"{unit_count} unit{'s' if unit_count != 1 else ''}")
-
-    # Show unit breakdown if multiple units.
     if unit_count > 1:
         for unit_name, unit in app.units.items():
             u_status = unit.workload_status.current
-            u_char, u_style = _STATUS_STYLE.get(u_status, ("○", "yellow"))
             short = unit_name.split("/")[-1]
-            lines.append(Text.assemble(("  ", ""), (f"{u_char}", u_style), f" /{short}"))
+            lines.append(
+                Text.assemble(
+                    ("  ", ""),
+                    (topology.status_glyph(u_status), topology.status_rich_colour(u_status)),
+                    f" /{short}",
+                )
+            )
 
-    border = _BORDER_COLOUR.get(status, "white")
     title = f"★ {name}" if highlight else name
     if _has_catalogue_relation(app):
         title = f"{title} [cat]"
-
+    border = _DIM_BORDER if dim else _BORDER_COLOUR.get(status, "white")
     return Panel(
         Group(*lines),
         title=title,
@@ -102,95 +119,162 @@ def _app_panel(name: str, app: statustypes.AppStatus, highlight: bool = False) -
         border_style=border,
         width=32,
         expand=False,
+        style="dim" if dim else "",
     )
 
 
-def _relation_line(source: str, endpoint: str, target: str, interface: str) -> Text:
-    """Render a single relation as a decorated line."""
+def _endpoint_for(
+    status: statustypes.Status, app_name: str, other: str, interface: str
+) -> str | None:
+    """The local endpoint name on *app_name*'s side of its relation to *other*."""
+    app = status.apps.get(app_name)
+    if app is None:
+        return None
+    for ep_name, rels in app.relations.items():
+        for rel in rels:
+            if rel.related_app == other and rel.interface == interface:
+                return ep_name
+    return None
+
+
+def _edge_endpoints(status: statustypes.Status, edge: topology.Edge) -> tuple[str, str]:
+    """``("a:ep", "b:ep")`` for an edge, falling back to the bare app name."""
+    ep_a = _endpoint_for(status, edge.a, edge.b, edge.interface)
+    ep_b = _endpoint_for(status, edge.b, edge.a, edge.interface)
+    return (
+        f"{edge.a}:{ep_a}" if ep_a else edge.a,
+        f"{edge.b}:{ep_b}" if ep_b else edge.b,
+    )
+
+
+def _edge_label(status: statustypes.Status, edge: topology.Edge, *, dim: bool = False) -> Text:
+    """Render an edge as ``a:ep ──[interface]── b:ep`` for the option list."""
+    a_disp, b_disp = _edge_endpoints(status, edge)
+    name_style = "dim" if dim else "bold"
+    iface_style = "dim" if dim else "cyan italic"
     return Text.assemble(
         ("  ", ""),
-        (source, "bold"),
-        (":", ""),
-        (endpoint, "cyan"),
-        (" ── ", "dim"),
-        (f"[{interface}]", "dim italic"),
-        (" ──▸ ", "dim"),
-        (target, "bold"),
+        (a_disp, name_style),
+        (" ──", "dim"),
+        (f"[{edge.interface}]", iface_style),
+        ("── ", "dim"),
+        (b_disp, name_style),
     )
 
 
-def build_graph(
+@dataclasses.dataclass(frozen=True)
+class GraphItem:
+    """One row in the rendered graph (an app panel, an edge, or a header)."""
+
+    kind: str  # "model" | "layer" | "app" | "edges-header" | "edge" | "empty"
+    renderable: RenderableType = ""
+    model: str = ""  # "dev" / "cos" — which model this item belongs to
+    app_name: str = ""
+    edge: topology.Edge | None = None
+    option_id: str | None = None  # set for selectable items (app:/edge:)
+
+    @property
+    def selectable(self) -> bool:
+        return self.option_id is not None
+
+
+def _focus_neighbours(
+    focus_app: str | None, visible: set[str], edges: list[topology.Edge]
+) -> set[str] | None:
+    """The focus app plus its direct neighbours, or ``None`` if no focus."""
+    if not focus_app or focus_app not in visible:
+        return None
+    out = {focus_app}
+    for e in edges:
+        if e.a == focus_app:
+            out.add(e.b)
+        elif e.b == focus_app:
+            out.add(e.a)
+    return out
+
+
+def build_graph_items(
     status: statustypes.Status,
+    *,
+    model: str = "",
     current_app: str | None = None,
     status_filter: frozenset[str] | None = None,
-) -> list[Text | Panel | str]:
-    """Build a list of Rich renderables representing the integration graph.
+    preset_match: presets.PresetMatch | None = None,
+    focus_app: str | None = None,
+) -> list[GraphItem]:
+    """Build the ordered list of :class:`GraphItem`\\ s for one model.
 
-    Returns a flat list of panels (apps) and text lines (relations) that
-    can be rendered sequentially.  Apps are grouped first, followed by a
-    relation section.
-
-    When *status_filter* is set, only apps whose app-level status is in
-    the set appear as panels, and relations are restricted to pairs
-    where both ends pass the filter.  The relation section stays useful
-    rather than turning into a noise of half-dangling edges.
+    Apps come first — grouped under preset-layer headers when
+    *preset_match* is given, otherwise alphabetically — followed by a
+    ``Relations`` header and one edge item per deduplicated app-pair.
+    When *focus_app* is set and present, app panels and edges that don't
+    touch it render dimmed.
     """
     if not status.apps:
-        return [Text("No applications deployed.", style="dim italic")]
+        return [
+            GraphItem(
+                kind="empty", renderable=Text("No applications deployed.", style="dim italic")
+            )
+        ]
 
-    visible_apps: dict[str, statustypes.AppStatus] = {
+    visible = {
         name: app
         for name, app in status.apps.items()
         if status_filter is None or app.app_status.current in status_filter
     }
-
-    parts: list[Text | Panel | str] = []
-
-    # Header.
-    parts.append(
-        Text.assemble(
-            ("Model: ", "bold"),
-            (status.model.name, ""),
-            ("  ", ""),
-            (f"({status.model.cloud})", "dim"),
-        )
-    )
-    parts.append("")
-
-    if not visible_apps:
+    if not visible:
         label = ", ".join(sorted(status_filter)) if status_filter else "any"
-        parts.append(Text(f"No applications matching filter ({label}).", style="dim italic"))
-        return parts
+        return [
+            GraphItem(
+                kind="empty",
+                renderable=Text(f"No applications matching filter ({label}).", style="dim italic"),
+            )
+        ]
 
-    # App panels.
-    for app_name, app in sorted(visible_apps.items()):
-        highlight = app_name == current_app
-        parts.append(_app_panel(app_name, app, highlight=highlight))
+    edges = topology.dedup_edges(status, visible=set(visible))
+    neighbours = _focus_neighbours(focus_app, set(visible), edges)
 
-    # Relation section — only include edges where both ends are visible.
-    seen: set[tuple[str, str, str]] = set()
-    relation_lines: list[Text] = []
-    for app_name, app in sorted(visible_apps.items()):
-        for endpoint, related_list in sorted(app.relations.items()):
-            for rel in related_list:
-                if rel.related_app not in visible_apps:
-                    continue
-                # Deduplicate bidirectional relations.
-                pair = tuple(sorted([app_name, rel.related_app]))
-                key = (pair[0], pair[1], rel.interface)
-                if key in seen:
-                    continue
-                seen.add(key)
-                relation_lines.append(
-                    _relation_line(app_name, endpoint, rel.related_app, rel.interface)
+    def _app_item(name: str) -> GraphItem:
+        dim = neighbours is not None and name not in neighbours
+        return GraphItem(
+            kind="app",
+            model=model,
+            app_name=name,
+            renderable=_app_panel(name, visible[name], highlight=name == current_app, dim=dim),
+            option_id=f"app:{model}:{name}",
+        )
+
+    items: list[GraphItem] = []
+    if preset_match is not None and preset_match.app_layers:
+        layer_order = [*preset_match.bundle.layers, "Other"]
+        by_layer: dict[str, list[str]] = {}
+        for name in visible:
+            by_layer.setdefault(preset_match.app_layers.get(name, "Other"), []).append(name)
+        for layer in layer_order:
+            names = sorted(by_layer.get(layer, []))
+            if not names:
+                continue
+            items.append(GraphItem(kind="layer", renderable=Text(f"▸ {layer}", style="bold")))
+            items.extend(_app_item(n) for n in names)
+    else:
+        items.extend(_app_item(n) for n in sorted(visible))
+
+    if edges:
+        items.append(
+            GraphItem(kind="edges-header", renderable=Text("Relations", style="bold underline"))
+        )
+        for i, edge in enumerate(edges):
+            dim = neighbours is not None and focus_app not in (edge.a, edge.b)
+            items.append(
+                GraphItem(
+                    kind="edge",
+                    model=model,
+                    edge=edge,
+                    renderable=_edge_label(status, edge, dim=dim),
+                    option_id=f"edge:{model}:{i}",
                 )
-
-    if relation_lines:
-        parts.append("")
-        parts.append(Text("Relations", style="bold underline"))
-        parts.extend(relation_lines)
-
-    return parts
+            )
+    return items
 
 
 class GraphScreen(ModalScreen):
@@ -203,7 +287,7 @@ class GraphScreen(ModalScreen):
 
     #graph-container {
         width: 90%;
-        height: 80%;
+        height: 85%;
         border: round $primary;
         background: $surface;
         padding: 1 2;
@@ -225,8 +309,16 @@ class GraphScreen(ModalScreen):
         width: auto;
     }
 
-    #graph-body {
+    #graph-options {
         height: 1fr;
+    }
+
+    #graph-detail {
+        height: auto;
+        max-height: 6;
+        border-top: solid $surface-lighten-1;
+        padding: 1 0 0 0;
+        color: $text-muted;
     }
 
     #graph-footer {
@@ -248,9 +340,10 @@ class GraphScreen(ModalScreen):
     """
 
     BINDINGS = [
-        Binding("escape", "dismiss", "Close"),
+        Binding("escape", "back", "Close"),
         Binding("r", "refresh", "Refresh"),
         Binding("f", "cycle_filter", "Filter"),
+        Binding("c", "clear_focus", "Clear focus"),
     ]
 
     def __init__(
@@ -260,14 +353,16 @@ class GraphScreen(ModalScreen):
         model: str | None = None,
         cos_status: statustypes.Status | None = None,
         cos_model: str | None = None,
+        focus_app: str | None = None,
     ) -> None:
         """Initialise with current Juju status.
 
-        ``status`` / ``model`` carry the dev model (the primary work
-        surface).  ``cos_status`` / ``cos_model`` carry the optional
-        COS model so the graph can show both side by side — when the
-        user hits F8 they expect to see *all* the integration shapes
-        at once, not just the dev half.
+        ``status`` / ``model`` carry the dev model; ``cos_status`` /
+        ``cos_model`` the optional COS model so F8 shows every
+        integration shape at once.  ``current_app`` marks the app under
+        construction with a ``★``; ``focus_app`` (set when the screen is
+        opened from a click on the right-panel sketch) starts the view
+        focused on that app.
         """
         super().__init__()
         self._status = status
@@ -275,60 +370,53 @@ class GraphScreen(ModalScreen):
         self._model = model
         self._cos_status = cos_status
         self._cos_model = cos_model
+        self._focus_app = focus_app
         # Held as a plain int so tests can cycle the filter without a
-        # mounted DOM; the binding re-renders explicitly in
-        # :meth:`action_cycle_filter`.
+        # mounted DOM; the binding re-renders explicitly.
         self.filter_index = 0
+        # Populated by :meth:`_render_graph` — maps a selectable
+        # option's id to its :class:`GraphItem` so selection handlers
+        # don't have to re-derive anything.
+        self._items_by_id: dict[str, GraphItem] = {}
 
     def compose(self) -> ComposeResult:
         """Compose the graph layout."""
         with Vertical(id="graph-container"):
             with Horizontal(id="graph-title"):
                 yield Static("Integration Graph", classes="title-text")
-                yield Static(
-                    "[ Esc Close ]",
-                    id="graph-close",
-                    classes="title-hint clickable",
-                )
-            yield RichLog(id="graph-body", wrap=True)
+                yield Static("[ Esc Close ]", id="graph-close", classes="title-hint clickable")
+            yield OptionList(id="graph-options")
+            yield Static("", id="graph-detail")
             with Horizontal(id="graph-footer"):
                 yield Static("[ r Refresh ]", id="graph-refresh-btn", classes="clickable")
                 yield Static("[ f Filter ]", id="graph-filter-btn", classes="clickable")
+                yield Static("[ c Clear focus ]", id="graph-clearfocus-btn", classes="clickable")
                 yield Static("[ Esc Close ]", id="graph-close-btn", classes="clickable")
-
-    def on_click(self, event: Click) -> None:
-        """Make the text-shaped footer entries actually clickable.
-
-        The keybindings still cover keyboard users; this routes mouse
-        clicks on the visible labels to the matching action so the
-        affordance the bracketed text suggests actually fires.
-        """
-        widget = event.widget
-        if widget is None:
-            return
-        wid = getattr(widget, "id", None)
-        if wid == "graph-refresh-btn":
-            self.action_refresh()
-            event.stop()
-        elif wid == "graph-filter-btn":
-            self.action_cycle_filter()
-            event.stop()
-        elif wid in ("graph-close-btn", "graph-close"):
-            self.dismiss()
-            event.stop()
 
     def on_mount(self) -> None:
         """Render the graph on mount."""
         self._render_graph()
 
-    def action_refresh(self) -> None:
-        """Fetch fresh Juju status and re-render the graph.
+    # -- actions ------------------------------------------------------------
 
-        Refreshes the dev model only — COS models are typically more
-        stable than the dev surface, and pulling a fresh COS status
-        on every press would slow the refresh markedly.  The cached
-        ``self._cos_status`` continues to render alongside.
-        """
+    def action_back(self) -> None:
+        """Clear an active focus first; a second Escape closes the screen."""
+        if self._focus_app is not None:
+            self.action_clear_focus()
+        else:
+            self.dismiss()
+
+    def action_clear_focus(self) -> None:
+        """Drop the app focus and re-render."""
+        if self._focus_app is None:
+            return
+        self._focus_app = None
+        self._set_detail("")
+        if self.is_mounted:
+            self._render_graph()
+
+    def action_refresh(self) -> None:
+        """Fetch fresh Juju status (dev model only) and re-render."""
         if self._model:
             self.run_worker(self._fetch_and_render, thread=True)
         else:
@@ -339,6 +427,42 @@ class GraphScreen(ModalScreen):
         self.filter_index = (self.filter_index + 1) % len(_FILTER_CYCLE)
         if self.is_mounted:
             self._render_graph()
+
+    # -- clicks / selection -------------------------------------------------
+
+    def on_click(self, event: Click) -> None:
+        """Route clicks on the bracketed footer labels to their actions."""
+        wid = getattr(event.widget, "id", None)
+        if wid == "graph-refresh-btn":
+            self.action_refresh()
+            event.stop()
+        elif wid == "graph-filter-btn":
+            self.action_cycle_filter()
+            event.stop()
+        elif wid == "graph-clearfocus-btn":
+            self.action_clear_focus()
+            event.stop()
+        elif wid in ("graph-close-btn", "graph-close"):
+            self.dismiss()
+            event.stop()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle picking an app (focus toggle) or an edge (detail strip)."""
+        option_id = event.option.id
+        if option_id is None:
+            return
+        item = self._items_by_id.get(option_id)
+        if item is None:
+            return
+        if item.kind == "app":
+            # Toggle: re-selecting the focused app clears the focus.
+            self._focus_app = None if self._focus_app == item.app_name else item.app_name
+            self._set_detail("")
+            self._render_graph()
+        elif item.kind == "edge" and item.edge is not None:
+            self._set_detail(self._edge_detail(item.model, item.edge))
+
+    # -- rendering ----------------------------------------------------------
 
     def _fetch_and_render(self) -> None:
         """Fetch current Juju status in a background thread and re-render."""
@@ -354,37 +478,90 @@ class GraphScreen(ModalScreen):
         self.app.call_from_thread(self._render_graph)
 
     def update_status(self, status: statustypes.Status) -> None:
-        """Update the status and re-render."""
+        """Update the dev status and re-render."""
         self._status = status
-        self._render_graph()
+        if self.is_mounted:
+            self._render_graph()
+
+    def _model_status(self, model: str) -> statustypes.Status | None:
+        return self._status if model == "dev" else self._cos_status
 
     def _render_graph(self) -> None:
-        """Build and display the integration graph for both models."""
-        body = self.query_one("#graph-body", RichLog)
-        body.clear()
+        """Rebuild the option list from the current status / filter / focus."""
+        opts = self.query_one("#graph-options", OptionList)
+        opts.clear_options()
+        self._items_by_id.clear()
         self._update_title()
 
         if not self._status and not self._cos_status:
-            body.write("No model connected.")
+            opts.add_option(Option("No model connected.", disabled=True))
             return
 
         status_filter = _FILTER_CYCLE[self.filter_index]
-
-        if self._status is not None:
-            body.write(Text("── Dev model ──", style="bold cyan"))
-            for part in build_graph(self._status, self._current_app, status_filter):
-                body.write(part)
-
-        if self._cos_status is not None:
-            if self._status is not None:
-                body.write("")
-            body.write(Text("── COS model ──", style="bold cyan"))
-            for part in build_graph(self._cos_status, None, status_filter):
-                body.write(part)
+        options: list[Option] = []
+        first = True
+        for model, status in (("dev", self._status), ("cos", self._cos_status)):
+            if status is None:
+                continue
+            if not first:
+                options.append(Option(Text(""), disabled=True))
+            first = False
+            label = "Dev model" if model == "dev" else "COS model"
+            options.append(Option(Text(f"── {label} ──", style="bold cyan"), disabled=True))
+            preset_match = presets.match_preset(status)
+            items = build_graph_items(
+                status,
+                model=model,
+                current_app=self._current_app if model == "dev" else None,
+                status_filter=status_filter,
+                preset_match=preset_match,
+                focus_app=self._focus_app,
+            )
+            for item in items:
+                if item.selectable and item.option_id is not None:
+                    self._items_by_id[item.option_id] = item
+                    options.append(Option(item.renderable, id=item.option_id))
+                else:
+                    options.append(Option(item.renderable, disabled=True))
+        opts.add_options(options)
 
     def _update_title(self) -> None:
-        """Reflect the active filter in the title bar."""
+        """Reflect the active filter (and any focus) in the title bar."""
         with contextlib.suppress(LookupError):
             title = self.query_one("#graph-title .title-text", Static)
             label = _FILTER_LABELS[_FILTER_CYCLE[self.filter_index]]
-            title.update(f"Integration Graph [{label}]")
+            suffix = f" ({label})"
+            if self._focus_app:
+                suffix += f" · focus: {self._focus_app}"
+            title.update(f"Integration Graph{suffix}")
+
+    def _set_detail(self, text: str) -> None:
+        with contextlib.suppress(LookupError):
+            self.query_one("#graph-detail", Static).update(text)
+
+    def _edge_detail(self, model: str, edge: topology.Edge) -> str:
+        """Compose the inline detail strip for a selected edge."""
+        status = self._model_status(model)
+        if status is None:
+            return ""
+        a_disp, b_disp = _edge_endpoints(status, edge)
+        lines = [
+            f"[bold]{a_disp}[/bold]  ──  [bold]{b_disp}[/bold]",
+            f"interface: [bold cyan]{edge.interface}[/bold cyan]",
+        ]
+        preset_match = presets.match_preset(status)
+        preset_edge = (
+            preset_match.edge_for(edge.a, edge.b, edge.interface) if preset_match else None
+        )
+        if preset_edge is not None:
+            lines.append(
+                f"role: [bold]{preset_edge.provider}[/bold] provides → "
+                f"[bold]{preset_edge.requirer}[/bold] requires"
+            )
+            lines.append(preset_edge.description)
+        else:
+            lines.append(
+                "[dim]provider/requirer roles aren't derivable from juju status — "
+                "open the relation in the status pane for databag contents.[/dim]"
+            )
+        return "\n".join(lines)

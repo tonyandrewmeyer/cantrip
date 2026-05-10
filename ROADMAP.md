@@ -831,23 +831,27 @@ concrete "agent re-derives databag shapes every turn" signal.
 
 ### 90.3 Rethink the F8 graph screen
 
-- [ ] Edges become first-class.  The dedup'd relation list at
-  the bottom of ``GraphScreen`` is replaced by an inline edge
-  layer between the app panels; each edge carries its
-  interface name as a label.  Selecting an edge opens an
-  inline detail strip (not a new modal) showing: interface
-  name, provider/requirer roles, observed databag keys (from
-  ``app.relations`` and any cached ``juju show-unit`` data),
-  and a one-paragraph description sourced from the
-  agent's relation knowledge (skill or context provider).
-- [ ] Focus + fade: selecting an app dims unconnected apps and
-  unrelated edges.  Escape / re-selecting clears the focus.
-- [ ] Layer hint: when the model matches a known preset
-  (90.4), render apps grouped by the preset's semantic layer
-  ("Data", "Routing", "User Access").  When it doesn't, fall
-  back to the current alphabetical layout.  No layer
-  invention — the grouping comes from the preset, not from
-  guessing.
+- [x] Edges are first-class.  ``GraphScreen``'s body is now an
+  ``OptionList`` whose selectable items are the app panels and
+  one row per deduplicated relation (``a:ep ──[interface]── b:ep``,
+  built by ``build_graph_items`` / ``cantrip.tui.topology``).
+  Selecting an edge fills an inline detail strip (``#graph-detail``,
+  not a new modal) with the endpoint names, the interface, and —
+  when the model matches a preset — the provider/requirer roles
+  and one-line description from ``cantrip.agent.presets``.
+  *Follow-up:* enrich the strip with observed databag keys once a
+  cached ``juju show-unit`` source is plumbed through (tracked in
+  Phase 92's review-follow-ups bucket; the relation-detail screen
+  already has the fetch, the graph screen needs the cache hook).
+- [x] Focus + fade: selecting an app sets ``_focus_app``; app
+  panels and edges that don't touch it render dimmed (Rich
+  ``style="dim"`` + grey border).  Escape (or re-selecting the
+  same app, or the ``c`` binding / footer button) clears it.
+- [x] Layer hint: when ``presets.match_preset`` hits, app panels
+  are grouped under ``▸ <Layer>`` headers in the preset's
+  declared layer order (apps that didn't match a preset app fall
+  under ``▸ Other``).  When no preset matches, the layout is the
+  flat alphabetical list — no layer is invented.
 
 ### 90.4 Preset bundle library (knowledge, not UX)
 

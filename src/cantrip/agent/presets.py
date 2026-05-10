@@ -655,6 +655,9 @@ class PresetMatch:
     app_layers: dict[str, str]
     """Maps each *live* app name to the preset layer it matched into."""
 
+    app_to_preset: dict[str, str]
+    """Maps each *live* app name to the :attr:`PresetApp.name` it matched."""
+
     @property
     def required_total(self) -> int:
         """Number of non-optional apps in the preset."""
@@ -665,6 +668,23 @@ class PresetMatch:
         """Fraction of the preset's *required* apps present in the model."""
         total = self.required_total
         return self.matched_required / total if total else 0.0
+
+    def edge_for(self, live_a: str, live_b: str, interface: str) -> PresetEdge | None:
+        """The preset edge connecting two *live* apps over *interface*, if any.
+
+        Maps the live names back to their preset-app names and looks for
+        a catalogue edge with that unordered pair and interface — used
+        by the graph screen to label an observed relation with the
+        preset's provider/requirer roles and prose.
+        """
+        pa, pb = self.app_to_preset.get(live_a), self.app_to_preset.get(live_b)
+        if pa is None or pb is None:
+            return None
+        wanted = {pa, pb}
+        for edge in self.bundle.edges:
+            if edge.interface == interface and {edge.provider, edge.requirer} == wanted:
+                return edge
+        return None
 
 
 def match_preset(status: statustypes.Status) -> PresetMatch | None:
@@ -686,6 +706,7 @@ def match_preset(status: statustypes.Status) -> PresetMatch | None:
     best: PresetMatch | None = None
     for bundle in CATALOGUE:
         app_layers: dict[str, str] = {}
+        app_to_preset: dict[str, str] = {}
         matched_required = 0
         for preset_app in bundle.apps:
             for live_name, live_charm in live.items():
@@ -693,6 +714,7 @@ def match_preset(status: statustypes.Status) -> PresetMatch | None:
                     continue
                 if _live_app_matches(live_name, live_charm, preset_app):
                     app_layers[live_name] = preset_app.layer
+                    app_to_preset[live_name] = preset_app.name
                     if not preset_app.optional:
                         matched_required += 1
                     break
@@ -704,6 +726,7 @@ def match_preset(status: statustypes.Status) -> PresetMatch | None:
             matched_apps=matched,
             matched_required=matched_required,
             app_layers=app_layers,
+            app_to_preset=app_to_preset,
         )
         if candidate.fraction < _MIN_MATCH_FRACTION:
             continue

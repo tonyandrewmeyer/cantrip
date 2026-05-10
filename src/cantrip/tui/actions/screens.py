@@ -58,6 +58,7 @@ def show_graph(app: CantripApp, *, focus_app: str | None = None) -> None:
             model=dev_model,
             cos_status=status_widget.cos_status,
             cos_model=cos_model,
+            focus_app=focus_app,
         )
     )
 

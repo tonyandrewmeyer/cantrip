@@ -122,12 +122,37 @@ re-scope the view without leaving the modal:
 {#graph}
 ## Integration graph
 
-The <kbd>F8</kbd> **Integration graph** shows deployed
-apps and their relations. <kbd>F</kbd> cycles a status filter
-through four states: all apps, only `blocked`, only
-`waiting`, or both — useful for zeroing in on
-apps that need attention when the model has a lot going on.
-<kbd>R</kbd> refreshes against the live status.
+The <kbd>F8</kbd> **Integration graph** lays out the deployed
+apps and their relations as a selectable list — apps first,
+then one row per relation. The relation rows are the point of
+the screen:
+
+- **Relations are objects.** Each row reads
+  `app-a:endpoint ──[interface]── app-b:endpoint`. Select one
+  and the detail strip below the list fills in: the endpoint
+  names, the interface, and — when the model matches a known
+  bundle shape — the provider/requirer roles and a one-line
+  description of what flows across that edge.
+- **Focus + fade.** Select an *app* and everything not
+  connected to it dims — unrelated apps and relations grey out
+  so a busy model collapses to the neighbourhood you care
+  about. <kbd>Esc</kbd>, re-selecting the same app, or
+  <kbd>C</kbd> clears the focus. Opening the graph by clicking
+  an app node in the right-hand status sketch starts it already
+  focused on that app.
+- **Layer grouping.** When the model is recognisably COS Lite,
+  a 12-Factor app with COS, the Canonical Identity Platform, or
+  the Charmed Kubeflow core, the app panels are grouped under
+  the bundle's semantic layers (`▸ Routing`, `▸ Telemetry`,
+  `▸ Identity`, …). Cantrip never invents a layer — an
+  unrecognised model is laid out flat and alphabetically.
+
+<kbd>F</kbd> cycles a status filter through four states (all
+apps, only `blocked`, only `waiting`, or both — useful for
+zeroing in on apps that need attention); <kbd>R</kbd> refreshes
+against the live status. When a COS model is connected, both
+models appear in the one list: a `── Dev model ──` section
+followed by a `── COS model ──` section.
 
 {#traces}
 ## Traces and COS endpoints
@@ -146,16 +171,23 @@ link.
 The right-hand side of the TUI shows two always-on panes, toggled
 together with <kbd>F2</kbd>:
 
-- **Dev model** — controller, model name, and a
-  short summary of each deployed app’s status.
-- **COS model** — labelled summary (units,
-  relations, offers) of the COS model backing observability, plus
-  an explicit list of cross-model offers so you can see at a glance
-  which apps are consuming the stack.
+- **Dev model** — at a wide-enough terminal this is a compact
+  *topology sketch*: one status-coloured node per app (click a
+  node to open the integration graph focused on it), then the
+  relations grouped under `[interface]` headers, then any
+  cross-model offers. On a narrow terminal it falls back to a
+  verbose per-app list with the unit and subordinate breakdown.
+  <kbd>/</kbd> opens a filter that matches app, unit, and
+  relation names; <kbd>Esc</kbd> clears it.
+- **COS model** — collapsed to a one-line summary by default
+  (`6 apps · 10 relations · 5 active, 1 blocked · 4 offers`);
+  click it to expand into the same view as the Dev pane, plus an
+  explicit list of the cross-model offers your dev charm can
+  consume.
 
 Both panes refresh from the event watcher, so they stay current
-without polling. Expanding either pane scrolls rather than
-clipping when the app or offer list grows past the pane height.
+without polling, and scroll rather than clip when the content
+grows past the pane height.
 
 {#confirmations}
 ## Confirmation prompts
