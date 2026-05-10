@@ -1541,19 +1541,114 @@ class CantripAgent:
         "plan_tasks",
     }
 
-    def _tools_for_llm(self) -> list[llm.Tool]:
-        """Convert tools to LLM format.
+    # Phase 104.5: in short-session mode the curated set is narrowed
+    # further to just the tools the active task's phase needs, because
+    # tool schemas eat a big slice of a ~10 K window before a
+    # conversation starts.  ``read_file`` / ``list_directory`` are in
+    # every phase (basic navigation).  An unknown phase, or no active
+    # task, falls back to ``_CORE_TOOL_NAMES``.
+    _SHORT_SESSION_PHASE_TOOLS: dict[str, set[str]] = {
+        TaskCategory.BUILD.value: {
+            "read_file",
+            "list_directory",
+            "edit_file",
+            "write_file",
+            "charmcraft_init",
+            "charmcraft_pack",
+            "quick_pack",
+        },
+        TaskCategory.DEBUG.value: {
+            "read_file",
+            "list_directory",
+            "edit_file",
+            "write_file",
+            "charmcraft_pack",
+            "charmlint",
+            "run_charm_tests",
+        },
+        TaskCategory.TEST.value: {
+            "read_file",
+            "list_directory",
+            "edit_file",
+            "run_charm_tests",
+            "charm_validate",
+        },
+        TaskCategory.DEPLOY.value: {
+            "read_file",
+            "list_directory",
+            "juju",
+            "charm_sync",
+            "charm_validate",
+        },
+        TaskCategory.INFRA.value: {
+            "read_file",
+            "list_directory",
+            "juju",
+            "charm_sync",
+        },
+        TaskCategory.RESEARCH.value: {
+            "read_file",
+            "list_directory",
+            "plan_tasks",
+        },
+    }
 
-        When the provider declares a ``max_tools`` limit and the
-        toolset overshoots it (e.g. lots of MCP servers on top of an
-        OpenAI-compatible provider whose API caps the array at 128),
-        fall back to the curated core set so the request is still
-        accepted.  Logged at WARNING with the count and dropped names
-        so operators can see what disappeared.
+    def _active_task_phase(self) -> str | None:
+        """Phase tag of the currently-running queue task, or ``None``.
+
+        Used by short-session mode to pick a phase-scoped tool set.
+        Falls back to the next ready task so an interactive turn between
+        executor picks still gets a sensible scope.
+        """
+        active = next(
+            (t for t in self._work_queue.all_tasks() if t.status == TaskStatus.ACTIVE),
+            None,
+        )
+        if active is None:
+            active = self._work_queue.next_ready()
+        return active.category.value if active is not None else None
+
+    def _short_session_tool_names(self) -> set[str]:
+        """Curated tool-name set for the active phase in short-session mode."""
+        phase = self._active_task_phase()
+        if phase is not None:
+            scoped = self._SHORT_SESSION_PHASE_TOOLS.get(phase)
+            if scoped is not None:
+                return scoped
+        return self._CORE_TOOL_NAMES
+
+    def _tools_for_llm(self) -> list[llm.Tool]:
+        """Convert tools to LLM format, trimming for tight-context providers.
+
+        Short-session mode (Phase 104.5): always narrow to a phase-aware
+        curated set so the tool schemas don't crowd out the conversation
+        in a ~10 K window.  Otherwise: only fall back to the curated
+        core set when the provider declares a ``max_tools`` limit and
+        the toolset overshoots it (e.g. lots of MCP servers on top of an
+        OpenAI-compatible provider whose API caps the array at 128).
+        Either way the trim is logged with the dropped names so
+        operators can see what disappeared.
         """
         tools = self._tools
         limit = self.provider.max_tools
-        if limit is not None and len(tools) > limit:
+
+        if self._context_manager.short_session_mode:
+            keep_names = self._short_session_tool_names()
+            kept = [t for t in tools if t.name in keep_names]
+            if limit is not None and len(kept) > limit:
+                kept = kept[:limit]
+            if len(kept) < len(tools):
+                kept_names = {t.name for t in kept}
+                dropped = sorted(t.name for t in tools if t.name not in kept_names)
+                log.info(
+                    "Short-session (%s phase): trimmed %d tools to %d; dropped: %s",
+                    self._active_task_phase() or "no-task",
+                    len(tools),
+                    len(kept),
+                    ", ".join(dropped) if dropped else "(none)",
+                )
+            tools = kept
+        elif limit is not None and len(tools) > limit:
             kept = [t for t in tools if t.name in self._CORE_TOOL_NAMES][:limit]
             kept_names = {t.name for t in kept}
             dropped = sorted(t.name for t in tools if t.name not in kept_names)
