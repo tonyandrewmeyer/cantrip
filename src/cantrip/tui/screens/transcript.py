@@ -8,6 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
+from textual.events import Click
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Input, RichLog, Static
@@ -56,6 +57,16 @@ class TranscriptScreen(ModalScreen):
         height: 1;
         color: $text-muted;
         padding: 0 1;
+    }
+
+    #transcript-footer .clickable {
+        margin-right: 2;
+        width: auto;
+    }
+
+    .clickable:hover {
+        background: $surface-darken-1;
+        color: $text;
     }
 
     #transcript-output {
@@ -119,7 +130,12 @@ class TranscriptScreen(ModalScreen):
         with Vertical(id="transcript-container"):
             with Horizontal(id="transcript-title"):
                 yield Static("Session Transcript", classes="title-text")
-                yield Static("[Esc Close]", classes="title-hint")
+                yield Static(
+                    "[ Esc Close ]",
+                    id="transcript-close",
+                    classes="title-hint clickable",
+                    markup=False,
+                )
             with Vertical(id="transcript-search"), Horizontal(id="search-row"):
                 yield Input(
                     placeholder="Search transcript... (Enter: next, Esc: close)",
@@ -127,11 +143,41 @@ class TranscriptScreen(ModalScreen):
                 )
                 yield Static("", id="search-status")
             yield RichLog(id="transcript-output", wrap=True, markup=True)
-            yield Static(
-                "[/ Search]  [v] View  [r] Refresh  [Esc] Close",
-                id="transcript-footer",
-                markup=False,
-            )
+            # ``markup=False`` so the bracketed key hints render literally.
+            with Horizontal(id="transcript-footer"):
+                yield Static(
+                    "[ / Search ]", id="transcript-search-btn", classes="clickable", markup=False
+                )
+                yield Static(
+                    "[ v View ]", id="transcript-view-btn", classes="clickable", markup=False
+                )
+                yield Static(
+                    "[ r Refresh ]",
+                    id="transcript-refresh-btn",
+                    classes="clickable",
+                    markup=False,
+                )
+                yield Static(
+                    "[ Esc Close ]",
+                    id="transcript-close-btn",
+                    classes="clickable",
+                    markup=False,
+                )
+
+    def on_click(self, event: Click) -> None:
+        """Route clicks on the bracketed footer/title labels to actions."""
+        wid = getattr(event.widget, "id", None)
+        if wid == "transcript-search-btn":
+            self.action_search()
+        elif wid == "transcript-view-btn":
+            self.action_cycle_view()
+        elif wid == "transcript-refresh-btn":
+            self.action_refresh()
+        elif wid in ("transcript-close-btn", "transcript-close"):
+            self.action_close_or_dismiss()
+        else:
+            return
+        event.stop()
 
     def on_mount(self) -> None:
         """Load transcript data on mount."""

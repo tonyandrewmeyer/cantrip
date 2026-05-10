@@ -201,12 +201,19 @@ class FileDetailScreen(ModalScreen):
                 # Two clickable footer-like widgets in the title bar so
                 # mouse users have a button-shaped target.  The visible
                 # text reads "[ Esc Close ]" so keyboard users still
-                # see the binding.
-                yield Static("[ Esc Close ]", id="file-close", classes="title-hint clickable")
+                # see the binding.  ``markup=False`` keeps Textual from
+                # eating the brackets as a (broken) style tag.
+                yield Static(
+                    "[ Esc Close ]", id="file-close", classes="title-hint clickable", markup=False
+                )
             yield RichLog(id="file-output", wrap=True, markup=True)
             with Horizontal(id="file-footer"):
-                yield Static("[ r Refresh ]", id="file-refresh-btn", classes="clickable")
-                yield Static("[ Esc Close ]", id="file-close-btn", classes="clickable")
+                yield Static(
+                    "[ r Refresh ]", id="file-refresh-btn", classes="clickable", markup=False
+                )
+                yield Static(
+                    "[ Esc Close ]", id="file-close-btn", classes="clickable", markup=False
+                )
 
     def on_mount(self) -> None:
         """Populate everything that's cheap, then fire git log in a worker."""

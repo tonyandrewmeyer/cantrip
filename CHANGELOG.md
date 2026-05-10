@@ -267,6 +267,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **Modal-screen footer "buttons" were invisible and inert.**  The
+  bracketed key hints at the bottom (and top-right) of the log,
+  relation, transcript, observability, help, and tool-error modals
+  (``[r] Refresh``, ``[Esc] Close``, …) were rendered through Rich
+  markup, which silently ate the ``[…]`` tokens — so ``[r] Refresh``
+  showed as ``Refresh`` (no key shown) and the file/graph variants
+  (``[ r Refresh ]``) vanished entirely.  None of these labels were
+  clickable, despite looking like buttons.  They now render literally
+  (``markup=False``) and route mouse clicks to the matching action,
+  matching the affordance the bracketed text implies.
 - **``/tree`` crashed the TUI when opened.**  ``TreePickerScreen``
   stored its turn list on ``self._nodes`` — a name Textual reserves
   for a widget's child collection — so pushing the screen replaced the

@@ -3,6 +3,7 @@
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Horizontal, Vertical
+from textual.events import Click
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -39,6 +40,11 @@ class TraceScreen(ModalScreen):
     .title-hint {
         color: $text-muted;
         width: auto;
+    }
+
+    .clickable:hover {
+        background: $surface-darken-1;
+        color: $text;
     }
 
     /* Phase 108.1: section headings replace the older
@@ -101,12 +107,20 @@ class TraceScreen(ModalScreen):
         """Return the Grafana base URL for display — real URL or fallback."""
         return self._endpoints.grafana_url or self._FALLBACK_GRAFANA
 
+    def on_click(self, event: Click) -> None:
+        """Make the bracketed ``[ Esc Close ]`` label behave like a button."""
+        if getattr(event.widget, "id", None) == "trace-close":
+            self.dismiss()
+            event.stop()
+
     def compose(self) -> ComposeResult:
         """Compose the trace/debug screen."""
         with Center(), Vertical(id="trace-container"):
             with Horizontal(id="trace-title"):
                 yield Static("Observability", classes="title-text")
-                yield Static("[Esc Close]", classes="title-hint")
+                yield Static(
+                    "[ Esc Close ]", id="trace-close", classes="title-hint clickable", markup=False
+                )
             # COS status.
             yield Static("COS Model", classes="trace-section-header")
             if self._cos_model:

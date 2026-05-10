@@ -3,6 +3,7 @@
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Horizontal, ScrollableContainer, Vertical
+from textual.events import Click
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -40,6 +41,11 @@ class HelpScreen(ModalScreen):
         width: auto;
     }
 
+    .clickable:hover {
+        background: $surface-darken-1;
+        color: $text;
+    }
+
     #help-scroll {
         height: 1fr;
     }
@@ -57,12 +63,20 @@ class HelpScreen(ModalScreen):
         Binding("escape", "dismiss", "Close"),
     ]
 
+    def on_click(self, event: Click) -> None:
+        """Make the bracketed ``[ Esc Close ]`` label behave like a button."""
+        if getattr(event.widget, "id", None) == "help-close":
+            self.dismiss()
+            event.stop()
+
     def compose(self) -> ComposeResult:
         """Compose the help screen layout."""
         with Center(), Vertical(id="help-container"):
             with Horizontal(id="help-title"):
                 yield Static("Cantrip Help", classes="title-text")
-                yield Static("[Esc Close]", classes="title-hint")
+                yield Static(
+                    "[ Esc Close ]", id="help-close", classes="title-hint clickable", markup=False
+                )
             with ScrollableContainer(id="help-scroll"):
                 yield Static("Quick Start", classes="help-section-header")
                 yield Static(
