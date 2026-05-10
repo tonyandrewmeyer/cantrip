@@ -19,6 +19,16 @@ Use `--improve` when you have an existing charm that needs:
 - Operational readiness evaluation
 - Preparation for Charmhub listing
 
+<div class="callout">
+  <p>
+    For the Harness → Scenario case specifically, there is a
+    step-by-step recipe with copy-paste prompts and a verifier you can
+    run against the result:
+    <a href="https://github.com/tonyandrewmeyer/cantrip/tree/main/cookbook/migrate-harness-to-scenario" target="_blank" rel="noopener"><code>cookbook/migrate-harness-to-scenario/</code></a>.
+    The <a href="https://github.com/tonyandrewmeyer/cantrip/tree/main/cookbook" target="_blank" rel="noopener"><code>cookbook/</code></a> directory collects more of these runnable workflows.
+  </p>
+</div>
+
 {#run}
 ## Run the improvement
 

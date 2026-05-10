@@ -30,8 +30,8 @@ shape.
 | Status | Recipe | What it shows |
 |--------|--------|---------------|
 | ✅ shipped | [`build-a-sprint-charm/`](build-a-sprint-charm/README.md) | The fastest path — sprint mode, no tests, ops-only deps, packs in under a minute |
+| ✅ shipped | [`migrate-harness-to-scenario/`](migrate-harness-to-scenario/README.md) | Drive the `harness-migration` skill to rewrite an existing Harness suite as Scenario tests |
 | 🗓️ proposed | `build-a-stateful-charm/` | Stateful workload with Scenario tests, COS integration, ops-tracing |
-| 🗓️ proposed | `migrate-harness-to-scenario/` | Drive the `harness-migration` skill to modernise an existing test suite |
 | 🗓️ proposed | `add-observability/` | Wire COS into an existing charm — Tempo + Loki + Grafana |
 | 🗓️ proposed | `generate-a-terraform-module/` | Produce a Terraform module that consumes the charm |
 | 🗓️ proposed | `deploy-with-juju-and-cos/` | End-to-end deploy + dashboard-ready observability |
@@ -55,11 +55,12 @@ python cookbook/build-a-sprint-charm/verify.py path/to/new/charm/dir
 
 ## Running the verifier in CI
 
-`tests/cookbook/test_cookbook_recipes.py` walks every
-`cookbook/*/verify.py` and runs it against the sibling `expected/`
-directory when one exists. A recipe without `expected/` contributes
-to the *structure* check — README, prompts, verifier exist and are
-parseable — without needing a committed fixture.
+`tests/unit/test_cookbook_recipes.py` walks every
+`cookbook/*/verify.py`: a recipe with a sibling `expected/` charm
+fixture has its verifier run against it; a recipe without one gets
+a hand-written in-process fixture matching what the recipe promises.
+Either way the *structure* check — README, prompts, verifier exist
+and the verifier is valid Python — runs over every `cookbook/*/`.
 
 This gives us two levels of protection:
 

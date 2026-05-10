@@ -230,3 +230,179 @@ class TestSprintCharmVerifier:
         code = verifier.main([])
         assert code == 2
         assert "Usage" in capsys.readouterr().err
+
+
+class TestHarnessMigrationVerifier:
+    """Verifier for ``cookbook/migrate-harness-to-scenario/``.
+
+    Builds an in-process charm tree that matches the post-migration
+    shape (Scenario tests, ``ops[testing]`` wired up, no Harness) and
+    exercises the verifier's happy path plus each failure mode.  No
+    real tests run.
+    """
+
+    RECIPE = COOKBOOK_ROOT / "migrate-harness-to-scenario"
+
+    _SCENARIO_TEST = textwrap.dedent("""\
+        from ops import testing
+        from charm import MyCharm
+
+        def test_start():
+            ctx = testing.Context(MyCharm)
+            state_out = ctx.run(ctx.on.start(), testing.State())
+            assert state_out.unit_status == testing.ActiveStatus()
+        """)
+    _HARNESS_TEST = textwrap.dedent("""\
+        from ops.testing import Harness
+        from charm import MyCharm
+
+        def test_start():
+            harness = Harness(MyCharm)
+            harness.begin()
+            harness.charm.on.start.emit()
+        """)
+    _PYPROJECT = textwrap.dedent("""\
+        [project]
+        name = "my-charm"
+        version = "0.1.0"
+        dependencies = ["ops>=3,<4"]
+
+        [dependency-groups]
+        unit = ["ops[testing]", "pytest"]
+        """)
+
+    @pytest.fixture
+    def verifier(self):
+        return _load_verifier(self.RECIPE / "verify.py")
+
+    @staticmethod
+    def _write_migrated_charm(
+        root: pathlib.Path,
+        *,
+        test_files: dict[str, str] | None = None,
+        pyproject_toml: str | None = None,
+        write_tests_dir: bool = True,
+    ) -> pathlib.Path:
+        """Write a minimal post-migration charm tree into *root*."""
+        if write_tests_dir:
+            if test_files is None:
+                test_files = {"unit/test_charm.py": TestHarnessMigrationVerifier._SCENARIO_TEST}
+            for rel, body in test_files.items():
+                path = root / "tests" / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(body, encoding="utf-8")
+        if pyproject_toml is None:
+            pyproject_toml = TestHarnessMigrationVerifier._PYPROJECT
+        (root / "pyproject.toml").write_text(pyproject_toml, encoding="utf-8")
+        return root
+
+    def test_happy_path(self, tmp_path: pathlib.Path, verifier) -> None:
+        charm_dir = self._write_migrated_charm(tmp_path)
+        verifier.verify(charm_dir)
+
+    def test_no_tests_dir_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_migrated_charm(tmp_path, write_tests_dir=False)
+        with pytest.raises(verifier.VerifyError, match="tests/"):
+            verifier.verify(tmp_path)
+
+    def test_empty_tests_dir_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "pyproject.toml").write_text(self._PYPROJECT, encoding="utf-8")
+        with pytest.raises(verifier.VerifyError, match="no .py files"):
+            verifier.verify(tmp_path)
+
+    def test_lingering_harness_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_migrated_charm(
+            tmp_path,
+            test_files={
+                "unit/test_charm.py": self._SCENARIO_TEST,
+                "unit/test_legacy.py": self._HARNESS_TEST,
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="Harness"):
+            verifier.verify(tmp_path)
+
+    def test_no_scenario_construct_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        # A test file with neither Harness nor Scenario — the suite was
+        # gutted, not migrated.
+        self._write_migrated_charm(
+            tmp_path,
+            test_files={"unit/test_charm.py": "def test_nothing():\n    assert True\n"},
+        )
+        with pytest.raises(verifier.VerifyError, match="state-transition"):
+            verifier.verify(tmp_path)
+
+    def test_missing_pyproject_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        (tmp_path / "tests" / "unit").mkdir(parents=True)
+        (tmp_path / "tests" / "unit" / "test_charm.py").write_text(
+            self._SCENARIO_TEST, encoding="utf-8"
+        )
+        with pytest.raises(verifier.VerifyError, match="pyproject.toml"):
+            verifier.verify(tmp_path)
+
+    def test_invalid_pyproject_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_migrated_charm(tmp_path, pyproject_toml="this is not = valid = toml\n[")
+        with pytest.raises(verifier.VerifyError, match="valid TOML"):
+            verifier.verify(tmp_path)
+
+    def test_no_ops_testing_extra_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        bad = textwrap.dedent("""\
+            [project]
+            name = "my-charm"
+            dependencies = ["ops>=3,<4"]
+
+            [dependency-groups]
+            unit = ["pytest"]
+            """)
+        self._write_migrated_charm(tmp_path, pyproject_toml=bad)
+        with pytest.raises(verifier.VerifyError, match=r"ops\[testing\]"):
+            verifier.verify(tmp_path)
+
+    def test_standalone_ops_scenario_pin_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        bad = textwrap.dedent("""\
+            [project]
+            name = "my-charm"
+            dependencies = ["ops>=3,<4"]
+
+            [dependency-groups]
+            unit = ["ops[testing]", "ops-scenario>=7", "pytest"]
+            """)
+        self._write_migrated_charm(tmp_path, pyproject_toml=bad)
+        with pytest.raises(verifier.VerifyError, match="ops-scenario"):
+            verifier.verify(tmp_path)
+
+    def test_ops_testing_in_optional_dependencies_passes(
+        self, tmp_path: pathlib.Path, verifier
+    ) -> None:
+        ok = textwrap.dedent("""\
+            [project]
+            name = "my-charm"
+            dependencies = ["ops>=3,<4"]
+
+            [project.optional-dependencies]
+            dev = ["ops[testing]", "pytest"]
+            """)
+        charm_dir = self._write_migrated_charm(tmp_path, pyproject_toml=ok)
+        verifier.verify(charm_dir)
+
+    def test_verifier_cli_returns_0_on_success(
+        self, tmp_path: pathlib.Path, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        charm_dir = self._write_migrated_charm(tmp_path)
+        code = verifier.main([str(charm_dir)])
+        assert code == 0
+        assert "OK" in capsys.readouterr().out
+
+    def test_verifier_cli_returns_1_on_failure(
+        self, tmp_path: pathlib.Path, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main([str(tmp_path)])  # Empty dir → no tests/.
+        assert code == 1
+        assert "FAIL" in capsys.readouterr().err
+
+    def test_verifier_cli_returns_2_on_wrong_argv(
+        self, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main(["a", "b"])
+        assert code == 2
+        assert "Usage" in capsys.readouterr().err
