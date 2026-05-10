@@ -19,7 +19,7 @@ pause 2.4
 note ""
 note "charmlint surfaces the deterministic gaps in milliseconds"
 pause 0.4
-run "uv run charmlint --no-color $CHARM 2>&1 | head -22"
+run "uv run charmlint --no-colour $CHARM 2>&1 | head -22"
 pause 2.6
 
 note ""
