@@ -1,7 +1,9 @@
 """Context window management via virtual files and compaction."""
 
 import dataclasses
+import enum
 import logging
+import os
 import re
 import time
 
@@ -17,6 +19,94 @@ from cantrip.llm.base import (
 )
 
 log = logging.getLogger(__name__)
+
+
+class CompactionStrategy(enum.StrEnum):
+    """How :meth:`ContextManager.compact` shrinks the conversation.
+
+    ``SUMMARISE`` — the default for frontier providers: ask the light
+    model to prose-summarise the older history, keep the summary plus a
+    protected tail, virtualise the full transcript for later recall.
+
+    ``LEDGER_AND_DROP`` — the short-session strategy for tight-context
+    providers: replace older history with a structured one-line-per-tool
+    "history ledger" carried on :class:`~cantrip.agent.state.AgentState`,
+    and *delete* the raw older messages rather than virtualising them so
+    the next prompt is genuinely shorter.  No light-model round-trip.
+    """
+
+    SUMMARISE = "summarise"
+    LEDGER_AND_DROP = "ledger-and-drop"
+
+
+@dataclasses.dataclass
+class LedgerEntry:
+    """One past tool call distilled to a single line for the history ledger.
+
+    Carried on :class:`~cantrip.agent.state.AgentState` in short-session
+    mode and re-rendered into the prompt each turn (see
+    :meth:`ContextManager.build_ledger_message`) so a tight-context
+    model keeps a thread of what it has already done without the raw
+    tool transcript.
+    """
+
+    tool: str
+    args_fingerprint: str
+    success: bool
+    summary: str
+
+
+# Compaction trigger fractions of the context window.  Frontier APIs run
+# at 0.80; short-session providers drop to 0.50 because the ``ops`` chat
+# template and tool schemas already eat 30–40 % of a ~10 K window before
+# a conversation starts, leaving no room for one big tool result.
+_DEFAULT_COMPACTION_THRESHOLD = 0.80
+_SHORT_SESSION_COMPACTION_THRESHOLD = 0.50
+
+# Protected-tail size (most recent messages kept verbatim through a
+# compaction).  Short-session mode keeps a tighter tail so the ledger
+# carries more and the live working set stays small.
+_KEEP_RECENT = 4
+_SHORT_SESSION_KEEP_RECENT = 2
+
+# Short-session mode eagerly folds the oldest completed tool round of a
+# turn into the ledger once a turn has accumulated more than this many
+# rounds — keeping the in-conversation working set small without waiting
+# for the compaction threshold to trip.
+SHORT_SESSION_INTURN_FOLD_AFTER = 2
+
+# Hard cap on accumulated ledger entries.  One entry is ~20–30 tokens;
+# 200 keeps the rendered ledger under ~6 K tokens even on a marathon
+# build.  When the cap is hit the oldest entries are dropped — the
+# recent ones are the ones a small model is most likely to need.
+_MAX_LEDGER_ENTRIES = 200
+
+# Per-field character cap for a ledger entry (summary and args
+# fingerprint).  Keeps each rendered bullet to roughly one terminal line.
+_LEDGER_FIELD_CHARS = 80
+
+
+def _first_line(text: str) -> str:
+    """First non-blank line of *text*, trimmed to a ledger-sized snippet."""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line:
+            return line[:_LEDGER_FIELD_CHARS] + ("…" if len(line) > _LEDGER_FIELD_CHARS else "")
+    return ""
+
+
+def _fingerprint_args(arguments: dict[str, object]) -> str:
+    """Short ``k=v, …`` rendering of tool arguments for a ledger entry."""
+    if not arguments:
+        return ""
+    parts: list[str] = []
+    for key, value in arguments.items():
+        text = str(value).replace("\n", " ")
+        if len(text) > 40:
+            text = text[:39] + "…"
+        parts.append(f"{key}={text}")
+    joined = ", ".join(parts)
+    return joined[:_LEDGER_FIELD_CHARS] + ("…" if len(joined) > _LEDGER_FIELD_CHARS else "")
 
 
 # Compaction safety defaults — chosen to be well above normal usage while still
@@ -141,8 +231,32 @@ class VirtualFileStore:
         return list(self._files.values())
 
 
-# Number of most recent messages to keep after compaction.
-_KEEP_RECENT = 4
+# Environment variable mirroring the ``--short-session`` CLI flag.
+_SHORT_SESSION_ENV = "CANTRIP_SHORT_SESSION"
+
+
+def resolve_short_session_mode(provider: LLMProvider, override: str | None) -> bool:
+    """Resolve the effective short-session flag from override + provider.
+
+    *override* is the ``--short-session`` value (``"on"`` / ``"off"`` /
+    ``"auto"``) or ``None``.  ``None`` falls back to
+    :data:`_SHORT_SESSION_ENV`; an unrecognised value (or none at all)
+    is treated as ``"auto"``, which defers to
+    :attr:`LLMProvider.short_session_mode`.
+    """
+    raw = override if override is not None else os.environ.get(_SHORT_SESSION_ENV)
+    value = (raw or "auto").strip().lower()
+    if value == "on":
+        return True
+    if value == "off":
+        return False
+    if value != "auto":
+        log.warning(
+            "Ignoring %s=%r — expected 'on', 'off', or 'auto'; using auto-detect",
+            _SHORT_SESSION_ENV,
+            raw,
+        )
+    return provider.short_session_mode
 
 
 class ContextManager:
@@ -152,15 +266,27 @@ class ContextManager:
         self,
         virtual_store: VirtualFileStore,
         context_window_tokens: int,
-        compaction_threshold: float = 0.80,
+        compaction_threshold: float = _DEFAULT_COMPACTION_THRESHOLD,
         virtualisation_threshold: int = 10_000,
         virtualisation_preview: int = 1_000,
         max_compactions: int = _MAX_COMPACTIONS_PER_SESSION,
         max_emergencies: int = _MAX_EMERGENCIES_PER_SESSION,
+        short_session_mode: bool = False,
     ) -> None:
         self._store = virtual_store
         self._context_window = context_window_tokens
-        self._compaction_threshold = compaction_threshold
+        # Short-session mode (tight-context local models) overrides the
+        # caller's threshold with a tighter one and switches the
+        # compaction strategy to ledger-and-drop.  See Phase 104.
+        self._short_session_mode = short_session_mode
+        if short_session_mode:
+            self._compaction_threshold = _SHORT_SESSION_COMPACTION_THRESHOLD
+            self._strategy = CompactionStrategy.LEDGER_AND_DROP
+            self._keep_recent = _SHORT_SESSION_KEEP_RECENT
+        else:
+            self._compaction_threshold = compaction_threshold
+            self._strategy = CompactionStrategy.SUMMARISE
+            self._keep_recent = _KEEP_RECENT
         self._virtualisation_threshold = virtualisation_threshold
         self._virtualisation_preview = virtualisation_preview
         self._max_compactions = max_compactions
@@ -300,10 +426,39 @@ class ContextManager:
             raise ValueError("context_window_tokens must be positive")
         self._context_window = tokens
 
+    def set_short_session_mode(self, enabled: bool) -> None:
+        """Flip short-session mode at runtime (e.g. after a ``/model`` swap).
+
+        Re-derives the compaction threshold, strategy, and protected-tail
+        size.  A no-op when the mode is already in the requested state so
+        callers can invoke it unconditionally after a provider change.
+        """
+        if enabled == self._short_session_mode:
+            return
+        self._short_session_mode = enabled
+        if enabled:
+            self._compaction_threshold = _SHORT_SESSION_COMPACTION_THRESHOLD
+            self._strategy = CompactionStrategy.LEDGER_AND_DROP
+            self._keep_recent = _SHORT_SESSION_KEEP_RECENT
+        else:
+            self._compaction_threshold = _DEFAULT_COMPACTION_THRESHOLD
+            self._strategy = CompactionStrategy.SUMMARISE
+            self._keep_recent = _KEEP_RECENT
+
     @property
     def compaction_threshold(self) -> float:
         """Fraction of context window at which compaction triggers."""
         return self._compaction_threshold
+
+    @property
+    def short_session_mode(self) -> bool:
+        """Whether this manager is running the tight-context short-session flow."""
+        return self._short_session_mode
+
+    @property
+    def compaction_strategy(self) -> CompactionStrategy:
+        """Which strategy :meth:`compact` uses (``summarise`` / ``ledger-and-drop``)."""
+        return self._strategy
 
     def estimate_tokens(self, messages: list[Message]) -> int:
         """Estimate the total token count across all messages."""
@@ -433,7 +588,7 @@ class ContextManager:
         """
         if self._cycle_detected or self._budget_exhausted:
             return False
-        if len(messages) < _KEEP_RECENT + 1:
+        if len(messages) < self._keep_recent + 1:
             return False
         used = self.estimate_tokens(messages)
         if used < self._context_window * self._compaction_threshold:
@@ -457,50 +612,37 @@ class ContextManager:
         messages: list[Message],
         system_prompt: str,
         provider: LLMProvider,
+        ledger: list["LedgerEntry"] | None = None,
     ) -> list[Message]:
-        """Compact the conversation by summarising older messages.
+        """Compact the conversation, dispatching on :attr:`compaction_strategy`.
 
-        Saves the full history as a virtual file, asks the provider to
-        summarise it, then returns ``[summary] + last N messages``.  If the
-        resulting context is not actually smaller, falls back to
-        ``emergency_truncate()`` immediately.  Also detects compact/expand
-        cycles — if this is the Nth recent fire with no progress, disables
-        further compaction for the session.
+        ``summarise`` (frontier default): save the full history as a
+        virtual file, ask the provider to prose-summarise it, return
+        ``[summary] + last N messages``.
+
+        ``ledger-and-drop`` (short-session): fold the older messages
+        into one-line ledger entries appended to *ledger* (the live
+        :class:`~cantrip.agent.state.AgentState` ledger), then return
+        just the protected tail — the raw older messages are dropped, no
+        light-model round-trip.
+
+        Either way, if the result is not actually smaller, falls back to
+        ``emergency_truncate()`` immediately.  Also detects
+        compact/expand cycles — if this is the Nth recent fire with no
+        progress, disables further compaction for the session.
         """
         pre_tokens = self.estimate_tokens(messages)
         self._compactions_attempted += 1
 
-        # Save full history as a virtual file.
-        history_text = self._format_history(messages)
-        file_id = self._store.store(
-            content=history_text,
-            name="conversation_history",
-            source="compaction",
-        )
-        log.info("Saved conversation history as %s before compaction", file_id)
-
-        # Ask the provider to summarise.
-        summary_messages = [
-            Message(role=Role.SYSTEM, content=system_prompt),
-            Message(role=Role.USER, content=f"{load_compaction_prompt()}\n\n{history_text}"),
-        ]
-        response = await provider.complete(summary_messages, temperature=0.3)
-
-        summary_content = (
-            f"[Conversation Summary]\n{response.content}\n\n"
-            f"[Full history saved as virtual file {file_id}. "
-            f"Use virtual_file_read or virtual_file_search to access.]"
-        )
-        summary_msg = Message(role=Role.SYSTEM, content=summary_content)
-
-        # Keep the most recent messages for continuity.
-        recent = messages[-_KEEP_RECENT:] if len(messages) > _KEEP_RECENT else messages
-        result = [summary_msg] + list(recent)
+        if self._strategy is CompactionStrategy.LEDGER_AND_DROP:
+            result = self._compact_ledger_and_drop(messages, ledger)
+        else:
+            result = await self._compact_summarise(messages, system_prompt, provider)
         post_tokens = self.estimate_tokens(result)
 
-        # Post-compaction size validation: if the summary didn't actually
+        # Post-compaction size validation: if compaction didn't actually
         # reduce the context, fall back to emergency_truncate on the
-        # original messages rather than shipping a bloated summary.
+        # original messages rather than shipping a bloated result.
         if post_tokens >= pre_tokens:
             log.warning(
                 "Compaction did not reduce context size (%d → %d tokens); "
@@ -534,6 +676,146 @@ class ContextManager:
             )
 
         return result
+
+    async def _compact_summarise(
+        self,
+        messages: list[Message],
+        system_prompt: str,
+        provider: LLMProvider,
+    ) -> list[Message]:
+        """Prose-summary compaction (frontier default).
+
+        Saves the full history as a virtual file, asks *provider* (the
+        light model) to summarise it, then returns the summary plus the
+        protected tail.
+        """
+        history_text = self._format_history(messages)
+        file_id = self._store.store(
+            content=history_text,
+            name="conversation_history",
+            source="compaction",
+        )
+        log.info("Saved conversation history as %s before compaction", file_id)
+
+        summary_messages = [
+            Message(role=Role.SYSTEM, content=system_prompt),
+            Message(role=Role.USER, content=f"{load_compaction_prompt()}\n\n{history_text}"),
+        ]
+        response = await provider.complete(summary_messages, temperature=0.3)
+
+        summary_content = (
+            f"[Conversation Summary]\n{response.content}\n\n"
+            f"[Full history saved as virtual file {file_id}. "
+            f"Use virtual_file_read or virtual_file_search to access.]"
+        )
+        summary_msg = Message(role=Role.SYSTEM, content=summary_content)
+        recent = messages[-self._keep_recent :] if len(messages) > self._keep_recent else messages
+        return [summary_msg] + list(recent)
+
+    def _compact_ledger_and_drop(
+        self,
+        messages: list[Message],
+        ledger: list["LedgerEntry"] | None,
+    ) -> list[Message]:
+        """Ledger-and-drop compaction (short-session).
+
+        Fold the messages older than the protected tail into one-line
+        ledger entries appended to *ledger* (capped at
+        :data:`_MAX_LEDGER_ENTRIES`), then return just the tail.  The
+        rendered ledger is injected back into the prompt by the agent's
+        ``_build_llm_messages`` — it is *not* prepended here, so the
+        returned list is genuinely just the live working set.
+
+        The raw older messages are dropped, not virtualised: a
+        tight-context model that can't hold the conversation can't hold
+        a virtual-file-search workflow either, and dropping is what
+        keeps the next prompt smaller.  The session store still holds
+        the full transcript for replay / inspection.
+        """
+        if len(messages) <= self._keep_recent:
+            return list(messages)
+        to_drop = messages[: -self._keep_recent]
+        recent = messages[-self._keep_recent :]
+        new_entries = self.build_ledger_entries(to_drop)
+        if ledger is not None:
+            self.extend_ledger(ledger, new_entries)
+        log.info(
+            "Ledger-and-drop compaction: folded %d messages into %d new ledger entries",
+            len(to_drop),
+            len(new_entries),
+        )
+        return list(recent)
+
+    @staticmethod
+    def extend_ledger(ledger: list["LedgerEntry"], new_entries: list["LedgerEntry"]) -> None:
+        """Append *new_entries* to *ledger* in place, capped at the recent tail.
+
+        Beyond :data:`_MAX_LEDGER_ENTRIES` the oldest entries are
+        dropped — on a long build the recent ones are what a small model
+        is most likely to need, and an unbounded ledger would eventually
+        crowd out the live working set.
+        """
+        ledger.extend(new_entries)
+        overflow = len(ledger) - _MAX_LEDGER_ENTRIES
+        if overflow > 0:
+            del ledger[:overflow]
+
+    def build_ledger_entries(self, messages: list[Message]) -> list["LedgerEntry"]:
+        """Distil tool calls in *messages* into one :class:`LedgerEntry` each.
+
+        Walks assistant messages carrying ``tool_calls`` and pairs each
+        call with its result in the following ``TOOL`` message (matched
+        by ``tool_call_id``).  Messages without tool calls (plain user /
+        assistant prose, system notes, an earlier rendered ledger) carry
+        no entries — the ledger is deliberately a record of *actions*.
+        """
+        # Index tool results by call id across the whole slice so an
+        # out-of-order or interleaved transcript still pairs up.
+        results: dict[str, ToolResult] = {}
+        for msg in messages:
+            for tr in msg.tool_results:
+                results[tr.tool_call_id] = tr
+        entries: list[LedgerEntry] = []
+        for msg in messages:
+            for tc in msg.tool_calls:
+                tr = results.get(tc.id)
+                if tr is None:
+                    entries.append(
+                        LedgerEntry(
+                            tool=tc.name,
+                            args_fingerprint=_fingerprint_args(tc.arguments),
+                            success=False,
+                            summary="(no result recorded)",
+                        )
+                    )
+                    continue
+                entries.append(
+                    LedgerEntry(
+                        tool=tc.name,
+                        args_fingerprint=_fingerprint_args(tc.arguments),
+                        success=not tr.is_error,
+                        summary=_first_line(tr.content),
+                    )
+                )
+        return entries
+
+    def render_ledger(self, entries: list["LedgerEntry"]) -> str:
+        """Render *entries* into a compact ``[History Ledger]`` block.
+
+        One bullet per entry, oldest first, prefixed with ``ok`` / ``error``.
+        Returned text is safe to wrap in a SYSTEM message.
+        """
+        lines = [f"[History Ledger] {len(entries)} earlier tool calls (oldest first):"]
+        for e in entries:
+            status = "ok" if e.success else "error"
+            args = f"({e.args_fingerprint})" if e.args_fingerprint else "()"
+            summary = f" {status}: {e.summary}" if e.summary else f" {status}"
+            lines.append(f"- {e.tool}{args} →{summary}")
+        return "\n".join(lines)
+
+    def build_ledger_message(self, entries: list["LedgerEntry"]) -> Message:
+        """Wrap :meth:`render_ledger` output in a SYSTEM message for the prompt."""
+        return Message(role=Role.SYSTEM, content=self.render_ledger(entries))
 
     def emergency_truncate(self, messages: list[Message]) -> list[Message]:
         """Drop oldest non-system messages to fit within the context budget.

@@ -206,6 +206,7 @@ def run_cli(args: argparse.Namespace) -> int:
         light_provider=light_provider,
         hook_runner=HookRunner.from_disk(repo_root=args.path),
         role_router=role_router,
+        short_session=getattr(args, "short_session", None),
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.

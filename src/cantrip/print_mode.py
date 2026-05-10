@@ -467,6 +467,7 @@ def run_print(args: argparse.Namespace) -> int:
         light_provider=light_provider,
         hook_runner=HookRunner.from_disk(repo_root=charm_path),
         role_router=role_router,
+        short_session=getattr(args, "short_session", None),
     )
 
     # Per-goal budget (Phase 55.3) and snapshot opt-out (Phase 68.1)

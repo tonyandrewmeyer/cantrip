@@ -143,6 +143,22 @@ def _add_run_model_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--short-session",
+        choices=["on", "off", "auto"],
+        default=None,
+        dest="short_session",
+        help=(
+            "Short-session mode for tight-context models: aggressive "
+            "compaction (0.50 of the window), a ledger-and-drop strategy "
+            "that collapses past tool calls into a one-line history "
+            "ledger, and a near-fresh conversation each turn.  ``auto`` "
+            "(the default) turns it on for providers below ~16 K context "
+            "(small inference snaps) and off for everything else; ``on`` "
+            "/ ``off`` force it.  Also settable via "
+            "``CANTRIP_SHORT_SESSION``."
+        ),
+    )
+    parser.add_argument(
         "--light-model",
         help=("Cheaper model for internal tasks like compaction (auto-detected if omitted)"),
     )

@@ -1015,6 +1015,7 @@ def run_web(args: argparse.Namespace) -> int:
         charm_path=args.path,
         light_provider=light_provider,
         role_router=role_router,
+        short_session=getattr(args, "short_session", None),
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.

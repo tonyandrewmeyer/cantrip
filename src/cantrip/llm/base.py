@@ -229,6 +229,22 @@ class LLMProvider(ABC):
         return None
 
     @property
+    def short_session_mode(self) -> bool:
+        """Whether this provider's context budget is too small for rich history.
+
+        Providers below ~16 K usable context (small local inference
+        snaps) return ``True``: the ``ops`` chat template and tool
+        schemas eat 30–40 % of the window before a conversation starts,
+        so the agent switches to an aggressive-compaction,
+        ledger-and-drop strategy with a per-turn ephemeral conversation
+        (see :class:`cantrip.agent.context.ContextManager`).  Frontier
+        APIs inherit the default ``False`` and keep the rich-history
+        flow unchanged.  Operators can force the mode on or off with
+        ``--short-session`` / ``CANTRIP_SHORT_SESSION``.
+        """
+        return False
+
+    @property
     def conversation_temperature(self) -> float:
         """Default sampling temperature for the main conversation loop.
 

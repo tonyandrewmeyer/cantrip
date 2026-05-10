@@ -24,7 +24,12 @@ from cantrip.agent.arena_controller import ArenaController
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.confirmations import ConfirmationsController
-from cantrip.agent.context import ContextManager, VirtualFileStore
+from cantrip.agent.context import (
+    SHORT_SESSION_INTURN_FOLD_AFTER,
+    ContextManager,
+    VirtualFileStore,
+    resolve_short_session_mode,
+)
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
 from cantrip.agent.executor_controller import ExecutorController
@@ -411,6 +416,7 @@ class CantripAgent:
         light_provider: LLMProvider | None = None,
         hook_runner: HookRunner | None = None,
         role_router: "roles.RoleRouter | None" = None,
+        short_session: str | None = None,
     ):
         """Initialise the agent.
 
@@ -432,6 +438,13 @@ class CantripAgent:
         Defaults to an empty router; retrieval-using callers raise
         :class:`~cantrip.llm.roles.RoleNotConfigured` until a
         provider is registered.
+
+        Phase 104: *short_session* is the ``--short-session`` override
+        (``"on"`` / ``"off"`` / ``"auto"``).  ``None`` falls back to
+        ``CANTRIP_SHORT_SESSION`` and finally to ``"auto"``, which
+        defers to :attr:`LLMProvider.short_session_mode` — tight-context
+        local snaps then run the aggressive-compaction, ledger-and-drop,
+        per-turn-ephemeral flow; frontier APIs keep rich history.
         """
         self.provider = provider
         self._light_provider = light_provider
@@ -477,9 +490,11 @@ class CantripAgent:
 
         # Context window management.
         self._virtual_store = VirtualFileStore()
+        self._short_session_override = short_session
         self._context_manager = ContextManager(
             virtual_store=self._virtual_store,
             context_window_tokens=provider.context_window_tokens,
+            short_session_mode=resolve_short_session_mode(provider, short_session),
         )
 
         # Lazy-initialised on first access via properties.
@@ -1106,8 +1121,11 @@ class CantripAgent:
         continue; the ``kind`` field in the completed event
         disambiguates the two paths for downstream listeners.
         """
+        strategy = self._context_manager.compaction_strategy
         self._event_bus.publish(
-            ui_events.compaction_started(tokens_before=tokens_before, source=source)
+            ui_events.compaction_started(
+                tokens_before=tokens_before, source=source, strategy=str(strategy)
+            )
         )
         kind = "compact"
         try:
@@ -1115,6 +1133,7 @@ class CantripAgent:
                 self.state.messages,
                 system_prompt=self._build_system_prompt(),
                 provider=self._get_provider("compaction"),
+                ledger=self.state.ledger,
             )
         except Exception:  # noqa: BLE001 — any compaction failure must fall through to emergency truncation; the loop has to keep running.
             log.warning(
@@ -1131,6 +1150,7 @@ class CantripAgent:
                 tokens_after=tokens_after,
                 source=source,
                 kind=kind,
+                strategy=str(strategy),
             )
         )
 
@@ -1303,6 +1323,12 @@ class CantripAgent:
             provider_name,
         )
         self._context_manager.update_context_window(new_provider.context_window_tokens)
+        # When the operator hasn't pinned --short-session, the mode tracks
+        # whichever provider is now active (e.g. swapping to a tight-context
+        # snap mid-session flips it on; swapping back off).
+        self._context_manager.set_short_session_mode(
+            resolve_short_session_mode(new_provider, self._short_session_override)
+        )
         # Caches that captured the old provider need rebuilding on the
         # next access.  Memory manager is left alone: its provider is
         # used only inside the auto-writer path, which is itself cached
@@ -1698,14 +1724,83 @@ class CantripAgent:
 
         When *include_budget* is True, a transient context budget message
         is appended (not stored in state.messages).
+
+        In short-session mode the accumulated history ledger
+        (:attr:`AgentState.ledger`) is rendered into a SYSTEM message
+        right after the prompt so a tight-context model retains a thread
+        of past actions even though the raw transcript has been dropped.
+        Like the budget message, it is built fresh each turn and never
+        stored in ``state.messages``.
         """
-        messages = [
-            Message(role=Role.SYSTEM, content=self._build_system_prompt()),
-            *self.state.messages,
-        ]
+        messages = [Message(role=Role.SYSTEM, content=self._build_system_prompt())]
+        if self._context_manager.short_session_mode and self.state.ledger:
+            messages.append(self._context_manager.build_ledger_message(self.state.ledger))
+        messages.extend(self.state.messages)
         if include_budget:
             messages.append(self._context_manager.build_budget_message(messages))
         return messages
+
+    def _collapse_messages_for_short_session(self) -> None:
+        """Fold the prior conversation into the ledger and reset the working set.
+
+        Called at the start of every user turn in short-session mode (and
+        only when there is something to fold).  Conceptually each turn
+        becomes a near-fresh session: ``state.messages`` collapses to
+        empty here, the new user message is appended by the caller, and
+        :meth:`_build_llm_messages` re-renders ``state.ledger`` into the
+        prompt.  This also covers resume — the next turn after a restored
+        transcript re-derives the ledger from it, so nothing about the
+        ledger needs persisting.
+        """
+        if not self._context_manager.short_session_mode or not self.state.messages:
+            return
+        carried = len(self.state.messages)
+        new_entries = self._context_manager.build_ledger_entries(self.state.messages)
+        ContextManager.extend_ledger(self.state.ledger, new_entries)
+        self.state.messages = []
+        log.info(
+            "Short-session: collapsed %d messages into %d new ledger entries at turn start",
+            carried,
+            len(new_entries),
+        )
+
+    def _maybe_fold_oldest_round_into_ledger(self, turn_start_idx: int) -> None:
+        """Eagerly fold the oldest completed tool round of this turn into the ledger.
+
+        Once a turn has accumulated more than
+        :data:`SHORT_SESSION_INTURN_FOLD_AFTER` completed tool rounds,
+        the oldest is distilled into ledger entries and its raw messages
+        dropped — keeping the in-conversation working set small without
+        waiting for the compaction threshold.  No-op outside
+        short-session mode.
+        """
+        if not self._context_manager.short_session_mode:
+            return
+        msgs = self.state.messages
+
+        def _round_starts() -> list[int]:
+            return [
+                i
+                for i in range(turn_start_idx + 1, len(msgs))
+                if msgs[i].role == Role.ASSISTANT and msgs[i].tool_calls
+            ]
+
+        starts = _round_starts()
+        while len(starts) > SHORT_SESSION_INTURN_FOLD_AFTER:
+            start, nxt = starts[0], starts[1]
+            # Only fold a round whose tool results have actually landed.
+            if not any(msgs[j].role == Role.TOOL for j in range(start + 1, nxt)):
+                break
+            folded = msgs[start:nxt]
+            new_entries = self._context_manager.build_ledger_entries(folded)
+            ContextManager.extend_ledger(self.state.ledger, new_entries)
+            del msgs[start:nxt]
+            log.info(
+                "Short-session: folded oldest in-turn round (%d msgs, %d entries) into ledger",
+                len(folded),
+                len(new_entries),
+            )
+            starts = _round_starts()
 
     async def _complete_with_retry(
         self,
@@ -2294,6 +2389,11 @@ class CantripAgent:
         # or when the working tree is already clean.
         self._maybe_pre_turn_commit_dirty()
 
+        # Phase 104: in short-session mode each turn is near-fresh —
+        # fold the prior conversation into the ledger and clear the
+        # working set before the new user message lands.
+        self._collapse_messages_for_short_session()
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self._snapshot_before_user_turn(user_msg)
@@ -2441,6 +2541,11 @@ class CantripAgent:
             self.state.messages.append(tool_msg)
             self._record_message(tool_msg)
 
+            # Phase 104: in short-session mode, fold the oldest in-turn
+            # tool round into the ledger once the turn has built up more
+            # than a couple — keeps the live working set tiny.
+            self._maybe_fold_oldest_round_into_ledger(turn_start_idx)
+
             # Phase 107: bail when the cap is hit.  Marks the active
             # work-queue task BLOCKED so Phase 106's loop-exit logic
             # fires; ``process_message`` returns its current response
@@ -2582,6 +2687,9 @@ class CantripAgent:
         # for rationale).  Same hook drives both paths.
         self._maybe_pre_turn_commit_dirty()
 
+        # Phase 104: short-session per-turn collapse (see non-streaming loop).
+        self._collapse_messages_for_short_session()
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self._snapshot_before_user_turn(user_msg)
@@ -2716,6 +2824,9 @@ class CantripAgent:
             tool_msg = self._context_manager.virtualise_message(tool_msg)
             self.state.messages.append(tool_msg)
             self._record_message(tool_msg)
+
+            # Phase 104: short-session in-turn ledger fold (see non-streaming loop).
+            self._maybe_fold_oldest_round_into_ledger(turn_start_idx)
 
             # Phase 107: same cap check as the non-streaming loop.
             cap_reason = self._consecutive_failure_cap_exceeded()

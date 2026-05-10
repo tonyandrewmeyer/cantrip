@@ -35,6 +35,12 @@ _SNAP_DEFAULTS: dict[str, int] = {
 # may be larger, but practical limits with quantised weights are lower.
 _DEFAULT_CONTEXT_WINDOW = 8_192
 
+# Below this usable per-slot context, the agent flips into short-session
+# mode (aggressive compaction + ledger-and-drop + per-turn ephemeral
+# conversation).  gemma4 (~10 K per slot) lands below it; qwen3-coder
+# (~32 K per slot) stays above.  See ``LLMProvider.short_session_mode``.
+_SHORT_SESSION_MAX_CONTEXT_TOKENS = 16_000
+
 # Known vision-capable inference snaps.  ``qwen-vl`` is explicitly
 # vision-language; Gemma 3 (4B and larger) accepts images through the
 # snap's OpenAI-compatible endpoint; gemma4 (Gemma 3n E4B) advertises
@@ -154,6 +160,18 @@ class InferenceSnapProvider(OpenAICompatBase):
     def max_tools(self) -> int | None:
         """Local models have limited context; restrict tools to a core set."""
         return 12
+
+    @property
+    def short_session_mode(self) -> bool:
+        """True when the detected per-slot context is too tight for rich history.
+
+        Reads the runtime ``context_window_tokens`` (after the
+        ``/slots`` / ``/props`` probe in :meth:`_probe_slot_context`),
+        so a snap launched with a generous ``--ctx-size`` and few
+        ``--parallel`` slots stays out of short-session mode while a
+        128 KiB-on-paper model whose slots are only 10 K wide flips in.
+        """
+        return self._context_window < _SHORT_SESSION_MAX_CONTEXT_TOKENS
 
     @property
     def conversation_temperature(self) -> float:
