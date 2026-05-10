@@ -237,6 +237,13 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **``/tree`` crashed the TUI when opened.**  ``TreePickerScreen``
+  stored its turn list on ``self._nodes`` — a name Textual reserves
+  for a widget's child collection — so pushing the screen replaced the
+  DOM node list with a plain ``list`` and the next widget registration
+  raised ``AttributeError: 'list' object has no attribute '_updates'``.
+  The picker now holds the turns under ``self._turns``.
+
 - **Repo-stats sidebar wrapped its own rows.**  The Charm Files
   stats column rendered each line to a width inflated past the
   column's actual text area (an 18-col floor applied on top of an

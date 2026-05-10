@@ -66,20 +66,22 @@ class TreePickerScreen(ModalScreen[int | None]):
     def __init__(self, nodes: list[TreeNode]) -> None:
         """Initialise with a flat depth-first traversal of the tree."""
         super().__init__()
-        self._nodes = nodes
+        # Note: ``_nodes`` is reserved by Textual for a widget's child
+        # collection, so the tree turns are held under a distinct name.
+        self._turns = nodes
 
     def compose(self) -> ComposeResult:
         """Compose the picker layout."""
         with Center(), Vertical(id="tree-container"):
             yield Static("Session tree", id="tree-title")
-            if not self._nodes:
+            if not self._turns:
                 yield Static(
                     "No turns yet — record a message before opening /tree.",
                     id="tree-empty",
                 )
             else:
                 yield OptionList(
-                    *(self._option_for(node) for node in self._nodes),
+                    *(self._option_for(node) for node in self._turns),
                     id="tree-options",
                 )
             yield Static(
