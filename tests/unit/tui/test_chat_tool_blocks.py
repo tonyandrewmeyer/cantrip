@@ -17,7 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from cantrip.tui.app import CantripApp
-from cantrip.tui.widgets.chat import ChatWidget
+from cantrip.tui.screens.tool_error import ToolErrorScreen
+from cantrip.tui.widgets.chat import ChatWidget, MessageWidget
 
 pytestmark = pytest.mark.tui
 
@@ -310,3 +311,153 @@ async def test_bus_pending_without_id_is_dropped():
             # No new message, no registry entry.
             assert len(chat._messages) == baseline
             assert chat._pending_tool_blocks == {}
+
+
+class TestFailedToolBlockDetail:
+    """A failed tool block carries a clickable failure drill-down."""
+
+    @pytest.mark.asyncio
+    async def test_failed_block_with_detail_is_marked_clickable(self):
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    "Pack failed: missing charmcraft.yaml",
+                    success=False,
+                    detail="charmcraft pack\nerror: charmcraft.yaml not found",
+                )
+                await pilot.pause()
+                assert (
+                    widget.tool_error_detail == "charmcraft pack\nerror: charmcraft.yaml not found"
+                )
+                assert widget.tool_error_caption == "Pack failed: missing charmcraft.yaml"
+                assert "tool-failed-detail" in widget.classes
+                assert "(details)" in widget.message.content
+
+    @pytest.mark.asyncio
+    async def test_failed_block_without_detail_is_not_clickable(self):
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block("Pack failed", success=False)
+                await pilot.pause()
+                assert widget.tool_error_detail is None
+                assert "tool-failed-detail" not in widget.classes
+                assert "(details)" not in widget.message.content
+
+    @pytest.mark.asyncio
+    async def test_success_block_ignores_detail(self):
+        """A successful call never becomes clickable even if ``detail`` slips through."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block("Done", success=True, detail="ignored")
+                await pilot.pause()
+                assert widget.tool_error_detail is None
+                assert "tool-failed-detail" not in widget.classes
+                assert "(details)" not in widget.message.content
+
+    @pytest.mark.asyncio
+    async def test_resolved_failed_block_carries_detail(self):
+        """Resolving a pending block as failed wires the drill-down too."""
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                chat.add_pending_tool_block("Packing…", tool_call_id="tc-fail")
+                widget = chat.add_tool_block(
+                    "Pack failed",
+                    success=False,
+                    tool_call_id="tc-fail",
+                    detail="boom",
+                )
+                await pilot.pause()
+                assert widget.tool_error_detail == "boom"
+                assert "tool-failed-detail" in widget.classes
+
+    @pytest.mark.asyncio
+    async def test_click_opens_failure_modal(self):
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block(
+                    "Pack failed",
+                    success=False,
+                    detail="error: charmcraft.yaml not found",
+                )
+                await pilot.pause()
+                widget.on_click(MagicMock())
+                await pilot.pause()
+                assert isinstance(pilot.app.screen, ToolErrorScreen)
+
+    @pytest.mark.asyncio
+    async def test_click_without_detail_does_not_open_modal(self):
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                chat = pilot.app.query_one("#chat", ChatWidget)
+                widget = chat.add_tool_block("Pack failed", success=False)
+                await pilot.pause()
+                top_before = type(pilot.app.screen)
+                widget.on_click(MagicMock())
+                await pilot.pause()
+                assert type(pilot.app.screen) is top_before
+
+    @pytest.mark.asyncio
+    async def test_bus_failure_event_attaches_detail(self):
+        from cantrip.ui import events as ui_events
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                event = ui_events.tool_invoked(
+                    tool_name="run_command",
+                    caption="run make check",
+                    success=False,
+                    detail="exit 1\n\n5 failed",
+                    tool_call_id="tc-bus-fail",
+                )
+                pilot.app._on_bus_tool_invoked(event)
+                await pilot.pause()
+                failed = next(
+                    w for w in pilot.app.query(MessageWidget) if "tool-failed" in w.classes
+                )
+                assert failed.tool_error_detail == "exit 1\n\n5 failed"
+                assert "(details)" in failed.message.content
+
+
+class TestToolErrorScreen:
+    """The modal that surfaces a failed tool's full error and output."""
+
+    @pytest.mark.asyncio
+    async def test_renders_caption_and_detail(self):
+        from textual.widgets import RichLog
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app.push_screen(ToolErrorScreen("Pack failed", "line one\nline two"))
+                await pilot.pause()
+                screen = pilot.app.screen
+                assert isinstance(screen, ToolErrorScreen)
+                assert screen._caption == "Pack failed"
+                log = screen.query_one("#tool-error-output", RichLog)
+                assert log.lines  # detail text was written
+
+    @pytest.mark.asyncio
+    async def test_empty_detail_shows_placeholder(self):
+        from textual.widgets import RichLog
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test() as pilot:
+                pilot.app.push_screen(ToolErrorScreen("", "   "))
+                await pilot.pause()
+                screen = pilot.app.screen
+                assert isinstance(screen, ToolErrorScreen)
+                log = screen.query_one("#tool-error-output", RichLog)
+                assert log.lines

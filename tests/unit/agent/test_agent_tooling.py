@@ -199,6 +199,55 @@ class TestToolInvokedEvent:
 
         assert len(received) == 1
         assert received[0].payload["success"] is False
+        # The failure drill-down carries the error summary.
+        assert received[0].payload["detail"] == "exit 1"
+
+    @pytest.mark.asyncio
+    async def test_failed_tool_detail_combines_error_and_output(self):
+        """``detail`` joins the error summary with the captured output."""
+        tool_call = ToolCall(id="tc1", name="run_command", arguments={"command": "make check"})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Tests are red."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(
+                success=False,
+                output="FAILED tests/test_x.py::test_a\n1 failed",
+                error="command exited 1",
+            )
+        )
+
+        received: list = []
+        agent.event_bus.subscribe(ui_events.EventType.TOOL_INVOKED, received.append)
+
+        await agent.process_message("run the tests")
+
+        detail = received[0].payload["detail"]
+        assert detail.startswith("command exited 1")
+        assert "FAILED tests/test_x.py::test_a" in detail
+
+    @pytest.mark.asyncio
+    async def test_successful_tool_call_has_no_detail(self):
+        tool_call = ToolCall(id="tc1", name="read_file", arguments={"path": "src/foo.py"})
+        provider = FakeProvider(
+            [
+                Response(content="", tool_calls=[tool_call]),
+                Response(content="Read it."),
+            ]
+        )
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="47 lines"))
+
+        received: list = []
+        agent.event_bus.subscribe(ui_events.EventType.TOOL_INVOKED, received.append)
+
+        await agent.process_message("show me the file")
+
+        assert received[0].payload["detail"] is None
 
     @pytest.mark.asyncio
     async def test_pending_event_precedes_invoked_with_matching_id(self):

@@ -111,6 +111,13 @@ MAX_TOOL_ROUNDS = 20
 # Tools whose results may contain a test summary to surface in the TUI.
 _TEST_RESULT_TOOLS = frozenset({"run_charm_tests", "charm_validate"})
 
+# Maximum characters of a failed tool's combined error + output to
+# forward on the ``TOOL_INVOKED`` event so the chat surfaces can offer
+# a failure drill-down — long enough for a traceback or a pytest tail,
+# short enough that a runaway log doesn't bloat the event bus.  The
+# per-tool truncation already trims most outputs well below this.
+_TOOL_FAILURE_DETAIL_MAX_CHARS = 8_000
+
 # Purposes that can use the light model.
 _LIGHT_PURPOSES = frozenset({"compaction"})
 
@@ -338,6 +345,30 @@ def _plan_mode_refusal(state: AgentState, tool_name: str) -> ToolResult | None:
         output="",
         error=plan_mode_message(tool_name),
     )
+
+
+def _tool_failure_detail(result: ToolResult) -> str | None:
+    """Assemble the failure drill-down text for a failed :class:`ToolResult`.
+
+    Combines the tool's short ``error`` summary with its captured
+    ``output`` (stderr, test logs, tracebacks) — skipping the output
+    when it merely repeats the error — and caps the total length so a
+    runaway log can't bloat the event bus.  Returns ``None`` when the
+    result is successful or carries no usable text.
+    """
+    if result.success:
+        return None
+    error = (result.error or "").strip()
+    output = (result.output or "").strip()
+    parts = [error] if error else []
+    if output and output != error:
+        parts.append(output)
+    detail = "\n\n".join(parts)
+    if not detail:
+        return None
+    if len(detail) > _TOOL_FAILURE_DETAIL_MAX_CHARS:
+        detail = "…(truncated)\n" + detail[-_TOOL_FAILURE_DETAIL_MAX_CHARS:]
+    return detail
 
 
 def detect_github_repo(charm_path: pathlib.Path | None) -> str | None:
@@ -1594,7 +1625,9 @@ class CantripAgent:
         ``tool_call_id`` (Phase 82) round-trips with the matching
         :meth:`_publish_tool_invoked_pending` event so the renderers can
         update the existing block in place rather than appending a new
-        line.
+        line.  On a failed call the event also carries a ``detail``
+        string (error summary + captured output) so the chat surfaces
+        can offer a "what went wrong" drill-down.
         """
         from cantrip.agent.tools.base import build_tool_caption
 
@@ -1607,6 +1640,7 @@ class CantripAgent:
                 duration_ms=duration_ms,
                 source=source,
                 tool_call_id=tool_call_id,
+                detail=_tool_failure_detail(result),
             )
         )
 

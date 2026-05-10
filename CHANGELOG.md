@@ -129,6 +129,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   indicator, slim header, dotfile cull).
 
 ### Added
+- **Click a failed tool block for the full error.**  When a tool
+  call fails, the chat block now carries a dim ``(details)`` hint;
+  clicking it opens a modal showing the captured error summary plus
+  the tool's full output (stderr, test logs, tracebacks) so you no
+  longer have to open the transcript viewer to see what went wrong.
+  The ``TOOL_INVOKED`` event gained a ``detail`` field (populated on
+  failure only) to carry the text.  See
+  ``docs/src/explanation-tui-screens.md#tool-failure``.
 - **Prompt ablation harness (Phase 79.5).**  ``tests/eval/ablate.py``
   drops each top-level ``## Section`` of the rendered system prompt
   one at a time, reruns the Phase 79.2 smoke invariants

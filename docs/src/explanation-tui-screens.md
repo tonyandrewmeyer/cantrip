@@ -92,6 +92,18 @@ Shortcut: <kbd>R</kbd> refreshes the modal against the current
 working tree so you can re-open after a subagent writes to the
 file. <kbd>Esc</kbd> closes.
 
+{#tool-failure}
+## Tool failure detail
+
+When a tool call fails, the chat shows a one-line `✗` block with a
+brief caption and a dim `(details)` hint. Clicking that block opens
+the **Tool failure** modal, which shows the captured error summary
+and the tool’s full output — stderr, test logs, tracebacks — so you
+can see what actually went wrong without opening the transcript
+viewer. <kbd>Esc</kbd> closes. (The block is only clickable when the
+agent captured detail for that failure; successful calls are never
+clickable.)
+
 {#logs}
 ## Logs
 

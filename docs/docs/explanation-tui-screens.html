@@ -181,6 +181,15 @@ highlighted preview rendered via Rich&rsquo;s <code>Syntax</code>.</p>
 <p>Shortcut: <kbd>R</kbd> refreshes the modal against the current
 working tree so you can re-open after a subagent writes to the
 file. <kbd>Esc</kbd> closes.</p>
+<h2 id="tool-failure">Tool failure detail</h2>
+<p>When a tool call fails, the chat shows a one-line <code>✗</code> block with a
+brief caption and a dim <code>(details)</code> hint. Clicking that block opens
+the <strong>Tool failure</strong> modal, which shows the captured error summary
+and the tool&rsquo;s full output &mdash; stderr, test logs, tracebacks &mdash; so you
+can see what actually went wrong without opening the transcript
+viewer. <kbd>Esc</kbd> closes. (The block is only clickable when the
+agent captured detail for that failure; successful calls are never
+clickable.)</p>
 <h2 id="logs">Logs</h2>
 <p>The <kbd>F3</kbd> <strong>Logs</strong> screen tails
 <code>juju debug-log</code> for the dev model. Three shortcuts

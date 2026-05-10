@@ -847,12 +847,23 @@ class CantripApp(App):
         success = bool(payload.get("success", False))
         duration_ms = payload.get("duration_ms")
         tool_call_id = payload.get("tool_call_id")
+        detail = payload.get("detail")
         chat.add_tool_block(
             caption,
             success=success,
             duration_ms=duration_ms if isinstance(duration_ms, int) else None,
             tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+            detail=detail if isinstance(detail, str) and detail else None,
         )
+
+    def on_message_widget_tool_error_requested(
+        self, event: chat_widget.MessageWidget.ToolErrorRequested
+    ) -> None:
+        """Open the failure-detail modal when the user clicks a failed tool block."""
+        event.stop()
+        from cantrip.tui.screens.tool_error import ToolErrorScreen
+
+        self.push_screen(ToolErrorScreen(event.caption, event.detail))
 
     def _on_bus_tool_invoked_pending(self, event: ui_events.Event) -> None:
         """Render the pre-call "running now" block (Phase 82).

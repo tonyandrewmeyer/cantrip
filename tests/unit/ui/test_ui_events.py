@@ -211,6 +211,21 @@ class TestToolInvokedEvent:
         event = events.tool_invoked(tool_name="read_file", caption="read_file()", success=True)
         assert event.payload["tool_call_id"] is None
 
+    def test_detail_round_trips_for_failures(self):
+        """A failed call carries the full error/output drill-down text."""
+        event = events.tool_invoked(
+            tool_name="run_command",
+            caption="run make check",
+            success=False,
+            detail="exit 1\n\n5 tests failed",
+        )
+        assert event.payload["detail"] == "exit 1\n\n5 tests failed"
+
+    def test_detail_defaults_to_none(self):
+        """Successful calls (and pre-existing callers) leave ``detail`` unset."""
+        event = events.tool_invoked(tool_name="read_file", caption="read src/foo.py", success=True)
+        assert event.payload["detail"] is None
+
 
 class TestToolInvokedPendingEvent:
     """Phase 82: ``TOOL_INVOKED_PENDING`` carries the pre-call payload."""

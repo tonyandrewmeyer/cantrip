@@ -468,6 +468,7 @@ def tool_invoked(
     duration_ms: int | None = None,
     source: str = "main",
     tool_call_id: str | None = None,
+    detail: str | None = None,
 ) -> Event:
     """Build a ``TOOL_INVOKED`` event.
 
@@ -481,6 +482,10 @@ def tool_invoked(
     than "zero".  ``tool_call_id`` (Phase 82) carries the LLM-assigned
     call id so renderers can match this final event back to the
     matching :func:`tool_invoked_pending` block and update it in place.
+    ``detail`` carries the full failure text (the tool's ``error``
+    summary plus captured ``output``) on a failed call so the chat
+    surfaces can offer a "what went wrong" drill-down; it is ``None``
+    for successful calls.
     """
     return Event(
         type=EventType.TOOL_INVOKED,
@@ -491,6 +496,7 @@ def tool_invoked(
             "duration_ms": duration_ms,
             "source": source,
             "tool_call_id": tool_call_id,
+            "detail": detail,
         },
     )
 

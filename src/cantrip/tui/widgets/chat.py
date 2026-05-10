@@ -125,6 +125,12 @@ class MessageWidget(Static):
         border-left: tall $error;
     }
 
+    /* A failed tool block that carries a captured error/output payload
+     * is clickable — underline on hover so the affordance is visible. */
+    MessageWidget.tool-failed-detail:hover {
+        text-style: underline;
+    }
+
     MessageWidget.shell {
         color: $text-muted;
         border-left: tall $warning;
@@ -177,6 +183,15 @@ class MessageWidget(Static):
     }
     """
 
+    class ToolErrorRequested(Message):
+        """Posted when the user clicks a failed tool block to see details."""
+
+        def __init__(self, caption: str, detail: str) -> None:
+            """Carry the failed tool's caption and full error/output text."""
+            super().__init__()
+            self.caption = caption
+            self.detail = detail
+
     def __init__(self, message: ChatMessage, *, show_timestamp: bool = True) -> None:
         """Initialise with a message.
 
@@ -195,6 +210,22 @@ class MessageWidget(Static):
         # should be styled as the "active" match.  ``None`` means no search.
         self._search_query: str | None = None
         self._active_local_idx: int | None = None
+        # Set on a failed tool block by ``ChatWidget.add_tool_block`` /
+        # ``resolve_tool_block``: the human caption and the captured
+        # error + output, surfaced in a modal when the block is clicked.
+        self.tool_error_caption: str | None = None
+        self.tool_error_detail: str | None = None
+
+    def on_click(self, event: events.Click) -> None:
+        """Open the failure-detail modal when a clickable failed tool block is clicked."""
+        if not self.tool_error_detail:
+            return
+        event.stop()
+        self.post_message(
+            self.ToolErrorRequested(
+                self.tool_error_caption or "Tool failed", self.tool_error_detail
+            )
+        )
 
     def compose(self) -> ComposeResult:
         """Compose the message widget."""
@@ -1386,6 +1417,41 @@ class ChatWidget(Widget):
             )
         )
 
+    @staticmethod
+    def _tool_block_content(
+        caption: str,
+        *,
+        success: bool,
+        duration_ms: int | None,
+        detail: str | None,
+    ) -> str:
+        """Build the marked-up body for a resolved tool block.
+
+        Appends the parenthesised timing for slow calls and, on a
+        failed call that carries a captured ``detail`` payload, a dim
+        ``(details)`` hint so the user knows the block can be clicked
+        for the full error / output.
+        """
+        glyph = "▸" if success else "✗"
+        suffix = ""
+        if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
+            suffix += f" [dim]({duration_ms} ms)[/dim]"
+        if detail and not success:
+            suffix += " [dim](details)[/dim]"
+        return f"{glyph} {rich_escape(caption)}{suffix}"
+
+    @staticmethod
+    def _attach_tool_detail(widget: MessageWidget, caption: str, detail: str | None) -> None:
+        """Wire a failure drill-down onto *widget*, or clear any prior one."""
+        if detail:
+            widget.tool_error_caption = caption
+            widget.tool_error_detail = detail
+            widget.add_class("tool-failed-detail")
+        else:
+            widget.tool_error_caption = None
+            widget.tool_error_detail = None
+            widget.remove_class("tool-failed-detail")
+
     def add_tool_block(
         self,
         caption: str,
@@ -1393,6 +1459,7 @@ class ChatWidget(Widget):
         success: bool,
         duration_ms: int | None = None,
         tool_call_id: str | None = None,
+        detail: str | None = None,
     ) -> MessageWidget:
         """Add a compact tool-invocation block to the chat (Phase 75).
 
@@ -1405,7 +1472,9 @@ class ChatWidget(Widget):
         ``TOOL_INVOKED`` event carries.  ``success=False`` recolours
         the block's left border to the error colour and swaps the
         leading glyph.  ``duration_ms`` is appended in parentheses
-        when supplied so slow calls stand out.
+        when supplied so slow calls stand out.  ``detail`` (failed
+        calls only) is the captured error + output; when present the
+        block becomes clickable and opens a modal with the full text.
 
         Phase 82: when ``tool_call_id`` matches a pending block added
         earlier via :meth:`add_pending_tool_block`, the pending block
@@ -1419,20 +1488,19 @@ class ChatWidget(Widget):
                 caption,
                 success=success,
                 duration_ms=duration_ms,
+                detail=detail,
             )
-        glyph = "▸" if success else "✗"
-        suffix = ""
-        if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
-            suffix = f" [dim]({duration_ms} ms)[/dim]"
-        content = f"{glyph} {rich_escape(caption)}{suffix}"
         widget = self.add_message(
             ChatMessage(
                 role=MessageRole.TOOL,
-                content=content,
+                content=self._tool_block_content(
+                    caption, success=success, duration_ms=duration_ms, detail=detail
+                ),
             )
         )
         if not success:
             widget.add_class("tool-failed")
+        self._attach_tool_detail(widget, caption, detail if not success else None)
         return widget
 
     def add_pending_tool_block(
@@ -1475,6 +1543,7 @@ class ChatWidget(Widget):
         *,
         success: bool,
         duration_ms: int | None = None,
+        detail: str | None = None,
     ) -> MessageWidget:
         """Replace a pending tool block in place with its post-call form (Phase 82).
 
@@ -1485,6 +1554,8 @@ class ChatWidget(Widget):
         registered for *tool_call_id* (renderer started after the
         pending event, or the agent crashed mid-call), falls back to
         :meth:`add_tool_block` so the user still sees *something*.
+        ``detail`` is the captured error + output forwarded on a
+        failed call; see :meth:`add_tool_block`.
         """
         widget = self._pending_tool_blocks.pop(tool_call_id, None)
         if widget is None:
@@ -1492,17 +1563,17 @@ class ChatWidget(Widget):
                 caption,
                 success=success,
                 duration_ms=duration_ms,
+                detail=detail,
             )
-        glyph = "▸" if success else "✗"
-        suffix = ""
-        if duration_ms is not None and duration_ms >= _TOOL_BLOCK_DURATION_THRESHOLD_MS:
-            suffix = f" [dim]({duration_ms} ms)[/dim]"
-        widget.message.content = f"{glyph} {rich_escape(caption)}{suffix}"
+        widget.message.content = self._tool_block_content(
+            caption, success=success, duration_ms=duration_ms, detail=detail
+        )
         widget.remove_class("tool-pending")
         if success:
             widget.remove_class("tool-failed")
         else:
             widget.add_class("tool-failed")
+        self._attach_tool_detail(widget, caption, detail if not success else None)
         # ``_rerender`` is a no-op pre-mount; the next compose pass
         # picks up the updated content from ``message.content``.
         widget._rerender()
