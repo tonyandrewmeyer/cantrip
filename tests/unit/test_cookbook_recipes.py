@@ -665,3 +665,267 @@ class TestStatefulCharmVerifier:
         code = verifier.main([])
         assert code == 2
         assert "Usage" in capsys.readouterr().err
+
+
+class TestTerraformModuleVerifier:
+    """Verifier for ``cookbook/generate-a-terraform-module/``.
+
+    Builds an in-process charm tree carrying a standard four-file
+    Terraform module and exercises the verifier's happy path plus
+    every failure mode.  No real ``terraform`` runs.
+    """
+
+    RECIPE = COOKBOOK_ROOT / "generate-a-terraform-module"
+
+    _CHARMCRAFT = "name: my-charm\ntype: charm\nbase: ubuntu@24.04\n"
+    _MAIN_TF = textwrap.dedent("""\
+        resource "juju_application" "my_charm" {
+          name  = var.app_name
+          model = var.model_uuid
+          charm {
+            name    = "my-charm"
+            channel = var.channel
+          }
+          units  = var.units
+          config = var.config
+        }
+        """)
+    _VARIABLES_TF = textwrap.dedent("""\
+        variable "app_name" {
+          type    = string
+          default = "my-charm"
+        }
+        variable "model_uuid" {
+          type = string
+        }
+        variable "channel" {
+          type    = string
+          default = "latest/stable"
+        }
+        variable "units" {
+          type    = number
+          default = 1
+        }
+        variable "config" {
+          type    = map(string)
+          default = {}
+        }
+        """)
+    _OUTPUTS_TF = textwrap.dedent("""\
+        output "app_name" {
+          value = juju_application.my_charm.name
+        }
+        """)
+    _TERRAFORM_TF = textwrap.dedent("""\
+        terraform {
+          required_version = ">= 1.6"
+          required_providers {
+            juju = {
+              source  = "juju/juju"
+              version = "~> 0.14"
+            }
+          }
+        }
+        """)
+
+    @pytest.fixture
+    def verifier(self):
+        return _load_verifier(self.RECIPE / "verify.py")
+
+    @staticmethod
+    def _write_module_charm(
+        root: pathlib.Path,
+        *,
+        charmcraft_yaml: str | None = None,
+        tf_files: dict[str, str] | None = None,
+        write_charmcraft: bool = True,
+        write_module: bool = True,
+    ) -> pathlib.Path:
+        """Write a charm tree with a Terraform module into *root*."""
+        cls = TestTerraformModuleVerifier
+        if write_charmcraft:
+            (root / "charmcraft.yaml").write_text(
+                charmcraft_yaml if charmcraft_yaml is not None else cls._CHARMCRAFT,
+                encoding="utf-8",
+            )
+        if write_module:
+            files = (
+                tf_files
+                if tf_files is not None
+                else {
+                    "main.tf": cls._MAIN_TF,
+                    "variables.tf": cls._VARIABLES_TF,
+                    "outputs.tf": cls._OUTPUTS_TF,
+                    "terraform.tf": cls._TERRAFORM_TF,
+                }
+            )
+            (root / "terraform").mkdir(parents=True, exist_ok=True)
+            for name, body in files.items():
+                (root / "terraform" / name).write_text(body, encoding="utf-8")
+        return root
+
+    def test_happy_path(self, tmp_path: pathlib.Path, verifier) -> None:
+        verifier.verify(self._write_module_charm(tmp_path))
+
+    def test_missing_charmcraft_yaml_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(tmp_path, write_charmcraft=False)
+        with pytest.raises(verifier.VerifyError, match="charmcraft.yaml"):
+            verifier.verify(tmp_path)
+
+    def test_charmcraft_without_name_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(tmp_path, charmcraft_yaml="type: charm\n")
+        with pytest.raises(verifier.VerifyError, match="no 'name'"):
+            verifier.verify(tmp_path)
+
+    def test_missing_terraform_dir_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(tmp_path, write_module=False)
+        with pytest.raises(verifier.VerifyError, match="terraform/ directory"):
+            verifier.verify(tmp_path)
+
+    def test_missing_required_file_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": self._MAIN_TF,
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": self._OUTPUTS_TF,
+                # terraform.tf deliberately omitted
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="missing required file"):
+            verifier.verify(tmp_path)
+
+    def test_no_juju_application_resource_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": 'resource "juju_model" "dev" {\n  name = "dev"\n}\n',
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": self._OUTPUTS_TF,
+                "terraform.tf": self._TERRAFORM_TF,
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="juju_application"):
+            verifier.verify(tmp_path)
+
+    def test_no_charm_block_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": 'resource "juju_application" "x" {\n  name  = var.app_name\n  units = 1\n}\n',
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": self._OUTPUTS_TF,
+                "terraform.tf": self._TERRAFORM_TF,
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="Charmhub charm and channel"):
+            verifier.verify(tmp_path)
+
+    def test_charm_name_mismatch_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        wrong = self._MAIN_TF.replace('"my-charm"', '"some-other-charm"')
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": wrong,
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": self._OUTPUTS_TF,
+                "terraform.tf": self._TERRAFORM_TF,
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="not a placeholder"):
+            verifier.verify(tmp_path)
+
+    def test_no_variable_blocks_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": self._MAIN_TF,
+                "variables.tf": "# no variables yet\n",
+                "outputs.tf": self._OUTPUTS_TF,
+                "terraform.tf": self._TERRAFORM_TF,
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="variables.tf"):
+            verifier.verify(tmp_path)
+
+    def test_no_output_blocks_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": self._MAIN_TF,
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": "# nothing exported\n",
+                "terraform.tf": self._TERRAFORM_TF,
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="outputs.tf"):
+            verifier.verify(tmp_path)
+
+    def test_no_terraform_block_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": self._MAIN_TF,
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": self._OUTPUTS_TF,
+                "terraform.tf": "# placeholder\n",
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match=r"no .terraform \{"):
+            verifier.verify(tmp_path)
+
+    def test_no_required_providers_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": self._MAIN_TF,
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": self._OUTPUTS_TF,
+                "terraform.tf": 'terraform {\n  required_version = ">= 1.6"\n}\n',
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="required_providers"):
+            verifier.verify(tmp_path)
+
+    def test_juju_provider_not_pinned_fails(self, tmp_path: pathlib.Path, verifier) -> None:
+        no_juju = textwrap.dedent("""\
+            terraform {
+              required_providers {
+                random = {
+                  source = "hashicorp/random"
+                }
+              }
+            }
+            """)
+        self._write_module_charm(
+            tmp_path,
+            tf_files={
+                "main.tf": self._MAIN_TF,
+                "variables.tf": self._VARIABLES_TF,
+                "outputs.tf": self._OUTPUTS_TF,
+                "terraform.tf": no_juju,
+            },
+        )
+        with pytest.raises(verifier.VerifyError, match="juju/juju"):
+            verifier.verify(tmp_path)
+
+    def test_verifier_cli_returns_0_on_success(
+        self, tmp_path: pathlib.Path, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main([str(self._write_module_charm(tmp_path))])
+        assert code == 0
+        assert "OK" in capsys.readouterr().out
+
+    def test_verifier_cli_returns_1_on_failure(
+        self, tmp_path: pathlib.Path, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main([str(tmp_path)])  # Empty dir → missing charmcraft.yaml.
+        assert code == 1
+        assert "FAIL" in capsys.readouterr().err
+
+    def test_verifier_cli_returns_2_on_wrong_argv(
+        self, verifier, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = verifier.main(["x", "y", "z"])
+        assert code == 2
+        assert "Usage" in capsys.readouterr().err
