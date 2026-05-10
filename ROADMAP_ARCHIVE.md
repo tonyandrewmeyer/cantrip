@@ -15041,3 +15041,291 @@ produces the same multi-edit-charm result that the manually-chained
 stays below the configured threshold; the TUI / Web UI label the
 short-session mode and per-turn token spend; existing frontier-API
 tests continue to pass with the long-history strategy unchanged.
+
+---
+
+## Phase 107: Tool-Call Failure Cap — Stop Looping on the Same Failing Call ✓
+
+**Goal:** Bound how many consecutive failures of the same tool call
+the autonomous loop will tolerate before treating the work-queue
+task as ``BLOCKED``.  Before this, the conversation continued
+indefinitely: each tool failure went back to the model, the model
+decided "let me try again", and on small local models that retry
+took 80+ seconds while making no progress.  After N rounds the loop
+now flips the active task to ``BLOCKED`` (with a clear
+``blocked_reason``) so Phase 106's exit/escalation paths fire.
+
+### Why now
+
+Phase 105.1.5's Qwen3-14B Run #2 reproduced this cleanly: after
+two successful ``write_file`` calls (charmcraft.yaml + src/charm.py
+both clean and packable), the model entered an **8-call retry
+loop** trying to ``write_file`` ``tests/unit/test_charm.py``.  Each
+attempt failed with ``duration_ms=0`` and a bare ``"write_file()"``
+caption — the function-call envelope came back without arguments
+(the long test-file content overflowed the model's tool-call
+generation budget mid-stream).  Each retry took ~80 s of model
+thinking; after 11 minutes the run was killed by hand.
+
+The downstream paths were already correct (Phase 106 ✓ — task hits
+BLOCKED → loop terminates → print-mode exits with code 1).  What
+was missing was a *trigger* upstream: nothing escalated a
+5-tool-failure streak into a BLOCKED transition.
+
+### 107.1 P0 — Reproduce in a unit test ✓
+
+- [x] ``tests/unit/agent/test_tool_failure_cap.py`` drives a
+  ``FakeProvider`` that re-emits the same failing ``write_file``
+  call every turn and asserts the loop bails near turn 5 (well
+  under ``MAX_TOOL_ROUNDS``), the active task transitions to
+  ``BLOCKED``, and the ``blocked_reason`` names the tool and the
+  count.  Landed already passing (not as an ``xfail``) because
+  107.2 shipped in the same commit.
+
+### 107.2 P0 — Counter + transition logic ✓
+
+- [x] ``AgentState`` carries ``consecutive_tool_failures``,
+  ``last_failed_tool_signature``, ``last_failed_tool_name`` and the
+  ``tool_failure_cap`` (default 5, tunable via
+  ``CANTRIP_TOOL_FAILURE_CAP``, clamped to ``[1, 50]`` at agent
+  init).  ``CantripAgent._track_tool_failure_streak`` increments on
+  a failed tool invocation and resets to zero on a successful one;
+  ``_consecutive_failure_cap_exceeded`` returns the operator-facing
+  reason string once the cap is hit and
+  ``_mark_active_task_blocked`` flips the active work-queue task via
+  ``WorkQueue.set_blocked`` so Phase 106 takes over.  Wired into
+  both the non-streaming and streaming tool-result branches of
+  ``CantripAgent`` (the loop lives there, not in
+  ``executor/core.py`` as the original sketch guessed).
+- [x] The streak only compounds on the *same* ``(tool name,
+  serialised arguments)`` signature; any different signature resets
+  it to one — so a model can legitimately retry one ``edit_file``
+  after fixing its ``old_string`` without tripping the cap.
+
+### 107.3 P1 — Inform the model before giving up ✓
+
+- [x] ``_maybe_warn_before_failure_cap`` injects a ``SYSTEM``
+  message (mirrored to the chat UI as a system message) the round
+  the streak reaches ``cap - 1``, telling the model it has retried
+  the same call N times and that one more identical failure will
+  mark the task ``BLOCKED`` — and to split the payload, switch
+  tools, fix the arguments, or stop.  A cap below 2 leaves no room
+  for the warning round and is silently skipped.
+
+### 107.4 P1 — Diagnostic logging + live badge ✓
+
+- [x] Each consecutive-failure increment past three logs at
+  ``warning`` level (``Tool {sig} has now failed N consecutive
+  times``) so operators watching ``run.stderr`` see the loop-out
+  forming.
+- [x] Once the streak hits two, ``_track_tool_failure_streak``
+  publishes a ``status_bar_changed`` event carrying
+  ``⟳ tool retrying (n/cap)`` so the TUI status bar and the web
+  footer render the streak live rather than only after the fact.
+
+### What this phase is *not*
+
+- **Not a model-side fix.**  Smaller local models hit this loop
+  more often, but the answer is bounding cantrip's tolerance, not
+  requiring better models.
+- **Not a change to provider-transient retry.**  ``retry.py``'s
+  linear backoff for HTTP 429 / 500 / network errors is a separate
+  layer — network-level retries on one LLM call, not tool-call
+  retries across conversation turns — and is untouched.
+- **Not "make tool failures user-visible somehow."**  The UIs
+  already render individual failed tool invocations; this phase is
+  about not letting a *streak* of them silently consume minutes.
+
+**Exit criteria (met):** ``test_tool_failure_cap.py`` passes (no
+``xfail``); a small local model asked to write a large test file in
+one ``write_file`` call now either succeeds or exits cleanly with
+``Tool write_file ... failed N consecutive times`` in stderr
+instead of looping until SIGKILL.
+
+**Shipped in:** ``f040dcb`` (107.1 + 107.2 — state, counter,
+transition, tests) and a follow-up commit (107.3 pre-cap warning,
+107.4 live retry badge, extra regression tests).
+
+---
+
+## Completed Milestones
+
+Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROADMAP.md).
+
+| Milestone | Phase | Definition |
+|-----------|-------|------------|
+| M0: Talking | 0 ✓ | CLI chat with Gemini + juju status |
+| M1: First Charm | 1 ✓ | Flask app → running charm in 2 min |
+| M2: Dev Loop | 2 ✓ | Fast iteration with trace debugging |
+| M3: All Paths | 3 ✓ | 12-factor, custom, infra all working |
+| M4: Autonomous | 4 ✓ | Agent works independently with visible task tracking |
+| M7: Showcase | 7 ✓ | Demo-ready with full ecosystem, testing, and publishing |
+| M8: Local Models | 8 ✓ | Cantrip runs on local inference snaps with no cloud API |
+| M18: Framework Decision | 18 ✓ | Evidence-based recommendation on build-vs-adopt for agent infrastructure |
+| M20: Deep Introspection | 20 ✓ | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
+| M21: Hardened Orchestrator | 21 ✓ | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
+| M22: Multi-Controller COS | 22 ✓ | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |
+| M31: Great UX | 31 ✓ | Streaming responses; chat search; session resume; cost tracking visible |
+| M33: Expanded Skills | 33 ✓ | Existing bundle management; charm migration; multi-charm workspaces; interactive debug; benchmarking |
+| M48: Multimodal Debug | 48 ✓ | Providers accept images; Grafana/Tempo/Juju-status rendering tools return PNGs the agent reasons about |
+| M49: Sandboxed Shell | 49 ✓ | Untrusted subprocesses run under PID/mount namespaces with deny-rule and syscall hardening |
+| M50: Skills Interop | 50 ✓ | Standard-format skills import and export round-trip; MCP-aware skills resolve dependencies at load time |
+| M52: Durable Subagents | 52 ✓ | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
+| M54: Authored Docs | 54 ✓ | `docs/docs/` site rebuilds from committed markdown sources through `make docs`; no hand-authored HTML remains in the docs tree |
+| M55: Awesome-Copilot Survey | 55 ✓ | Eight awesome-copilot patterns investigated end-to-end; each has a committed decision, prototype, or recommendation |
+| M63: Self-Update Check | 63 ✓ | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
+| M64: Polite Repo Bootstrap | 64 ✓ | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
+| M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
+| M67: Pi-Inspired Sessions | 67 ✓ | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
+| M68: OpenCode Safety Rails | 68 ✓ | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
+| M71: Aider Engineering Hygiene | 71 ✓ | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |
+| M72b: Read-Only Code Intelligence | 72b ✓ | Exact workspace-symbol, go-to-definition, and find-references queries layered on repo-map and ``@``-providers, giving Cantrip precise code navigation without an IDE surface or write-capable refactors |
+| M74: Populated Charm Docs | 74 ✓ | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
+| M75: Inline Tool Blocks | 75 ✓ | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
+| M76: Copy-Friendly Chat | 76 ✓ | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
+| M77: Reasoning Content Surfaced | 77 ✓ | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
+| M78: Observability Hardening | 78 ✓ | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
+| M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
+| M81: Tool Caption Coverage | 81 ✓ | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback; coverage test forces the rich-caption-vs-fallback choice for new tools |
+| M83: Pause-and-Edit Research | 83 ✓ | Written decision (ship / defer / drop) on whether Cantrip's hard cancel should soften into a pausable, editable mid-turn affordance; verdict is *defer*, with queue-next-instruction sketched as the leaner follow-up shape against three named revisit triggers |
+| M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
+| M91: Canonical/skills Adoption | 91 ✓ | Four upstream 12-factor scripts (framework detect, rock-contract check, env-key inspect, preflight targets) ship as Cantrip tools with attribution and tests; ``twelve-factor`` skill body adopts the upstream checkpoint workflow and handoff payload; framework-specific contract tables inlined into the charm and rock skill bodies |
+| M99: Goal Lifecycle | 99 ✓ | `/pause` and `/resume` toggle the autonomous loop mid-run; `cantrip resume` preserves `/budget` caps; user-prose objective is a first-class session field surfaced via `/goal`; status bar projects running / paused / done / blocked / budget-limited |
+| M100: Wait For | 100 ✓ | Typed-predicate ``wait_for`` tool with file/process/port/command/juju-app waits, hard timeouts, policy-gated commands, and reference docs; streaming-stream monitoring stays deferred behind named triggers |
+| M101: ops-tracing Refresh | 101 ✓ | System prompt, subagent guidance, and the ``_inject_ops_tracing`` injection helper teach the modern ``ops_tracing.Tracing(charm, "<rel>")`` constructor instead of the long-removed ``setup`` shorthand; a regression test exercises the recipe against the live PyPI ``ops-tracing`` API |
+| M102: Long-Generation Resilience | 102 ✓ | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
+| M103: Resume Hallucination Repair | 103 ✓ | Post-``load_state`` turns carry a "must-read-first" directive until the agent re-reads each file it intends to edit; ``edit_file`` / ``multi_edit`` ``old_string`` mismatches return a "did you mean" diff hint instead of the bare-error preview; an opt-in whitespace-tolerant match handles trivial drift; a session counter surfaces hallucination-rate via ``/cost`` |
+| M104: Short-Session Mode | 104 ✓ | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
+| M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
+| M107: Tool-Call Failure Cap | 107 ✓ | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; one round before the cap a SYSTEM message nudges the model to change approach; a "tool retrying (n/cap)" status-bar badge surfaces the streak live; regression tests pin the shape |
+
+---
+
+## Dependencies and Blockers (historical)
+
+The original cross-phase dependency map for Phases 4–41. Every entry's phase is now complete; this table is preserved as a record of the build order. New phases carry their own per-phase `Dependencies` tables in [`ROADMAP.md`](ROADMAP.md).
+
+| Item | Blocked By | Notes |
+|------|------------|-------|
+| Task planner (4.2) | Task model (4.1) | Need the data structures before the LLM can populate them |
+| Background executor (4.3) | Task model (4.1) | Executor consumes the work queue |
+| Task checklist widget (4.4) | Task model (4.1) | Widget renders task state |
+| Auto-deploy loop (4.5) | Background executor (4.3) | Deploy tasks run through the executor |
+| Research-driven design (5.x) | Background executor (4.3) | Research tasks are autonomous work |
+| Parallel execution (6.1) | Phase 4 executor (4.3) | Extends the existing sequential executor |
+| Fast path (6.2) | Phase 5 design pipeline | Needs the full pipeline working to know what to skip |
+| Merge planning (6.4) | Phase 6 speed analysis | Needs discussion and evaluation first |
+| Advanced testing (7.2) | Phase 4 autonomous core | Tests should run as autonomous tasks |
+| Charmhub publishing (7.4) | Phase 5 design pipeline | Only publish well-researched charms |
+| Inference snaps (8.2+) | Phase 8.1 basic provider | Need the basic provider working to evaluate quality |
+| Terraform support (9.x) | Phase 5 design pipeline | Needs working charm build pipeline to generate modules from |
+| Charm audit (10.1) | Phase 4 autonomous core | Audit tasks run as autonomous work |
+| Test gap fill (10.3) | Phase 2 test generation | Builds on existing Scenario/Jubilant generation |
+| Observability gap fill (10.2) | Phase 2 COS integration | Builds on existing COS tooling |
+| Listing readiness (10.5) | Phase 7.4 publishing | Builds on existing Charmhub publishing support |
+| Commit-after-build (11.1) | Phase 4 executor (4.3) | Extends subagent guidance and executor checks |
+| Self-verification (11.2) | Phase 4 executor (4.3) | Extends BUILD tool allowlist and guidance |
+| Session resume (11.3) | Phase 2.5 persistence | Builds on existing SQLite session store |
+| Git-revert-on-failure (11.4) | Phase 1.5 git tools | Uses existing git tooling in the executor |
+| Environment health checks (11.5) | Phase 4 executor (4.3) | Pre-task checks before subagent launch |
+| Integration-tests-first (12.1) | Phase 4 planner (4.2) | Changes the build task sequence in the planner prompt |
+| Test generation from design (12.2) | Phase 5 design pipeline | Needs approved DESIGN.md to extract testable contracts |
+| Test-driven build subagent (12.3) | Phase 12.1 + 12.2 | Needs tests written before build subagent can target them |
+| Incremental feature TDD (12.4) | Phase 12.3 | Extends the red/green cycle to feature additions via replanning |
+| Unit tests second pass (12.5) | Phase 12.3 | Sequences unit tests after integration tests pass |
+| Showboat/Rodney integration (13.1) | Phase 4 executor (4.3) | Wraps external CLI tools as agent tools |
+| Demo document generation (13.2) | Phase 13.1 | Uses Showboat to capture live deployment output |
+| Captured artefacts (13.3) | Phase 13.2 | Saves standalone files alongside the demo document |
+| Visual assets (13.4) | Phase 13.1 + Phase 2.2 COS | Uses Rodney for Grafana/web UI screenshots |
+| Demo tutorial (13.5) | Phase 5 design pipeline | Draws on WORKLOAD.md and DESIGN.md |
+| Demo as pipeline stage (13.6) | Phase 13.2 + 13.5 | Integrates demo generation into the planner |
+| Conversation recording (14.1) | Phase 2.5 persistence | Extends the existing SQLite store schema |
+| Subagent recording (14.2) | Phase 14.1 + Phase 4.3 executor | Records full subagent conversations to SQLite |
+| Event log (14.3) | Phase 14.1 | Adds event stream alongside message recording |
+| HTML export (14.4) | Phase 14.1 + 14.2 | Needs recorded data to export |
+| Additional export formats (14.5) | Phase 14.4 | Extends the export pipeline with JSONL/Markdown |
+| Live transcript in TUI (14.6) | Phase 14.1 + 14.2 | Needs recording in place to display |
+| Shared UI event bus (15.1) | Phase 4.4 TUI widgets | Refactors existing TUI widgets to event-driven |
+| Localhost HTTP server (15.2) | Phase 15.1 | Needs event bus to bridge to WebSocket |
+| Static frontend (15.3) | Phase 15.2 | Needs server to serve assets and provide API |
+| Real-time updates (15.4) | Phase 15.2 + 15.3 | Needs both server and frontend in place |
+| Alternative views (15.5) | Phase 15.3 | Extends the base frontend layout |
+| Feature parity maintenance (15.6) | Phase 15.1 | Ongoing process once event bus exists |
+| Security event identification (16.1) | Phase 5 design pipeline | Assessed during design phase |
+| Tracing instrumentation guidance (16.2) | Phase 2 COS integration | Extends existing ops-tracing setup |
+| Security event collection (16.3) | Phase 16.1 + Phase 2 COS | Needs security events + Loki/Grafana |
+| Security/tracing audit (16.4) | Phase 10.1 + Phase 16.1 | Extends charm audit with security checks |
+| Action exerciser (17.1) | Phase 4 executor (4.3) + Phase 4.5 auto-deploy | Needs a live deployment to exercise actions against |
+| Relation smoke tests (17.2) | Phase 17.1 + Phase 5 design pipeline | Needs deployed charm and workload knowledge to pick partners |
+| Workload endpoint testing (17.3) | Phase 17.1 + Phase 5 design pipeline | Needs research context to know how to probe the workload |
+| Config variation testing (17.4) | Phase 17.1 | Needs a live deployment to apply config changes against |
+| Upgrade and lifecycle testing (17.5) | Phase 17.1 | Needs a live deployment to test scale/refresh |
+| Acceptance test report (17.6) | Phase 17.1–17.5 | Consolidates results from all acceptance test stages |
+| Planner integration (17.6) | Phase 4 planner (4.2) + Phase 7.2 | Acceptance tests become a standard pipeline stage after integration tests |
+| Landscape survey (18.1) | None | Can start any time — pure research |
+| Architecture mapping (18.2) | Phase 18.1 | Needs the candidate list to map against |
+| Proof of concept (18.3) | Phase 18.2 | Needs mapping results to select candidates for spike |
+| Decision and recommendation (18.4) | Phase 18.3 | Needs spike results to make an informed recommendation |
+| Readiness assessment tool (19.1) | Phase 10.1 charm audit | Extends the audit pattern with operability checks |
+| Readiness skill (19.2) | Phase 0.4 skills infrastructure | New skill following existing SKILL.md pattern |
+| Operability planner phase (19.3) | Phase 4 planner (4.2) + Phase 19.1 | Needs assessment tool results to generate fix tasks |
+| Readiness report (19.4) | Phase 19.1 | Needs assessment results to generate the report |
+| Improvement mode integration (19.3) | Phase 10 charm improvement | Extends the existing improvement pipeline |
+| Pure state machine (21.1) | Phase 4 autonomous core | Formalises the existing executor routing logic |
+| Service injection (21.2) | Phase 4 executor (4.3) | Refactors the executor to accept Protocol services |
+| Noop detection (21.3) | Phase 21.2 | Needs service injection to capture state snapshots cleanly |
+| Graceful shutdown (21.4) | Phase 4 executor (4.3) | Extends executor lifecycle management |
+| Exit contracts (21.5) | Phase 4 subagent (4.6) | Formalises subagent result reporting |
+| Scoped tool access (21.6) | Phase 4 planner (4.2) | Formalises existing category-based tool allowlists |
+| Relation databag tool (20.1) | Phase 0.3 Juju integration | Reads relation data via Jubilant or juju show-unit |
+| App config tool (20.2) | Phase 0.3 Juju integration | Reads config via juju config CLI |
+| WebSocket log streaming (20.3) | Phase 3.1 watcher | Replaces/supplements SSH-to-Loki polling |
+| Cross-model offers (20.4) | Phase 0.3 Juju integration | Multi-controller inspection |
+| Detect K8s controller for COS (22.1) | Phase 0.3 Juju integration | Needs controller enumeration via Jubilant or subprocess |
+| Cross-model COS integration (22.2) | Phase 22.1 | Needs K8s controller targeting + juju offer/consume |
+| Preflight multi-controller awareness (22.3) | Phase 22.1 | Extends preflight to enumerate controllers |
+| COS system prompt updates (22.4) | Phase 22.2 | Updates prompts and skills for cross-model COS |
+| Secrets inspection (20.5) | Phase 0.3 Juju integration | Lists and inspects Juju secrets |
+| TUI status enhancements (20.6) | Phase 1.3 TUI + Phase 20.1 | Needs relation data tool for detail panel |
+| Bare Exception catches (25.1) | None | Style-guide compliance; can start any time |
+| Shell injection fix (25.2) | None | Security fix; can start any time |
+| Target version fix (25.3) | None | Config fix; can start any time |
+| Duplicated `_run_juju()` (25.4) | None | Refactor; can start any time |
+| Duplicated `_get_system_prompt()` (25.5) | None | Refactor; can start any time |
+| Duplicated light provider resolution (25.6) | None | Refactor; can start any time |
+| Streaming duplication (25.7) | None | Refactor; can start any time |
+| Long function decomposition (25.8) | None | Refactor; can start any time |
+| Claude prompt caching (27.1) | None | Provider-level change; can start any time |
+| Fix max_tokens 4096 cap (27.2) | None | Provider-level change; can start any time |
+| Gemini duplicate tool call IDs (27.3) | None | Provider-level bug fix; can start any time |
+| Extended thinking support (27.4) | None | Provider-level change; can start any time |
+| SQLite busy timeout (28.1) | None | Store-level fix; can start any time |
+| Hardcoded task ID collisions (28.2) | None | Planner fix; can start any time |
+| Executor exception hardening (28.3) | None | Executor fix; can start any time |
+| Subagent context management (28.4) | Phase 4 subagent | Extends existing subagent runner |
+| Concurrent subagent tools (28.5) | Phase 4 subagent | Changes tool execution in subagent.py |
+| Streaming responses (28.6 + 31.2) | Phase 25.7 streaming dedup | Needs unified streaming path first |
+| Wire RelationDetailScreen (29.1) | Phase 20.6 TUI status | Screen exists, needs handler in app.py |
+| Shell injection fix (30.1) | None | Security fix; can start any time |
+| Missing Juju tools (30.2) | Phase 0.3 Juju integration | New tools using existing juju patterns |
+| Missing git tools (30.3) | Phase 1.5 git tools | New tools using existing git patterns |
+| Existing bundle management (33.1) | Phase 0.3 Juju integration | Read/deploy existing bundles only; new bundles are deprecated |
+| Charm migration (33.2) | Phase 10 charm improvement | Extends the improvement pipeline |
+| Multi-charm workspace (33.3) | Phase 5 design pipeline | Needs design system for multi-charm coordination |
+| ACP protocol familiarisation (39.1) | None | Pure research; can start any time |
+| Candidate agents survey (39.2) | Phase 39.1 | Needs protocol understanding first |
+| Integration sketch (39.3) | Phase 39.2 | Needs candidate assessment to design against |
+| ACP decision write-up (39.4) | Phase 39.3 | Needs integration sketch to make recommendation |
+| Compaction cycle detection (40.1) | Phase 28.7 compaction recovery | Extends existing compaction/emergency_truncate |
+| Compaction retry budget (40.2) | Phase 28.1 SQLite upsert | Persists counters via session store |
+| Post-compaction validation (40.3) | Phase 28.4 context window mgmt | Needs token estimation working |
+| Gemini streaming usage (41.1) | None | Provider-level fix; can start any time |
+| Extended thinking (41.2) | Phase 27.4 extended thinking | Anthropic-specific feature |
+| Caching awareness (41.3) | Phase 27.1 Claude caching | Monitoring/logging improvement |
+| Claude model ID updates (41.4) | None | Maintenance; can start any time |
+| Provider token counting (41.5) | None | Provider-level enhancement |
+| Cost display (41.6) | Phase 31 UX improvements | Builds on existing usage tracking |
+| Compaction monitoring (41.7) | Phase 40 compaction safety | Feeds into cycle detection |
+| Streaming chunk granularity (41.8) | Phase 28.6 streaming | Cosmetic; low priority |
+| Rate limit coordination (41.9) | None | Provider-level tuning |
+| Streaming usage robustness (41.10) | None | Defensive guard; can start any time |

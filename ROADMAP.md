@@ -70,135 +70,6 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
 
 ---
 
-## Dependencies and Blockers
-
-| Item | Blocked By | Notes |
-|------|------------|-------|
-| Task planner (4.2) | Task model (4.1) | Need the data structures before the LLM can populate them |
-| Background executor (4.3) | Task model (4.1) | Executor consumes the work queue |
-| Task checklist widget (4.4) | Task model (4.1) | Widget renders task state |
-| Auto-deploy loop (4.5) | Background executor (4.3) | Deploy tasks run through the executor |
-| Research-driven design (5.x) | Background executor (4.3) | Research tasks are autonomous work |
-| Parallel execution (6.1) | Phase 4 executor (4.3) | Extends the existing sequential executor |
-| Fast path (6.2) | Phase 5 design pipeline | Needs the full pipeline working to know what to skip |
-| Merge planning (6.4) | Phase 6 speed analysis | Needs discussion and evaluation first |
-| Advanced testing (7.2) | Phase 4 autonomous core | Tests should run as autonomous tasks |
-| Charmhub publishing (7.4) | Phase 5 design pipeline | Only publish well-researched charms |
-| Inference snaps (8.2+) | Phase 8.1 basic provider | Need the basic provider working to evaluate quality |
-| Terraform support (9.x) | Phase 5 design pipeline | Needs working charm build pipeline to generate modules from |
-| Charm audit (10.1) | Phase 4 autonomous core | Audit tasks run as autonomous work |
-| Test gap fill (10.3) | Phase 2 test generation | Builds on existing Scenario/Jubilant generation |
-| Observability gap fill (10.2) | Phase 2 COS integration | Builds on existing COS tooling |
-| Listing readiness (10.5) | Phase 7.4 publishing | Builds on existing Charmhub publishing support |
-| Commit-after-build (11.1) | Phase 4 executor (4.3) | Extends subagent guidance and executor checks |
-| Self-verification (11.2) | Phase 4 executor (4.3) | Extends BUILD tool allowlist and guidance |
-| Session resume (11.3) | Phase 2.5 persistence | Builds on existing SQLite session store |
-| Git-revert-on-failure (11.4) | Phase 1.5 git tools | Uses existing git tooling in the executor |
-| Environment health checks (11.5) | Phase 4 executor (4.3) | Pre-task checks before subagent launch |
-| Integration-tests-first (12.1) | Phase 4 planner (4.2) | Changes the build task sequence in the planner prompt |
-| Test generation from design (12.2) | Phase 5 design pipeline | Needs approved DESIGN.md to extract testable contracts |
-| Test-driven build subagent (12.3) | Phase 12.1 + 12.2 | Needs tests written before build subagent can target them |
-| Incremental feature TDD (12.4) | Phase 12.3 | Extends the red/green cycle to feature additions via replanning |
-| Unit tests second pass (12.5) | Phase 12.3 | Sequences unit tests after integration tests pass |
-| Showboat/Rodney integration (13.1) | Phase 4 executor (4.3) | Wraps external CLI tools as agent tools |
-| Demo document generation (13.2) | Phase 13.1 | Uses Showboat to capture live deployment output |
-| Captured artefacts (13.3) | Phase 13.2 | Saves standalone files alongside the demo document |
-| Visual assets (13.4) | Phase 13.1 + Phase 2.2 COS | Uses Rodney for Grafana/web UI screenshots |
-| Demo tutorial (13.5) | Phase 5 design pipeline | Draws on WORKLOAD.md and DESIGN.md |
-| Demo as pipeline stage (13.6) | Phase 13.2 + 13.5 | Integrates demo generation into the planner |
-| Conversation recording (14.1) | Phase 2.5 persistence | Extends the existing SQLite store schema |
-| Subagent recording (14.2) | Phase 14.1 + Phase 4.3 executor | Records full subagent conversations to SQLite |
-| Event log (14.3) | Phase 14.1 | Adds event stream alongside message recording |
-| HTML export (14.4) | Phase 14.1 + 14.2 | Needs recorded data to export |
-| Additional export formats (14.5) | Phase 14.4 | Extends the export pipeline with JSONL/Markdown |
-| Live transcript in TUI (14.6) | Phase 14.1 + 14.2 | Needs recording in place to display |
-| Shared UI event bus (15.1) | Phase 4.4 TUI widgets | Refactors existing TUI widgets to event-driven |
-| Localhost HTTP server (15.2) | Phase 15.1 | Needs event bus to bridge to WebSocket |
-| Static frontend (15.3) | Phase 15.2 | Needs server to serve assets and provide API |
-| Real-time updates (15.4) | Phase 15.2 + 15.3 | Needs both server and frontend in place |
-| Alternative views (15.5) | Phase 15.3 | Extends the base frontend layout |
-| Feature parity maintenance (15.6) | Phase 15.1 | Ongoing process once event bus exists |
-| Security event identification (16.1) | Phase 5 design pipeline | Assessed during design phase |
-| Tracing instrumentation guidance (16.2) | Phase 2 COS integration | Extends existing ops-tracing setup |
-| Security event collection (16.3) | Phase 16.1 + Phase 2 COS | Needs security events + Loki/Grafana |
-| Security/tracing audit (16.4) | Phase 10.1 + Phase 16.1 | Extends charm audit with security checks |
-| Action exerciser (17.1) | Phase 4 executor (4.3) + Phase 4.5 auto-deploy | Needs a live deployment to exercise actions against |
-| Relation smoke tests (17.2) | Phase 17.1 + Phase 5 design pipeline | Needs deployed charm and workload knowledge to pick partners |
-| Workload endpoint testing (17.3) | Phase 17.1 + Phase 5 design pipeline | Needs research context to know how to probe the workload |
-| Config variation testing (17.4) | Phase 17.1 | Needs a live deployment to apply config changes against |
-| Upgrade and lifecycle testing (17.5) | Phase 17.1 | Needs a live deployment to test scale/refresh |
-| Acceptance test report (17.6) | Phase 17.1–17.5 | Consolidates results from all acceptance test stages |
-| Planner integration (17.6) | Phase 4 planner (4.2) + Phase 7.2 | Acceptance tests become a standard pipeline stage after integration tests |
-| Landscape survey (18.1) | None | Can start any time — pure research |
-| Architecture mapping (18.2) | Phase 18.1 | Needs the candidate list to map against |
-| Proof of concept (18.3) | Phase 18.2 | Needs mapping results to select candidates for spike |
-| Decision and recommendation (18.4) | Phase 18.3 | Needs spike results to make an informed recommendation |
-| Readiness assessment tool (19.1) | Phase 10.1 charm audit | Extends the audit pattern with operability checks |
-| Readiness skill (19.2) | Phase 0.4 skills infrastructure | New skill following existing SKILL.md pattern |
-| Operability planner phase (19.3) | Phase 4 planner (4.2) + Phase 19.1 | Needs assessment tool results to generate fix tasks |
-| Readiness report (19.4) | Phase 19.1 | Needs assessment results to generate the report |
-| Improvement mode integration (19.3) | Phase 10 charm improvement | Extends the existing improvement pipeline |
-| Pure state machine (21.1) | Phase 4 autonomous core | Formalises the existing executor routing logic |
-| Service injection (21.2) | Phase 4 executor (4.3) | Refactors the executor to accept Protocol services |
-| Noop detection (21.3) | Phase 21.2 | Needs service injection to capture state snapshots cleanly |
-| Graceful shutdown (21.4) | Phase 4 executor (4.3) | Extends executor lifecycle management |
-| Exit contracts (21.5) | Phase 4 subagent (4.6) | Formalises subagent result reporting |
-| Scoped tool access (21.6) | Phase 4 planner (4.2) | Formalises existing category-based tool allowlists |
-| Relation databag tool (20.1) | Phase 0.3 Juju integration | Reads relation data via Jubilant or juju show-unit |
-| App config tool (20.2) | Phase 0.3 Juju integration | Reads config via juju config CLI |
-| WebSocket log streaming (20.3) | Phase 3.1 watcher | Replaces/supplements SSH-to-Loki polling |
-| Cross-model offers (20.4) | Phase 0.3 Juju integration | Multi-controller inspection |
-| Detect K8s controller for COS (22.1) | Phase 0.3 Juju integration | Needs controller enumeration via Jubilant or subprocess |
-| Cross-model COS integration (22.2) | Phase 22.1 | Needs K8s controller targeting + juju offer/consume |
-| Preflight multi-controller awareness (22.3) | Phase 22.1 | Extends preflight to enumerate controllers |
-| COS system prompt updates (22.4) | Phase 22.2 | Updates prompts and skills for cross-model COS |
-| Secrets inspection (20.5) | Phase 0.3 Juju integration | Lists and inspects Juju secrets |
-| TUI status enhancements (20.6) | Phase 1.3 TUI + Phase 20.1 | Needs relation data tool for detail panel |
-| Bare Exception catches (25.1) | None | Style-guide compliance; can start any time |
-| Shell injection fix (25.2) | None | Security fix; can start any time |
-| Target version fix (25.3) | None | Config fix; can start any time |
-| Duplicated `_run_juju()` (25.4) | None | Refactor; can start any time |
-| Duplicated `_get_system_prompt()` (25.5) | None | Refactor; can start any time |
-| Duplicated light provider resolution (25.6) | None | Refactor; can start any time |
-| Streaming duplication (25.7) | None | Refactor; can start any time |
-| Long function decomposition (25.8) | None | Refactor; can start any time |
-| Claude prompt caching (27.1) | None | Provider-level change; can start any time |
-| Fix max_tokens 4096 cap (27.2) | None | Provider-level change; can start any time |
-| Gemini duplicate tool call IDs (27.3) | None | Provider-level bug fix; can start any time |
-| Extended thinking support (27.4) | None | Provider-level change; can start any time |
-| SQLite busy timeout (28.1) | None | Store-level fix; can start any time |
-| Hardcoded task ID collisions (28.2) | None | Planner fix; can start any time |
-| Executor exception hardening (28.3) | None | Executor fix; can start any time |
-| Subagent context management (28.4) | Phase 4 subagent | Extends existing subagent runner |
-| Concurrent subagent tools (28.5) | Phase 4 subagent | Changes tool execution in subagent.py |
-| Streaming responses (28.6 + 31.2) | Phase 25.7 streaming dedup | Needs unified streaming path first |
-| Wire RelationDetailScreen (29.1) | Phase 20.6 TUI status | Screen exists, needs handler in app.py |
-| Shell injection fix (30.1) | None | Security fix; can start any time |
-| Missing Juju tools (30.2) | Phase 0.3 Juju integration | New tools using existing juju patterns |
-| Missing git tools (30.3) | Phase 1.5 git tools | New tools using existing git patterns |
-| Existing bundle management (33.1) | Phase 0.3 Juju integration | Read/deploy existing bundles only; new bundles are deprecated |
-| Charm migration (33.2) | Phase 10 charm improvement | Extends the improvement pipeline |
-| Multi-charm workspace (33.3) | Phase 5 design pipeline | Needs design system for multi-charm coordination |
-| ACP protocol familiarisation (39.1) | None | Pure research; can start any time |
-| Candidate agents survey (39.2) | Phase 39.1 | Needs protocol understanding first |
-| Integration sketch (39.3) | Phase 39.2 | Needs candidate assessment to design against |
-| ACP decision write-up (39.4) | Phase 39.3 | Needs integration sketch to make recommendation |
-| Compaction cycle detection (40.1) | Phase 28.7 compaction recovery | Extends existing compaction/emergency_truncate |
-| Compaction retry budget (40.2) | Phase 28.1 SQLite upsert | Persists counters via session store |
-| Post-compaction validation (40.3) | Phase 28.4 context window mgmt | Needs token estimation working |
-| Gemini streaming usage (41.1) | None | Provider-level fix; can start any time |
-| Extended thinking (41.2) | Phase 27.4 extended thinking | Anthropic-specific feature |
-| Caching awareness (41.3) | Phase 27.1 Claude caching | Monitoring/logging improvement |
-| Claude model ID updates (41.4) | None | Maintenance; can start any time |
-| Provider token counting (41.5) | None | Provider-level enhancement |
-| Cost display (41.6) | Phase 31 UX improvements | Builds on existing usage tracking |
-| Compaction monitoring (41.7) | Phase 40 compaction safety | Feeds into cycle detection |
-| Streaming chunk granularity (41.8) | Phase 28.6 streaming | Cosmetic; low priority |
-| Rate limit coordination (41.9) | None | Provider-level tuning |
-| Streaming usage robustness (41.10) | None | Defensive guard; can start any time |
-
----
-
 ## Phase 56: Publish Juju Copilot / Claude Code Assets
 
 **Goal:** The awesome-copilot survey turned up zero Juju-specific
@@ -1890,121 +1761,6 @@ stays the documented default.
 
 ---
 
-## Phase 107: Tool-Call Failure Cap — Stop Looping on the Same Failing Call
-
-**Goal:** Bound how many consecutive failures of the same tool call
-the autonomous loop will tolerate before treating the work-queue
-task as ``BLOCKED``.  Today the conversation continues indefinitely:
-each tool failure goes back to the model, the model decides "let me
-try again", and on small local models that retry can take 80+
-seconds while making no progress.  After N rounds the loop should
-flip the active task to ``BLOCKED`` (with a clear ``blocked_reason``)
-so Phase 106's exit/escalation paths fire.
-
-### Why now
-
-Phase 105.1.5's Qwen3-14B Run #2 reproduced this cleanly: after
-two successful ``write_file`` calls (charmcraft.yaml + src/charm.py
-both clean and packable), the model entered an **8-call retry
-loop** trying to ``write_file`` ``tests/unit/test_charm.py``.  Each
-attempt failed with ``duration_ms=0`` and a bare
-``"write_file()"`` caption — meaning the function-call envelope
-came back without arguments (almost certainly the long test-file
-content overflowed the model's tool-call generation budget mid-
-stream).  Each retry took ~80 s of model thinking; after 11
-minutes I killed the process.
-
-The downstream paths are correct (Phase 106 ✓ — task hits BLOCKED →
-loop terminates → print-mode exits with code 1).  What's missing is
-a *trigger* upstream: nothing escalates a 5-tool-failure streak
-into a BLOCKED transition.
-
-This isn't a Phase 102 / 103 / 106 dup:
-
-- **Phase 102** (long-generation resilience) covers httpx-level
-  timeouts on a *single* long generation.  Here every tool call
-  completes within seconds — the failure is at the validation
-  layer, not the network.
-- **Phase 103** (resume hallucination) covers
-  ``edit_file old_string`` mismatches with did-you-mean hints.
-  Here the failing tool is ``write_file`` — different shape, no
-  old_string to compare.
-- **Phase 106** (BLOCKED deadlock) handles tasks that *have*
-  transitioned to BLOCKED.  Here the task never gets there because
-  no one decides to mark it BLOCKED.
-
-### 107.1 P0 — Reproduce in a unit test
-
-- [ ] Test in ``tests/unit/agent/`` that drives a fake provider
-  emitting the same tool call repeatedly with arguments that fail
-  validation (use ``write_file`` with empty ``content`` to mirror
-  the smoke).  Assert that after N consecutive failures
-  (configurable, default 5) the active task transitions to
-  ``BLOCKED`` with a blocked_reason that names the offending tool
-  and the failure count.  Mark ``xfail`` until 107.2 lands.
-- [ ] The smoke artefacts at
-  ``cantrip-iter-runs/qwen3-14b-improve/run.ndjson`` are the
-  ground-truth event sequence; the loop happened from
-  12:40:11–12:48:54 with 8 failures.
-
-### 107.2 P0 — Counter + transition logic
-
-- [ ] In ``src/cantrip/agent/executor/core.py`` (or wherever the
-  tool-result branch sits), maintain a per-task counter
-  ``consecutive_tool_failures`` that increments on a failed tool
-  invocation and resets on a successful one.
-- [ ] When the counter hits a threshold (default 5; tunable via
-  ``CANTRIP_TOOL_FAILURE_CAP`` env var), call
-  ``_record_status_change(task, "blocked",
-  error="tool {name} failed {n} consecutive times: {last_reason}")``
-  so Phase 106 takes over and the loop exits cleanly.
-- [ ] Distinguish "same tool with same args" from "any tool
-  failure" — only the former should count toward the cap.  The
-  agent legitimately can recover from a one-off ``edit_file``
-  ``old_string`` mismatch by reading and retrying with a different
-  anchor; that pattern shouldn't trip the cap.
-
-### 107.3 P1 — Inform the model before giving up
-
-- [ ] Before the BLOCKED transition fires (one round earlier),
-  inject a system message into the conversation telling the model
-  it has tried the same tool ``N-1`` times unsuccessfully and
-  should either change approach or stop.  Gives the model one last
-  chance to recover (e.g. by splitting the failing payload into
-  smaller chunks) before cantrip force-blocks the task.
-
-### 107.4 P1 — Diagnostic logging
-
-- [ ] Log each consecutive-failure increment at ``warning`` level
-  (``Tool {name} has now failed N consecutive times``) so operators
-  watching ``run.stderr`` see the loop-out forming rather than
-  having to reverse-engineer it from NDJSON.
-- [ ] Surface the consecutive count in the
-  ``status_bar_changed`` / ``task_updated`` event payload so the
-  Web UI and TUI can render a "tool retrying (3/5)" badge.
-
-### What this phase is *not*
-
-- **Not a model-side fix.**  Some models (smaller local models
-  especially) will hit this loop more often, but the right answer is
-  bounding cantrip's tolerance, not requiring better models.
-- **Not a change to provider-transient retry.**  ``retry.py``'s
-  linear-backoff for HTTP 429 / 500 / network errors is a separate
-  layer and stays untouched — those are network-level retries on
-  one LLM call, not tool-call retries across conversation turns.
-- **Not "make tool failures user-visible somehow."**  The Web UI
-  and TUI already render failed tool invocations.  This phase is
-  about not letting a *streak* of those silently consume minutes.
-
-**Exit criteria:** The 107.1 regression test passes (no longer
-``xfail``); the Phase 105.1.5 smoke can be re-run with a known-
-hard scope (e.g. asking a small local model to write a 4 KB test
-file in one ``write_file`` call) and either succeeds or exits
-cleanly within ~5 minutes with ``Tool write_file failed 5 times``
-in stderr — instead of looping for 11 minutes until manual SIGKILL.
-
----
-
 ## Phase 109: Per-Provider Message-Format Normalisation — Unblock Non-Qwen Local Models
 
 **Goal:** Add a per-provider message-rewriting hook so cantrip's
@@ -2259,17 +2015,12 @@ override works; ``/cost`` (or equivalent) shows the active phase.
 
 ## Milestones
 
+High-level targets for **open** work. Completed milestones are listed in [`ROADMAP_ARCHIVE.md`](ROADMAP_ARCHIVE.md).
+
 | Milestone | Phase | Definition |
 |-----------|-------|------------|
-| M0: Talking | 0 ✓ | CLI chat with Gemini + juju status |
-| M1: First Charm | 1 ✓ | Flask app → running charm in 2 min |
-| M2: Dev Loop | 2 ✓ | Fast iteration with trace debugging |
-| M3: All Paths | 3 ✓ | 12-factor, custom, infra all working |
-| M4: Autonomous | 4 ✓ | Agent works independently with visible task tracking |
 | M5: Research-Driven | 5 | Agent proactively researches and proposes grounded designs |
 | M6: Fast | 6 | Common charm build completes in under two minutes |
-| M7: Showcase | 7 ✓ | Demo-ready with full ecosystem, testing, and publishing |
-| M8: Local Models | 8 ✓ | Cantrip runs on local inference snaps with no cloud API |
 | M9: Terraform | 9 | Cantrip generates and validates Terraform modules for charms |
 | M10: Charm Improver | 10 | Cantrip audits and upgrades existing charms to modern standards |
 | M11: Resilient Agent | 11 | Subagents commit, self-verify, and recover cleanly from failures |
@@ -2279,19 +2030,13 @@ override works; ``/cost`` (or equivalent) shows the active phase.
 | M15: Web UI | 15 | Browser-based interface mirroring the TUI via shared event bus |
 | M16: Security & Tracing | 16 | OWASP security events + clear manual tracing guidance |
 | M17: Acceptance Tested | 17 | Cantrip deploys, exercises, and reports on every charm it builds |
-| M18: Framework Decision | 18 ✓ | Evidence-based recommendation on build-vs-adopt for agent infrastructure |
 | M19: Operationally Ready | 19 | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
-| M20: Deep Introspection | 20 ✓ | Agent reads relation databags, config sources, secrets, and offers to diagnose issues autonomously |
-| M21: Hardened Orchestrator | 21 ✓ | Formally verified state machine, protocol-injected services, noop detection, graceful shutdown |
-| M22: Multi-Controller COS | 22 ✓ | COS observability works on both single-controller (K8s) and dual-controller (LXD + K8s) environments |
 | M25: Code Health | 25 | All critical and high code-review findings resolved; `make check` green |
 | M27: Provider Quality | 27 | Claude caching active; Gemini parallel tool calls correct; extended thinking available |
 | M28: Robust Agent | 28 | SQLite concurrent writes safe; executor self-heals; subagent context managed |
 | M29: Polished TUI | 29 | All screens functional; no blocking subprocess calls; dead features wired up or removed |
 | M30: Complete Toolbox | 30 | Shell injection fixed; missing Juju/git tools available; existing tools hardened |
-| M31: Great UX | 31 ✓ | Streaming responses; chat search; session resume; cost tracking visible |
 | M32: Smart Planning | 32 | Compact prompt complete; dependency validation; watcher events all routed |
-| M33: Expanded Skills | 33 ✓ | Existing bundle management; charm migration; multi-charm workspaces; interactive debug; benchmarking |
 | M39: ACP Research | 39 | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
 | M40: Safe Compaction | 40 | Compaction has cycle detection, retry budgets, and size validation — no infinite loops possible |
 | M41: Provider Parity | 41 | All providers capture streaming usage; extended thinking available for Claude; accurate token counting; cost visibility; compaction monitoring |
@@ -2300,14 +2045,8 @@ override works; ``/cost`` (or equivalent) shows the active phase.
 | M45: MCP Client | 45 | Cantrip can attach third-party MCP servers with OAuth, elicitation, and category-scoped tool access |
 | M46: User Hooks | 46 | Users configure pre/post lifecycle hooks with conditional filters; PreCompact can block compaction |
 | M47: Best-of-N | 47 | High-value tasks optionally race multiple models and commit the test-pass-scored winner |
-| M48: Multimodal Debug | 48 ✓ | Providers accept images; Grafana/Tempo/Juju-status rendering tools return PNGs the agent reasons about |
-| M49: Sandboxed Shell | 49 ✓ | Untrusted subprocesses run under PID/mount namespaces with deny-rule and syscall hardening |
-| M50: Skills Interop | 50 ✓ | Standard-format skills import and export round-trip; MCP-aware skills resolve dependencies at load time |
 | M51: Team Research | 51 | Written assessment of whether and how Cantrip should support teams working on a charm, with architecture sketches and a next-step recommendation |
-| M52: Durable Subagents | 52 ✓ | Subagent LLM turns and tool calls checkpoint into SQLite; interrupted tasks resume from the last completed step instead of re-burning tokens |
 | M53: Knowledge-in-Markdown | 53 | Planner prompts and task descriptions live in Jinja2 templates; `planner.py` split along the deterministic / LLM seam; dev design docs cover tools, skills, and prompts |
-| M54: Authored Docs | 54 ✓ | `docs/docs/` site rebuilds from committed markdown sources through `make docs`; no hand-authored HTML remains in the docs tree |
-| M55: Awesome-Copilot Survey | 55 ✓ | Eight awesome-copilot patterns investigated end-to-end; each has a committed decision, prototype, or recommendation |
 | M56: Juju Copilot Bundle | 56 | `canonical/skills` hosts a Juju-specific instruction/skill bundle derived from Cantrip's system prompt, with CI validation and a regeneration path |
 | M57: Test Cleanup | 57 | Unit coverage ≥85%; zero test warnings; oversized unit files split; quickpack tests reorganised to match charmlint |
 | M58: Rust Tested | 58 | `cargo test` runs in CI for both Rust crates; every `.rs` file above 60% coverage; regressions surface at unit-test time, not via spread |
@@ -2315,45 +2054,26 @@ override works; ``/cost`` (or equivalent) shows the active phase.
 | M60: Accessible Web UI | 60 | Web UI passes WCAG 2.1 AA: visible focus indicators, labelled controls, live regions for chat/status, overlays behave as modal dialogs; rodney/showboat regression guard in CI |
 | M61: Slash Autocomplete | 61 | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
 | M62: On-Theme Activity Labels | 62 | Status-bar and Web "Thinking..." literals replaced by randomly-selected spellcasting verbs (incanting, conjuring, brewing, …) so the UI matches the cantrip/juju theme |
-| M63: Self-Update Check | 63 ✓ | PyPI polled at startup; TUI, Web, and CLI surface a non-blocking notice with filtered changelog and an installer-aware upgrade command when a newer Cantrip is published |
-| M64: Polite Repo Bootstrap | 64 ✓ | Create-GitHub-repo offer moved out of the main chat and suggests ``<workload>-operator`` by default |
 | M65: Right-Panel Tidy | 65 | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
 | M90: Visual Topology | 90 | Right-panel multi-model pane and F8 graph screen treat the model as a visual topology — edges are first-class clickable objects with interface details, focus-fade dims unconnected apps, and a preset-bundle catalogue grounds layer grouping |
-| M66: Transcript/Log Visible | 66 ✓ | Transcript and debug-log modals render their content (or a clear empty state) on every launch, with a smoke test guarding the fix |
-| M67: Pi-Inspired Sessions | 67 ✓ | Session tree rewind/branch, mid-session ``/model``, ``cantrip run --print --json`` for scripts, and ``/share`` to secret gist — four gaps the Pi coding agent fills that charm authors also hit |
-| M68: OpenCode Safety Rails | 68 ✓ | Snapshot-backed ``/undo``/``/redo`` for file changes, declarative ask/allow/deny permissions, markdown-defined user slash commands, and a session-level plan mode — four guardrails adopted from OpenCode that map onto Cantrip's existing subsystems |
 | M69: Kimi Workflow Features | 69 | Bounded Ralph-Loop iterate-until-green, ``--yolo`` unattended switch, ``Ctrl-X`` shell mode, and Mermaid/D2 Flow skills — four Kimi CLI patterns that fit Cantrip's autonomous loop, skill system, and CI story |
 | M70: Amp-Inspired Depth | 70 | Librarian subagent that searches Charmhub and Launchpad, Oracle tool for on-demand second-opinion reasoning, glob-conditional guidance in AGENTS.md / skills, prompt-based review Checks that layer on top of charmlint, and a Painter tool that generates a Charmhub-style ``icon.svg`` |
-| M71: Aider Engineering Hygiene | 71 ✓ | Tree-sitter-backed repo-map with graph-ranked symbols, architect/editor two-model mode, auto-commit-per-turn with dirty-commit separation, and a per-edit ruff/ty/charmlint feedback loop |
 | M72: Continue Context Providers | 72 | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
-| M72b: Read-Only Code Intelligence | 72b ✓ | Exact workspace-symbol, go-to-definition, and find-references queries layered on repo-map and ``@``-providers, giving Cantrip precise code navigation without an IDE surface or write-capable refactors |
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
-| M74: Populated Charm Docs | 74 ✓ | Generated ``docs/`` tree is bridged with the Phase 13 root files, populated from real Phase 17 acceptance-test command/output capture, with an architecture page extracted from transcript design decisions and a troubleshooting page mined from the agent's resolved-error history |
-| M75: Inline Tool Blocks | 75 ✓ | Every tool call renders as a one-line block in the TUI and Web chat with a success/failure colour cue, so trailing-colon preambles stop reading as broken speech |
-| M76: Copy-Friendly Chat | 76 ✓ | Toad-inspired per-block copy affordances either ship (keybinding, slash command, OSC 52, or similar) or a written assessment in ``design/UI.md`` explains why the current flow is sufficient |
-| M77: Reasoning Content Surfaced | 77 ✓ | OpenAI-compatible reasoning deltas (Kimi K2, DeepSeek-R1, GLM reasoning variants) are captured and rendered like Claude's extended thinking rather than silently dropped |
-| M78: Observability Hardening | 78 ✓ | Cache cascades surface as visible warnings, Web UI shows cache metrics at parity with TUI, compaction stop-flags persist across session resume, and ``thinking`` payload is asserted on the wire for Claude + Gemini |
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
-| M80: Stacked Policies | 80 ✓ | `GovernancePolicy` + `compose_policies()` replace the single-level category filter; per-goal rate limit, JSONL audit trail, and in-code destructive-command gates ship together as the policy-allowlist layer in the defence-in-depth stack with Phases 46 / 49 / 55.3 / 55.5 |
-| M81: Tool Caption Coverage | 81 ✓ | ``run_command``, the Juju tool family, and the acceptance/test reporters populate ``ToolResult.caption`` rather than relying on the Phase 75 fallback; coverage test forces the rich-caption-vs-fallback choice for new tools |
 | M82: Pre/Post Tool Captions | 82 | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
-| M83: Pause-and-Edit Research | 83 ✓ | Written decision (ship / defer / drop) on whether Cantrip's hard cancel should soften into a pausable, editable mid-turn affordance; verdict is *defer*, with queue-next-instruction sketched as the leaner follow-up shape against three named revisit triggers |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
-| M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
 | M87: COS Coverage | 87 | Alertmanager, Catalogue-k8s, and Sloth gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Parca/Pyroscope decision recorded in ``design/PROFILING.md`` (deferred to Phase 89 against four named triggers) |
 | M88: Identity Platform | 88 | A user asking for "Canonical-Identity-Platform-backed login" gets a charm with correctly-wired Hydra relations, secret fabric, and a passing Phase 17 acceptance test |
 | M92: Skill-derived Lint Rules | 92 | Six deterministic helpers — action-handler coverage, config-option coverage, charm-library semver, relation-data missing-guards, Pebble layer validation, harness-call inventory plus scenario-test event-shape coverage — ship as charmlint rule modules or standalone Cantrip tools, derived from existing skill bodies; affected skills shed their rule-recitation passages |
-| M91: Canonical/skills Adoption | 91 ✓ | Four upstream 12-factor scripts (framework detect, rock-contract check, env-key inspect, preflight targets) ship as Cantrip tools with attribution and tests; ``twelve-factor`` skill body adopts the upstream checkpoint workflow and handoff payload; framework-specific contract tables inlined into the charm and rock skill bodies |
+| M93: Tested in Depth | 93 | High-value unit blind spots closed; failure-injection integration tests cover provider, tool, and recovery paths; restart/resume and worktree isolation exercised end to end; the eval/e2e portfolio reaches beyond the happy-path build/deploy story |
+| M94: K8s Diagnostics Binary | 94 | A read-only ``cantrip-kdiag`` Go binary powers a first-class typed tool that diagnoses the common pod-layer failure modes, with tests locking the JSON report contract and the Python integration |
+| M95: Canonical Dev Surfaces | 95 | Launchpad, Snapcraft, and Charmcraft MCP servers are documented, discoverable via ``/mcp marketplace``, and used by the agent in research, local-model discovery, and packaging flows without bespoke prompting |
+| M96: Chiselled Rocks | 96 | Cantrip recognises when a workload suits a chiselled-Ubuntu rock, generates and explains that path, and cleanly falls back to the fuller-base path when it does not |
+| M97: Canonical Cloud Targets | 97 | A user asking for MAAS-, OpenStack/Sunbeam-, or MicroCloud-aware work gets substrate-specific guidance or automation rather than a generic "bring your own cloud" answer |
+| M98: Canonical Estate Ops | 98 | Cantrip's improvement and operational-readiness flows recommend Ubuntu Pro and Landscape in the right day-2 contexts with clear guidance and without feeling bolted on |
 | M43: Memory | 43 | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
-| M99: Goal Lifecycle | 99 ✓ | `/pause` and `/resume` toggle the autonomous loop mid-run; `cantrip resume` preserves `/budget` caps; user-prose objective is a first-class session field surfaced via `/goal`; status bar projects running / paused / done / blocked / budget-limited |
-| M100: Wait For | 100 ✓ | Typed-predicate ``wait_for`` tool with file/process/port/command/juju-app waits, hard timeouts, policy-gated commands, and reference docs; streaming-stream monitoring stays deferred behind named triggers |
-| M101: ops-tracing Refresh | 101 ✓ | System prompt, subagent guidance, and the ``_inject_ops_tracing`` injection helper teach the modern ``ops_tracing.Tracing(charm, "<rel>")`` constructor instead of the long-removed ``setup`` shorthand; a regression test exercises the recipe against the live PyPI ``ops-tracing`` API |
-| M102: Long-Generation Resilience | 102 ✓ | Inference-snap conversations stream by default with progress write-back, ``Server disconnected`` and ``ReadTimeout`` mid-stream errors retry with backoff (and surface a UI banner), and the read timeout is operator-tunable; soak test against the qwen3-coder snap survives transient drops without exiting the conversation |
-| M103: Resume Hallucination Repair | 103 ✓ | Post-``load_state`` turns carry a "must-read-first" directive until the agent re-reads each file it intends to edit; ``edit_file`` / ``multi_edit`` ``old_string`` mismatches return a "did you mean" diff hint instead of the bare-error preview; an opt-in whitespace-tolerant match handles trivial drift; a session counter surfaces hallucination-rate via ``/cost`` |
-| M104: Short-Session Mode | 104 ✓ | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
-| M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
-| M107: Tool-Call Failure Cap | 107 | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; a regression test pins the shape; smoke runs that hit a hard tool scope exit cleanly with stderr telling the operator which tool exhausted retries |
 | M108: TUI Visual Refresh | 108 | Welcome state has identity (wordmark + tagline); double frames around the chat are gone; modal screens use single rounded borders without manual ``─`` underlines; ``$primary`` is reserved for focus / accent and shows up in under ten places per screen; ModelInfoBar collapses to one line by default; tool-block captions read as English (``▸ read backend/pyproject.toml``); timestamps appear only on gaps; loading indicator is on-brand; header carries actual context; file tree surfaces charm content first |
 | M109: Non-Qwen Local Models | 109 | An ``LLMProvider.rewrite_messages`` hook + Mistral-shape inbound tool-call parser unblocks providers whose chat templates expect tool calls / results inline within assistant turns (Mistral Tekken format); Mistral Nemo 12B drives the ntfy improve scenario end-to-end; ``CANTRIP_MESSAGE_FORMAT`` env var lets operators force the rewriter for unknown snaps; recorded-trace tests pin the wire format |
 | M110: Phase-Aware Tool Curation | 110 | The static ``_CORE_TOOL_NAMES`` keep-list is replaced by a curator that picks the right tool slice for the active workflow phase (build / debug / deploy / research); inference-snap providers no longer need to drop ``quick_pack`` / ``charmlint`` / ``run_command`` to fit the 12-tool budget when they're load-bearing for the current phase; an env-var override lets operators pin a custom set; tests pin each phase's expected tool list |

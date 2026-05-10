@@ -2068,16 +2068,17 @@ class CantripAgent:
     ) -> None:
         """Update the consecutive same-(tool, args) failure counter.
 
-        Resets to zero on a successful call.  When the same tool with the
-        same arguments fails twice in a row, the counter increments; a
-        different signature resets to one (we're starting a new streak).
-        Looking at the *first-arg-bearing* signature lets a model
-        legitimately retry one ``edit_file`` after fixing the
-        ``old_string`` without tripping the cap.
+        Resets to zero on a successful call.  The streak only compounds
+        when the *same* ``(tool name, serialised arguments)`` signature
+        fails again; any different signature resets it to one — so a
+        model can legitimately retry one ``edit_file`` after fixing its
+        ``old_string`` without tripping the cap.  Once the streak hits
+        two it also publishes a "tool retrying (n/cap)" status update.
         """
         if success:
             self.state.consecutive_tool_failures = 0
             self.state.last_failed_tool_signature = None
+            self.state.last_failed_tool_name = None
             return
         try:
             args_repr = json.dumps(arguments, sort_keys=True, default=str)[:200]
@@ -2089,14 +2090,53 @@ class CantripAgent:
         else:
             self.state.consecutive_tool_failures = 1
             self.state.last_failed_tool_signature = signature
-        if self.state.consecutive_tool_failures >= 3:
+        self.state.last_failed_tool_name = tool_name
+        n = self.state.consecutive_tool_failures
+        if n >= 3:
             log.warning(
                 "Tool %s has now failed %d consecutive times "
                 "(cap is %d; tune via CANTRIP_TOOL_FAILURE_CAP)",
                 signature,
-                self.state.consecutive_tool_failures,
+                n,
                 self.state.tool_failure_cap,
             )
+        if n >= 2:
+            # Phase 107.4: surface the streak on the status bar so the
+            # TUI/Web show a "tool retrying (3/5)" badge while the loop
+            # is grinding, not just afterwards in the logs.
+            self._publish_activity(f"⟳ tool retrying ({n}/{self.state.tool_failure_cap})")
+
+    def _maybe_warn_before_failure_cap(self) -> None:
+        """One turn before the cap fires, tell the model to change tack.
+
+        Phase 107.3: a model that keeps re-emitting the same failing
+        tool call gets one explicit, in-conversation chance to split a
+        large payload, switch tools, fix the arguments, or bail — before
+        cantrip force-blocks the task.  Fires only on the exact turn the
+        streak reaches ``cap - 1`` so the warning lands while there is
+        still a round left to act on it; a cap below 2 leaves no room
+        for the warning and is silently skipped.
+        """
+        cap = self.state.tool_failure_cap
+        n = self.state.consecutive_tool_failures
+        if cap < 2 or n != cap - 1:
+            return
+        tool = self.state.last_failed_tool_name or "that tool"
+        warning = (
+            f"You have called {tool} {n} times in a row with the same arguments "
+            "and it has failed every time. One more identical failure and this "
+            "task will be marked BLOCKED and the run will stop. Do something "
+            "different now: split a large payload into smaller writes, use a "
+            "different tool, correct the arguments — or, if you genuinely cannot "
+            "make progress, say so plainly instead of retrying."
+        )
+        self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
+        self._event_bus.publish(ui_events.chat_message(role="system", content=warning))
+        log.warning(
+            "Phase 107: injected pre-cap warning after %d consecutive %s failures",
+            n,
+            tool,
+        )
 
     def _consecutive_failure_cap_exceeded(self) -> str | None:
         """Return a blocked-reason string when the cap has been hit.
@@ -2652,6 +2692,9 @@ class CantripAgent:
             # than a couple — keeps the live working set tiny.
             self._maybe_fold_oldest_round_into_ledger(turn_start_idx)
 
+            # Phase 107.3: one round before the cap, nudge the model to
+            # change approach instead of retrying into a BLOCKED state.
+            self._maybe_warn_before_failure_cap()
             # Phase 107: bail when the cap is hit.  Marks the active
             # work-queue task BLOCKED so Phase 106's loop-exit logic
             # fires; ``process_message`` returns its current response
@@ -2934,7 +2977,9 @@ class CantripAgent:
             # Phase 104: short-session in-turn ledger fold (see non-streaming loop).
             self._maybe_fold_oldest_round_into_ledger(turn_start_idx)
 
-            # Phase 107: same cap check as the non-streaming loop.
+            # Phase 107.3 / 107: pre-cap nudge then cap check, as in the
+            # non-streaming loop.
+            self._maybe_warn_before_failure_cap()
             cap_reason = self._consecutive_failure_cap_exceeded()
             if cap_reason is not None:
                 log.warning("Phase 107 cap fired (stream): %s", cap_reason)

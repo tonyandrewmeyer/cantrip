@@ -14,7 +14,8 @@ import pytest
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.tools.base import ToolResult
-from cantrip.llm.base import Response, ToolCall
+from cantrip.llm.base import Response, Role, ToolCall
+from cantrip.ui import events as ui_events
 from tests.conftest import FakeProvider
 
 
@@ -173,3 +174,76 @@ class TestToolFailureCap:
         agent = CantripAgent(provider=FakeProvider())
         # 5 is the documented default.
         assert agent.state.tool_failure_cap == 5
+
+    @pytest.mark.asyncio
+    async def test_pre_cap_warning_injected_one_round_early(self):
+        """Phase 107.3: one round before the cap, nudge the model to change tack."""
+        failing_call = ToolCall(
+            id="wf", name="write_file", arguments={"path": "x.py", "content": ""}
+        )
+        provider = FakeProvider([Response(content="", tool_calls=[failing_call])] * 30)
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(success=False, output="", error="boom")
+        )
+
+        chat_events: list = []
+        agent.event_bus.subscribe(ui_events.EventType.CHAT_MESSAGE, chat_events.append)
+
+        await agent.process_message("Do it")
+
+        # Exactly one warning, injected as a SYSTEM message when the
+        # streak reached cap - 1 (frontier providers don't collapse
+        # history, so it stays in the working set).
+        warnings = [
+            m for m in agent.state.messages if m.role == Role.SYSTEM and "BLOCKED" in m.content
+        ]
+        assert len(warnings) == 1
+        assert "write_file" in warnings[0].content
+        # ...and it was mirrored to the chat UI as a system message.
+        sys_chats = [
+            e
+            for e in chat_events
+            if e.payload.get("role") == "system" and "write_file" in e.payload.get("content", "")
+        ]
+        assert len(sys_chats) == 1
+
+    @pytest.mark.asyncio
+    async def test_pre_cap_warning_skipped_when_cap_is_one(self, monkeypatch):
+        """A cap of 1 leaves no room for a warning round — none is injected."""
+        monkeypatch.setenv("CANTRIP_TOOL_FAILURE_CAP", "1")
+        failing_call = ToolCall(id="wf", name="write_file", arguments={"path": "x.py"})
+        provider = FakeProvider([Response(content="", tool_calls=[failing_call])] * 10)
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(success=False, output="", error="boom")
+        )
+
+        await agent.process_message("Do it")
+
+        assert not [
+            m for m in agent.state.messages if m.role == Role.SYSTEM and "BLOCKED" in m.content
+        ]
+
+    @pytest.mark.asyncio
+    async def test_retry_streak_surfaces_status_badge(self):
+        """Phase 107.4: a streak of 2+ publishes a 'tool retrying (n/cap)' label."""
+        failing_call = ToolCall(id="wf", name="write_file", arguments={"path": "x.py"})
+        provider = FakeProvider([Response(content="", tool_calls=[failing_call])] * 30)
+        agent = CantripAgent(provider=provider)
+        agent._execute_tool = AsyncMock(
+            return_value=ToolResult(success=False, output="", error="boom")
+        )
+
+        labels: list[str] = []
+        agent.event_bus.subscribe(
+            ui_events.EventType.STATUS_BAR_CHANGED,
+            lambda e: labels.append(e.payload.get("task_label", "")),
+        )
+
+        await agent.process_message("Do it")
+
+        retry_labels = [label for label in labels if "tool retrying" in label]
+        assert retry_labels
+        cap = agent.state.tool_failure_cap
+        assert any(f"(2/{cap})" in label for label in retry_labels)

@@ -1476,6 +1476,11 @@ and not duplicated elsewhere.</p>
 <td>optional</td>
 <td>Force short-session mode <code>on</code> or <code>off</code>, or <code>auto</code> (the default) to enable it only for providers below ~16 K usable context. Equivalent to <code>--short-session</code>; see that flag for what the mode changes.</td>
 </tr>
+<tr>
+<td><code>CANTRIP_TOOL_FAILURE_CAP</code></td>
+<td>optional</td>
+<td>How many times the same tool call (same name <strong>and</strong> same arguments) may fail in a row before the active task is marked <code>BLOCKED</code> and the run stops. Default <code>5</code>; clamped to <code>[1, 50]</code>; non-integer or out-of-range values log a warning and fall back to the default. One round before the cap the agent injects a message telling the model to change approach. A different tool call (or different arguments) resets the streak. Raise it for flaky environments, lower it to fail fast on small local models that loop on oversized <code>write_file</code> payloads.</td>
+</tr>
 </tbody>
 </table>
 <p>The <code>inference-snap</code> provider does not require an API key

@@ -279,6 +279,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``test_all_ready_unblocks_after_blocked_dependency`` is the
   regression pin, mirroring the existing FAILED-dependency test.
 
+- **Tool-call failure cap (Phase 107).**  A model that kept
+  re-emitting the same failing tool call — the canonical case being
+  a small local model whose ``write_file`` envelope comes back
+  without arguments because the payload overran its tool-call
+  generation budget — used to retry indefinitely, ~80 s per round,
+  until someone killed the run.  The agent now counts consecutive
+  failures of the same ``(tool, arguments)`` signature; once the
+  streak hits ``CANTRIP_TOOL_FAILURE_CAP`` (default 5, clamped to
+  ``[1, 50]``) the active work-queue task flips to ``BLOCKED`` with
+  a reason naming the tool and the count, so Phase 106's clean-exit
+  path fires instead of the loop grinding for minutes.  One round
+  before the cap a ``SYSTEM`` message tells the model it has retried
+  the same call N times and to split the payload, switch tools, fix
+  the arguments, or stop.  A different ``(tool, arguments)``
+  signature resets the streak, so a legitimate ``edit_file`` retry
+  after fixing an ``old_string`` doesn't count.  Each increment
+  past three logs at ``warning`` (visible in ``run.stderr`` without
+  ``--verbose``), and once the streak reaches two the status bar
+  shows a live ``⟳ tool retrying (n/cap)`` badge.  Regression tests
+  in ``tests/unit/agent/test_tool_failure_cap.py``.
+
 ### Changed
 - **Planner uses structured-output schema (Phase 73.3 follow-up).**
   ``TaskPlanner.plan_from_design`` / ``replan`` /
