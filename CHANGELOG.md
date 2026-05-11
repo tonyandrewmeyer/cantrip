@@ -346,6 +346,18 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **Inference-snap requests now disable chain-of-thought
+  (``chat_template_kwargs.enable_thinking=false``).**  Qwen3-family
+  snaps served via llama.cpp's ``--jinja`` route their reasoning into
+  ``reasoning_content`` and, on a tight per-slot context (e.g. the
+  16 K Qwen3-14B smoke server), routinely spent the whole completion
+  budget thinking and returned an empty ``content`` / no tool calls —
+  the agent loop then saw a ``(no response)`` turn and stalled or
+  drained the work queue with nothing done.  ``InferenceSnapProvider``
+  now passes ``enable_thinking=false`` through to the chat template on
+  every request, so the model answers (and calls tools) directly;
+  templates that don't recognise the kwarg (gemma3, deepseek-r1, …)
+  ignore it, so it's safe to send unconditionally.
 - **A retry-exhausted ``ProviderOverloadedError`` /
   ``ProviderConnectionError`` now fails the task cleanly instead of
   stalling the work loop.**  Both are siblings of ``ProviderError``,

@@ -81,6 +81,21 @@ break out of the OpenAI tool-call envelope at the frontier-default
 content, which the conversation loop then mistakes for a final
 reply. The clamp is per-provider; cloud APIs still run at 0.7.
 
+The provider also disables chain-of-thought on the snap. Thinking
+models served through llama.cpp's <code>--jinja</code> (the Qwen3
+family especially) route their reasoning into
+<code>reasoning_content</code>, and on a tight per-slot context the
+prompt alone can leave too little room for both a
+<code>&lt;think&gt;</code> block <em>and</em> an answer — so the
+turn comes back empty (no <code>content</code>, no tool calls) and
+the agent loop stalls. Cantrip sends
+<code>chat_template_kwargs: {enable_thinking: false}</code> on every
+inference-snap request; chat templates that don't recognise the kwarg
+(gemma3, deepseek-r1, …) ignore it, so it's harmless. If you want a
+snap to think, that's not currently configurable on this provider —
+use a cloud provider with <code>thinking_budget</code> support
+instead.
+
 The provider also auto-detects the runtime per-slot context size
 from llama.cpp's <code>/slots</code> and <code>/props</code>
 endpoints. The trained context (often 128 K or 256 K) is usually

@@ -18,9 +18,26 @@
 > Phase 105.2 / 105.3.  qwen3-coder stays the documented default
 > until 105.3 packages Qwen3-14B as a snap.
 
-- **Qwen3-14B is the new front-runner** (§5.6.1).  Q4_K_M ~9 GB
+> **Status update (after the from-scratch eval, 2026-05-11 — §5.6.2):**
+> The "front-runner" verdict above was on the *improve-02* path
+> (edit an existing scaffold).  A from-scratch build for a real
+> multi-service workload (`suitenumerique/docs` — Django + frontend
+> + y-provider, needs Postgres / Redis / S3 / OIDC) is **out of
+> reach** for Qwen3-14B on the 16 K smoke server: across three
+> attempts it never got past the scaffold (couldn't read the
+> upstream docs handed to it, wandered into infra-tool churn,
+> produced empty `(no response)` turns).  The one durable win was
+> the **no-think fix** — `InferenceSnapProvider` now sends
+> `chat_template_kwargs: {enable_thinking: false}`, which killed
+> the empty-turn failure mode and ~5×'d turn speed.  A
+> `gemini-3.1-pro-preview` run on the identical task did the full
+> research / design / charm-code work the local model couldn't,
+> for ≈$40–50.
+
+- **Qwen3-14B is the front-runner for the *improve* path** (§5.6.1) —
+  but **can't carry a complex from-scratch build** (§5.6.2).  Q4_K_M ~9 GB
   weights + 16 K KV cache fits in ~11.7 GB on the 12 GB GPU with
-  full offload.  Run #3 walked the full sequence
+  full offload.  Run #3 walked the full improve sequence
   (read → write_file × 3 → charmcraft_pack), produced a 1.19 MB
   charm matching improve-02's size, no manual intervention.  Phase
   107's tool-call cap was dormant insurance — the model didn't
@@ -547,6 +564,79 @@ Smoke artefacts retained at:
 - Run #2 artefacts have been overwritten by Run #3's reset; the
   measurements above are reconstructed from the Phase 107 NDJSON
   and the doc-as-of-2026-05-10 snapshot of this section.
+
+#### 5.6.2 From-scratch eval (2026-05-11): `suitenumerique/docs`
+
+§5.6.1 tested the *improve-02* path — modify an existing,
+already-scaffolded ntfy charm.  This run tested the harder case:
+build a polished charm **from an empty folder** for a real,
+multi-service workload — Docs (codename "impress",
+`github.com/suitenumerique/docs`): a Django backend + Node frontend +
+y-provider websocket server, needing PostgreSQL, Redis, S3/MinIO and
+Keycloak/OIDC.  Three autonomous TUI runs against the same 16 K smoke
+server, prompt pointing at the upstream install docs.
+
+- **Attempt 1** — scaffolded the charm, edited `charmcraft.yaml`
+  ~12×, but mostly fumbled relative paths (`charmcraft.yaml` vs the
+  actual `docs/charmcraft.yaml` once the project lands in a subdir),
+  produced several empty `(no response)` turns, and the work queue
+  drained with the charm essentially still the template.
+- **Attempt 2** — upstream repo pre-cloned into the working dir + an
+  explicit step-by-step steer.  The model went down a "how do I
+  pip-install the juju SDK" tangent, never read the upstream docs
+  (`read upstream/...` *fails* — the file tools are scoped to the charm
+  subdir, not the project root), `charmcraft.yaml` stayed template,
+  and `src/charm.py` got *replaced* with a broken stub.
+- **Attempt 3** — the no-think fix in place (below).  The empty-turn
+  problem vanished and turns sped up ~5×, but the model then wandered
+  into `concierge_prepare` / `concierge_restore` infra-tool churn,
+  blocked itself on a *false* "controller unreachable", and *still*
+  couldn't read the upstream docs or develop the charm.
+
+**The fix that came out of this — disable thinking on the snap.**  The
+`(no response)` turns trace to Qwen3-14B (a thinking model) spending
+its whole completion budget on `<think>` and emitting no `content` —
+trivially reproducible: a "say OK" prompt with a small `max_tokens`
+returns `content=""` and a full `reasoning_content`, `finish=length`.
+Sending `chat_template_kwargs: {enable_thinking: false}` (llama.cpp
+`--jinja` forwards it to the chat template) fixes it — `content="OK"`,
+no `reasoning_content`, `finish=stop`.  This is now
+`InferenceSnapProvider`'s default for every request; templates that
+don't recognise the kwarg (gemma3, deepseek-r1, …) ignore it, so it's
+safe to send unconditionally.  See the CHANGELOG entry and
+`tests/unit/llm/test_inference_snap.py::TestGracefulDegradation::test_thinking_disabled_in_request_body`.
+
+**Verdict.**  cantrip + Qwen3-14B can stand up the scaffold and
+pack/deploy a *template* charm, but cannot do the substantive
+charm-design work for a workload this complex — even with the upstream
+docs handed to it, step-by-step steering, and the no-think fix.  The
+§5.6.1 "front-runner" rating stands for the *improve* path; this
+from-scratch multi-service case is out of reach.  The obvious next
+question: does the gap close with a larger per-slot context (so the
+model can hold the upstream docs *and* the charm in one
+conversation)?  The 16 K smoke server is tight; 32 K needs KV-cache
+quantisation to fit (§5.6).
+
+**Comparison datapoint — `gemini-3.1-pro-preview` on the same task.**
+Same prompt, same setup, `--provider gemini`: it cloned the repo
+itself, read the install docs + `compose.yml` + `Dockerfile` +
+`settings.py` (1413 lines) + helm values, correctly identified the
+Django 3-service architecture, wrote a sound `DESIGN.md` and then a
+real `charmcraft.yaml` (3 containers with the actual `lasuite/impress-*`
+images; relations for postgresql_client / redis / s3 / oidc_client /
+ingress + COS; config options; a `create-superuser` action) and a
+~400-line `src/charm.py` (three Pebble layers, relation handlers, Juju
+secrets, ops-tracing, status) plus Scenario unit tests — i.e. the
+substantive work the local model couldn't touch.  It did *not* reach a
+packed/deployed charm, but every blocker was operational, not
+capability: a Textual `MarkupError` crash in the TUI (`closing tag
+'[/dim]'`), the design-review gate jamming when driven non-
+interactively, an unsynced charm `.venv`, a `charmcraft.yaml` /
+`actions.yaml` conflict, and finally a project-level Gemini API rate
+limit (which `gemini-2.5-pro` hit too).  Cost ≈ $40–50
+(`gemini-3.1-pro-preview` then `gemini-2.5-pro`, ~80 K-token session
+prompts).  Run artefacts — both models, all attempts, asciinema casts
++ `.cantrip` session DBs — under `~/cantrip-runs/` on the eval host.
 
 ### 5.7 DeepSeek-Coder-V2-Lite-Instruct *(blocked on infrastructure — b8589 build doesn't run this model end-to-end)*
 

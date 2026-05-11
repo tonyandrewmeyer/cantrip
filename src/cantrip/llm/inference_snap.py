@@ -186,6 +186,25 @@ class InferenceSnapProvider(OpenAICompatBase):
         """
         return 0.2
 
+    def _build_request_body(self, *args, **kwargs):  # type: ignore[override]
+        """Suppress Qwen3-style chain-of-thought reasoning.
+
+        Thinking models served via llama.cpp's ``--jinja`` (the Qwen3
+        family especially) emit their reasoning into ``reasoning_content``
+        and routinely exhaust the completion budget before producing any
+        ``content`` / tool calls — the empty ``(no response)`` turn that
+        stalls the agent loop, made worse on a tight (16 K) per-slot
+        context where the prompt alone leaves little room for both a
+        ``<think>`` block *and* an answer.  Passing ``enable_thinking=false``
+        through to the chat template skips the reasoning block so the
+        model answers — and calls tools — directly.  Chat templates that
+        don't recognise the kwarg (gemma3, deepseek-r1, …) ignore it, so
+        this is safe to send unconditionally.
+        """
+        body = super()._build_request_body(*args, **kwargs)
+        body.setdefault("chat_template_kwargs", {})["enable_thinking"] = False
+        return body
+
     #: Default httpx read timeout (seconds) for snap chat completions.
     #: 20 min is enough headroom for any plausible single-turn
     #: generation on the slowest local snap (qwen3-coder routinely

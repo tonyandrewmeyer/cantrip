@@ -1243,8 +1243,21 @@ class TestGracefulDegradation:
         provider._apply_model_metadata({"data": [{"id": "test", "capabilities": ["completion"]}]})
         assert provider._supports_tools is True
 
+    def test_thinking_disabled_in_request_body(self):
+        """Request body carries ``chat_template_kwargs.enable_thinking=False``.
 
-class TestListInferenceSnapsTool:
+        Qwen3-family snaps served via llama.cpp ``--jinja`` otherwise
+        burn the whole completion budget on ``reasoning_content`` and
+        emit an empty turn; pinning this stops a regression from
+        re-enabling chain-of-thought on a tight per-slot context.
+        """
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="qwen3-14b", model="test-model", base_url="http://test:8340/v1"
+            )
+        body = provider._build_request_body([Message(role=Role.USER, content="hi")], None, 0.2)
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+
     """Tests for the ListInferenceSnapsTool agent tool."""
 
     @pytest.mark.asyncio
