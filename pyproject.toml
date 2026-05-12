@@ -29,7 +29,7 @@ dependencies = [
     # Juju integration
     "jubilant>=1.8,<2",            # Juju control (1.x is API-stable; pin to avoid silent v2 break)
     # Security
-    "cryptography>=46.0.7",        # Transitive; pinned for CVE fix
+    "cryptography>=47.0.0",        # Transitive; pinned for CVE fix
     "requests>=2.33.0",            # Transitive; pinned for CVE fix
     "pygments>=2.20.0",            # Transitive; pinned for CVE fix
     # Web UI
