@@ -39,7 +39,8 @@ if [ ! -e "${{python_path}}" ]; then
 fi
 
 export PYTHONPATH="${{dispatch_path}}/lib:${{dispatch_path}}/src"
-export LD_LIBRARY_PATH="${{dispatch_path}}/usr/lib:${{dispatch_path}}/lib:${{dispatch_path}}/usr/lib/$(uname -m)-linux-gnu"
+arch="$(uname -m)"
+export LD_LIBRARY_PATH="${{dispatch_path}}/usr/lib:${{dispatch_path}}/lib:${{dispatch_path}}/usr/lib/${{arch}}-linux-gnu"
 
 exec "${{python_path}}" "${{dispatch_path}}/{entrypoint}"
 """

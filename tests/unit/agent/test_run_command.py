@@ -1,5 +1,6 @@
 """Tests for the RunCommandTool (scoped command runner)."""
 
+import pathlib
 import subprocess
 from unittest import mock
 
@@ -186,8 +187,11 @@ class TestRunCommandExecution:
         ) as mock_run:
             await custom_tool.execute(command="ls", cwd="/tmp")
 
+        # The sandbox runner resolves the cwd before passing it to
+        # subprocess.run — on macOS ``/tmp`` is a symlink to ``/private/tmp``,
+        # so compare against the resolved form to stay portable.
         call_kwargs = mock_run.call_args.kwargs
-        assert call_kwargs["cwd"] == "/tmp"
+        assert call_kwargs["cwd"] == str(pathlib.Path("/tmp").resolve())
 
 
 class TestJujuRejected:
