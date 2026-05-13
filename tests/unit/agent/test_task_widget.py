@@ -215,7 +215,13 @@ class TestTaskChecklistWidget:
         async with app.run_test() as pilot:
             checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
             checklist.notify_changed([_make_task("First task")])
-            await pilot.pause(delay=0.7)
+            # Poll instead of a single fixed pause — the 0.5 s refresh
+            # timer is reliable on Linux at 0.7 s, but the macOS GHA
+            # runner sometimes needs longer for the first tick to land.
+            for _ in range(30):
+                if messages_received:
+                    break
+                await pilot.pause(delay=0.1)
             assert len(messages_received) == 1
 
     @pytest.mark.asyncio
@@ -240,9 +246,17 @@ class TestTaskChecklistWidget:
         async with app.run_test() as pilot:
             checklist = pilot.app.query_one("#task-checklist", TaskChecklistWidget)
             checklist.notify_changed([_make_task("First")])
-            await pilot.pause(delay=0.7)
+            # Poll for the first message so the macOS GHA runner has room
+            # to land the 0.5 s timer tick.
+            for _ in range(30):
+                if messages_received:
+                    break
+                await pilot.pause(delay=0.1)
+            assert len(messages_received) == 1
+            # Second notify_changed must not re-post — give the timer
+            # plenty of slack to prove no extra message arrives.
             checklist.notify_changed([_make_task("First"), _make_task("Second")])
-            await pilot.pause(delay=0.7)
+            await pilot.pause(delay=1.5)
             assert len(messages_received) == 1
 
     @pytest.mark.asyncio
