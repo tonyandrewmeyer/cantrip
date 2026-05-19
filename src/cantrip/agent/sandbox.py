@@ -226,6 +226,47 @@ def _probe_mechanism(mechanism: Mechanism) -> bool:
     return usable
 
 
+# Stderr signatures that mean the *wrapper tool* (not the inner command)
+# failed to set up the sandbox.  When we see these on a non-zero exit, the
+# inner command never ran — falling back to unwrapped execution is safe.
+_SANDBOX_INTERNAL_ERROR_MARKERS: dict[Mechanism, tuple[str, ...]] = {
+    "unshare": (
+        "unshare: ",
+        "unshare failed",
+        "Operation not permitted",
+    ),
+    "bwrap": ("bwrap: ",),
+    "sandbox-exec": ("sandbox-exec: ",),
+}
+
+
+def _is_sandbox_internal_failure(
+    mechanism: Mechanism,
+    result: subprocess.CompletedProcess[str],
+) -> bool:
+    """Heuristic: did the sandbox wrapper itself fail before exec'ing the inner command?
+
+    Two patterns:
+    1. The wrapper exited non-zero and printed a known error string to stderr
+       (e.g. ``unshare: write failed /proc/self/uid_map: Operation not permitted``).
+    2. The wrapper was killed by a signal with no inner output — almost always
+       the wrapper aborting on profile/namespace setup (sandbox-exec on
+       restricted hosts SIGABRTs without writing anything).
+    """
+    if result.returncode == 0:
+        return False
+    stderr = result.stderr or ""
+    stdout = result.stdout or ""
+    markers = _SANDBOX_INTERNAL_ERROR_MARKERS.get(mechanism, ())
+    if stderr and any(marker in stderr for marker in markers):
+        return True
+    # Wrapper killed by signal before producing output: the inner command
+    # never ran.  Negative returncodes only come from os.WTERMSIG paths in
+    # subprocess.  We require no stdout/stderr to avoid swallowing a real
+    # signal-killed inner command (e.g. a build that segfaults).
+    return result.returncode < 0 and not stdout and not stderr
+
+
 class SandboxedRunner:
     """Run subprocess commands under Linux namespace isolation.
 
@@ -271,7 +312,7 @@ class SandboxedRunner:
         cwd_path = pathlib.Path(cwd).resolve()
         wrapped = self.wrap(argv, cwd=cwd_path, policy=policy)
         self._record_decision(argv=list(argv), cwd=cwd_path, policy=policy)
-        return subprocess.run(
+        result = subprocess.run(
             wrapped,
             cwd=str(cwd_path),
             capture_output=capture_output,
@@ -279,6 +320,30 @@ class SandboxedRunner:
             timeout=timeout,
             check=False,
         )
+        # If the sandbox tool itself failed (kernel restrictions, missing
+        # caps), retry unwrapped.  The probe is supposed to catch this
+        # ahead of time, but some hosts (notably GH Actions runners) let
+        # the probe succeed with ``exit 0`` and then fail real namespace
+        # setup at uid_map write time.  Detect that pattern by stderr
+        # signature and demote the mechanism so future calls in this
+        # process skip the broken wrapper.
+        if self._mechanism != "none" and _is_sandbox_internal_failure(self._mechanism, result):
+            log.warning(
+                "Sandbox mechanism %r failed at runtime (%s); falling back to unwrapped execution",
+                self._mechanism,
+                (result.stderr or "").strip().splitlines()[0] if result.stderr else "",
+            )
+            _mechanism_probe_cache[self._mechanism] = False
+            self._mechanism = "none"
+            result = subprocess.run(
+                list(argv),
+                cwd=str(cwd_path),
+                capture_output=capture_output,
+                text=text,
+                timeout=timeout,
+                check=False,
+            )
+        return result
 
     def _record_decision(
         self,

@@ -14,6 +14,7 @@ from cantrip.agent.commands import share as share_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.slash import SlashResult, dispatch
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
+from cantrip.agent.queue import WorkflowPhase
 from cantrip.agent.store import SessionStore
 
 
@@ -60,6 +61,17 @@ def _fake_agent(
         provider=SimpleNamespace(model_name=provider_model),
         cache_read_tokens=cache_read,
         cache_creation_tokens=cache_write,
+        # Phase 104: ``/cost`` reads the context-management rollup.
+        context_manager=SimpleNamespace(
+            compactions_attempted=0,
+            emergencies_attempted=0,
+            compaction_strategy="summarise",
+            short_session_mode=False,
+        ),
+        _tools=[],
+        _tools_for_llm=lambda: [],
+        # Phase 110: ``/cost`` reads the active workflow phase.
+        workflow_phase=WorkflowPhase.BUILD,
     )
 
 

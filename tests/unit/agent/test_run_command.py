@@ -1,5 +1,6 @@
 """Tests for the RunCommandTool (scoped command runner)."""
 
+import pathlib
 import subprocess
 from unittest import mock
 
@@ -186,8 +187,11 @@ class TestRunCommandExecution:
         ) as mock_run:
             await custom_tool.execute(command="ls", cwd="/tmp")
 
+        # The sandbox runner resolves the cwd before passing it to
+        # subprocess.run — on macOS ``/tmp`` is a symlink to ``/private/tmp``,
+        # so compare against the resolved form to stay portable.
         call_kwargs = mock_run.call_args.kwargs
-        assert call_kwargs["cwd"] == "/tmp"
+        assert call_kwargs["cwd"] == str(pathlib.Path("/tmp").resolve())
 
 
 class TestJujuRejected:
@@ -205,6 +209,30 @@ class TestJujuRejected:
         result = await tool.execute(command="juju status")
         assert not result.success
         assert "not on the allowlist" in result.error
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("command", "expected_hint"),
+        [
+            ("juju status", "`juju` tool"),
+            ("git status", "`git` tool"),
+            ("gh pr list", "`gh` tool"),
+        ],
+    )
+    async def test_allowlist_miss_hints_at_the_dedicated_tool(self, tool, command, expected_hint):
+        """An allowlist miss for a command with a typed tool points at that tool."""
+        result = await tool.execute(command=command)
+        assert not result.success
+        assert "not on the allowlist" in result.error
+        assert expected_hint in result.error
+
+    @pytest.mark.anyio
+    async def test_allowlist_miss_without_a_tool_has_no_hint(self, tool):
+        """Commands with no dedicated tool just report the plain allowlist miss."""
+        result = await tool.execute(command="rm -rf /tmp/x")
+        assert not result.success
+        assert "not on the allowlist" in result.error
+        assert "tool" not in result.error
 
 
 class TestRunCommandConstants:

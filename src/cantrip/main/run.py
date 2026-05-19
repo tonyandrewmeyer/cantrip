@@ -192,6 +192,7 @@ def _run(args: argparse.Namespace) -> int:
             embed_model=getattr(args, "embed_model", None),
             rerank_provider=getattr(args, "rerank_provider", None),
             rerank_model=getattr(args, "rerank_model", None),
+            short_session=getattr(args, "short_session", None),
         )
         app.run()
         _print_update_panel(app.pending_update_info)

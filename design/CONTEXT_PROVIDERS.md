@@ -5,8 +5,9 @@ Phase 72.2.  This document covers the input-layer expansion of
 parties implement, and the conventions for adding a new provider.
 The implementation lives in `src/cantrip/agent/context_providers.py`
 (parser, registry, protocol) and
-`src/cantrip/agent/context_providers_builtin.py` (the seven shipped
-providers).
+`src/cantrip/agent/context_providers_builtin.py` (the eight
+unconditionally-shipped providers, plus `@docs` and the three
+codeintel providers when their backends are available).
 
 ## What gets expanded
 
@@ -106,6 +107,7 @@ Defaults (in chars; ~4 chars per token):
 | `@problems`  |  6000 | matches `lint_context.DEFAULT_MAX_CHARS` |
 | `@url`       | 12000 | webfetch markdownified body             |
 | `@charm`     |  8000 | Charmhub metadata                       |
+| `@preset`    |  8000 | known-good bundle shape from `cantrip.agent.presets` |
 | `@juju`      |  8000 | read-only `juju` output                 |
 
 ## Tab-complete
@@ -138,6 +140,16 @@ not yet have a parallel popup.
 * **`@docs`** ships in Phase 72.1 (indexed charm-ecosystem docs)
   once the provider-roles work in 72.3 lands.
 * **`@terminal`** waits on the Phase 69.3 shell-mode output buffer.
+* **`@relation <a>:<b>`** — deferred candidate (Phase 90 side-finding).
+  Would expand a relation reference (e.g. `@relation
+  prometheus:alertmanager`) into the interface name, provider/requirer
+  roles, observed databag keys (from the watcher's cached `juju
+  show-unit`), and a one-paragraph description.  The Phase 90 preset
+  catalogue (`cantrip.agent.presets`) already gives the agent the
+  canonical per-edge prose for the well-known bundles, which covers the
+  common case — promote this to a real provider only if the agent is
+  observed re-deriving databag shapes for arbitrary relations every
+  turn.
 * The transcript-side metadata for raw-vs-expanded message records
   is currently approximated by the multi-line fence wrappers.  A
   proper schema-level pair would be a Phase 67.1 transcript polish

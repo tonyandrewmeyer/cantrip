@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from cantrip.llm.base import Message
 
 if TYPE_CHECKING:
+    from cantrip.agent.context import LedgerEntry
     from cantrip.agent.goal_budget import GoalBudget
 
 log = logging.getLogger(__name__)
@@ -239,6 +240,11 @@ class AgentState:
     # Transient — not persisted to SQLite, re-determined each startup.
     environment_ready: bool = False
     watcher_enabled: bool = False
+    # When ``False`` the watcher keeps observing the model (status panes
+    # and ``[Watcher]`` chat notices still update) but detected events are
+    # not turned into work-queue tasks — i.e. the agent stops reacting
+    # autonomously.  Toggled from the TUI with F5.
+    watcher_reacting: bool = True
     test_results: TestResults | None = None
 
     # Phase 103.1: set ``True`` by ``persistence.load_state`` after a
@@ -406,10 +412,19 @@ class AgentState:
     # ``CANTRIP_TOOL_FAILURE_CAP`` env var (read once at agent init).
     consecutive_tool_failures: int = 0
     last_failed_tool_signature: str | None = None
+    last_failed_tool_name: str | None = None
     tool_failure_cap: int = 5
 
     messages: list[Message] = dataclasses.field(default_factory=list)
     decisions: list[Decision] = dataclasses.field(default_factory=list)
+
+    # Phase 104: short-session "history ledger" — one terse line per past
+    # tool call.  Populated by :class:`~cantrip.agent.context.ContextManager`
+    # under the ledger-and-drop compaction strategy and re-rendered into
+    # the prompt each turn.  Empty (and unused) for frontier providers.
+    # Not persisted: on resume the next turn's ephemeral collapse rebuilds
+    # it from the restored transcript, so there is nothing to migrate.
+    ledger: list[LedgerEntry] = dataclasses.field(default_factory=list)
 
     def add_decision(self, type: str, choice: str, reason: str | None = None) -> None:
         """Record a decision.

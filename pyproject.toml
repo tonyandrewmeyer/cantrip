@@ -1,6 +1,6 @@
 [project]
 name = "juju-cantrip"
-version = "0.1.0"
+version = "0.2.3"
 description = "A small spell for building Juju charms - an AI-powered charm development agent"
 readme = "README.md"
 license = { text = "Apache-2.0" }

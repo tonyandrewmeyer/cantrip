@@ -13,7 +13,12 @@ from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import TaskStatus
 from cantrip.hooks import HookRunner
 from cantrip.llm import create_provider, pricing, resolve_light_provider
-from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError
+from cantrip.llm.base import (
+    ProviderConnectionError,
+    ProviderError,
+    ProviderOverloadedError,
+    ProviderRateLimitError,
+)
 from cantrip.llm.roles import build_role_router
 from cantrip.ui import events as ui_events
 
@@ -206,6 +211,7 @@ def run_cli(args: argparse.Namespace) -> int:
         light_provider=light_provider,
         hook_runner=HookRunner.from_disk(repo_root=args.path),
         role_router=role_router,
+        short_session=getattr(args, "short_session", None),
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
@@ -519,7 +525,7 @@ async def _repl(agent: CantripAgent) -> None:
             print("\n[interrupted]")
             # Drain the executor cleanly instead of abandoning it.
             await _drain_executor(agent)
-        except (ProviderRateLimitError, ProviderOverloadedError):
+        except (ProviderRateLimitError, ProviderOverloadedError, ProviderConnectionError):
             spinner_task.cancel()
             await asyncio.gather(spinner_task, return_exceptions=True)
             print("\nProvider temporarily unavailable — please wait a moment and try again.\n")

@@ -35,6 +35,12 @@ _SNAP_DEFAULTS: dict[str, int] = {
 # may be larger, but practical limits with quantised weights are lower.
 _DEFAULT_CONTEXT_WINDOW = 8_192
 
+# Below this usable per-slot context, the agent flips into short-session
+# mode (aggressive compaction + ledger-and-drop + per-turn ephemeral
+# conversation).  gemma4 (~10 K per slot) lands below it; qwen3-coder
+# (~32 K per slot) stays above.  See ``LLMProvider.short_session_mode``.
+_SHORT_SESSION_MAX_CONTEXT_TOKENS = 16_000
+
 # Known vision-capable inference snaps.  ``qwen-vl`` is explicitly
 # vision-language; Gemma 3 (4B and larger) accepts images through the
 # snap's OpenAI-compatible endpoint; gemma4 (Gemma 3n E4B) advertises
@@ -156,6 +162,18 @@ class InferenceSnapProvider(OpenAICompatBase):
         return 12
 
     @property
+    def short_session_mode(self) -> bool:
+        """True when the detected per-slot context is too tight for rich history.
+
+        Reads the runtime ``context_window_tokens`` (after the
+        ``/slots`` / ``/props`` probe in :meth:`_probe_slot_context`),
+        so a snap launched with a generous ``--ctx-size`` and few
+        ``--parallel`` slots stays out of short-session mode while a
+        128 KiB-on-paper model whose slots are only 10 K wide flips in.
+        """
+        return self._context_window < _SHORT_SESSION_MAX_CONTEXT_TOKENS
+
+    @property
     def conversation_temperature(self) -> float:
         """Clamp the conversation temperature low for reliable tool calls.
 
@@ -167,6 +185,25 @@ class InferenceSnapProvider(OpenAICompatBase):
         making the model parrot its own past replies.
         """
         return 0.2
+
+    def _build_request_body(self, *args, **kwargs):  # type: ignore[override]
+        """Suppress Qwen3-style chain-of-thought reasoning.
+
+        Thinking models served via llama.cpp's ``--jinja`` (the Qwen3
+        family especially) emit their reasoning into ``reasoning_content``
+        and routinely exhaust the completion budget before producing any
+        ``content`` / tool calls — the empty ``(no response)`` turn that
+        stalls the agent loop, made worse on a tight (16 K) per-slot
+        context where the prompt alone leaves little room for both a
+        ``<think>`` block *and* an answer.  Passing ``enable_thinking=false``
+        through to the chat template skips the reasoning block so the
+        model answers — and calls tools — directly.  Chat templates that
+        don't recognise the kwarg (gemma3, deepseek-r1, …) ignore it, so
+        this is safe to send unconditionally.
+        """
+        body = super()._build_request_body(*args, **kwargs)
+        body.setdefault("chat_template_kwargs", {})["enable_thinking"] = False
+        return body
 
     #: Default httpx read timeout (seconds) for snap chat completions.
     #: 20 min is enough headroom for any plausible single-turn

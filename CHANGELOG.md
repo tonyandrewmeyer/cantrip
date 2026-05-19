@@ -5,6 +5,102 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+- **Phase-aware tool curation (Phase 110).**  Tight-context providers
+  (inference snaps cap the LLM's tool array at 12; short-session mode
+  has a similar squeeze) no longer get a fixed 11-name "core tools"
+  keep-list that silently dropped load-bearing tools.  Instead the
+  toolbox is curated to the *active workflow phase* — `build` ships
+  `quick_pack` / `charmcraft_pack` / `charmlint` / `run_command`,
+  `debug` swaps in `juju_debug_log` / `juju_status_render`, `deploy`
+  brings `concierge_prepare` / `wait_for` / `relation_smoke_test`,
+  `research` is navigation + `web_search` / `analyse_framework` /
+  `oracle_consult` / `extract_design_decisions` — so the model gets
+  the tools its current task needs rather than a one-size-fits-all
+  slice.  The phase follows the work-queue task category (a test
+  failing flips `build → debug`, reshaping the next turn's tools);
+  `CANTRIP_TOOL_PHASE={research|build|debug|deploy|demo}` pins it for
+  unusual flows.  `/cost` names the active phase, and the TUI status
+  bar / Web header show a `[build · 11]`-style chip when curation is
+  active.  Roomy providers (Claude, Gemini) are unaffected — they
+  still see the full toolset.
+- **Failure-injection integration tests (Phase 93.2).**  A new
+  ``tests/integration/test_failure_injection.py`` exercises what the
+  agent does when reality is messy: a provider returning 5xx / overload /
+  a mid-stream disconnect (the transient-retry budget is burned, then the
+  task goes FAILED with a one-line cause), a malformed planner reply that
+  the structured-output retry corrects — or exhausts and surfaces — real
+  tool failures via ``run_command`` (non-zero exit, timeout, missing
+  binary, off-allowlist), a crashing or refusing subagent tool that the
+  loop reports and steps past, a persistent outage that *terminates* the
+  work loop instead of hanging it, a transient blip that recovers, and
+  degraded-environment paths (missing API key, no ``juju`` on PATH, an
+  unwritable transcript export).  Reusable doubles keep each scenario a
+  few lines: ``FailingProvider`` / ``FlakyProvider``
+  (``tests/support/providers.py``), ``make_raising_tool``
+  (``tests/support/tools.py``), and the ``fast_retry`` fixture.  (Also
+  refreshed the canned planner-output fixtures to the
+  ``{"tasks": [...]}`` shape the structured-output planner actually
+  expects, so ``test_design_flow`` / ``test_day2_and_improvement`` stop
+  feeding it a value the real planner would reject.)
+- **Durability / resume integration tests (Phase 93.3).**  A new
+  ``tests/integration/test_durability_resume.py`` exercises the whole
+  checkpoint → stop → restart → resume path rather than the per-table
+  unit round-trips: a subagent force-stopped mid-LLM-call (the prior
+  turn and tool call are durably checkpointed, the in-flight one isn't)
+  is picked up by a fresh executor at the same ``.cantrip`` and finished
+  with one fresh provider call and no re-run of the cached tool — and
+  its checkpoints are purged once it reaches DONE; a DONE task isn't
+  re-dispatched after a restart; an ACTIVE-when-saved task comes back
+  PENDING and runs to completion; ``CantripAgent.load_state()`` restores
+  decisions + conversation history + the work queue (done-with-result,
+  active→pending, pending-with-dependencies) together; and the
+  context-budget lifecycle survives — compaction fires under a tiny
+  window and its counter is restored on resume, a summariser failure
+  falls back to emergency truncation without wedging the loop, and an
+  already-exhausted compaction budget carries through resume and keeps
+  the conversation answering.
+- **F5 now pauses/resumes the watcher's reactions instead of
+  stopping it.**  The Juju event watcher always keeps observing the
+  model — the status panes and `[Watcher]` chat notices stay
+  current — and <kbd>F5</kbd> toggles only whether detected events
+  queue tasks for the agent.  Pause it when you want to hand-debug
+  the model without the agent acting on every status blip; resume
+  to hand control back.  The status bar shows `👁 Watching` or
+  `👁 Watching (paused)`.  (Previously <kbd>F5</kbd> stopped the
+  watcher entirely — which also blanked the model panes — and gave
+  no feedback when toggled back on.)
+- **F8 integration graph: edges as objects, focus/fade, layer
+  hints (Phase 90.3).**  The F8 screen no longer renders a static
+  block with a flat relation list at the bottom; its body is now a
+  selectable list.  Picking a relation row (`a:ep ──[interface]──
+  b:ep`) opens an inline detail strip with the endpoint names, the
+  interface, and — when the model matches a known bundle shape —
+  the provider/requirer roles and a one-line description from the
+  preset catalogue.  Picking an app *focuses* it: unconnected apps
+  and edges that don't touch it fade out; Escape, re-picking the
+  same app, or the `c` binding clears the focus.  When the model
+  matches a preset (COS Lite, 12-Factor + COS, …) the app panels
+  are grouped under `▸ <Layer>` headers in the preset's declared
+  order; otherwise the layout stays flat and alphabetical — no
+  layer is invented.  Clicking an app in the right-panel sketch
+  opens F8 already focused on that app.
+- **Right-panel topology sketch (Phase 90.2).**  The expanded
+  per-model view in the right panel used to be a stack of
+  ``AppBox`` rows (each with its unit / subordinate breakdown)
+  followed by a flat relation list.  At a wide-enough terminal it
+  now renders as a compact topology sketch instead: one
+  status-coloured node line per app — clicking it opens the F8
+  integration graph focused on that app — and a "Relations"
+  section that lists one line per related app-pair, grouped under
+  ``[interface]`` sub-headers.  A narrow pane (≈ 80-column
+  terminal or smaller) keeps the verbose ``AppBox`` list as a
+  fall-back, and the widget flips between the two when a terminal
+  resize crosses the threshold.  The collapsed COS summary line
+  gained a relation count: ``6 apps · 10 relations · 5 active, 1
+  blocked · 4 offers (click to expand)``.  Shared glyph/colour
+  tables and the relation-dedup logic moved into a new
+  ``cantrip.tui.topology`` module so the pane and the F8 screen
+  stay consistent.
 - **Colour discipline pass (Phase 108.3).**  ``$primary`` (Ubuntu
   orange) was doing duty as wallpaper across the TUI — borders on
   suggestion popups, dividers between sub-panels, in-progress
@@ -129,6 +225,37 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   indicator, slim header, dotfile cull).
 
 ### Added
+- **Preset bundle catalogue and `@preset` mention (Phase 90.4).**
+  Cantrip now ships a small curated catalogue of known-good Juju
+  deployment shapes — COS Lite, a 12-Factor app + COS, the Canonical
+  Identity Platform, and the auth-and-routing core of Charmed Kubeflow
+  — recording each shape's apps, the semantic layer each belongs to,
+  and every relation edge with its interface name and a one-line
+  description.  Type `@preset` in the chat for the index or
+  `@preset cos-lite` for the full layout; the agent consults the same
+  data (and a new `preset-bundles` skill points it there) when
+  composing relations instead of re-deriving the shape from web docs.
+  The catalogue (`cantrip.agent.presets`) also backs the integration
+  graph's layer grouping.  It is knowledge, not a deployment recipe —
+  it prescribes no steps and emits no `bundle.yaml`.
+- **Short-session mode for tight-context models (Phase 104).**
+  Providers below ~16 K usable context (small local inference snaps
+  such as gemma4, whose system prompt plus tool schemas already fill a
+  third of the window) now auto-flip into a short-session flow: the
+  context manager compacts at 50 % of the window instead of 80 %,
+  replaces the prose-summary compaction with a one-line-per-tool-call
+  *history ledger* that drops the raw older messages rather than
+  virtualising them, trims the toolset to a phase-aware curated set,
+  and treats each turn as a near-fresh conversation (the working set
+  collapses into the ledger between turns, and a turn that builds up
+  more than a couple of tool rounds folds the oldest into the ledger
+  immediately).  The status bar shows a ``[short-session]`` chip and
+  ``/cost`` reports the compaction strategy in use.  Frontier APIs are
+  unchanged — they keep the rich-history summarise flow.  Override the
+  auto-detect with ``--short-session=on|off|auto`` /
+  ``CANTRIP_SHORT_SESSION`` to opt a borderline ~16–32 K provider in
+  or out.  See ``docs/src/howto-provider.md`` and
+  ``docs/src/reference-cli.md``.
 - **Click a failed tool block for the full error.**  When a tool
   call fails, the chat block now carries a dim ``(details)`` hint;
   clicking it opens a modal showing the captured error summary plus
@@ -219,6 +346,46 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   the full schema and dispatcher flow.
 
 ### Fixed
+- **Inference-snap requests now disable chain-of-thought
+  (``chat_template_kwargs.enable_thinking=false``).**  Qwen3-family
+  snaps served via llama.cpp's ``--jinja`` route their reasoning into
+  ``reasoning_content`` and, on a tight per-slot context (e.g. the
+  16 K Qwen3-14B smoke server), routinely spent the whole completion
+  budget thinking and returned an empty ``content`` / no tool calls —
+  the agent loop then saw a ``(no response)`` turn and stalled or
+  drained the work queue with nothing done.  ``InferenceSnapProvider``
+  now passes ``enable_thinking=false`` through to the chat template on
+  every request, so the model answers (and calls tools) directly;
+  templates that don't recognise the kwarg (gemma3, deepseek-r1, …)
+  ignore it, so it's safe to send unconditionally.
+- **A retry-exhausted ``ProviderOverloadedError`` /
+  ``ProviderConnectionError`` now fails the task cleanly instead of
+  stalling the work loop.**  Both are siblings of ``ProviderError``,
+  not subclasses, so the executor's task-failure handler never caught
+  them — when ``complete_with_retry`` re-raised one after burning its
+  retry budget, the task coroutine died unhandled and the task stayed
+  ``IN_PROGRESS`` indefinitely.  The executor now treats every
+  retry-exhausted transient error as a task failure, and ``cantrip run
+  --print`` / the REPL surface a ``ProviderConnectionError`` with the
+  same "provider unavailable" message they already gave for rate-limit
+  and overload errors.
+- **Modal-screen footer "buttons" were invisible and inert.**  The
+  bracketed key hints at the bottom (and top-right) of the log,
+  relation, transcript, observability, help, and tool-error modals
+  (``[r] Refresh``, ``[Esc] Close``, …) were rendered through Rich
+  markup, which silently ate the ``[…]`` tokens — so ``[r] Refresh``
+  showed as ``Refresh`` (no key shown) and the file/graph variants
+  (``[ r Refresh ]``) vanished entirely.  None of these labels were
+  clickable, despite looking like buttons.  They now render literally
+  (``markup=False``) and route mouse clicks to the matching action,
+  matching the affordance the bracketed text implies.
+- **``/tree`` crashed the TUI when opened.**  ``TreePickerScreen``
+  stored its turn list on ``self._nodes`` — a name Textual reserves
+  for a widget's child collection — so pushing the screen replaced the
+  DOM node list with a plain ``list`` and the next widget registration
+  raised ``AttributeError: 'list' object has no attribute '_updates'``.
+  The picker now holds the turns under ``self._turns``.
+
 - **Repo-stats sidebar wrapped its own rows.**  The Charm Files
   stats column rendered each line to a width inflated past the
   column's actual text area (an 18-col floor applied on top of an
@@ -260,6 +427,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``tests/unit/agent/test_queue.py``'s
   ``test_all_ready_unblocks_after_blocked_dependency`` is the
   regression pin, mirroring the existing FAILED-dependency test.
+
+- **Tool-call failure cap (Phase 107).**  A model that kept
+  re-emitting the same failing tool call — the canonical case being
+  a small local model whose ``write_file`` envelope comes back
+  without arguments because the payload overran its tool-call
+  generation budget — used to retry indefinitely, ~80 s per round,
+  until someone killed the run.  The agent now counts consecutive
+  failures of the same ``(tool, arguments)`` signature; once the
+  streak hits ``CANTRIP_TOOL_FAILURE_CAP`` (default 5, clamped to
+  ``[1, 50]``) the active work-queue task flips to ``BLOCKED`` with
+  a reason naming the tool and the count, so Phase 106's clean-exit
+  path fires instead of the loop grinding for minutes.  One round
+  before the cap a ``SYSTEM`` message tells the model it has retried
+  the same call N times and to split the payload, switch tools, fix
+  the arguments, or stop.  A different ``(tool, arguments)``
+  signature resets the streak, so a legitimate ``edit_file`` retry
+  after fixing an ``old_string`` doesn't count.  Each increment
+  past three logs at ``warning`` (visible in ``run.stderr`` without
+  ``--verbose``), and once the streak reaches two the status bar
+  shows a live ``⟳ tool retrying (n/cap)`` badge.  Regression tests
+  in ``tests/unit/agent/test_tool_failure_cap.py``.
 
 ### Changed
 - **Planner uses structured-output schema (Phase 73.3 follow-up).**

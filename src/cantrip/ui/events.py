@@ -262,17 +262,21 @@ def juju_status_changed(*, status_data: dict[str, Any]) -> Event:
     )
 
 
-def compaction_started(*, tokens_before: int, source: str = "main") -> Event:
+def compaction_started(
+    *, tokens_before: int, source: str = "main", strategy: str = "summarise"
+) -> Event:
     """Build a ``COMPACTION_STARTED`` event.
 
     Fired before :meth:`ContextManager.compact` runs so UIs can show an
     inline "compacting…" indicator.  Without this, users see a multi-
-    second pause with no explanation because compaction requires a
-    full LLM summary round-trip before the next turn can proceed.
+    second pause with no explanation because the ``summarise`` strategy
+    requires a full LLM summary round-trip before the next turn can
+    proceed.  ``strategy`` is ``"summarise"`` or ``"ledger-and-drop"``
+    (the latter is the cheap, no-round-trip short-session path).
     """
     return Event(
         type=EventType.COMPACTION_STARTED,
-        payload={"tokens_before": tokens_before, "source": source},
+        payload={"tokens_before": tokens_before, "source": source, "strategy": strategy},
     )
 
 
@@ -349,13 +353,16 @@ def compaction_completed(
     tokens_after: int,
     source: str = "main",
     kind: str = "compact",
+    strategy: str = "summarise",
 ) -> Event:
     """Build a ``COMPACTION_COMPLETED`` event.
 
     Fired after compaction finishes (either normally or after falling
     back to ``emergency_truncate``).  ``kind`` is ``"compact"`` for a
-    successful LLM summary, ``"emergency"`` when truncation was used
+    successful compaction, ``"emergency"`` when truncation was used
     instead — lets the UI show a different phrasing for the two paths.
+    ``strategy`` records which compaction strategy ran (``"summarise"``
+    vs ``"ledger-and-drop"``) so ``/cost`` can surface the trade-off.
     """
     return Event(
         type=EventType.COMPACTION_COMPLETED,
@@ -364,6 +371,7 @@ def compaction_completed(
             "tokens_after": tokens_after,
             "source": source,
             "kind": kind,
+            "strategy": strategy,
         },
     )
 

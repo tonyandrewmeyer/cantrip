@@ -136,8 +136,14 @@ class TestGraphModal:
 
     @pytest.mark.asyncio
     async def test_no_model_renders_notice(self) -> None:
+        from textual.widgets import OptionList
+
         async with _Host().run_test(size=_TERMINAL) as pilot:
             screen = GraphScreen(model=None)
             await pilot.app.push_screen(screen)
             await pilot.pause()
-            _assert_has_rendered_rows(screen, "graph-container", "graph-body")
+            container = screen.query_one("#graph-container")
+            assert container.size.height > 0, "#graph-container collapsed — modal will look blank"
+            opts = screen.query_one("#graph-options", OptionList)
+            assert opts.size.height > 0
+            assert opts.option_count >= 1  # the "No model connected." notice

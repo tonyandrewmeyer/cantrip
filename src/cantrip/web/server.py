@@ -294,6 +294,11 @@ async def _api_state(request: web.Request) -> web.Response:
             # never disagree about whether the loop is paused / done /
             # blocked / budget-limited.
             "loop_state": agent.lifecycle_label(),
+            # Phase 104: prime the [short-session] header chip.
+            "short_session": agent.context_manager.short_session_mode,
+            # Phase 110: prime the curated-tool-phase header chip
+            # (empty string unless the LLM tool slice is being trimmed).
+            "tool_phase": agent.tool_phase_badge(),
         }
     )
 
@@ -1015,6 +1020,7 @@ def run_web(args: argparse.Namespace) -> int:
         charm_path=args.path,
         light_provider=light_provider,
         role_router=role_router,
+        short_session=getattr(args, "short_session", None),
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.

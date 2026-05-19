@@ -7,6 +7,7 @@ import subprocess
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.events import Click
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
 from textual.worker import Worker, WorkerState
@@ -58,6 +59,16 @@ class RelationDetailScreen(ModalScreen):
         padding: 0 1;
     }
 
+    #relation-footer .clickable {
+        margin-right: 2;
+        width: auto;
+    }
+
+    .clickable:hover {
+        background: $surface-darken-1;
+        color: $text;
+    }
+
     #relation-output {
         height: 1fr;
     }
@@ -90,16 +101,35 @@ class RelationDetailScreen(ModalScreen):
                     f"Relation: {self._endpoint} ↔ {self._related_app}",
                     classes="title-text",
                 )
-                yield Static("[Esc Close]", classes="title-hint")
+                yield Static(
+                    "[ Esc Close ]",
+                    id="relation-close",
+                    classes="title-hint clickable",
+                    markup=False,
+                )
             yield RichLog(id="relation-output", wrap=True)
-            yield Static(
-                "[r] Refresh  [Esc] Close",
-                id="relation-footer",
-            )
+            with Horizontal(id="relation-footer"):
+                yield Static(
+                    "[ r Refresh ]", id="relation-refresh-btn", classes="clickable", markup=False
+                )
+                yield Static(
+                    "[ Esc Close ]", id="relation-close-btn", classes="clickable", markup=False
+                )
 
     def on_mount(self) -> None:
         """Fetch relation data on mount."""
         self._fetch_data()
+
+    def on_click(self, event: Click) -> None:
+        """Route clicks on the bracketed footer/title labels to actions."""
+        wid = getattr(event.widget, "id", None)
+        if wid == "relation-refresh-btn":
+            self.action_refresh()
+        elif wid in ("relation-close-btn", "relation-close"):
+            self.dismiss()
+        else:
+            return
+        event.stop()
 
     def action_refresh(self) -> None:
         """Refresh the relation data."""

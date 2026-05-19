@@ -38,12 +38,17 @@ def show_logs(app: CantripApp) -> None:
     app.push_screen(logs_screen.LogScreen(dev_model=dev_model, cos_model=cos_model))
 
 
-def show_graph(app: CantripApp) -> None:
-    """Push the integration graph screen."""
+def show_graph(app: CantripApp, *, focus_app: str | None = None) -> None:
+    """Push the integration graph screen.
+
+    *focus_app* overrides the highlighted/focused app — used when the
+    user clicks an app node in the right-panel sketch so F8 opens
+    focused on that app rather than on the charm under construction.
+    """
     from cantrip.tui.screens import graph as graph_screen
 
     status_widget = app.query_one("#juju-status", status_widgets.MultiModelStatusWidget)
-    current_app = app._agent.state.charm_name if app._agent else None
+    current_app = focus_app or (app._agent.state.charm_name if app._agent else None)
     dev_model = app._agent.state.dev_model if app._agent else None
     cos_model = app._agent.state.cos_model if app._agent else None
     app.push_screen(
@@ -53,6 +58,7 @@ def show_graph(app: CantripApp) -> None:
             model=dev_model,
             cos_status=status_widget.cos_status,
             cos_model=cos_model,
+            focus_app=focus_app,
         )
     )
 

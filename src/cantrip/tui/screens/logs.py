@@ -9,6 +9,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.content import Content
+from textual.events import Click
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import RichLog, Static
@@ -69,6 +70,16 @@ class LogScreen(ModalScreen):
         padding: 0 1;
     }
 
+    #log-footer .clickable {
+        margin-right: 2;
+        width: auto;
+    }
+
+    .clickable:hover {
+        background: $surface-darken-1;
+        color: $text;
+    }
+
     #log-output {
         height: 1fr;
     }
@@ -113,20 +124,54 @@ class LogScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         """Compose the log viewer layout."""
+        # ``markup=False`` on the bracketed labels: Textual's markup
+        # parser would otherwise eat ``[ ... ]`` as a (broken) style
+        # tag and the hint text would vanish entirely.
         with Vertical(id="log-container"):
             with Horizontal(id="log-title"):
                 yield Static("Juju Logs", classes="title-text")
-                yield Static("[Esc Close]", classes="title-hint")
+                yield Static(
+                    "[ Esc Close ]", id="log-close", classes="title-hint clickable", markup=False
+                )
             yield RichLog(id="log-output", wrap=True)
-            yield Static(
-                "[r] Refresh  [l] Level  [m] Model  [t] Stream  [Esc] Close",
-                id="log-footer",
-            )
+            with Horizontal(id="log-footer"):
+                yield Static(
+                    "[ r Refresh ]", id="log-refresh-btn", classes="clickable", markup=False
+                )
+                yield Static("[ l Level ]", id="log-level-btn", classes="clickable", markup=False)
+                yield Static("[ m Model ]", id="log-model-btn", classes="clickable", markup=False)
+                yield Static(
+                    "[ t Stream ]", id="log-stream-btn", classes="clickable", markup=False
+                )
+                yield Static(
+                    "[ Esc Close ]", id="log-close-btn", classes="clickable", markup=False
+                )
 
     def on_mount(self) -> None:
         """Fetch logs on mount."""
         self._update_title()
         self._fetch_logs()
+
+    def on_click(self, event: Click) -> None:
+        """Route clicks on the bracketed footer/title labels to actions.
+
+        The keybindings still cover keyboard users; this makes the
+        button-shaped text behave like the buttons it looks like.
+        """
+        wid = getattr(event.widget, "id", None)
+        if wid == "log-refresh-btn":
+            self.action_refresh()
+        elif wid == "log-level-btn":
+            self.action_cycle_level()
+        elif wid == "log-model-btn":
+            self.action_cycle_model()
+        elif wid == "log-stream-btn":
+            self.action_toggle_stream()
+        elif wid in ("log-close-btn", "log-close"):
+            self.action_dismiss()
+        else:
+            return
+        event.stop()
 
     def watch_level(self, _level: str) -> None:
         """Refresh logs when the level changes."""

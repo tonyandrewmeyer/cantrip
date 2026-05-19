@@ -27,18 +27,22 @@ shape.
 
 ## Recipes
 
-| Status | Recipe | What it shows |
-|--------|--------|---------------|
-| ✅ shipped | [`build-a-sprint-charm/`](build-a-sprint-charm/README.md) | The fastest path — sprint mode, no tests, ops-only deps, packs in under a minute |
-| 🗓️ proposed | `build-a-stateful-charm/` | Stateful workload with Scenario tests, COS integration, ops-tracing |
-| 🗓️ proposed | `migrate-harness-to-scenario/` | Drive the `harness-migration` skill to modernise an existing test suite |
-| 🗓️ proposed | `add-observability/` | Wire COS into an existing charm — Tempo + Loki + Grafana |
-| 🗓️ proposed | `generate-a-terraform-module/` | Produce a Terraform module that consumes the charm |
-| 🗓️ proposed | `deploy-with-juju-and-cos/` | End-to-end deploy + dashboard-ready observability |
+| Recipe | What it shows |
+|--------|---------------|
+| [`build-a-sprint-charm/`](build-a-sprint-charm/README.md) | The fastest path — sprint mode, no tests, ops-only deps, packs in under a minute |
+| [`build-a-stateful-charm/`](build-a-stateful-charm/README.md) | The full path — Scenario unit tests, ops-tracing, COS integration, Jubilant integration tests |
+| [`migrate-harness-to-scenario/`](migrate-harness-to-scenario/README.md) | Drive the `harness-migration` skill to rewrite an existing Harness suite as Scenario tests |
+| [`generate-a-terraform-module/`](generate-a-terraform-module/README.md) | Drive the `terraform` skill to produce the standard four-file Terraform module under `terraform/` |
+| [`add-observability/`](add-observability/README.md) | Wire an existing charm into COS — ops-tracing, metrics, logs, Grafana dashboards |
 
-Proposed recipes are tracked in ROADMAP Phase 55.6 as follow-up
-items. Open a PR with a new `cookbook/<name>/` directory to
-promote one from proposed to shipped.
+More recipes are welcome — open a PR with a new `cookbook/<name>/`
+directory following the format above.
+
+> A `deploy-with-juju-and-cos/` recipe was considered and dropped:
+> the cookbook's contract model verifies files in a charm directory,
+> and an end-to-end deploy's output is a running Juju model, not a
+> directory artifact. The deploy + COS-relate step is already
+> exercised as a phase inside `build-a-stateful-charm/`.
 
 ## Running a recipe
 
@@ -55,11 +59,12 @@ python cookbook/build-a-sprint-charm/verify.py path/to/new/charm/dir
 
 ## Running the verifier in CI
 
-`tests/cookbook/test_cookbook_recipes.py` walks every
-`cookbook/*/verify.py` and runs it against the sibling `expected/`
-directory when one exists. A recipe without `expected/` contributes
-to the *structure* check — README, prompts, verifier exist and are
-parseable — without needing a committed fixture.
+`tests/unit/test_cookbook_recipes.py` walks every
+`cookbook/*/verify.py`: a recipe with a sibling `expected/` charm
+fixture has its verifier run against it; a recipe without one gets
+a hand-written in-process fixture matching what the recipe promises.
+Either way the *structure* check — README, prompts, verifier exist
+and the verifier is valid Python — runs over every `cookbook/*/`.
 
 This gives us two levels of protection:
 

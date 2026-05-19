@@ -21,11 +21,10 @@ pytestmark = pytest.mark.tui
 def _patched_with_watcher_off() -> tuple[object, object]:
     """``_patch_app`` plus the watcher mocks F5 needs to round-trip cleanly.
 
-    The shared helper auto-mocks every agent attribute as a truthy MagicMock,
-    so ``agent.watcher_running`` reads truthy and ``action_toggle_watcher``
-    routes to the *stop* path on the very first F5 — but ``stop_watcher`` is
-    plain MagicMock, not awaitable.  Hard-set both here so F5 exercises the
-    realistic start-path on a fresh app.
+    F5 (``action_toggle_watcher``) flips ``agent.toggle_watcher_reacting``
+    and refreshes the status bar; give it a concrete bool so the chat
+    notice and status glyph are deterministic rather than driven off an
+    auto-mocked truthy MagicMock.
 
     Also pin ``state.charm_path`` to ``None`` so the F9 transcript action
     short-circuits — otherwise an auto-mocked MagicMock is passed to
@@ -34,8 +33,9 @@ def _patched_with_watcher_off() -> tuple[object, object]:
     """
     p1, p2, agent = _patch_app()
     agent.watcher_running = False
+    agent.watcher_reacting = True
+    agent.toggle_watcher_reacting = lambda: False
     agent.stop_watcher = AsyncMock()
-    agent.start_watcher = lambda: True
     agent.state.charm_path = None
     return p1, p2
 

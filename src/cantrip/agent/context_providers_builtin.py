@@ -27,7 +27,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 
-from cantrip.agent import lint_context
+from cantrip.agent import lint_context, presets
 from cantrip.agent.context_providers import (
     ArgStyle,
     ContextBlock,
@@ -62,6 +62,9 @@ _URL_MAX_CHARS = chars_for_tokens(3000)
 _CHARM_MAX_CHARS = chars_for_tokens(2000)
 _JUJU_MAX_CHARS = chars_for_tokens(2000)
 _DOCS_MAX_CHARS = chars_for_tokens(3000)
+# The catalogue entries are hand-sized; the largest preset renders well
+# under 2k tokens, and the bare index is a few hundred.
+_PRESET_MAX_CHARS = chars_for_tokens(2000)
 # Phase 72b: keep codeintel expansions tight — symbol listings and
 # reference lists rarely justify more than a couple of dozen lines
 # inline.  The index already truncates with explicit counts so the
@@ -496,6 +499,53 @@ class CharmProvider:
 
 
 # ---------------------------------------------------------------------------
+# @preset [<slug>]
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PresetProvider:
+    """``@preset [<slug>]`` — a known-good bundle shape from the catalogue.
+
+    Bare ``@preset`` lists the available shapes; ``@preset cos-lite``
+    expands the full layout (apps grouped by semantic layer, then every
+    relation edge with its interface name and a one-line description).
+    Reads :mod:`cantrip.agent.presets` directly — no network, no Juju —
+    so the agent can pull the canonical edge list while composing
+    relations instead of re-deriving it from web docs.
+    """
+
+    info: ProviderInfo = ProviderInfo(
+        name="preset",
+        summary="A known-good bundle shape (apps, layers, relation edges)",
+        arg_style=ArgStyle.TOKEN,
+        args_hint="[slug]",
+    )
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        """Render the catalogue index, or one preset when *args* names it."""
+        slug = args.strip()
+        if not slug:
+            return truncate(
+                raw="@preset",
+                rendered=presets.render_index(),
+                max_chars=_PRESET_MAX_CHARS,
+            )
+        bundle = presets.get_preset(slug)
+        raw = f"@preset {slug}"
+        if bundle is None:
+            known = ", ".join(presets.preset_names())
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@preset {slug}: unknown preset — known: {known}]",
+                error=f"unknown preset {slug!r}",
+            )
+        return truncate(
+            raw=raw, rendered=presets.render_preset(bundle), max_chars=_PRESET_MAX_CHARS
+        )
+
+
+# ---------------------------------------------------------------------------
 # @juju <subcmd>
 # ---------------------------------------------------------------------------
 
@@ -528,7 +578,10 @@ class JujuProvider:
             allowed = ", ".join(sorted(_JUJU_READONLY_VERBS))
             return ContextBlock(
                 raw=raw,
-                rendered=f"[@juju {verb}: not a read-only verb. Allowed: {allowed}]",
+                rendered=(
+                    f"[@juju {verb}: not a read-only verb. Allowed: {allowed}. "
+                    "For anything that changes the model, use the `juju` tool.]"
+                ),
                 error="not read-only",
             )
         if verb == "config" and not _juju_config_is_readonly(rest):
@@ -805,6 +858,7 @@ def build_default_registry(
         ProblemsProvider(),
         UrlProvider(),
         CharmProvider(),
+        PresetProvider(),
         JujuProvider(),
     ]
     if role_router is not None:

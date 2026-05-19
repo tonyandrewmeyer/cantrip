@@ -132,6 +132,14 @@ new error-level entries and surfaces them as tasks.</li>
 <p>The watcher is useful during iterative development and testing. It
 turns Cantrip into a continuously watching agent that reacts to
 changes in the model without you needing to notice or report them.</p>
+<p>In the TUI you can press <kbd>F5</kbd> to pause and resume those
+autonomous reactions. While paused, the watcher keeps observing &mdash; the
+model panes still refresh and <code>[Watcher]</code> notices still appear in the
+chat &mdash; but detected events no longer queue tasks, so the agent stops
+acting on them on its own. Useful when you want to debug the model by
+hand without the agent jumping in. The status bar shows
+<code>👁 Watching</code> normally and <code>👁 Watching (paused)</code> while reactions are
+suspended.</p>
 <p>See also:</p>
 <ul>
 <li><a href="explanation-architecture.html">How Cantrip works</a></li>

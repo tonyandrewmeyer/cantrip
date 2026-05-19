@@ -120,7 +120,7 @@ instead — orange is for brand / focus / heading, not separators.
 | `F2` | Toggle status panel |
 | `F3` | Log viewer |
 | `F4` | Trace/debug screen |
-| `F5` | Toggle watcher |
+| `F5` | Pause/resume watcher reactions (watcher keeps observing either way) |
 | `F6` | Toggle file tree |
 | `F7` | Toggle model info |
 | `F8` | Integration graph |

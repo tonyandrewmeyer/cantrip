@@ -13,6 +13,12 @@ sent these messages / this temperature / this thinking_budget" — every
 Use :class:`CallbackProvider` when the response needs to vary based
 on what's in the message history — pass a ``callback(messages, tools)
 → Response`` and it runs on every :meth:`complete`.
+
+Use :class:`FailingProvider` / :class:`FlakyProvider` for failure
+injection: the former raises a fresh exception on every call, the
+latter raises a configurable number of times and then succeeds.  Both
+keep a :attr:`calls` counter so a test can assert the retry budget was
+actually exercised.
 """
 
 from __future__ import annotations
@@ -158,3 +164,137 @@ class MultiRoleProvider(FakeProvider):
             return resp
 
         return llm.Response(content="default response")
+
+
+# ---------------------------------------------------------------------------
+# Failure-injection doubles (Phase 93.2)
+# ---------------------------------------------------------------------------
+
+
+type ExceptionFactory = Callable[[], BaseException]
+
+
+def _coerce_exc_factory(exc: BaseException | ExceptionFactory) -> ExceptionFactory:
+    """Normalise ``exc`` to a zero-arg factory.
+
+    Accepts either an exception *instance* (reused on every raise — fine,
+    Python lets the same instance propagate repeatedly) or a callable that
+    builds a fresh one each time (an exception *class* counts as such).
+    """
+    if isinstance(exc, BaseException):
+        captured = exc
+        return lambda: captured
+    return exc
+
+
+class FailingProvider(FakeProvider):
+    """Provider whose every :meth:`complete` / :meth:`stream` call raises.
+
+    Pass an exception instance or a zero-arg factory.  Useful for
+    "the model server is down / rate-limited / returning 5xx" scenarios
+    where the test wants to assert the *handling* (retry budget, task
+    state, user-visible message) rather than a particular stack trace.
+    """
+
+    def __init__(self, exc: BaseException | ExceptionFactory) -> None:
+        super().__init__()
+        self._exc_factory = _coerce_exc_factory(exc)
+        self.calls = 0
+
+    async def complete(
+        self,
+        messages: list[llm.Message],  # noqa: ARG002
+        tools: list[llm.Tool] | None = None,  # noqa: ARG002
+        temperature: float = 0.7,  # noqa: ARG002
+        max_tokens: int | None = None,  # noqa: ARG002
+        thinking_budget: int | None = None,  # noqa: ARG002
+        response_schema: dict | None = None,
+    ) -> llm.Response:
+        self.last_response_schema = response_schema
+        self.calls += 1
+        self._call_count += 1
+        await asyncio.sleep(0)
+        raise self._exc_factory()
+
+    async def stream(
+        self,
+        messages: list[llm.Message],  # noqa: ARG002
+        tools: list[llm.Tool] | None = None,  # noqa: ARG002
+        temperature: float = 0.7,  # noqa: ARG002
+        max_tokens: int | None = None,  # noqa: ARG002
+        thinking_budget: int | None = None,  # noqa: ARG002
+        response_schema: dict | None = None,
+    ):
+        self.last_response_schema = response_schema
+        self.calls += 1
+        self._call_count += 1
+        await asyncio.sleep(0)
+        raise self._exc_factory()
+        yield  # pragma: no cover — marks this as an async generator
+
+
+class FlakyProvider(FakeProvider):
+    """Provider that raises ``failures`` times, then returns ``response``.
+
+    Models a transient outage that recovers: the first ``failures`` calls
+    raise the configured exception, every call after that returns
+    ``response`` (default: ``Response(content="recovered")``).  Streaming
+    follows the same schedule, yielding ``response`` word-by-word once the
+    failure window has passed.
+    """
+
+    def __init__(
+        self,
+        *,
+        failures: int,
+        exc: BaseException | ExceptionFactory,
+        response: llm.Response | None = None,
+    ) -> None:
+        super().__init__()
+        self._remaining_failures = failures
+        self._exc_factory = _coerce_exc_factory(exc)
+        self._response = response if response is not None else llm.Response(content="recovered")
+        self.calls = 0
+
+    def _next(self) -> llm.Response:
+        self.calls += 1
+        self._call_count += 1
+        if self._remaining_failures > 0:
+            self._remaining_failures -= 1
+            raise self._exc_factory()
+        return self._response
+
+    async def complete(
+        self,
+        messages: list[llm.Message],  # noqa: ARG002
+        tools: list[llm.Tool] | None = None,  # noqa: ARG002
+        temperature: float = 0.7,  # noqa: ARG002
+        max_tokens: int | None = None,  # noqa: ARG002
+        thinking_budget: int | None = None,  # noqa: ARG002
+        response_schema: dict | None = None,
+    ) -> llm.Response:
+        self.last_response_schema = response_schema
+        await asyncio.sleep(0)
+        return self._next()
+
+    async def stream(
+        self,
+        messages: list[llm.Message],  # noqa: ARG002
+        tools: list[llm.Tool] | None = None,  # noqa: ARG002
+        temperature: float = 0.7,  # noqa: ARG002
+        max_tokens: int | None = None,  # noqa: ARG002
+        thinking_budget: int | None = None,  # noqa: ARG002
+        response_schema: dict | None = None,
+    ):
+        self.last_response_schema = response_schema
+        await asyncio.sleep(0)
+        resp = self._next()
+        if resp.content:
+            for i, word in enumerate(resp.content.split(" ")):
+                yield llm.Chunk(content=word if i == 0 else f" {word}")
+        yield llm.Chunk(
+            tool_calls=resp.tool_calls,
+            is_final=True,
+            usage=resp.usage,
+            metadata=resp.metadata,
+        )

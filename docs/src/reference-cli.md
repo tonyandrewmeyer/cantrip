@@ -122,6 +122,32 @@ Start the agent and build or improve a charm.
     Falls back to the <code>CANTRIP_SNAP_READ_TIMEOUT</code>
     environment variable when omitted.
   </dd>
+
+  <dt>--short-session {on,off,auto}</dt>
+  <dd>
+    Short-session mode for tight-context models. <code>auto</code>
+    (the default) turns it on for providers with less than ~16&nbsp;K
+    usable context — small local inference snaps such as gemma4 —
+    and off for everything else; <code>on</code> / <code>off</code>
+    force it. When active, Cantrip compacts at 50&nbsp;% of the
+    window (instead of 80&nbsp;%), replaces the prose-summary
+    compaction with a one-line-per-tool-call <em>history ledger</em>
+    that drops the raw older messages, and treats each turn as a
+    near-fresh conversation — trading some cross-edit memory for the
+    ability to actually finish a multi-edit task on a model whose
+    system prompt plus tool schemas already fill a third of the
+    window. The status bar shows a <code>[short-session]</code> chip
+    while it is on, and <code>/cost</code> reports the compaction
+    strategy in use. Tight-context providers (this mode, or any
+    provider that caps its tool array — inference snaps cap at 12)
+    are also offered a <em>curated</em> tool slice scoped to the
+    active workflow phase rather than the full toolbox; the status
+    bar shows a <code>[build · 11]</code>-style chip and
+    <code>/cost</code> names the phase. See
+    <code>CANTRIP_TOOL_PHASE</code> below to pin it. Falls back to
+    the <code>CANTRIP_SHORT_SESSION</code> environment variable when
+    omitted.
+  </dd>
 </dl>
 
 ### Light model (cost routing)
@@ -1396,6 +1422,17 @@ highlight, Escape dismisses.
   </dd>
   <dt><code>@charm &lt;name&gt;</code></dt>
   <dd>Charmhub metadata (relations, config, revision) for the named charm.</dd>
+  <dt><code>@preset [slug]</code></dt>
+  <dd>
+    A known-good bundle shape from the built-in catalogue.  Bare
+    <code>@preset</code> lists the shapes (<code>cos-lite</code>,
+    <code>twelve-factor-cos</code>, <code>identity-platform</code>,
+    <code>charmed-kubeflow</code>); <code>@preset cos-lite</code>
+    expands one — the apps grouped by semantic layer, then every
+    relation edge with its interface name and a one-line description.
+    Knowledge only: it prescribes no deployment steps and emits no
+    <code>bundle.yaml</code>.
+  </dd>
   <dt><code>@juju &lt;subcmd&gt;</code></dt>
   <dd>
     Run a read-only <code>juju</code> subcommand.  The first token is
@@ -1480,6 +1517,9 @@ and not duplicated elsewhere.
 | `CANTRIP_NO_RESUME` | optional | Disable step-checkpoint replay for the next run. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). Subagents skip the checkpoint lookup and re-execute every LLM turn and tool call live; fresh results still land in the store so the next run without the var sees a clean cache. Useful when hunting a bug that might itself be cached in a stale checkpoint. |
 | `CANTRIP_KEEP_CHECKPOINTS` | optional | Preserve step checkpoints after a task reaches `DONE`. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). By default, checkpoints are purged on successful task completion; setting this flips the purge into a no-op so rows can be inspected via `SELECT * FROM step_checkpoints` in the `.cantrip` SQLite file. Intended for debugging; leave unset in normal use. |
 | `CANTRIP_SNAPSHOTS` | optional | Set to `0`, `false`, `no`, or `off` (case-insensitive) to disable per-turn working-tree snapshots backing `/undo` and `/redo`. Equivalent to passing `--no-snapshots`. Defaults to on; the snapshot repo lives at `$XDG_STATE_HOME/cantrip/snapshots/<hash>/`. |
+| `CANTRIP_SHORT_SESSION` | optional | Force short-session mode `on` or `off`, or `auto` (the default) to enable it only for providers below ~16 K usable context. Equivalent to `--short-session`; see that flag for what the mode changes. |
+| `CANTRIP_TOOL_FAILURE_CAP` | optional | How many times the same tool call (same name **and** same arguments) may fail in a row before the active task is marked `BLOCKED` and the run stops. Default `5`; clamped to `[1, 50]`; non-integer or out-of-range values log a warning and fall back to the default. One round before the cap the agent injects a message telling the model to change approach. A different tool call (or different arguments) resets the streak. Raise it for flaky environments, lower it to fail fast on small local models that loop on oversized `write_file` payloads. |
+| `CANTRIP_TOOL_PHASE` | optional | Pin the curated tool slice to one of `research`, `build`, `debug`, `deploy`, or `demo`, regardless of what the work queue is doing. Tight-context providers (inference-snap's 12-tool cap, short-session mode) only ever see the tools the active workflow phase needs; normally that phase is derived from the running task's category, but this var forces it — useful for driving Cantrip through an unusual flow (e.g. a documentation pass that wants research-tier tools throughout). Unrecognised values log a warning and are ignored. Roomy providers (Claude, Gemini) are unaffected — they get the full toolset either way. |
 
 The `inference-snap` provider does not require an API key
 as it runs models locally.

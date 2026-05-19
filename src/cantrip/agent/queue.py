@@ -31,6 +31,47 @@ class TaskCategory(enum.StrEnum):
     LIBRARIAN = "librarian"
 
 
+class WorkflowPhase(enum.StrEnum):
+    """Coarse workflow stage the agent is in, used to curate the tool slice.
+
+    Distinct from :class:`TaskCategory` (which has eight values, several
+    of them planner bookkeeping) — the phase is the *shape* of work the
+    LLM is doing right now, and there are exactly five shapes worth a
+    hand-curated tool set.  :meth:`from_category` collapses the queue
+    categories onto these five.
+    """
+
+    RESEARCH = "research"
+    BUILD = "build"
+    DEBUG = "debug"
+    DEPLOY = "deploy"
+    DEMO = "demo"
+
+    @classmethod
+    def from_category(cls, category: "TaskCategory | None") -> "WorkflowPhase":
+        """Map a queue task category onto a workflow phase.
+
+        ``TEST`` is debug-shaped (run tests, read failures, lint); ``INFRA``
+        is deploy-shaped (juju, concierge); ``CONFIRM`` / ``LIBRARIAN`` are
+        short interactive turns that are happiest with the build set.  An
+        unknown or missing category defaults to :attr:`BUILD` so the first
+        interaction picks build-shaped tools.
+        """
+        return _CATEGORY_TO_PHASE.get(category, cls.BUILD) if category else cls.BUILD
+
+
+_CATEGORY_TO_PHASE: dict[TaskCategory, WorkflowPhase] = {
+    TaskCategory.RESEARCH: WorkflowPhase.RESEARCH,
+    TaskCategory.BUILD: WorkflowPhase.BUILD,
+    TaskCategory.DEPLOY: WorkflowPhase.DEPLOY,
+    TaskCategory.TEST: WorkflowPhase.DEBUG,
+    TaskCategory.DEBUG: WorkflowPhase.DEBUG,
+    TaskCategory.INFRA: WorkflowPhase.DEPLOY,
+    TaskCategory.CONFIRM: WorkflowPhase.BUILD,
+    TaskCategory.LIBRARIAN: WorkflowPhase.RESEARCH,
+}
+
+
 class ModelHint(enum.StrEnum):
     """Hint for which model a task should use, overriding category defaults."""
 

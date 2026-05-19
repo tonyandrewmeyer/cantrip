@@ -326,7 +326,9 @@ class TestTreePickerScreen:
             assert option.id == str(node.id)
             assert str(node.id) in str(option.prompt)
             assert node.label in str(option.prompt)
-        assert screen._nodes == nodes
+        # ``_nodes`` is reserved by Textual for a widget's child collection;
+        # the picker holds the turns under ``_turns``.
+        assert screen._turns == nodes
 
 
 class TestExportFollowsBranch:

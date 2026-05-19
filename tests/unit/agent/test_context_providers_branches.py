@@ -450,6 +450,43 @@ class TestCharmProviderShell:
 
 
 # ---------------------------------------------------------------------------
+# PresetProvider — catalogue index / single-preset / unknown-slug
+# ---------------------------------------------------------------------------
+
+
+class TestPresetProviderShell:
+    """``PresetProvider`` reads the in-repo catalogue — no I/O."""
+
+    @pytest.mark.asyncio
+    async def test_bare_renders_index(self) -> None:
+        block = await cpb.PresetProvider().expand("", ExpansionContext())
+        assert block.ok is True
+        assert block.raw == "@preset"
+        assert "`cos-lite`" in block.rendered
+        assert "`identity-platform`" in block.rendered
+
+    @pytest.mark.asyncio
+    async def test_named_preset_renders_layout(self) -> None:
+        block = await cpb.PresetProvider().expand("cos-lite", ExpansionContext())
+        assert block.ok is True
+        assert block.raw == "@preset cos-lite"
+        assert "COS Lite" in block.rendered
+        # Apps grouped by layer + edges with interface names.
+        assert "**Routing**" in block.rendered
+        assert "alertmanager_dispatch" in block.rendered
+
+    @pytest.mark.asyncio
+    async def test_unknown_slug_is_inline_error(self) -> None:
+        block = await cpb.PresetProvider().expand("no-such-bundle", ExpansionContext())
+        assert block.ok is False
+        assert "unknown preset" in block.rendered
+        assert "cos-lite" in block.rendered  # lists the known slugs
+
+    def test_registered_in_default_registry(self) -> None:
+        assert "preset" in cpb.build_default_registry().names()
+
+
+# ---------------------------------------------------------------------------
 # JujuProvider — actual subprocess routing
 # ---------------------------------------------------------------------------
 

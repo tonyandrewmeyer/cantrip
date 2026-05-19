@@ -125,6 +125,7 @@ class CantripApp(App):
         embed_model: str | None = None,
         rerank_provider: str | None = None,
         rerank_model: str | None = None,
+        short_session: str | None = None,
     ):
         """Initialise the app."""
         super().__init__()
@@ -154,6 +155,7 @@ class CantripApp(App):
         self._embed_model = embed_model
         self._rerank_provider = rerank_provider
         self._rerank_model = rerank_model
+        self._short_session = short_session
         self._agent: CantripAgent | None = None
         self._prepare_group_idx: int | None = None
         self._bootstrap_group_idx: int | None = None
@@ -373,6 +375,7 @@ class CantripApp(App):
                 light_provider=light_provider,
                 hook_runner=HookRunner.from_disk(repo_root=self.charm_path),
                 role_router=role_router,
+                short_session=self._short_session,
             )
 
             # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
@@ -766,6 +769,18 @@ class CantripApp(App):
         # session resumed mid-block doesn't render as ``running`` until
         # the first task event arrives.
         self._refresh_lifecycle_badge()
+        # Phase 104: prime the [short-session] chip so it shows from the
+        # start when a tight-context provider is in play.
+        from textual.css.query import NoMatches
+
+        with contextlib.suppress(NoMatches):
+            status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
+            status_bar.short_session = (
+                "[short-session]" if self._agent.context_manager.short_session_mode else ""
+            )
+            # Phase 110: prime the curated-tool-phase chip (quiet unless
+            # the provider's tool slice is actually being trimmed).
+            status_bar.tool_phase = self._agent.tool_phase_badge()
 
     def _on_bus_task_updated(self, event: ui_events.Event) -> None:
         """Handle a task-updated event from the bus.
@@ -792,6 +807,12 @@ class CantripApp(App):
         # to BUDGET LIMITED on the next paint; a queue draining to empty
         # flips it to DONE without /pause needing to fire.
         self._refresh_lifecycle_badge()
+        # Phase 110: a task transition (build → debug because a test
+        # failed) reshapes the curated tool slice — keep the chip current.
+        with contextlib.suppress(NoMatches):
+            self.query_one(
+                "#status-bar", statusbar_widget.StatusBar
+            ).tool_phase = self._agent.tool_phase_badge()
 
         # Detect when a confirm task becomes blocked.
         payload = event.payload
@@ -892,6 +913,10 @@ class CantripApp(App):
             status_bar.test_summary = payload["test_summary"]
         if "watcher_status" in payload:
             status_bar.watcher_status = payload["watcher_status"]
+        if "short_session" in payload:
+            # Phase 104: non-empty when the active provider runs the
+            # tight-context short-session flow.
+            status_bar.short_session = payload["short_session"]
         if "mode" in payload:
             # Phase 68.4: ``/plan`` and ``/build`` publish
             # ``mode=plan|build`` so the bar tints distinctly while
@@ -1576,7 +1601,7 @@ class CantripApp(App):
         status_bar.loop_state = self._agent.lifecycle_label()
 
     def action_toggle_watcher(self) -> None:
-        """Toggle the event watcher on or off."""
+        """Pause or resume the watcher's autonomous reactions."""
         watcher_actions.toggle_watcher(self)
 
     # -- Chat -----------------------------------------------------------------
@@ -2024,6 +2049,10 @@ class CantripApp(App):
     def on_relation_line_selected(self, event: status_widgets.RelationLine.Selected) -> None:
         """Open the relation detail screen when a relation line is clicked."""
         screens_actions.open_relation_detail(self, event)
+
+    def on_app_node_selected(self, event: status_widgets.AppNode.Selected) -> None:
+        """Open the F8 graph focused on the app picked in the sketch."""
+        screens_actions.show_graph(self, focus_app=event.app_name)
 
     def on_juju_status_widget_status_available(self) -> None:
         """Show the status panel when status data first arrives."""

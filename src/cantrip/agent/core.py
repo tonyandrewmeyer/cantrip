@@ -24,7 +24,12 @@ from cantrip.agent.arena_controller import ArenaController
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.confirmations import ConfirmationsController
-from cantrip.agent.context import ContextManager, VirtualFileStore
+from cantrip.agent.context import (
+    SHORT_SESSION_INTURN_FOLD_AFTER,
+    ContextManager,
+    VirtualFileStore,
+    resolve_short_session_mode,
+)
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
 from cantrip.agent.executor_controller import ExecutorController
@@ -64,7 +69,13 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import agents_md, build_system_prompt
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.queue import (
+    AgentTask,
+    TaskCategory,
+    TaskStatus,
+    WorkflowPhase,
+    WorkQueue,
+)
 from cantrip.agent.retry import RetryEvent, complete_with_retry, stream_with_retry
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
@@ -411,6 +422,7 @@ class CantripAgent:
         light_provider: LLMProvider | None = None,
         hook_runner: HookRunner | None = None,
         role_router: "roles.RoleRouter | None" = None,
+        short_session: str | None = None,
     ):
         """Initialise the agent.
 
@@ -432,6 +444,13 @@ class CantripAgent:
         Defaults to an empty router; retrieval-using callers raise
         :class:`~cantrip.llm.roles.RoleNotConfigured` until a
         provider is registered.
+
+        Phase 104: *short_session* is the ``--short-session`` override
+        (``"on"`` / ``"off"`` / ``"auto"``).  ``None`` falls back to
+        ``CANTRIP_SHORT_SESSION`` and finally to ``"auto"``, which
+        defers to :attr:`LLMProvider.short_session_mode` — tight-context
+        local snaps then run the aggressive-compaction, ledger-and-drop,
+        per-turn-ephemeral flow; frontier APIs keep rich history.
         """
         self.provider = provider
         self._light_provider = light_provider
@@ -477,9 +496,11 @@ class CantripAgent:
 
         # Context window management.
         self._virtual_store = VirtualFileStore()
+        self._short_session_override = short_session
         self._context_manager = ContextManager(
             virtual_store=self._virtual_store,
             context_window_tokens=provider.context_window_tokens,
+            short_session_mode=resolve_short_session_mode(provider, short_session),
         )
 
         # Lazy-initialised on first access via properties.
@@ -1106,8 +1127,11 @@ class CantripAgent:
         continue; the ``kind`` field in the completed event
         disambiguates the two paths for downstream listeners.
         """
+        strategy = self._context_manager.compaction_strategy
         self._event_bus.publish(
-            ui_events.compaction_started(tokens_before=tokens_before, source=source)
+            ui_events.compaction_started(
+                tokens_before=tokens_before, source=source, strategy=str(strategy)
+            )
         )
         kind = "compact"
         try:
@@ -1115,6 +1139,7 @@ class CantripAgent:
                 self.state.messages,
                 system_prompt=self._build_system_prompt(),
                 provider=self._get_provider("compaction"),
+                ledger=self.state.ledger,
             )
         except Exception:  # noqa: BLE001 — any compaction failure must fall through to emergency truncation; the loop has to keep running.
             log.warning(
@@ -1131,6 +1156,7 @@ class CantripAgent:
                 tokens_after=tokens_after,
                 source=source,
                 kind=kind,
+                strategy=str(strategy),
             )
         )
 
@@ -1303,6 +1329,12 @@ class CantripAgent:
             provider_name,
         )
         self._context_manager.update_context_window(new_provider.context_window_tokens)
+        # When the operator hasn't pinned --short-session, the mode tracks
+        # whichever provider is now active (e.g. swapping to a tight-context
+        # snap mid-session flips it on; swapping back off).
+        self._context_manager.set_short_session_mode(
+            resolve_short_session_mode(new_provider, self._short_session_override)
+        )
         # Caches that captured the old provider need rebuilding on the
         # next access.  Memory manager is left alone: its provider is
         # used only inside the auto-writer path, which is itself cached
@@ -1332,8 +1364,19 @@ class CantripAgent:
                     context_window=new_provider.context_window_tokens,
                 )
             )
+            self._publish_short_session_status()
         except Exception:  # noqa: BLE001 - UI hook must not break the swap.
             log.debug("model_switched event publish failed", exc_info=True)
+
+    def _publish_short_session_status(self) -> None:
+        """Publish the ``[short-session]`` status-bar chip (empty when inactive).
+
+        Fired on a runtime ``/model`` swap so the bar tracks whichever
+        provider is now active; the UI also primes the chip directly from
+        :attr:`context_manager` at startup.
+        """
+        chip = "[short-session]" if self._context_manager.short_session_mode else ""
+        self._event_bus.publish(ui_events.status_bar_changed(short_session=chip))
 
     def _invalidate_tools_cache(self) -> None:
         """Drop the cached tool list and tool map; next access rebuilds."""
@@ -1395,7 +1438,7 @@ class CantripAgent:
             skills_index=skills_index,
             memory_index=memory_index,
             environment_ready=self.state.environment_ready,
-            watcher_enabled=self.state.watcher_enabled,
+            watcher_enabled=self.state.watcher_enabled and self.state.watcher_reacting,
             repo_map=repo_map,
             compact=compact,
         )
@@ -1485,50 +1528,173 @@ class CantripAgent:
             return None
         return rendered or None
 
-    # Tools that are always included when the provider has a tool limit.
-    # Names match LLM-facing entries — Juju leaves are now bundled
-    # behind the single ``juju`` tool, so the core set references the
-    # bundle name; the leaf still dispatches via the subcommand
-    # rewrite at the executor entry.
-    _CORE_TOOL_NAMES: set[str] = {
-        "read_file",
-        "write_file",
-        "list_directory",
-        "edit_file",
-        "charmcraft_init",
-        "charmcraft_pack",
-        "quick_pack",
-        "charmlint",
-        "juju",
-        "run_charm_tests",
-        "plan_tasks",
+    # Phase 110: phase-aware tool curation.  Each :class:`WorkflowPhase`
+    # gets a hand-curated ≤11-name set so an inference-snap provider's
+    # 12-tool cap can still fit one MCP tool / extension on top.  The
+    # active phase is derived from the work-queue task category (or the
+    # ``CANTRIP_TOOL_PHASE`` override); see :meth:`workflow_phase`.
+    # Names match LLM-facing entries — Juju leaves are bundled behind the
+    # single ``juju`` tool, so the sets reference the bundle name; the
+    # leaf still dispatches via the subcommand rewrite at the executor.
+    _CORE_TOOLS_BY_PHASE: dict[WorkflowPhase, set[str]] = {
+        WorkflowPhase.BUILD: {
+            "read_file",
+            "write_file",
+            "edit_file",
+            "list_directory",
+            "charmcraft_init",
+            "quick_pack",
+            "charmcraft_pack",
+            "charmlint",
+            "plan_tasks",
+            "run_charm_tests",
+            "run_command",
+        },
+        WorkflowPhase.DEBUG: {
+            "read_file",
+            "edit_file",
+            "list_directory",
+            "juju",
+            "charmlint",
+            "juju_debug_log",
+            "juju_status_render",
+            "run_command",
+            "plan_tasks",
+            "run_charm_tests",
+            "web_fetch",
+        },
+        WorkflowPhase.DEPLOY: {
+            "juju",
+            "concierge_prepare",
+            "juju_status_render",
+            "juju_debug_log",
+            "wait_for",
+            "relation_smoke_test",
+            "charmcraft_pack",
+            "run_command",
+            "list_directory",
+            "plan_tasks",
+        },
+        WorkflowPhase.RESEARCH: {
+            "read_file",
+            "list_directory",
+            "web_fetch",
+            "web_search",
+            "analyse_framework",
+            "code_definition",
+            "code_references",
+            "oracle_consult",
+            "plan_tasks",
+            "extract_design_decisions",
+        },
+        WorkflowPhase.DEMO: {
+            "read_file",
+            "write_file",
+            "edit_file",
+            "list_directory",
+            "charmcraft_init",
+            "quick_pack",
+            "charmcraft_pack",
+            "manage_tasks",
+            "plan_tasks",
+            "run_charm_tests",
+            "run_command",
+        },
     }
 
-    def _tools_for_llm(self) -> list[llm.Tool]:
-        """Convert tools to LLM format.
+    #: ``CANTRIP_TOOL_PHASE={research|build|debug|deploy|demo}`` pins the
+    #: curated tool slice regardless of work-queue state — useful for
+    #: operators driving cantrip through an unusual flow (e.g. a
+    #: documentation pass that wants research-tier tools throughout).
+    _TOOL_PHASE_ENV = "CANTRIP_TOOL_PHASE"
 
-        When the provider declares a ``max_tools`` limit and the
-        toolset overshoots it (e.g. lots of MCP servers on top of an
-        OpenAI-compatible provider whose API caps the array at 128),
-        fall back to the curated core set so the request is still
-        accepted.  Logged at WARNING with the count and dropped names
-        so operators can see what disappeared.
+    def _active_task_category(self) -> TaskCategory | None:
+        """Category of the currently-running queue task, or ``None``.
+
+        Falls back to the next ready task so an interactive turn between
+        executor picks still gets a sensible scope.
+        """
+        active = next(
+            (t for t in self._work_queue.all_tasks() if t.status == TaskStatus.ACTIVE),
+            None,
+        )
+        if active is None:
+            active = self._work_queue.next_ready()
+        return active.category if active is not None else None
+
+    @property
+    def workflow_phase(self) -> WorkflowPhase:
+        """Active workflow phase used to curate the LLM tool slice.
+
+        ``CANTRIP_TOOL_PHASE`` wins if set to a recognised value;
+        otherwise the active (or next-ready) work-queue task's category
+        maps onto a phase, defaulting to :attr:`WorkflowPhase.BUILD`
+        when the conversation is idle.
+        """
+        override = os.environ.get(self._TOOL_PHASE_ENV, "").strip().lower()
+        if override:
+            try:
+                return WorkflowPhase(override)
+            except ValueError:
+                log.warning(
+                    "%s=%r is not a valid workflow phase; ignoring",
+                    self._TOOL_PHASE_ENV,
+                    override,
+                )
+        return WorkflowPhase.from_category(self._active_task_category())
+
+    def _curated_tool_names(self) -> set[str]:
+        """Tool-name set for the active workflow phase."""
+        return self._CORE_TOOLS_BY_PHASE[self.workflow_phase]
+
+    def tool_phase_badge(self) -> str:
+        """Short badge text for status surfaces, or ``""`` when uncurated.
+
+        Returns e.g. ``"build · 11"`` when the LLM tool slice has been
+        narrowed to the active phase's curated set; empty when the full
+        toolset is offered (roomy providers), so the badge stays quiet in
+        the common case.
+        """
+        full = len(self._tools)
+        offered = len(self._tools_for_llm())
+        return f"{self.workflow_phase.value} · {offered}" if offered < full else ""
+
+    def _tools_for_llm(self) -> list[llm.Tool]:
+        """Convert tools to LLM format, curating for tight-context providers.
+
+        The full toolset is offered unchanged to roomy providers (Claude,
+        Gemini, …).  When the provider runs in short-session mode
+        (tight context window) *or* declares a ``max_tools`` cap that the
+        toolset overshoots (inference-snap's 12, or lots of MCP servers
+        on an OpenAI-compatible API), the slice is narrowed to the
+        :meth:`workflow_phase`'s curated set — that's the ≤11 tools the
+        agent's current activity actually needs.  The curated set is
+        recomputed every turn, so a work-queue task transition (build →
+        debug because a test failed) is picked up on the next LLM call.
+        The trim is logged with the dropped names so operators can see
+        what disappeared.
         """
         tools = self._tools
         limit = self.provider.max_tools
-        if limit is not None and len(tools) > limit:
-            kept = [t for t in tools if t.name in self._CORE_TOOL_NAMES][:limit]
-            kept_names = {t.name for t in kept}
-            dropped = sorted(t.name for t in tools if t.name not in kept_names)
-            log.warning(
-                "Tool count %d exceeds provider %r limit %d — "
-                "trimmed to %d core tools; dropped: %s",
-                len(tools),
-                self.provider.name,
-                limit,
-                len(kept),
-                ", ".join(dropped) if dropped else "(none)",
-            )
+        short_session = self._context_manager.short_session_mode
+        overshoots = limit is not None and len(tools) > limit
+
+        if short_session or overshoots:
+            keep_names = self._curated_tool_names()
+            kept = [t for t in tools if t.name in keep_names]
+            if limit is not None and len(kept) > limit:
+                kept = kept[:limit]
+            if len(kept) < len(tools):
+                kept_names = {t.name for t in kept}
+                dropped = sorted(t.name for t in tools if t.name not in kept_names)
+                log.info(
+                    "Tool curation (%s phase%s): %d tools → %d; dropped: %s",
+                    self.workflow_phase.value,
+                    ", short-session" if short_session else "",
+                    len(tools),
+                    len(kept),
+                    ", ".join(dropped) if dropped else "(none)",
+                )
             tools = kept
 
         return [
@@ -1698,14 +1864,83 @@ class CantripAgent:
 
         When *include_budget* is True, a transient context budget message
         is appended (not stored in state.messages).
+
+        In short-session mode the accumulated history ledger
+        (:attr:`AgentState.ledger`) is rendered into a SYSTEM message
+        right after the prompt so a tight-context model retains a thread
+        of past actions even though the raw transcript has been dropped.
+        Like the budget message, it is built fresh each turn and never
+        stored in ``state.messages``.
         """
-        messages = [
-            Message(role=Role.SYSTEM, content=self._build_system_prompt()),
-            *self.state.messages,
-        ]
+        messages = [Message(role=Role.SYSTEM, content=self._build_system_prompt())]
+        if self._context_manager.short_session_mode and self.state.ledger:
+            messages.append(self._context_manager.build_ledger_message(self.state.ledger))
+        messages.extend(self.state.messages)
         if include_budget:
             messages.append(self._context_manager.build_budget_message(messages))
         return messages
+
+    def _collapse_messages_for_short_session(self) -> None:
+        """Fold the prior conversation into the ledger and reset the working set.
+
+        Called at the start of every user turn in short-session mode (and
+        only when there is something to fold).  Conceptually each turn
+        becomes a near-fresh session: ``state.messages`` collapses to
+        empty here, the new user message is appended by the caller, and
+        :meth:`_build_llm_messages` re-renders ``state.ledger`` into the
+        prompt.  This also covers resume — the next turn after a restored
+        transcript re-derives the ledger from it, so nothing about the
+        ledger needs persisting.
+        """
+        if not self._context_manager.short_session_mode or not self.state.messages:
+            return
+        carried = len(self.state.messages)
+        new_entries = self._context_manager.build_ledger_entries(self.state.messages)
+        ContextManager.extend_ledger(self.state.ledger, new_entries)
+        self.state.messages = []
+        log.info(
+            "Short-session: collapsed %d messages into %d new ledger entries at turn start",
+            carried,
+            len(new_entries),
+        )
+
+    def _maybe_fold_oldest_round_into_ledger(self, turn_start_idx: int) -> None:
+        """Eagerly fold the oldest completed tool round of this turn into the ledger.
+
+        Once a turn has accumulated more than
+        :data:`SHORT_SESSION_INTURN_FOLD_AFTER` completed tool rounds,
+        the oldest is distilled into ledger entries and its raw messages
+        dropped — keeping the in-conversation working set small without
+        waiting for the compaction threshold.  No-op outside
+        short-session mode.
+        """
+        if not self._context_manager.short_session_mode:
+            return
+        msgs = self.state.messages
+
+        def _round_starts() -> list[int]:
+            return [
+                i
+                for i in range(turn_start_idx + 1, len(msgs))
+                if msgs[i].role == Role.ASSISTANT and msgs[i].tool_calls
+            ]
+
+        starts = _round_starts()
+        while len(starts) > SHORT_SESSION_INTURN_FOLD_AFTER:
+            start, nxt = starts[0], starts[1]
+            # Only fold a round whose tool results have actually landed.
+            if not any(msgs[j].role == Role.TOOL for j in range(start + 1, nxt)):
+                break
+            folded = msgs[start:nxt]
+            new_entries = self._context_manager.build_ledger_entries(folded)
+            ContextManager.extend_ledger(self.state.ledger, new_entries)
+            del msgs[start:nxt]
+            log.info(
+                "Short-session: folded oldest in-turn round (%d msgs, %d entries) into ledger",
+                len(folded),
+                len(new_entries),
+            )
+            starts = _round_starts()
 
     async def _complete_with_retry(
         self,
@@ -1867,16 +2102,17 @@ class CantripAgent:
     ) -> None:
         """Update the consecutive same-(tool, args) failure counter.
 
-        Resets to zero on a successful call.  When the same tool with the
-        same arguments fails twice in a row, the counter increments; a
-        different signature resets to one (we're starting a new streak).
-        Looking at the *first-arg-bearing* signature lets a model
-        legitimately retry one ``edit_file`` after fixing the
-        ``old_string`` without tripping the cap.
+        Resets to zero on a successful call.  The streak only compounds
+        when the *same* ``(tool name, serialised arguments)`` signature
+        fails again; any different signature resets it to one — so a
+        model can legitimately retry one ``edit_file`` after fixing its
+        ``old_string`` without tripping the cap.  Once the streak hits
+        two it also publishes a "tool retrying (n/cap)" status update.
         """
         if success:
             self.state.consecutive_tool_failures = 0
             self.state.last_failed_tool_signature = None
+            self.state.last_failed_tool_name = None
             return
         try:
             args_repr = json.dumps(arguments, sort_keys=True, default=str)[:200]
@@ -1888,14 +2124,53 @@ class CantripAgent:
         else:
             self.state.consecutive_tool_failures = 1
             self.state.last_failed_tool_signature = signature
-        if self.state.consecutive_tool_failures >= 3:
+        self.state.last_failed_tool_name = tool_name
+        n = self.state.consecutive_tool_failures
+        if n >= 3:
             log.warning(
                 "Tool %s has now failed %d consecutive times "
                 "(cap is %d; tune via CANTRIP_TOOL_FAILURE_CAP)",
                 signature,
-                self.state.consecutive_tool_failures,
+                n,
                 self.state.tool_failure_cap,
             )
+        if n >= 2:
+            # Phase 107.4: surface the streak on the status bar so the
+            # TUI/Web show a "tool retrying (3/5)" badge while the loop
+            # is grinding, not just afterwards in the logs.
+            self._publish_activity(f"⟳ tool retrying ({n}/{self.state.tool_failure_cap})")
+
+    def _maybe_warn_before_failure_cap(self) -> None:
+        """One turn before the cap fires, tell the model to change tack.
+
+        Phase 107.3: a model that keeps re-emitting the same failing
+        tool call gets one explicit, in-conversation chance to split a
+        large payload, switch tools, fix the arguments, or bail — before
+        cantrip force-blocks the task.  Fires only on the exact turn the
+        streak reaches ``cap - 1`` so the warning lands while there is
+        still a round left to act on it; a cap below 2 leaves no room
+        for the warning and is silently skipped.
+        """
+        cap = self.state.tool_failure_cap
+        n = self.state.consecutive_tool_failures
+        if cap < 2 or n != cap - 1:
+            return
+        tool = self.state.last_failed_tool_name or "that tool"
+        warning = (
+            f"You have called {tool} {n} times in a row with the same arguments "
+            "and it has failed every time. One more identical failure and this "
+            "task will be marked BLOCKED and the run will stop. Do something "
+            "different now: split a large payload into smaller writes, use a "
+            "different tool, correct the arguments — or, if you genuinely cannot "
+            "make progress, say so plainly instead of retrying."
+        )
+        self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
+        self._event_bus.publish(ui_events.chat_message(role="system", content=warning))
+        log.warning(
+            "Phase 107: injected pre-cap warning after %d consecutive %s failures",
+            n,
+            tool,
+        )
 
     def _consecutive_failure_cap_exceeded(self) -> str | None:
         """Return a blocked-reason string when the cap has been hit.
@@ -2294,6 +2569,11 @@ class CantripAgent:
         # or when the working tree is already clean.
         self._maybe_pre_turn_commit_dirty()
 
+        # Phase 104: in short-session mode each turn is near-fresh —
+        # fold the prior conversation into the ledger and clear the
+        # working set before the new user message lands.
+        self._collapse_messages_for_short_session()
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self._snapshot_before_user_turn(user_msg)
@@ -2441,6 +2721,14 @@ class CantripAgent:
             self.state.messages.append(tool_msg)
             self._record_message(tool_msg)
 
+            # Phase 104: in short-session mode, fold the oldest in-turn
+            # tool round into the ledger once the turn has built up more
+            # than a couple — keeps the live working set tiny.
+            self._maybe_fold_oldest_round_into_ledger(turn_start_idx)
+
+            # Phase 107.3: one round before the cap, nudge the model to
+            # change approach instead of retrying into a BLOCKED state.
+            self._maybe_warn_before_failure_cap()
             # Phase 107: bail when the cap is hit.  Marks the active
             # work-queue task BLOCKED so Phase 106's loop-exit logic
             # fires; ``process_message`` returns its current response
@@ -2582,6 +2870,9 @@ class CantripAgent:
         # for rationale).  Same hook drives both paths.
         self._maybe_pre_turn_commit_dirty()
 
+        # Phase 104: short-session per-turn collapse (see non-streaming loop).
+        self._collapse_messages_for_short_session()
+
         user_msg = Message(role=Role.USER, content=user_message)
         user_msg = self._context_manager.virtualise_message(user_msg)
         self._snapshot_before_user_turn(user_msg)
@@ -2717,7 +3008,12 @@ class CantripAgent:
             self.state.messages.append(tool_msg)
             self._record_message(tool_msg)
 
-            # Phase 107: same cap check as the non-streaming loop.
+            # Phase 104: short-session in-turn ledger fold (see non-streaming loop).
+            self._maybe_fold_oldest_round_into_ledger(turn_start_idx)
+
+            # Phase 107.3 / 107: pre-cap nudge then cap check, as in the
+            # non-streaming loop.
+            self._maybe_warn_before_failure_cap()
             cap_reason = self._consecutive_failure_cap_exceeded()
             if cap_reason is not None:
                 log.warning("Phase 107 cap fired (stream): %s", cap_reason)
@@ -3063,6 +3359,21 @@ class CantripAgent:
     async def stop_watcher(self) -> None:
         """Stop the event watcher if it is running."""
         await self._watcher_ctl.stop()
+
+    @property
+    def watcher_reacting(self) -> bool:
+        """Whether watcher events are routed to the work queue.
+
+        When ``False`` the watcher keeps observing (status panes and
+        ``[Watcher]`` chat notices still update) but detected events do
+        not become tasks, so the agent stops reacting autonomously.
+        """
+        return self.state.watcher_reacting
+
+    def toggle_watcher_reacting(self) -> bool:
+        """Flip whether watcher events queue tasks; return the new value."""
+        self.state.watcher_reacting = not self.state.watcher_reacting
+        return self.state.watcher_reacting
 
     def route_watcher_event(self, event: WatcherEvent) -> AgentTask | None:
         """Convert a watcher event into a task and add it to the work queue."""

@@ -145,6 +145,10 @@
       <td>Charmhub metadata for the named charm: relations, config, current revision.</td>
     </tr>
     <tr>
+      <td><code>@preset [slug]</code></td>
+      <td>A known-good bundle shape from the built-in catalogue.  Bare lists the shapes (<code>cos-lite</code>, <code>twelve-factor-cos</code>, <code>identity-platform</code>, <code>charmed-kubeflow</code>); with a slug, the full layout &mdash; apps grouped by semantic layer, then every relation edge with its interface name and a one-line description.</td>
+    </tr>
+    <tr>
       <td><code>@juju &lt;subcmd&gt;</code></td>
       <td>Read-only Juju subcommand output.  Allowlisted: <code>status</code>, <code>show-unit</code>, <code>show-application</code>, <code>show-model</code>, <code>config</code>, <code>list-secrets</code>, <code>show-relation</code>, <code>list-models</code>.</td>
     </tr>
@@ -217,6 +221,17 @@ why is the relation showing as pending?</code></pre>
 <p>
   <code>@juju</code> runs only the read-only allowlisted
   subcommand; a typo cannot reach a destructive verb.
+</p>
+<h3>Wire relations against a known bundle shape</h3>
+<pre><code><span class="prompt">cantrip&gt;</span> integrate the new app with COS &mdash; @preset cos-lite
+which of those edges does a 12-factor app need?</code></pre>
+<p>
+  <code>@preset cos-lite</code> pastes in the canonical COS Lite
+  layout &mdash; apps by layer, then every relation edge with its
+  interface name and a one-line description &mdash; so the agent
+  composes the relations from the agreed shape instead of
+  re-deriving it from web docs.  Bare <code>@preset</code> lists
+  the available shapes.
 </p>
 <h3>Forward a remote document for review</h3>
 <pre><code><span class="prompt">cantrip&gt;</span> here's the spec the team agreed on:

@@ -7,18 +7,35 @@ from unittest.mock import MagicMock
 from cantrip.tui.widgets.status import _cos_collapsed_summary
 
 
-def _mock_status(app_statuses: list[str], *, offers: int = 0) -> MagicMock:
+def _mock_status(
+    app_statuses: list[str],
+    *,
+    offers: int = 0,
+    relations: list[tuple[str, str]] | None = None,
+) -> MagicMock:
     """Build the minimum ``statustypes.Status``-shaped mock the summary reads.
 
-    ``_cos_collapsed_summary`` only touches ``apps[*].app_status.current``
-    and ``offers`` — everything else can stay as a generic ``MagicMock``.
+    ``_cos_collapsed_summary`` touches ``apps[*].app_status.current``,
+    ``apps[*].relations`` (for the pair count), and ``offers`` —
+    everything else can stay a generic ``MagicMock``.  Apps are named
+    ``app-0``, ``app-1``, …; *relations* is a list of name pairs.
     """
     status = MagicMock()
     status.apps = {}
+    rel_map: dict[str, list[MagicMock]] = {}
+    for a, b in relations or []:
+        rel = MagicMock()
+        rel.related_app = b
+        rel_map.setdefault(a, []).append(rel)
+        back = MagicMock()
+        back.related_app = a
+        rel_map.setdefault(b, []).append(back)
     for i, current in enumerate(app_statuses):
+        name = f"app-{i}"
         app = MagicMock()
         app.app_status.current = current
-        status.apps[f"app-{i}"] = app
+        app.relations = {"r": rel_map[name]} if name in rel_map else {}
+        status.apps[name] = app
     status.offers = {f"offer-{i}": MagicMock() for i in range(offers)}
     return status
 
@@ -64,3 +81,16 @@ def test_unknown_future_juju_status_still_shown():
     result = _cos_collapsed_summary(status)
     assert "1 active" in result
     assert "1 teleporting" in result
+
+
+def test_relation_pair_count_is_reported():
+    # 3 apps, 2 distinct related pairs (0–1, 1–2).
+    status = _mock_status(
+        ["active", "active", "active"], relations=[("app-0", "app-1"), ("app-1", "app-2")]
+    )
+    assert _cos_collapsed_summary(status) == "3 apps · 2 relations · all active  (click to expand)"
+
+
+def test_single_relation_is_singular():
+    status = _mock_status(["active", "active"], relations=[("app-0", "app-1")])
+    assert _cos_collapsed_summary(status) == "2 apps · 1 relation · all active  (click to expand)"

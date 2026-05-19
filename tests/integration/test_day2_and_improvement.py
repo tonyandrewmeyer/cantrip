@@ -22,23 +22,28 @@ from tests.integration.conftest import (
 
 # -- Canned planner outputs ---------------------------------------------------
 
+# ``complete_structured`` validates planner replies against the
+# ``PLANNER_BRIEFING`` schema (Phase 73.3) — a top-level
+# ``{"tasks": [...]}`` object, not a bare array.
 DAY2_IMPL_PLAN_JSON = json.dumps(
-    [
-        {
-            "id": "add-backup-action",
-            "title": "Add backup action",
-            "category": "build",
-            "description": "Implement backup action for the charm.",
-            "dependencies": [],
-        },
-        {
-            "id": "add-ha-support",
-            "title": "Add high-availability support",
-            "category": "build",
-            "description": "Implement HA with sentinel-based failover.",
-            "dependencies": ["add-backup-action"],
-        },
-    ]
+    {
+        "tasks": [
+            {
+                "id": "add-backup-action",
+                "title": "Add backup action",
+                "category": "build",
+                "description": "Implement backup action for the charm.",
+                "dependencies": [],
+            },
+            {
+                "id": "add-ha-support",
+                "title": "Add high-availability support",
+                "category": "build",
+                "description": "Implement HA with sentinel-based failover.",
+                "dependencies": ["add-backup-action"],
+            },
+        ]
+    }
 )
 
 DAY2_SYNTHESIS_RESULT = """\
@@ -145,6 +150,7 @@ class TestDay2Confirmation:
                 temperature=0.7,
                 max_tokens=None,
                 thinking_budget=None,  # noqa: ARG002
+                response_schema=None,  # noqa: ARG002
             ):
                 for msg in messages:
                     if msg.role.value == "user":

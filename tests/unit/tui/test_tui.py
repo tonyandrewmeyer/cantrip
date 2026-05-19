@@ -868,11 +868,12 @@ class TestTuiWidgets:
         ``height: 100%`` and got mounted inside ``.model-section``
         (``height: auto``) — the recursion collapsed the inner content
         so only the ``Model: cos (k8s)`` line ever rendered after a
-        click-to-expand.  Asserting on virtual_size catches the case
-        where AppBoxes exist in the DOM but get squashed to zero
-        height by their container.
+        click-to-expand.  At this terminal width the expanded body is
+        the compact topology sketch (one ``AppNode`` per app); asserting
+        on each node's height catches the case where the nodes exist in
+        the DOM but get squashed to zero by their container.
         """
-        from cantrip.tui.widgets.status import AppBox
+        from cantrip.tui.widgets.status import AppNode
 
         p1, p2, _ = _patch_app()
         with p1, p2:
@@ -902,16 +903,146 @@ class TestTuiWidgets:
                 await pilot.pause()
                 await pilot.pause()
 
-                boxes = list(widget.query(AppBox))
-                assert len(boxes) == 3
-                # Each AppBox must have a non-zero virtual size; this
-                # is what the bug regressed (DOM said boxes existed,
-                # layout said they were zero-height).
-                for box in boxes:
-                    assert box.virtual_size.height > 0, (
-                        f"AppBox {box.app_name!r} rendered with virtual height 0 — "
+                nodes = list(widget.query(AppNode))
+                assert len(nodes) == 3
+                # Each node must have non-zero height; this is what the
+                # bug regressed (DOM said rows existed, layout squashed
+                # them).
+                for node in nodes:
+                    assert node.size.height > 0, (
+                        f"AppNode {node.app_name!r} rendered with height 0 — "
                         "JujuStatusWidget likely collapsed its layout"
                     )
+
+    @staticmethod
+    def _model_with_relations():
+        """A small real ``jubilant.Status`` — app + db + ingress, two edges."""
+        from jubilant import statustypes
+
+        return statustypes.Status._from_dict(
+            {
+                "model": {
+                    "name": "dev",
+                    "type": "caas",
+                    "cloud": "k8s",
+                    "region": "",
+                    "version": "3.5.0",
+                    "controller": "k8s",
+                    "model-status": {"current": "available"},
+                },
+                "machines": {},
+                "applications": {
+                    "flask-app": {
+                        "charm": "flask-k8s",
+                        "charm-origin": "charmhub",
+                        "charm-name": "flask-k8s",
+                        "charm-rev": 1,
+                        "exposed": False,
+                        "application-status": {"current": "active"},
+                        "units": {},
+                        "relations": {
+                            "postgresql": [
+                                {
+                                    "related-application": "postgresql",
+                                    "interface": "postgresql_client",
+                                    "scope": "global",
+                                }
+                            ],
+                            "ingress": [
+                                {
+                                    "related-application": "traefik",
+                                    "interface": "ingress",
+                                    "scope": "global",
+                                }
+                            ],
+                        },
+                    },
+                    "postgresql": {
+                        "charm": "postgresql-k8s",
+                        "charm-origin": "charmhub",
+                        "charm-name": "postgresql-k8s",
+                        "charm-rev": 1,
+                        "exposed": False,
+                        "application-status": {"current": "active"},
+                        "units": {},
+                        "relations": {
+                            "database": [
+                                {
+                                    "related-application": "flask-app",
+                                    "interface": "postgresql_client",
+                                    "scope": "global",
+                                }
+                            ]
+                        },
+                    },
+                    "traefik": {
+                        "charm": "traefik-k8s",
+                        "charm-origin": "charmhub",
+                        "charm-name": "traefik-k8s",
+                        "charm-rev": 1,
+                        "exposed": False,
+                        "application-status": {"current": "active"},
+                        "units": {},
+                        "relations": {
+                            "ingress": [
+                                {
+                                    "related-application": "flask-app",
+                                    "interface": "ingress",
+                                    "scope": "global",
+                                }
+                            ]
+                        },
+                    },
+                },
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_wide_terminal_renders_topology_sketch(self):
+        """At a wide terminal the expanded dev body is the sketch, not AppBoxes."""
+        from cantrip.tui.widgets.status import AppBox, AppNode, JujuStatusWidget
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test(size=(140, 60)) as pilot:
+                await pilot.pause()
+                widget = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+                widget.dev_status = self._model_with_relations()
+                await pilot.pause()
+                await pilot.pause()
+                inner = widget.query_one(JujuStatusWidget)
+                assert inner._rendered_sketch is True
+                nodes = {n.app_name for n in inner.query(AppNode)}
+                assert nodes == {"flask-app", "postgresql", "traefik"}
+                assert not list(inner.query(AppBox))
+                # The interface-grouped relation section is present.
+                from textual.widgets import Static
+
+                texts = " ".join(str(s.render()) for s in inner.query(Static))
+                assert "Relations" in texts
+                assert "[ingress]" in texts and "[postgresql_client]" in texts
+                assert "flask-app ─ postgresql" in texts
+
+    @pytest.mark.asyncio
+    async def test_app_node_click_opens_graph_focused(self):
+        """Clicking an app node opens the F8 graph focused on that app."""
+        from cantrip.tui.screens.graph import GraphScreen
+        from cantrip.tui.widgets.status import AppNode, JujuStatusWidget
+
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test(size=(140, 60)) as pilot:
+                await pilot.pause()
+                widget = pilot.app.query_one("#juju-status", MultiModelStatusWidget)
+                widget.dev_status = self._model_with_relations()
+                await pilot.pause()
+                await pilot.pause()
+                inner = widget.query_one(JujuStatusWidget)
+                node = next(n for n in inner.query(AppNode) if n.app_name == "postgresql")
+                node.on_click()
+                await pilot.pause()
+                assert isinstance(pilot.app.screen, GraphScreen)
+                assert pilot.app.screen._current_app == "postgresql"
 
     @pytest.mark.asyncio
     async def test_juju_status_pane_is_scrollable(self):
