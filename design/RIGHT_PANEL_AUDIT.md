@@ -7,12 +7,17 @@ for.  It walks the three widgets on the TUI right panel —
 across every state transition the user actually sees, and lists the
 specific things to fix.
 
-The findings are *grounded*: a Pilot harness at
-`tmp/audit_phase65/drive_right_panel.py` constructs each scenario,
-captures both an SVG screenshot and a flat dump of every rendered
-`Static` (with classes and content) under
-`tmp/audit_phase65/scenarios/`.  Re-run the harness with
-`uv run python tmp/audit_phase65/drive_right_panel.py` to refresh.
+The findings are *grounded* by a Pilot-driven capture harness.  The
+harness wired a mock `CantripAgent` through `create_provider` to
+produce a minimal `CantripApp`, mounted the app under Textual's
+`Pilot`, applied each scenario's state by setting reactive attributes
+directly, then captured both `app.export_screenshot()` (SVG) and a
+flat dump of every `Static` under the target panel id (with CSS
+classes and rendered content).  To rebuild it: mock agent +
+`create_provider`, drive state via reactive attributes, `await
+pilot.pause()` to let layout settle, then iterate `app.query(Static)`
+filtered by the target container id and serialise class lists alongside
+text content.
 
 ## Scenarios captured
 
@@ -59,8 +64,7 @@ present — including any newly-mounted ones whose layout hasn't
 caught up.  Order is preserved through the message queue, so the
 final state converges to whichever refresh ran last.
 
-The harness is fixed (`tmp/audit_phase65/drive_right_panel.py`
-calls a `_eager_idx` helper that reuses
+The harness was fixed (a `_eager_idx` helper that reuses
 `pilot.app._prepare_group_idx`) so this finding does not recur on
 re-runs.
 
