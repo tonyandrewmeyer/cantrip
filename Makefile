@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test rust-coverage docs docs-check docs-check-strict
+.PHONY: format lint unit integration e2e tui live eval eval-static eval-validate test check all clean coverage rust-test rust-coverage docs docs-check docs-check-strict
 
 # Format code with ruff
 format:
@@ -27,9 +27,13 @@ e2e:
 tui:
 	uv run pytest tests/unit/test_tui.py -v
 
-# Run gold-standard evaluation tests
+# Run gold-standard evaluation tests (all — smoke tests skip cleanly without API keys)
 eval:
 	uv run pytest tests/eval -v
+
+# Run only the static eval tests (no API keys required — safe for local dev and CI)
+eval-static:
+	uv run pytest tests/eval/test_gold_standards.py tests/eval/test_runner_generate.py tests/eval/test_ablate.py -v
 
 # Validate gold standards score 100%
 eval-validate:
@@ -111,7 +115,8 @@ help:
 	@echo "  integration - Run integration tests (real tools, no external services)"
 	@echo "  e2e         - Run end-to-end scenario tests"
 	@echo "  tui         - Run TUI tests"
-	@echo "  eval        - Run gold-standard evaluation tests"
+	@echo "  eval        - Run gold-standard evaluation tests (all)"
+	@echo "  eval-static - Run only static eval tests (no API keys required)"
 	@echo "  eval-validate - Validate gold standards score 100%%"
 	@echo "  live        - Run live tests (Juju, LLM APIs)"
 	@echo "  test        - Run all tests (unit + integration + e2e)"

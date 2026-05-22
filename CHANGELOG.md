@@ -4,6 +4,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Expanded eval corpus (Phase 92.3).**  Two new machine-substrate gold
+  charms join the eval suite: ``alertmanager-machine`` (Path C infrastructure,
+  machine, peer + provides relations, systemd management via snap, COS
+  integration) and ``flask-hello`` (Path B custom app, machine, PostgreSQL
+  requires, nginx-route, virtualenv install, systemd).  The corpus now spans
+  all three charm-building paths (A/B/C) across both substrates (k8s and
+  machine) with peer, requires, and provides relation shapes, making prompt
+  and planner regressions on machine or non-PaaS paths easier to catch.
+- **CI eval gate (Phase 92.3).**  ``.github/workflows/eval.yaml`` runs the
+  static eval suite (gold-standard rubric validation, runner CLI tests,
+  ablation helper tests) on every PR that touches ``tests/eval/`` or the
+  prompts directory — no API keys required, ~10 minutes bound.  A new
+  ``make eval-static`` target provides the same no-key lane locally.
+
 ### Changed
 - **Phase-aware tool curation (Phase 110).**  Tight-context providers
   (inference snaps cap the LLM's tool array at 12; short-session mode
