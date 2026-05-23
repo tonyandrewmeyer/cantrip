@@ -1,0 +1,60 @@
+name: flask-hello
+type: charm
+title: Flask Hello (Machine)
+summary: Simple Flask web application on a machine substrate.
+description: |
+  Deploys a custom Flask web application on a machine unit.  The charm
+  installs the application inside a virtualenv, manages it via systemd,
+  configures nginx as a reverse proxy, requires a PostgreSQL relation
+  for persistent storage, and integrates with COS for observability.
+
+base: ubuntu@24.04
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+assumes:
+  - juju >= 3.6
+
+parts:
+  charm:
+    plugin: charm
+
+requires:
+  postgresql:
+    interface: postgresql_client
+    limit: 1
+  nginx-route:
+    interface: nginx-route
+    limit: 1
+  logging:
+    interface: loki_push_api
+  tracing:
+    interface: tracing
+
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+config:
+  options:
+    log-level:
+      type: string
+      description: Log verbosity for the Flask application (debug, info, warning, error).
+      default: "info"
+    debug:
+      type: boolean
+      description: >
+        Enable Flask debug mode.  Do NOT use in production — exposes the
+        interactive debugger and disables request caching.
+      default: false
+    workers:
+      type: int
+      description: Number of gunicorn worker processes.
+      default: 2
+
+actions:
+  reset-counter:
+    description: Reset the page-view counter stored in PostgreSQL to zero.

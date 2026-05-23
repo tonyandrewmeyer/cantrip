@@ -826,14 +826,25 @@ identified rather than opening a new product line.
   pytest-cov consumes the threshold during ``make unit``, which
   ``make check`` already invokes, so any drop below 88% fails the
   developer loop and CI.
-- [ ] Expand the eval corpus beyond the current minimal set of gold
+- [x] Expand the eval corpus beyond the current minimal set of gold
   charms: cover more substrates (machine + k8s), at least one custom /
   non-framework application path, and more relation / observability
   shapes so prompt or planner regressions are easier to detect.
-- [ ] Add CI wiring for the eval work that is cheap enough to run
+  Two new machine-substrate charms added: ``alertmanager-machine``
+  (Path C infrastructure, machine substrate, peer + provides relations,
+  systemd management, COS integration) and ``flask-hello`` (Path B
+  custom app, machine substrate, PostgreSQL requires, nginx-route,
+  virtualenv install, systemd management).  Corpus now covers all
+  three paths (A/B/C) across both substrates (k8s and machine) with
+  peer, requires, and provides relation shapes.
+- [x] Add CI wiring for the eval work that is cheap enough to run
   regularly: keep the full provider-matrix ambition in Phase 79, but
   make the static gold-standard / rubric path and any cheap smoke path
   first-class rather than manual-only.
+  ``.github/workflows/eval.yaml`` runs the static eval suite (gold
+  standards, runner, ablation tests) on every PR touching
+  ``tests/eval/`` or the prompts directory — no API keys required.
+  ``make eval-static`` provides the same no-key lane locally.
 - [x] Reduce test-maintenance drag in the heaviest files and fixtures.
   - [x] Split the monolithic ``tests/unit/agent/test_agent.py`` into
     feature-scoped modules.  ~1.5 kloc went into eight new siblings —
