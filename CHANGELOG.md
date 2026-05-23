@@ -5,6 +5,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Tests
+- **Phase 93.6 — permission policy differential / metamorphic property
+  tests.**  Added `tests/unit/agent/test_permissions_properties.py`
+  (17 Hypothesis properties) closing the permission-enforcement slice of
+  Phase 93.6's differential/metamorphic bullet: `evaluate` is
+  deterministic and non-mutating on both the ruleset and the arguments
+  dict; an empty ruleset returns default ALLOW; a catch-all `("*", deny)`
+  rule in `tools` (or layered via `compose_rulesets`) is absorbing — any
+  tool/args produces DENY; an unmatchable-pattern rule appended to any
+  section is inert; two matching rules pick the stricter outcome within
+  a section and across `tools` / `bash`; the `bash` section is consulted
+  only for tools in `bash_tools` (default `run_command`); argument-free
+  `evaluate` skips `bash` / `paths` and agrees with a tools-only
+  ruleset; and `compose_rulesets` is structurally associative,
+  concatenates section tuples in order, and leaves a single-input call
+  as identity.  Hypothesis caught one false claim along the way:
+  appending a rule to a section can *lower* restrictiveness —
+  last-match-wins inside a section means an agent overlay's later ALLOW
+  pattern intentionally loosens a global rule.  The module docstring
+  records that so future readers don't reintroduce a bogus monotonicity
+  invariant.  With this slice and the earlier transcript-renderer slice,
+  Phase 93.6's differential/metamorphic bullet is now fully `[x]`.
 - **Phase 93.6 — transcript renderer differential / metamorphic property
   tests.**  Added `tests/unit/transcript/test_transcript_properties.py`
   (21 Hypothesis properties) pinning the export-shape and

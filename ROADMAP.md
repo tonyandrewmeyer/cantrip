@@ -975,11 +975,11 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
 - [ ] Add more **stateful e2e** scenarios: interrupted deploy, failed verify
   followed by debug task creation, improvement flows on an existing charm, and
   "user says no" / override branches that materially change the plan.
-- [ ] Build **differential / metamorphic** checks where Cantrip should preserve
+- [x] Build **differential / metamorphic** checks where Cantrip should preserve
   invariants across providers or surfaces: stable task-graph validity, export
   shape, permission enforcement, and transcript/event consistency.
-  *(Partial — export-shape + transcript/event-consistency dimensions now
-  covered by ``tests/unit/transcript/test_transcript_properties.py``
+  *(Done — all four dimensions covered.  Export shape + transcript/event
+  consistency via ``tests/unit/transcript/test_transcript_properties.py``
   (21 properties): ``_fence_for`` always returns a backtick string strictly
   longer than the worst inner run, ``render_message`` is deterministic and
   respects ``include_header``, backtick-heavy tool results are fenced
@@ -989,12 +989,27 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
   message, ``render_jsonl`` is deterministic with a line count equal to
   ``messages + events + tasks + Σ subagent_messages`` and every line is
   valid JSON tagged with a ``type`` field in source-bucket order
-  (message → event → task → subagent_message); empty data renders to the
-  empty string.  Task-graph validity is incidentally covered by the
-  existing ``test_planner_properties.py`` (Kahn-based acyclicity check
-  on ``_validate_dependencies``).  Permission-enforcement differential
-  checks remain pending — they fit a Phase 68 / 80 follow-up if the user
-  wants the next bite.)*
+  (message → event → task → subagent_message); empty data renders to
+  empty string.  Permission enforcement via
+  ``tests/unit/agent/test_permissions_properties.py`` (17 properties):
+  ``evaluate`` is deterministic and non-mutating on ruleset + arguments,
+  empty ruleset returns default ALLOW, a catch-all ``("*", deny)`` rule
+  in ``tools`` (or layered via ``compose_rulesets``) is absorbing — any
+  tool/args produces DENY, an unmatchable-pattern rule appended to any
+  section is inert, two matching rules pick the stricter outcome (within
+  a section and across ``tools`` / ``bash``), the ``bash`` section is
+  consulted only for tools in ``bash_tools`` (default ``run_command``),
+  argument-free ``evaluate`` skips ``bash`` / ``paths`` and agrees with
+  a tools-only ruleset, and ``compose_rulesets`` is structurally
+  associative + concatenates sections in order + leaves a single-input
+  call as identity.  Hypothesis caught one false claim along the way:
+  appending a rule to a section can *lower* restrictiveness — last-match-
+  wins inside a section means an agent overlay's later ALLOW pattern
+  intentionally loosens a global rule.  The expanded module docstring
+  records that fact so future readers don't reintroduce a bogus
+  monotonicity invariant.  Task-graph validity is incidentally covered
+  by the existing ``test_planner_properties.py`` (Kahn-based acyclicity
+  check on ``_validate_dependencies``).)*
 - [ ] Extend accessibility regression coverage beyond the current Web-only
   smoke test where feasible, and at minimum document the deliberate boundary
   if TUI accessibility remains manual.
