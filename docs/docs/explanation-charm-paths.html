@@ -51,6 +51,7 @@
     <ul>
       <li><a href="#why-three">Why three paths?</a></li>
       <li><a href="#path-a">Path A: 12-factor PaaS</a></li>
+      <li><a href="#chiselled-rocks">Chiselled rocks</a></li>
       <li><a href="#path-b">Path B: Custom applications</a></li>
       <li><a href="#path-c">Path C: Infrastructure</a></li>
       <li><a href="#selection">How the agent chooses</a></li>
@@ -91,12 +92,27 @@ ingress and COS, and deploys. For a simple application, this takes
 under two minutes from description to active/idle.</p>
 <h3>What you get</h3>
 <ul>
-<li>OCI image via Rockcraft</li>
+<li>OCI image via Rockcraft &mdash; chiselled (smaller, tighter) when the workload passes the eligibility check, or a fuller Ubuntu base when it does not</li>
 <li>paas-charm base with framework-specific configuration</li>
 <li>Ingress integration</li>
 <li>COS integration (traces, metrics)</li>
 <li>Config options mapped from environment variables</li>
 </ul>
+<h3 id="chiselled-rocks">Chiselled rocks</h3>
+<p>Cantrip can generate chiselled rocks for Path A workloads &mdash; OCI images
+that contain only the filesystem slices the workload actually needs,
+with no shell, no apt, and no unneeded OS utilities. The result is a
+smaller image with a reduced attack surface and faster pulls.</p>
+<p>Before generating a chiselled rock, Cantrip runs the
+<code>check_chisel_eligibility</code> tool to verify that the workload does not
+invoke a shell at runtime, does not call apt at runtime, and has no
+opaque vendor install scripts. If the workload passes, Cantrip keeps
+the default <code>base: bare</code> emitted by <code>rockcraft init</code> and adds a short
+explanation to <code>rockcraft.yaml</code>. If the workload does not pass, Cantrip
+falls back to <code>base: ubuntu@24.04</code> and explains why.</p>
+<p>The escape hatch is always one line: change <code>base: bare</code> to
+<code>base: ubuntu@24.04</code> in <code>rockcraft.yaml</code> to get the full Ubuntu
+filesystem back.</p>
 <h2 id="path-b">Path B: Custom applications</h2>
 <p>Path B handles applications that do not fit the 12-factor model but
 are not infrastructure software either. Examples include legacy

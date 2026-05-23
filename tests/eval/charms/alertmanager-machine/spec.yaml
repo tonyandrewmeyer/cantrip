@@ -1,0 +1,225 @@
+name: alertmanager-machine
+description: >
+  Prometheus Alertmanager on a machine substrate (Path C, infrastructure).
+  Tests the machine charm path: apt/snap installation, systemd service
+  management, config file templating, a provides relation so Prometheus can
+  discover the Alertmanager endpoint, a peer relation for HA clustering,
+  and COS integration.
+
+charm_path: infrastructure
+substrate: machine
+
+workload:
+  repo: https://github.com/prometheus/alertmanager
+  tag: "v0.27.0"
+  port: 9093
+  health: /-/healthy
+
+prompt: >
+  Build a machine charm for Prometheus Alertmanager (v0.27.0).  Alertmanager
+  is distributed as a single binary (or installable via snap) that reads a
+  YAML config file at /etc/alertmanager/alertmanager.yml and listens on
+  port 9093.  The charm should install Alertmanager from the Snap Store
+  (snap name: alertmanager), manage the service via systemd
+  (service unit: snap.alertmanager.alertmanager), generate the
+  alertmanager.yml configuration from charm config options, expose a
+  "alerting" provides relation so Prometheus can send alerts to this unit,
+  support a peer relation called "replicas" for cluster HA, and integrate
+  with COS (metrics at /metrics, Loki log forwarding).  Config options
+  should include resolve-timeout (default 5m), smtp-smarthost, smtp-from,
+  and log-level (default info).  Include a send-test-alert action so
+  operators can verify the notification pipeline without real alerts.
+
+follow_ups: []
+
+rubric:
+  # ── Structure ──────────────────────────────────────────────────────
+  - name: charmcraft-yaml
+    description: Primary project file exists
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: charmcraft.yaml}
+    points: 3
+
+  - name: charm-source
+    description: Main charm source file
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: src/charm.py}
+    points: 3
+
+  - name: unit-test-dir
+    description: Unit test directory
+    category: structure
+    severity: major
+    check: dir_exists
+    args: {path: tests/unit}
+    points: 2
+
+  - name: integration-test-dir
+    description: Integration test directory
+    category: structure
+    severity: minor
+    check: dir_exists
+    args: {path: tests/integration}
+    points: 1
+
+  # ── Metadata ───────────────────────────────────────────────────────
+  - name: charm-name
+    description: Charm name is set
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: name}
+    points: 2
+
+  - name: machine-base
+    description: Targets a machine base (ubuntu@24.04)
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: base}
+    points: 2
+
+  - name: alerting-provides-relation
+    description: Provides alerting relation for Prometheus
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: alerting}
+    points: 3
+
+  - name: replicas-peer-relation
+    description: Peer relation for HA cluster membership
+    category: metadata
+    severity: major
+    check: has_relation
+    args: {relation: replicas}
+    points: 2
+
+  - name: resolve-timeout-config
+    description: Config option for alert resolve timeout
+    category: metadata
+    severity: major
+    check: has_config_option
+    args: {option: resolve-timeout, type: string}
+    points: 1
+
+  - name: log-level-config
+    description: Config option for log verbosity
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: log-level, type: string}
+    points: 1
+
+  - name: send-test-alert-action
+    description: Action to send a test alert through the pipeline
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: send-test-alert}
+    points: 2
+
+  # ── Code ───────────────────────────────────────────────────────────
+  - name: uses-ops
+    description: Charm uses the ops framework
+    category: code
+    severity: critical
+    check: uses_ops_framework
+    points: 3
+
+  - name: generates-config-file
+    description: Charm generates alertmanager.yml configuration
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "alertmanager\\.yml|alertmanager_yml|push.*config|write.*config"
+      message: Charm generates alertmanager.yml configuration
+    points: 3
+
+  - name: systemd-service
+    description: Charm manages the alertmanager systemd service
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "systemd|service.*restart|subprocess.*systemctl|snap\\.alertmanager"
+      message: Charm manages alertmanager via systemd
+    points: 3
+
+  - name: snap-install
+    description: Charm installs alertmanager via snap
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "snap|apt|install"
+      message: Charm installs alertmanager workload
+    points: 2
+
+  - name: resolve-timeout-used
+    description: Charm uses resolve-timeout config in generated YAML
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "resolve.timeout|resolve_timeout"
+      message: Charm includes resolve-timeout in configuration
+    points: 2
+
+  - name: port-9093
+    description: Charm references the alertmanager port
+    category: code
+    severity: minor
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "9093"
+      message: Charm uses port 9093
+    points: 1
+
+  # ── COS ────────────────────────────────────────────────────────────
+  - name: cos-integration
+    description: COS integration for observability
+    category: cos
+    severity: major
+    check: has_cos_integration
+    points: 3
+
+  - name: metrics-relation
+    description: Prometheus scrape endpoint for self-metrics
+    category: cos
+    severity: major
+    check: has_relation
+    args: {relation: metrics-endpoint, interface: prometheus_scrape}
+    points: 2
+
+  # ── Testing ────────────────────────────────────────────────────────
+  - name: has-unit-tests
+    description: At least one unit test file
+    category: testing
+    severity: major
+    check: has_unit_tests
+    points: 2
+
+  - name: uses-scenario
+    description: Unit tests use Scenario (ops.testing)
+    category: testing
+    severity: major
+    check: uses_scenario_tests
+    points: 2
+
+  - name: no-harness
+    description: No deprecated Harness usage
+    category: testing
+    severity: critical
+    check: no_harness
+    points: 2

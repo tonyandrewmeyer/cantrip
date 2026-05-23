@@ -1,0 +1,74 @@
+name: alertmanager-machine
+type: charm
+title: Prometheus Alertmanager (Machine)
+summary: Prometheus Alertmanager on a machine substrate.
+description: |
+  Deploys Prometheus Alertmanager on a machine unit.  Installs the
+  alertmanager snap, generates a configuration file from charm config,
+  exposes a provides relation for Prometheus to route alerts, supports
+  HA clustering via a peer relation, and integrates with COS for
+  self-observability.
+
+base: ubuntu@24.04
+build-base: ubuntu@24.04
+platforms:
+  amd64:
+
+assumes:
+  - juju >= 3.6
+
+parts:
+  charm:
+    plugin: charm
+
+requires:
+  logging:
+    interface: loki_push_api
+  tracing:
+    interface: tracing
+
+provides:
+  alerting:
+    interface: alertmanager_dispatch
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+peers:
+  replicas:
+    interface: alertmanager_replica
+
+config:
+  options:
+    resolve-timeout:
+      type: string
+      description: >
+        How long to wait before declaring an alert resolved when no firing
+        notifications are received.
+      default: "5m"
+    smtp-smarthost:
+      type: string
+      description: >
+        SMTP server hostname:port for email notifications
+        (e.g. smtp.example.com:587).
+      default: ""
+    smtp-from:
+      type: string
+      description: Sender address used in alert email notifications.
+      default: ""
+    log-level:
+      type: string
+      description: Log verbosity (debug, info, warn, error).
+      default: "info"
+
+actions:
+  send-test-alert:
+    description: >
+      Send a test alert through the Alertmanager pipeline to verify
+      notification routing and receivers are configured correctly.
+    params:
+      labels:
+        type: object
+        description: Additional labels to include on the test alert.
+        default: {}

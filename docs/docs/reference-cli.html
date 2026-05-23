@@ -1503,6 +1503,11 @@ and not duplicated elsewhere.</p>
 <td>optional</td>
 <td>Pin the curated tool slice to one of <code>research</code>, <code>build</code>, <code>debug</code>, <code>deploy</code>, or <code>demo</code>, regardless of what the work queue is doing. Tight-context providers (inference-snap's 12-tool cap, short-session mode) only ever see the tools the active workflow phase needs; normally that phase is derived from the running task's category, but this var forces it &mdash; useful for driving Cantrip through an unusual flow (e.g. a documentation pass that wants research-tier tools throughout). Unrecognised values log a warning and are ignored. Roomy providers (Claude, Gemini) are unaffected &mdash; they get the full toolset either way.</td>
 </tr>
+<tr>
+<td><code>CANTRIP_MESSAGE_FORMAT</code></td>
+<td>optional</td>
+<td>Override the outbound message-format for the <code>inference-snap</code> provider. Accepted values: <code>openai</code> (default) and <code>mistral</code>. Auto-detection from the snap name handles the common cases &mdash; <code>mistral-nemo-*</code> and <code>magistral-*</code> snaps default to <code>mistral</code>; all others default to <code>openai</code> &mdash; so this variable is only needed when the snap name does not follow the naming convention (e.g. a custom Mistral fine-tune with a non-standard name). Unrecognised values log a warning and fall back to auto-detection.</td>
+</tr>
 </tbody>
 </table>
 <p>The <code>inference-snap</code> provider does not require an API key

@@ -600,6 +600,10 @@ tests/unit/test_charm.py:78  refresh
 <td>Validate a repo against the rockcraft framework contract for a 12-factor framework (Flask, Django, FastAPI, Express, Spring Boot, Go) &mdash; blocking issues, advisory warnings, supported <code>base:</code> values</td>
 </tr>
 <tr>
+<td><code>check_chisel_eligibility</code></td>
+<td>Evaluate whether a workload is a good candidate for a chiselled rock (smaller image, reduced attack surface). Returns an eligibility verdict, any blocking reasons (shell-at-runtime, apt-at-runtime, opaque vendor scripts), advisories, and a short rationale to include as a comment in <code>rockcraft.yaml</code>. Run after <code>check_rock_contract</code>.</td>
+</tr>
+<tr>
 <td><code>skopeo_registry_push</code></td>
 <td>Push an OCI image to a registry</td>
 </tr>

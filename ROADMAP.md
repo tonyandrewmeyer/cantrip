@@ -826,14 +826,25 @@ identified rather than opening a new product line.
   pytest-cov consumes the threshold during ``make unit``, which
   ``make check`` already invokes, so any drop below 88% fails the
   developer loop and CI.
-- [ ] Expand the eval corpus beyond the current minimal set of gold
+- [x] Expand the eval corpus beyond the current minimal set of gold
   charms: cover more substrates (machine + k8s), at least one custom /
   non-framework application path, and more relation / observability
   shapes so prompt or planner regressions are easier to detect.
-- [ ] Add CI wiring for the eval work that is cheap enough to run
+  Two new machine-substrate charms added: ``alertmanager-machine``
+  (Path C infrastructure, machine substrate, peer + provides relations,
+  systemd management, COS integration) and ``flask-hello`` (Path B
+  custom app, machine substrate, PostgreSQL requires, nginx-route,
+  virtualenv install, systemd management).  Corpus now covers all
+  three paths (A/B/C) across both substrates (k8s and machine) with
+  peer, requires, and provides relation shapes.
+- [x] Add CI wiring for the eval work that is cheap enough to run
   regularly: keep the full provider-matrix ambition in Phase 79, but
   make the static gold-standard / rubric path and any cheap smoke path
   first-class rather than manual-only.
+  ``.github/workflows/eval.yaml`` runs the static eval suite (gold
+  standards, runner, ablation tests) on every PR touching
+  ``tests/eval/`` or the prompts directory — no API keys required.
+  ``make eval-static`` provides the same no-key lane locally.
 - [x] Reduce test-maintenance drag in the heaviest files and fixtures.
   - [x] Split the monolithic ``tests/unit/agent/test_agent.py`` into
     feature-scoped modules.  ~1.5 kloc went into eight new siblings —
@@ -1108,16 +1119,32 @@ All four bullets land in ``tests/integration/test_durability_resume.py``
 
 ### 93.4 High — Add isolation and security-oriented system tests
 
-- [ ] Add tests proving the sandbox/workspace/worktree boundaries hold under
+- [x] Add tests proving the sandbox/workspace/worktree boundaries hold under
   pressure: path traversal attempts, symlink escapes, out-of-tree writes,
   temporary-file leakage, and cleanup after cancellation/failure.
-- [ ] Add integration coverage for worktree lifecycle and git isolation:
+  (``tests/integration/test_isolation_security.py`` —
+  ``TestWorkspaceBoundaryUnderPressure`` covers traversal / symlink-escape /
+  out-of-tree paths through the real file tools;
+  ``TestRunCommandSandboxAndDestructiveGate`` pins the no-network, cwd-only
+  sandbox policy and the out-of-tree-cwd refusal; and the failed-subagent
+  worktree case proves no temporary-tree leakage after a crash.  Cancellation
+  shares the same ``_execute_task`` ``finally`` cleanup path as the failure
+  case exercised here.)
+- [x] Add integration coverage for worktree lifecycle and git isolation:
   branch creation, temporary worktree setup/teardown, dirty-tree handling,
   merge/reconcile paths, and failure cleanup.
-- [ ] Add system tests around the policy/permission boundary so "plan mode",
+  (``TestWorktreeIsolationAndLifecycle`` against a real git repo: concurrent
+  allocation isolation + serialised merge-back, dirty-main-tree merge refusal
+  with branch preservation, and full worktree+branch cleanup after a crashing
+  subagent.)
+- [x] Add system tests around the policy/permission boundary so "plan mode",
   destructive-command gates, and category-scoped tool access are verified in
   real flows rather than only at unit granularity.
-- [ ] Treat these as regression guards for Phase 49's sandbox promise, not as
+  (``TestPermissionAndPolicyBoundaryInRealFlows`` drives real ``Subagent.run``
+  loops: plan-mode denies an edit, RESEARCH cannot run a deploy-only tool, the
+  destructive shell is gated behind approval, and an ``ask`` with no approval
+  surface degrades to deny.)
+- [x] Treat these as regression guards for Phase 49's sandbox promise, not as
   optional hardening.
 
 ### 93.5 Medium — Cover advanced controllers and automation workflows
@@ -1384,38 +1411,40 @@ with a fuller Ubuntu base for debugging or runtime reasons.
 
 ### 96.1 Eligibility rules
 
-- [ ] Write the deterministic "is chiselled a good fit?" rubric:
+- [x] Write the deterministic "is chiselled a good fit?" rubric:
   12-factor or otherwise simple container workloads, no shell-dependent
   runtime, no apt-at-runtime behaviour, package slices available, and a
   workable debug / support story.
-- [ ] Record explicit blockers: workloads that expect a shell or
+- [x] Record explicit blockers: workloads that expect a shell or
   ad-hoc OS utilities in production, opaque vendor install scripts,
   packages without the needed slices, or charm logic that would make the
   minimised filesystem shape too brittle.
-- [ ] Decide whether the eligibility logic lives purely in skill /
+- [x] Decide whether the eligibility logic lives purely in skill /
   prompt guidance or deserves a small deterministic helper next to the
-  existing Rockcraft tooling.
+  existing Rockcraft tooling. **Decision:** deterministic helper
+  (`chisel_eligibility.py`) alongside `rock_contract.py`, exposed as the
+  `check_chisel_eligibility` tool.
 
 ### 96.2 Generation and escape hatches
 
-- [ ] Extend Rockcraft generation guidance so Cantrip can emit
+- [x] Extend Rockcraft generation guidance so Cantrip can emit
   chiselled-rock examples when the workload passes the rubric, including
   a short explanation to the user about *why* the smaller base is safe
   here.
-- [ ] Preserve a clear escape hatch back to ordinary Ubuntu bases when
+- [x] Preserve a clear escape hatch back to ordinary Ubuntu bases when
   the workload needs shell tooling, the user prioritises operability
   over footprint, or the chiselled build fails for a slice-availability
   reason.
-- [ ] Ensure the generated charm and rock wiring still compose cleanly
+- [x] Ensure the generated charm and rock wiring still compose cleanly
   with Pebble plans, health checks, and the existing 12-factor /
   custom-app flows.
 
 ### 96.3 Validation and user-facing docs
 
-- [ ] Add tests / fixtures proving Cantrip's chiselled output still
+- [x] Add tests / fixtures proving Cantrip's chiselled output still
   launches correctly and keeps the expected runtime files, entrypoints,
   and libraries.
-- [ ] Update the relevant user-facing docs and examples so
+- [x] Update the relevant user-facing docs and examples so
   "Cantrip can build smaller, tighter rocks when appropriate" is a
   visible feature rather than an invisible prompt tweak.
 
@@ -1767,12 +1796,12 @@ non-Qwen candidates can be evaluated fairly.
 
 ### 109.1 P0 — Provider hook for outbound message rewriting
 
-- [ ] Add ``LLMProvider.rewrite_messages(messages: list[Message])
+- [x] Add ``LLMProvider.rewrite_messages(messages: list[Message])
   -> list[Message]`` (or equivalent) — default identity, Mistral
   family overrides to fold consecutive ``tool``-role messages
   into the *prior* ``assistant`` message's ``content`` /
   ``tool_calls`` payload using Mistral's required markers.
-- [ ] Wire the hook into ``InferenceSnapProvider.complete()`` /
+- [x] Wire the hook into ``InferenceSnapProvider.complete()`` /
   ``stream()`` so rewriting fires once per LLM call before the
   request body is built.  Frontier providers (Gemini, Claude,
   OpenAI-compatible) inherit the identity default — they already
@@ -1780,7 +1809,7 @@ non-Qwen candidates can be evaluated fairly.
 
 ### 109.2 P0 — Inbound parser for Mistral-format tool calls
 
-- [ ] Mistral models emit
+- [x] Mistral models emit
   ``[TOOL_CALLS][{"name":"…","arguments":{…}}][/TOOL_CALLS]``
   inline within assistant content rather than the OpenAI-shaped
   ``tool_calls`` array.  Add a parser that splits
@@ -1789,7 +1818,7 @@ non-Qwen candidates can be evaluated fairly.
   this on the server side, but Phase 105.1.7 showed it doesn't
   always — fall back to client-side parsing when the server
   returns ``content`` containing the markers.
-- [ ] Negative test: when no ``[TOOL_CALLS]`` markers are present,
+- [x] Negative test: when no ``[TOOL_CALLS]`` markers are present,
   treat ``content`` as a plain assistant reply.  Don't false-
   positive on an LLM that mentions the literal token in regular
   prose.
@@ -1807,26 +1836,26 @@ non-Qwen candidates can be evaluated fairly.
 
 ### 109.4 P1 — Family detection + opt-in
 
-- [ ] ``InferenceSnapProvider`` should pick the right rewriter
+- [x] ``InferenceSnapProvider`` should pick the right rewriter
   based on the snap name (``mistral-nemo-*``,
   ``magistral-*`` → Mistral path; everything else →
   identity).
-- [ ] Operator-visible env var
+- [x] Operator-visible env var
   ``CANTRIP_MESSAGE_FORMAT={openai,mistral,…}`` overrides the
   family detection for unknown snaps (e.g. a new Mistral fine-
   tune with a non-standard name).  Defaults to ``openai``.
 
 ### 109.5 P1 — Tests
 
-- [ ] Unit test ``rewrite_messages`` for the Mistral path: a
+- [x] Unit test ``rewrite_messages`` for the Mistral path: a
   conversation containing ``[user, assistant(with tool_calls),
   tool(result)]`` rewrites to ``[user, assistant(content
   containing the [TOOL_CALLS]/[/TOOL_CALLS] +
   [TOOL_RESULTS]/[/TOOL_RESULTS] markers folded in)]``.
-- [ ] Unit test the inbound parser: response with
+- [x] Unit test the inbound parser: response with
   ``[TOOL_CALLS][...][/TOOL_CALLS]`` content splits into a
   ``ToolCall`` array and an empty ``content`` field.
-- [ ] Recorded-trace test pinning the wire format (the same way
+- [x] Recorded-trace test pinning the wire format (the same way
   Phase 41 pins frontier-provider streaming).
 
 ### What this phase is *not*

@@ -152,10 +152,74 @@ ingress:
 
 Stay inside the extension.  If the repo only works after replacing the extension, stop.
 
+### Chiselled Rocks
+
+A chiselled rock contains only the filesystem slices the workload actually needs — no shell, no apt, no unneeded OS utilities.  The result is a smaller image with a reduced attack surface and faster pulls.  Because the 12-factor framework extensions default to ``base: bare``, most 12-factor workloads already produce a *de facto* chiselled image through the extension's staged slice selection.
+
+**When to consider a chiselled base:**
+
+- The workload is a pure 12-factor web app with no shell-at-runtime requirements.
+- No script in the repo invokes ``apt-get``, ``dpkg``, or a shell interpreter at runtime.
+- No opaque vendor install script (``curl | bash``, npm ``preinstall``/``postinstall`` with wget) is needed at build or run time.
+- The user values a minimal image (smaller attack surface, faster cold starts, compliance audit requirements).
+
+**Eligibility check — always run before generating:**
+
+```python
+check_chisel_eligibility(path=repo_path, framework=framework)
+```
+
+This returns an ``eligible`` flag, any blocking reasons, and a short ``rationale`` you should include as a comment in the generated ``rockcraft.yaml``.  Run it *after* ``check_rock_contract`` — the two checks are orthogonal.
+
+**When chiselled output is safe:**
+
+Keep the default ``base: bare`` emitted by ``rockcraft init``.  The extension's slice selection is already chiselled.  Add a comment near the top of ``rockcraft.yaml`` explaining why the smaller base is safe:
+
+```yaml
+# base: bare — this workload passes the chisel eligibility check.
+# <rationale from check_chisel_eligibility>
+# To fall back to a fuller Ubuntu base: replace `bare` with `ubuntu@24.04`.
+base: bare
+```
+
+**Escape hatch — when to use a fuller Ubuntu base:**
+
+Use ``base: ubuntu@24.04`` whenever:
+
+- ``check_chisel_eligibility`` returns blockers (shell-at-runtime, apt-at-runtime, opaque vendor scripts).
+- A ``rockcraft pack`` with ``base: bare`` fails with a missing-slice error.
+- The workload needs ad-hoc OS diagnostics at runtime (``strace``, ``curl``, ``bash`` for debugging).
+- The user explicitly asks for operability over footprint.
+- A required package does not have a published Chisel slice in the ubuntu-24.04 definitions.
+
+Switching to a fuller base requires only one line change — this is intentional:
+
+```yaml
+base: ubuntu@24.04   # was: bare
+```
+
+**Pebble plans, health checks, and 12-factor composition:**
+
+A chiselled base does not change how Pebble interacts with the workload.  The Pebble binary and its health-check HTTP endpoint are both staged by the extension regardless of ``base:``.  Health check configuration in ``rockcraft.yaml`` applies identically:
+
+```yaml
+services:
+  app:
+    override: merge
+    command: gunicorn -w 4 myapp:app
+    checks:
+      - name: http-ready
+        http:
+          url: http://localhost:8080/healthz
+```
+
+Worker and scheduler services defined in ``rockcraft.yaml`` compose with chiselled bases exactly as with ``ubuntu@24.04`` — the extension stages the interpreter slices required by all defined services, not just the main one.
+
 ### Rock Workflow
 
 1. Reuse the fit verdict.
 2. Run ``check_rock_contract`` with the chosen framework before generating anything.  It returns blocking issues, advisory warnings, and the supported ``base:`` list.  Resolve every blocking issue before continuing.
+2a. Run ``check_chisel_eligibility`` with the same framework.  If eligible, keep the default ``base: bare`` and add the eligibility rationale as a comment.  If blockers are present, switch to ``base: ubuntu@24.04``.
 3. If the framework is FastAPI / Go / Express / Spring Boot, verify the user accepted the experimental path and that ``rockcraft`` is on an edge channel (``preflight_targets`` reports the snap channel).
 4. If the repo separates frontend and backend, confirm the backend subdirectory is the target scope before running ``rockcraft init``.
 5. If the app needs database migrations, prefer a root ``migrate.sh`` for Flask / FastAPI / Express / Go when the repo does not already provide a supported migration entrypoint.  For Django, ``paas-charm`` uses ``manage.py migrate`` whenever ``manage.py`` exists, so a new ``migrate.sh`` will not replace that path.  For Spring Boot, prefer framework-managed migrations (Flyway / Liquibase) unless the repo already exposes a compatible wrapper.
@@ -466,6 +530,7 @@ When updating the application:
 9. **Adding ``migrate.sh`` for Django** — ``paas-charm`` always prefers ``manage.py migrate`` when ``manage.py`` exists.  A new ``migrate.sh`` will not replace that path.
 10. **Spring Boot dual build systems** — the rock contract rejects repos that expose both ``pom.xml`` and ``build.gradle`` (or ``build.gradle.kts``).  ``check_rock_contract`` flags this before ``rockcraft pack``.
 11. **Editing ``src/charm.py`` to fix workload issues** — Pebble service-command failures, ``permission denied`` on ``/app``, missing env vars are rock / runtime issues first.  Fix the rock before touching charm Python.
+12. **Making every rock chiselled by default** — ``base: bare`` is already the framework-extension default and is *de facto* chiselled, but a chiselled base is not always safe.  Always run ``check_chisel_eligibility`` first; if it returns blockers, use ``base: ubuntu@24.04``.  Do not treat chisel as an invisible optimisation — explain the tradeoff to the user.
 
 ## Troubleshooting
 
@@ -473,6 +538,8 @@ When updating the application:
 |---------|--------------|-----|
 | ``rockcraft init`` fails with "unknown extension" | Experimental flag not set | Set ``ROCKCRAFT_ENABLE_EXPERIMENTAL_EXTENSIONS=true`` |
 | ``check_rock_contract`` reports issues | Framework contract violated | Resolve every issue before ``rockcraft pack`` |
+| ``rockcraft pack`` fails with "slice not found" | Package has no chisel slice | Switch to ``base: ubuntu@24.04``; no other changes needed |
+| ``check_chisel_eligibility`` returns blockers | Shell / apt / vendor-script at runtime | Use ``base: ubuntu@24.04``; explain to user why smaller base is unsafe |
 | Unit stuck in ``waiting`` | Image not in registry | Push the rock with ``skopeo_registry_push`` |
 | Unit in ``error`` | Workload crash | Check ``juju debug-log`` for container errors |
 | ``blocked: missing relation`` | Database or ingress not related | Run ``juju_relate`` to add the integration |
