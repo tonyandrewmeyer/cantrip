@@ -278,10 +278,19 @@ agent surfaces them to the user via the Escalation script shape below
 — hand the user a copy-paste block and resume work once they paste
 back the output.
 
-If the user has approved a destructive policy and `kubectl` lands as
-a typed agent tool in a future phase (see `design/K8S_TOOL.md`), the
-agent can run these itself; today the verbs above are
-user-driven only.
+When the binary `cantrip-kdiag` is available (built from `src/cantrip-kdiag/`
+or on PATH), prefer calling `k8s_diagnostics` directly rather than prescribing
+raw `kubectl` commands to the user.  `k8s_diagnostics` surfaces pod/PVC/event/
+metrics data in structured JSON and produces a concise summary — use it for:
+
+- `CrashLoopBackOff` or `OOMKilled` — call `k8s_diagnostics(namespace=..., app=..., mode="summary")`
+- Single-pod drilldown — call `k8s_diagnostics(namespace=..., pod=..., mode="pod")`
+- Connectivity check — call `k8s_diagnostics(namespace=..., mode="preflight")`
+
+The `kubectl` verbs below are still the right fallback when `cantrip-kdiag` is
+absent or when the read paths above don't cover a specific question.  All reads
+remain user-driven; write verbs (`kubectl delete`, `exec`, `apply`, `patch`)
+are never agent-driven.
 
 ## Things you must NOT do
 

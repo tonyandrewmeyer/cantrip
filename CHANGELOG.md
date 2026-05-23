@@ -5,6 +5,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Kubernetes pod-layer diagnostics tool (Phase 94).**  A new `k8s_diagnostics`
+  tool backed by a small read-only Go binary (`cantrip-kdiag`) gives the agent
+  first-class visibility into pod-layer failures that Juju does not surface —
+  `CrashLoopBackOff`, `OOMKilled`, `ImagePullBackOff`, PVC stuck `Pending`, and
+  namespace warning event storms.  The binary collects pods, container statuses,
+  previous log tails for crashed containers, PVC state, events, and pod metrics
+  (when the metrics API is available) and returns deterministic JSON with an
+  explicit schema version and documented exit codes.  Three modes: `summary`
+  (namespace/app triage), `pod` (single-pod drilldown), and `preflight`
+  (connectivity check).  Strictly read-only — no `exec`, no mutations.  Build
+  with `cd src/cantrip-kdiag && go build -o cantrip-kdiag ./cmd/cantrip-kdiag/`.
 - **Expanded eval corpus (Phase 92.3).**  Two new machine-substrate gold
   charms join the eval suite: ``alertmanager-machine`` (Path C infrastructure,
   machine, peer + provides relations, systemd management via snap, COS

@@ -135,6 +135,7 @@ def build_tools(
         JujuTrustTool,
         JujuWaitTool,
     )
+    from cantrip.agent.tools.k8s import K8sDiagnosticsTool
     from cantrip.agent.tools.launchpad import LaunchpadFetchTool, LaunchpadSearchTool
     from cantrip.agent.tools.loadtest import GenerateLoadTestTool
     from cantrip.agent.tools.mcp_tool import MCPTool
@@ -268,6 +269,10 @@ def build_tools(
         ConciergeStatusTool(),
         ConciergeRestoreTool(),
         PreflightTargetsTool(),
+        # Kubernetes pod-layer diagnostics (Phase 94).  Read-only; complements
+        # the Juju tools by surfacing pod/PVC/event/metrics data that Juju
+        # does not expose.  Requires the cantrip-kdiag binary.
+        K8sDiagnosticsTool(),
         # Git operations — bundled behind a single ``git`` tool so the
         # OpenAI-compatible 128-tool cap is never threatened.  Each
         # subcommand keeps its full per-action argument schema (visible

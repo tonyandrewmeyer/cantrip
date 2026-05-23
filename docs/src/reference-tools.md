@@ -16,6 +16,7 @@ on_this_page:
   - { anchor: "publishing", label: "Publishing" }
   - { anchor: "rockcraft", label: "Rockcraft and OCI" }
   - { anchor: "environment", label: "Environment" }
+  - { anchor: "k8s-diagnostics", label: "Kubernetes diagnostics" }
   - { anchor: "memory", label: "Memory" }
   - { anchor: "mcp", label: "MCP-sourced tools" }
   - { anchor: "internal", label: "Internal" }
@@ -255,6 +256,64 @@ wait_for(
 ```
 
 For waits that must span turns (the autonomous loop should stop while you wait), use `/pause` and `/resume` instead — `wait_for` blocks the current tool call only.
+
+{#k8s-diagnostics}
+## Kubernetes diagnostics
+
+`k8s_diagnostics` is a read-only pod-layer diagnostic tool backed by the
+`cantrip-kdiag` Go binary.  It surfaces information that Juju does not expose —
+container restart counts, previous log tails for crashed containers, PVC binding
+state, namespace warning events, and pod CPU/memory metrics when the metrics API
+is available.
+
+| Tool | Description |
+|---|---|
+| `k8s_diagnostics` | Collect Kubernetes pod/PVC/event diagnostics for a namespace or workload |
+
+### When to use
+
+Call `k8s_diagnostics` when a Juju unit is in `error`, `lost`, or `waiting` on
+a Kubernetes substrate and the Juju tools do not explain the root cause.  The
+most common trigger conditions are:
+
+| Symptom | Juju view | What `k8s_diagnostics` adds |
+|---|---|---|
+| `CrashLoopBackOff` | unit `error` | Container exit code, restart count, previous log tail |
+| `ImagePullBackOff` | unit `waiting` | Pull failure event message (registry auth, bad tag) |
+| `OOMKilled` | unit `lost` | `lastState.terminated.reason: OOMKilled` |
+| PVC stuck `Pending` | unit `blocked` | PVC phase, storage class, binding event |
+| Namespace event storm | no Juju signal | Warning events sorted by recency |
+
+### Modes
+
+| Mode | Required parameters | Use for |
+|---|---|---|
+| `summary` (default) | `namespace` | Namespace-wide or app-scoped triage |
+| `pod` | `namespace`, `pod` | Single-pod drilldown |
+| `preflight` | `namespace` | Check kubeconfig/API reachability |
+
+### Targeting
+
+Use `app` or `unit` to scope a `summary` to a specific Juju workload.  Use
+`pod` for an exact pod name.  Without any filter, the tool returns all pods in
+the namespace.
+
+### Safety boundary
+
+`k8s_diagnostics` is strictly read-only.  It does not `exec` into containers,
+apply manifests, or forward ports.  The underlying `cantrip-kdiag` binary
+enforces this boundary — there is no write path.
+
+### Binary prerequisite
+
+Requires `cantrip-kdiag` to be built and available.  Build it with:
+
+```bash
+cd src/cantrip-kdiag
+go build -o cantrip-kdiag ./cmd/cantrip-kdiag/
+```
+
+Or install it to `~/.local/bin/` for system-wide use.
 
 {#memory}
 ## Memory

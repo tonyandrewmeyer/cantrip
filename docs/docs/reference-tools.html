@@ -53,6 +53,7 @@
       <li><a href="#publishing">Publishing</a></li>
       <li><a href="#rockcraft">Rockcraft and OCI</a></li>
       <li><a href="#environment">Environment</a></li>
+      <li><a href="#k8s-diagnostics">Kubernetes diagnostics</a></li>
       <li><a href="#memory">Memory</a></li>
       <li><a href="#mcp">MCP-sourced tools</a></li>
       <li><a href="#internal">Internal</a></li>
@@ -700,6 +701,107 @@ wait_for(
 )
 </code></pre>
 <p>For waits that must span turns (the autonomous loop should stop while you wait), use <code>/pause</code> and <code>/resume</code> instead &mdash; <code>wait_for</code> blocks the current tool call only.</p>
+<h2 id="k8s-diagnostics">Kubernetes diagnostics</h2>
+<p><code>k8s_diagnostics</code> is a read-only pod-layer diagnostic tool backed by the
+<code>cantrip-kdiag</code> Go binary.  It surfaces information that Juju does not expose &mdash;
+container restart counts, previous log tails for crashed containers, PVC binding
+state, namespace warning events, and pod CPU/memory metrics when the metrics API
+is available.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>k8s_diagnostics</code></td>
+<td>Collect Kubernetes pod/PVC/event diagnostics for a namespace or workload</td>
+</tr>
+</tbody>
+</table>
+<h3>When to use</h3>
+<p>Call <code>k8s_diagnostics</code> when a Juju unit is in <code>error</code>, <code>lost</code>, or <code>waiting</code> on
+a Kubernetes substrate and the Juju tools do not explain the root cause.  The
+most common trigger conditions are:</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Juju view</th>
+<th>What <code>k8s_diagnostics</code> adds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CrashLoopBackOff</code></td>
+<td>unit <code>error</code></td>
+<td>Container exit code, restart count, previous log tail</td>
+</tr>
+<tr>
+<td><code>ImagePullBackOff</code></td>
+<td>unit <code>waiting</code></td>
+<td>Pull failure event message (registry auth, bad tag)</td>
+</tr>
+<tr>
+<td><code>OOMKilled</code></td>
+<td>unit <code>lost</code></td>
+<td><code>lastState.terminated.reason: OOMKilled</code></td>
+</tr>
+<tr>
+<td>PVC stuck <code>Pending</code></td>
+<td>unit <code>blocked</code></td>
+<td>PVC phase, storage class, binding event</td>
+</tr>
+<tr>
+<td>Namespace event storm</td>
+<td>no Juju signal</td>
+<td>Warning events sorted by recency</td>
+</tr>
+</tbody>
+</table>
+<h3>Modes</h3>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Required parameters</th>
+<th>Use for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>summary</code> (default)</td>
+<td><code>namespace</code></td>
+<td>Namespace-wide or app-scoped triage</td>
+</tr>
+<tr>
+<td><code>pod</code></td>
+<td><code>namespace</code>, <code>pod</code></td>
+<td>Single-pod drilldown</td>
+</tr>
+<tr>
+<td><code>preflight</code></td>
+<td><code>namespace</code></td>
+<td>Check kubeconfig/API reachability</td>
+</tr>
+</tbody>
+</table>
+<h3>Targeting</h3>
+<p>Use <code>app</code> or <code>unit</code> to scope a <code>summary</code> to a specific Juju workload.  Use
+<code>pod</code> for an exact pod name.  Without any filter, the tool returns all pods in
+the namespace.</p>
+<h3>Safety boundary</h3>
+<p><code>k8s_diagnostics</code> is strictly read-only.  It does not <code>exec</code> into containers,
+apply manifests, or forward ports.  The underlying <code>cantrip-kdiag</code> binary
+enforces this boundary &mdash; there is no write path.</p>
+<h3>Binary prerequisite</h3>
+<p>Requires <code>cantrip-kdiag</code> to be built and available.  Build it with:</p>
+<pre><code class="language-bash">cd src/cantrip-kdiag
+go build -o cantrip-kdiag ./cmd/cantrip-kdiag/
+</code></pre>
+<p>Or install it to <code>~/.local/bin/</code> for system-wide use.</p>
 <h2 id="memory">Memory</h2>
 <p>Durable learning tools. The agent calls these when the auto-writer
 needs to persist a lesson, or when the user drives a
