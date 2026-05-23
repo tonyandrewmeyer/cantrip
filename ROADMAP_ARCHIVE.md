@@ -15314,6 +15314,560 @@ status during a representative session.
 
 ---
 
+## Phase 92: Review Follow-Ups — Deterministic Scan, Validation Hardening, and Docs Discoverability ✓
+
+**Goal:** A broad April 2026 project review turned up four clusters of
+follow-up work that are individually small-to-medium but collectively
+important: one deferred-but-user-visible product gap (the unfinished
+deterministic repo scan for custom apps), a handful of correctness and
+validation hardening fixes in ``charmlint`` / ``quickpack``, several
+test-suite reliability gaps, and documentation / onboarding surfaces
+that ship features without making them easy to discover.  The phase is
+explicitly a **follow-up sweep**: close the sharp edges the review
+identified rather than opening a new product line.
+
+### 92.1 High — Finish the deterministic pre-scan for non-PaaS repos
+
+- [x] Turn ``src/cantrip/agent/tools/_scan.py`` from the current
+  documented stub into the real implementation sketched in
+  ``design/TOOLS.md``: filesystem walk with ``EXCLUDE_DIRS`` pruning,
+  manifest expansion, entry-point probing, CI/CD detection, container /
+  security / lint-config / env-template detection, charm-marker
+  detection, and recent-git-churn summary.
+- [x] Wire ``AnalyseFrameworkTool.execute()`` to call the scan helper so
+  custom-application routing stops re-deriving deterministic facts ad
+  hoc.  Keep the existing user-facing return shape
+  (``framework``, ``language``, ``profile``, ``workload_hints``,
+  ``candidates``, ``notes``) and layer the scan output underneath it
+  rather than widening every downstream caller.
+- [x] Add focused unit tests for the scan passes under
+  ``tests/unit/test_scan.py`` using tiny synthetic repo fixtures:
+  manifests-only, CI-only, entry-point-only, existing-charm marker,
+  mixed Docker/systemd hints, and a pathological excluded-directory
+  case so the walk budget stays bounded.
+- [x] Record whether the scan should also feed future UI surfaces
+  (repo-stats sidebar, onboarding summary, print-mode preamble) so the
+  helper becomes the single source of truth for "what kind of repo is
+  this?" rather than a planner-only utility.
+
+### 92.2 High — Validation hardening in ``charmlint`` and ``quickpack``
+
+- [x] Replace the current ``charmlint`` category extraction
+  (``rule_id.rstrip("0123456789")``) with an explicit parser so
+  category-level ``select`` / ``ignore`` / severity overrides cannot
+  mis-handle edge-case rule IDs.  Add regression tests for category
+  matching rather than relying on naming convention alone.
+- [x] Remove the lazy rule-registration bootstrap in
+  ``src/charmlint/linter.py`` in favour of an explicit, import-at-module-
+  top registration path that keeps the rule set deterministic and
+  easier to reason about under tests and future concurrency.
+- [x] Harden ``quickpack``'s generated dispatch script: fail fast on
+  missing interpreters, tighten shell quoting / error handling, and
+  surface launcher problems as clear pack-time failures instead of
+  delayed deploy-time breakage.
+- [x] Validate ``quickpack`` metadata inputs earlier: reject invalid or
+  out-of-tree entrypoints, validate ``charmcraft.yaml`` fields that the
+  pack path depends on, and add tests covering malformed metadata so the
+  failures stay crisp.
+- [x] Audit the remaining broad ``except Exception`` sites touched by
+  the review and either narrow them or document the boundary in the
+  established ``# noqa: BLE001 — <reason>`` style where the broad catch
+  is intentional.
+
+### 92.3 High — Test reliability, coverage, and evaluation depth
+
+- [x] Replace the fixed sleeps in the executor and e2e harnesses with
+  polling / signalling helpers.  ``tests/support/wait.py`` exposes a
+  shared ``wait_until`` predicate poller plus ``wait_for_task_status``,
+  ``wait_for_queue_state``, and ``wait_for_value`` helpers.  Migrated
+  ``tests/unit/executor/test_run_loop.py``, ``test_budget.py``,
+  ``test_rate_limit.py``, and ``tests/integration/test_work_loop.py``
+  off the previous ``asyncio.sleep(0.05–0.2)`` / fixed 2 s waits.
+  The integration ``wait_for_queue_state`` shim now re-exports from
+  ``tests.support.wait`` so existing call sites keep importing from
+  ``tests.integration.conftest``.  The remaining ``time.sleep(5/10)``
+  calls in ``tests/e2e/harness.py`` are already inside polling loops
+  (Jubilant ``juju status`` reads with deadline-bounded loops) — they
+  set the polling cadence rather than acting as fixed timing
+  assumptions, so they are not in the "structurally flaky" bucket.
+- [x] Add a lightweight executor-test harness that waits on explicit
+  queue / task state transitions rather than timing assumptions, then
+  migrate ``tests/unit/executor/test_run_loop.py`` and similar files.
+  Done as part of the shared wait helpers above; the executor unit
+  tests now wait on task/queue state directly via
+  ``wait_for_task_status`` and ``wait_for_queue_state``.
+- [x] Enforce Python coverage in the main developer loop.  ``make unit``
+  already collects coverage; add a ``fail_under`` threshold and wire it
+  into ``make check`` so coverage regressions are visible before merge.
+  ``[tool.coverage.report].fail_under = 88`` is set in ``pyproject.toml``
+  (current baseline ~88.77%, leaves a 1pp margin for xdist noise);
+  pytest-cov consumes the threshold during ``make unit``, which
+  ``make check`` already invokes, so any drop below 88% fails the
+  developer loop and CI.
+- [x] Expand the eval corpus beyond the current minimal set of gold
+  charms: cover more substrates (machine + k8s), at least one custom /
+  non-framework application path, and more relation / observability
+  shapes so prompt or planner regressions are easier to detect.
+  Two new machine-substrate charms added: ``alertmanager-machine``
+  (Path C infrastructure, machine substrate, peer + provides relations,
+  systemd management, COS integration) and ``flask-hello`` (Path B
+  custom app, machine substrate, PostgreSQL requires, nginx-route,
+  virtualenv install, systemd management).  Corpus now covers all
+  three paths (A/B/C) across both substrates (k8s and machine) with
+  peer, requires, and provides relation shapes.
+- [x] Add CI wiring for the eval work that is cheap enough to run
+  regularly: keep the full provider-matrix ambition in Phase 79, but
+  make the static gold-standard / rubric path and any cheap smoke path
+  first-class rather than manual-only.
+  ``.github/workflows/eval.yaml`` runs the static eval suite (gold
+  standards, runner, ablation tests) on every PR touching
+  ``tests/eval/`` or the prompts directory — no API keys required.
+  ``make eval-static`` provides the same no-key lane locally.
+- [x] Reduce test-maintenance drag in the heaviest files and fixtures.
+  - [x] Split the monolithic ``tests/unit/agent/test_agent.py`` into
+    feature-scoped modules.  ~1.5 kloc went into eight new siblings —
+    ``test_agent_core.py``, ``test_agent_models.py``,
+    ``test_agent_cache.py``, ``test_agent_persistence.py``,
+    ``test_agent_context.py``, ``test_agent_tooling.py``,
+    ``test_agent_watcher.py``, and ``test_agent_improvement.py`` —
+    matching the existing ``test_agent_<feature>.py`` convention used by
+    ``test_agent_arena.py`` / ``test_agent_github.py`` /
+    ``test_agent_lifecycle.py``.  The duplicated ``TestInferGapsFromAudit``
+    class (a strict subset of the canonical copy in
+    ``test_audit_gap_inference.py``) was dropped rather than re-housed.
+  - [x] Centralise reusable fakes/builders so unit / integration / e2e
+    layers stop growing parallel infrastructure by accident.  Five new
+    modules under ``tests/support/``:  ``providers.py`` (``RecordingProvider``,
+    ``CallbackProvider``, ``MultiRoleProvider`` — the latter two moved out
+    of ``tests/integration/conftest.py``), ``tools.py`` (``make_stub_tool``,
+    replacing five inline ``_StubTool`` / ``_make_tool`` definitions plus
+    the integration-conftest variant), ``worktrees.py`` (a single
+    ``FakeAllocator`` + ``AllocCall`` / ``ReleaseCall`` dataclasses,
+    replacing three near-duplicate ``FakeAllocator`` / ``_FakeAllocator``
+    classes across ``test_executor_worktree.py``, ``test_executor_race.py``,
+    and ``test_race.py``), and ``roles.py`` (``StubEmbed`` / ``StubRerank``,
+    replacing three inline ``_StubEmbed`` definitions).  Inline
+    ``RecordingProvider`` subclasses in ``test_run.py``, ``test_day2.py``,
+    and ``test_design.py`` (5 occurrences) collapsed onto the shared one.
+  - [x] Document the fixture hierarchy.  ``tests/README.md`` lays out the
+    unit / integration / e2e / eval rings, the conftest layering rules,
+    and a catalogue of every shared fake plus the protocol it stands in
+    for; ``CLAUDE.md`` carries a pointer to it from the test-suite section
+    so future contributors find the catalogue before reaching for an
+    inline ``_StubX``.
+- [x] Add a small audit of exception-path coverage in high-value modules
+  (provider adapters, executor loop, juju/log plumbing, structured
+  output, persistence) and backfill the missing regression tests the
+  review called out.  Audit drove from the annotated coverage report
+  (``cov_annotate/``) and landed seventeen focused regression tests:
+  ``ClaudeProvider.complete()`` rate-limit / 5xx / generic-API-error
+  mappings (and the matching ``stream()`` paths), ``GeminiProvider``
+  ``ServerError`` / generic ``APIError`` mappings on both ``complete()``
+  and ``stream()``, ``BackgroundExecutor._on_permission_decided``
+  swallowing ``TypeError`` and ``RuntimeError`` from a broken UI hook
+  without crashing the loop, ``preview_session`` falling through to an
+  empty preview when the ``.cantrip`` file is corrupt or
+  ``peek_session`` raises, and ``capture_databag_snapshot`` degrading
+  to an empty ``DatabagSnapshot()`` when the ``juju`` CLI is missing,
+  hangs, or returns malformed JSON.  Total coverage moved 88.76 → 88.88%.
+
+### 92.4 Medium — Docs and discoverability sweep
+
+- [x] Fix command discoverability in ``docs/src/reference-cli.md``:
+  add ``cantrip audit`` and ``cantrip permissions`` to the
+  ``on_this_page`` list, make sure every implemented subcommand appears
+  in the reference navigation, and add brief prose explaining when a
+  user reaches for each command.
+- [x] Rework the README opening so it distinguishes **end-user install**
+  from **contributor checkout** immediately.  The current clone+``uv
+  sync`` path is correct for development but obscures the simpler
+  install flow for users who just want the tool.
+- [x] Add docs for the two underexplained interface surfaces:
+  **Web UI** and **CLI/REPL mode** (``--web`` and ``--no-tui``).  Cover
+  when to use each surface, any feature-parity caveats, and the
+  workflows that are easier there than in the TUI.
+- [x] Expand ``howto-print-mode`` with concrete CI / automation
+  examples, and surface print mode, permissions, and audit from the docs
+  landing page instead of leaving them buried in the CLI reference.
+- [x] Add a short "Start here" path to the docs landing page:
+  install, choose TUI/Web/CLI, build a new charm vs improve an existing
+  one, then link to the relevant how-tos.  The current card grid is rich
+  but gives new users no ordering signal.
+- [x] Consolidate environment-variable guidance so setup is not repeated
+  piecemeal across README, tutorial, provider how-to, and CLI reference.
+  ``howto-provider.md`` gained an ``{#env-vars}`` section that owns the
+  setup walk-through (per-provider exports, persistence guidance, embed
+  / rerank keys); ``reference-cli.md#env-vars`` keeps the comprehensive
+  table and now leads with a one-paragraph cross-reference to the
+  how-to; README and ``tutorial.md`` collapse the duplicated
+  ``export GEMINI_API_KEY`` step into a single example with explicit
+  links to the consolidated env-var page.
+- [x] Sweep user-facing docs for stray internal phase-language
+  references and remove them.  ``grep -rn "Phase [0-9]"`` against
+  ``docs/src/`` and ``docs/docs/`` returned zero matches; remaining
+  ``phase`` mentions are the four user-facing workflow phases
+  (research / build / deploy / test) which CLAUDE.md explicitly keeps.
+  Nothing to remove — bullet closed by audit.
+
+### What this phase is *not*
+
+- Not a new architecture initiative.  The point is to finish deferred
+  or rough-edged pieces already implied by the current design.
+- Not a wholesale test-suite rewrite.  The target is the high-value
+  reliability and maintenance problems the review surfaced first.
+- Not a docs-platform rewrite.  The existing Markdown → HTML pipeline
+  stands; this phase improves content structure and discoverability
+  inside it.
+
+**Exit criteria:** the deterministic scan is implemented and used by
+``analyse_framework``; the ``charmlint`` / ``quickpack`` fixes above
+land with regression tests; the flaky fixed-sleep cases are gone from
+the reviewed executor/e2e paths and coverage is enforced in ``make
+check``; the docs surface ``audit``, ``permissions``, Web UI, CLI mode,
+print mode, onboarding, and env-var setup clearly enough that a new
+user can find them without prior project knowledge.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Deterministic pre-scan (92.1) | Phase 91 framework-detection port, design/TOOLS.md Phase 55.7 stub note | Finishes the deferred implementation rather than inventing a new surface |
+| Validation hardening (92.2) | Existing ``charmlint`` / ``quickpack`` test suites | Mostly surgical correctness work |
+| Test reliability (92.3) | Phase 79 eval work for provider-matrix follow-ons | Coverage / gold standards can land independently of full provider-in-loop eval |
+| Docs sweep (92.4) | Existing docs build pipeline | Source edits under ``docs/src/`` + regenerated HTML |
+
+**Discovered:** Project-wide review on 2026-04-30 covering code,
+tests, docs, and UX surfaces.  The strongest themes were the unfinished
+deterministic repo scan, a handful of correctness hardening fixes, flaky
+test timing, thin eval/discoverability coverage, and user-facing
+features that exist but are too hard to find.
+
+---
+
+## Phase 94: Go Kubernetes Diagnostics Binary — Pod-Layer Insight for Charm Debugging ✓
+
+**Goal:** Implement the Kubernetes diagnostic gap identified in
+[`design/K8S_TOOL.md`](design/K8S_TOOL.md) as a small, read-only **Go**
+binary and wire it into Cantrip as a first-class typed tool.  The new
+design document [`design/K8S_DIAGNOSTICS_BINARY.md`](design/K8S_DIAGNOSTICS_BINARY.md)
+is the source of truth for scope, command shape, JSON contract, safety
+boundary, and Python integration.
+
+### 94.1 High — Ship the Go binary itself
+
+- [x] Add a new Go module under ``src/cantrip-kdiag/`` with a small,
+  explicit package layout (`cmd/`, `internal/cli`, `internal/kube`,
+  `internal/collect`, `internal/summarise`, `internal/output`) matching
+  the design doc.
+- [x] Implement the three v1 commands from the design:
+  ``summary``, ``pod``, and ``preflight``.
+- [x] Support kubeconfig/context loading, namespace selection, and
+  bounded targeting by exact pod, Juju app, or Juju unit.
+- [x] Collect the initial read-only diagnostic set only: pods, container
+  statuses, warning events, PVC state, previous log tails for crashed
+  containers, and pod metrics when the metrics API is present.
+- [x] Emit deterministic JSON with an explicit schema version and crisp,
+  documented exit codes for usage error, kubeconfig/context failure, API
+  reachability failure, target-not-found, metrics unavailable, and
+  internal error.
+
+### 94.2 High — Integrate the binary into the Python tool layer
+
+- [x] Add a typed Python wrapper in ``src/cantrip/agent/tools/k8s.py``
+  that invokes ``cantrip-kdiag`` via ``subprocess.run``,
+  parses the JSON output, and returns a structured ``ToolResult`` with a
+  concise caption plus the full report in ``data``.
+- [x] Register the new tool in ``build_tools()`` and scope its
+  description/schema so the agent reaches for it only when Juju does not
+  explain a pod-layer problem.
+- [x] Mirror the existing Juju-tool pattern for environment handling:
+  bypass the subprocess sandbox, thread through ``KUBECONFIG`` /
+  explicit context inputs, and fail clearly when the binary is missing.
+- [x] v1 uses a single ``k8s_diagnostics`` tool with a ``mode``
+  parameter (``summary`` / ``pod`` / ``preflight``), aligned to the
+  three Go commands without inventing a Python-only abstraction.
+
+### 94.3 Medium — Teach the agent when to use it
+
+- [x] Updated the Kubernetes diagnostic guidance in ``system.md.j2`` so
+  the agent prefers the typed tool over prescribing raw ``kubectl`` when
+  the binary is available, while keeping the existing
+  `fix-broken-juju-k8s` skill for substrate-rebuild flows and manual
+  fallback.
+- [x] Updated ``fix-broken-juju-k8s/SKILL.md`` so the skill directs the
+  agent to ``k8s_diagnostics`` for pod/PVC/event reads when the binary
+  is present, with ``kubectl`` as the fallback.
+- [x] Scope is charm-focused and read-only; no raw kubectl wrapper or
+  write-path surface is exposed.
+
+### 94.4 Medium — Validation, tests, and packaging hygiene
+
+- [x] Go tests covering target resolution (``kube/target_test.go``),
+  warning synthesis (``summarise/warnings_test.go``), output shape
+  (``output/json_test.go``), and the read-only collectors using fake
+  clients (``collect/pods_test.go``, ``collect/events_test.go``,
+  ``collect/pvcs_test.go``).
+- [x] Python unit tests in ``tests/unit/test_k8s_tool.py`` covering
+  happy path, missing binary, malformed JSON, non-zero exit codes,
+  structured error responses, missing kubeconfig, arg building, and
+  caption generation (24 tests, all passing).
+- [x] Build/CI path decided and documented:
+  - **Development**: ``cd src/cantrip-kdiag && go build -o cantrip-kdiag ./cmd/cantrip-kdiag/``
+    (binary searched at PATH, then in-tree at ``src/cantrip-kdiag/cantrip-kdiag``,
+    then at ``~/.local/bin/cantrip-kdiag``).
+  - **Go tests**: ``make go-test`` added to the Makefile, included in
+    ``make check``; skips gracefully when Go is absent (same pattern as
+    ``rust-test``).
+  - **Python tests**: mock ``subprocess.run`` via ``_run_binary`` — no live
+    cluster or real binary required.
+- [x] User docs updated in ``docs/src/reference-tools.md`` with a new
+  "Kubernetes diagnostics" section covering modes, targeting, safety
+  boundary, and the binary prerequisite.
+
+### What this phase is *not*
+
+- Not a generic ``kubectl`` wrapper.
+- Not a write path to the cluster (`apply`, `delete`, `patch`, `exec`,
+  `port-forward`).
+- Not a rewrite of other Cantrip native helpers in Go.
+- Not a requirement to replace Juju-native debugging with Kubernetes
+  debugging; the binary fills the specific gap where Juju's view stops.
+
+**Exit criteria:** Cantrip can diagnose the common pod-layer failure modes
+called out in ``design/K8S_TOOL.md`` through a first-class typed tool
+powered by ``cantrip-kdiag``; the binary stays read-only and bounded; the
+Python wrapper surfaces crisp structured output and failures; and tests
+cover both the Go report contract and the Python integration.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Go binary (94.1) | `design/K8S_DIAGNOSTICS_BINARY.md`; Kubernetes client-go ecosystem | Keep the initial command set small and the contract explicit |
+| Python integration (94.2) | 94.1; existing `Tool` / `ToolResult` conventions in `design/TOOLS.md` | Mirror Juju-tool subprocess patterns rather than shelling out through `run_command` |
+| Agent guidance (94.3) | 94.2; existing Kubernetes skill content | Prefer typed-tool guidance without deleting the manual fallback story |
+| Validation/docs (94.4) | 94.1 + 94.2 | Tests should lock the JSON contract and error handling in place |
+
+**Discovered:** Follow-up design work on 2026-04-30 after reviewing
+Cantrip's current features, planned features, and native-helper pattern
+(``quickpack-rs`` / ``charmlint-rs``).  Verdict: Kubernetes pod-layer
+diagnostics is the highest-value feature that is distinctly well suited to
+a Go binary.
+
+---
+
+## Phase 96: Chiselled Rocks — Chisel-Aware Rockcraft Output ✓
+
+**Goal:** Cantrip already generates rocks for OCI-backed charms, but it
+does not yet understand Canonical's chiselled-Ubuntu packaging story.
+This phase teaches the agent when a workload is a good chiselled
+candidate, how to generate that Rockcraft shape safely, and when to stay
+with a fuller Ubuntu base for debugging or runtime reasons.
+
+### 96.1 Eligibility rules
+
+- [x] Write the deterministic "is chiselled a good fit?" rubric:
+  12-factor or otherwise simple container workloads, no shell-dependent
+  runtime, no apt-at-runtime behaviour, package slices available, and a
+  workable debug / support story.
+- [x] Record explicit blockers: workloads that expect a shell or
+  ad-hoc OS utilities in production, opaque vendor install scripts,
+  packages without the needed slices, or charm logic that would make the
+  minimised filesystem shape too brittle.
+- [x] Decide whether the eligibility logic lives purely in skill /
+  prompt guidance or deserves a small deterministic helper next to the
+  existing Rockcraft tooling. **Decision:** deterministic helper
+  (`chisel_eligibility.py`) alongside `rock_contract.py`, exposed as the
+  `check_chisel_eligibility` tool.
+
+### 96.2 Generation and escape hatches
+
+- [x] Extend Rockcraft generation guidance so Cantrip can emit
+  chiselled-rock examples when the workload passes the rubric, including
+  a short explanation to the user about *why* the smaller base is safe
+  here.
+- [x] Preserve a clear escape hatch back to ordinary Ubuntu bases when
+  the workload needs shell tooling, the user prioritises operability
+  over footprint, or the chiselled build fails for a slice-availability
+  reason.
+- [x] Ensure the generated charm and rock wiring still compose cleanly
+  with Pebble plans, health checks, and the existing 12-factor /
+  custom-app flows.
+
+### 96.3 Validation and user-facing docs
+
+- [x] Add tests / fixtures proving Cantrip's chiselled output still
+  launches correctly and keeps the expected runtime files, entrypoints,
+  and libraries.
+- [x] Update the relevant user-facing docs and examples so
+  "Cantrip can build smaller, tighter rocks when appropriate" is a
+  visible feature rather than an invisible prompt tweak.
+
+### What this phase is *not*
+
+- Not a blanket switch making every rock chiselled by default.
+- Not a replacement for quickpack or charmcraft packaging paths.
+- Not a packaging-minification contest detached from charm operability.
+
+**Exit criteria:** for workloads that fit the rubric, Cantrip can
+generate and explain a chiselled-Rockcraft path; for workloads that do
+not, it cleanly falls back to the existing fuller-base path.
+
+---
+
+## Phase 110: Phase-Aware Tool Curation — Replace the Static Core-Tools Keep-List ✓
+
+**Goal:** Replace ``CantripAgent._CORE_TOOL_NAMES`` (a fixed 11-name
+``set``) with a *curator* that picks the right tool slice for the
+agent's active workflow phase (research / build / debug / deploy
+/ demo).  Inference-snap providers cap the LLM's tool array at
+12 — the static keep-list silently drops load-bearing tools
+(``quick_pack``, ``charmlint``, ``run_command``) when those tools
+are exactly what the current phase needs, and keeps tools the
+phase doesn't need (``analyse_framework``, ``web_fetch``) just
+because they're "always useful in some scenario".
+
+### Why now
+
+Phase 105.1.5 dry runs surfaced two concrete losses from the
+static list:
+
+- ``quick_pack`` is dropped, so even when sprint mode's recipe
+  explicitly says *"prefer ``quick_pack``"*, the model can only
+  call ``charmcraft_pack`` (slower, no LXD-free path).
+- ``charmlint`` is dropped, so when ``charmcraft_pack`` fails
+  with a YAML structure error, the model has no way to *see*
+  what's wrong — the demo dry run oscillated between two
+  near-identical broken YAMLs for 5 minutes because the
+  feedback loop was pack-fail / guess / pack-fail.
+
+Meanwhile ``analyse_framework`` (only useful when scaffolding a
+fresh charm from a host directory) and ``web_fetch`` (a context
+trap — bit the same demo dry run with a 41 KB payload that blew
+the 16 K context budget) are kept by default.
+
+A surgical short-term swap landed alongside this phase
+(``analyse_framework`` + ``web_fetch`` out, ``quick_pack`` +
+``charmlint`` in, same 11 names).  That helps the demo but
+doesn't solve the underlying problem: the keep-list isn't aware
+of *what the agent is doing right now*.
+
+This isn't a duplicate of Phase 104.5 (shipped) — that sub-phase
+added a phase-scoped tool set (``CantripAgent._SHORT_SESSION_PHASE_TOOLS``,
+keyed on the active queue task's category) that fires *only* in
+short-session mode (provider context window < 16 K).  Phase 110
+generalises the same idea to *all* inference-snap providers
+(Qwen3-14B at 16 K is also tight on context budget), promotes the
+ad-hoc dict into a proper ``WorkflowPhase`` enum + curator, and
+replaces the static ``_CORE_TOOL_NAMES`` fallback — building on
+104.5's table rather than re-doing it.
+
+### 110.1 P0 — Phase enum + tool-set table
+
+- [x] Define a small enum ``WorkflowPhase`` with values
+  ``research`` / ``build`` / ``debug`` / ``deploy`` / ``demo``.
+  Map the existing planner task categories
+  (``BUILD`` / ``RESEARCH`` / ``DEPLOY`` / ``TEST`` /
+  ``DEBUG`` / ``INFRA`` / ``CONFIRM`` / ``LIBRARIAN``) onto this
+  enum.  *(Done — ``WorkflowPhase`` + ``WorkflowPhase.from_category``
+  in ``cantrip/agent/queue.py``; ``TEST → debug``, ``INFRA → deploy``,
+  ``CONFIRM → build``, ``LIBRARIAN → research``.  ``DAY2`` isn't a
+  real category — the actual eight are mapped instead.)*
+- [x] In ``cantrip/agent/core.py``, replace
+  ``_CORE_TOOL_NAMES: set[str]`` with
+  ``_CORE_TOOLS_BY_PHASE: dict[WorkflowPhase, set[str]]``.
+  Each phase's set lives at ≤ 11 names so the inference-snap
+  cap can fit one MCP tool / extension if any are loaded.
+  Tables shipped (the suggested ones, verbatim):
+  - **build**: ``read_file write_file edit_file list_directory
+    charmcraft_init quick_pack charmcraft_pack charmlint
+    plan_tasks run_charm_tests run_command``
+  - **debug**: ``read_file edit_file list_directory juju
+    charmlint juju_debug_log juju_status_render run_command
+    plan_tasks run_charm_tests web_fetch``
+  - **deploy**: ``juju concierge_prepare juju_status_render
+    juju_debug_log wait_for relation_smoke_test charmcraft_pack
+    run_command list_directory plan_tasks``
+  - **research**: ``read_file list_directory web_fetch
+    web_search analyse_framework code_definition
+    code_references oracle_consult plan_tasks
+    extract_design_decisions``
+  - **demo**: build, with ``charmlint`` swapped out for
+    ``manage_tasks``.
+  *(``_SHORT_SESSION_PHASE_TOOLS`` from Phase 104.5 folded into this
+  one table.)*
+
+### 110.2 P0 — Hook the curator into ``_tools_for_llm``
+
+- [x] When the work queue's active task has a category, map it
+  to a phase and use that phase's tool set.  Otherwise (no
+  active task — the conversation is at idle) default to
+  ``WorkflowPhase.build`` so the first interaction picks
+  build-shaped tools.  *(Done — ``CantripAgent.workflow_phase``
+  property + ``_curated_tool_names``; ``_tools_for_llm`` curates
+  whenever short-session mode is on **or** the provider's
+  ``max_tools`` cap is overshot, and serves the full toolset
+  otherwise.)*
+- [x] Re-fire ``invalidate_tools_cache`` ... when the active task
+  transitions.  *(Moot — ``_tools_for_llm`` is recomputed from live
+  work-queue state at the top of every turn, so a transition is
+  picked up on the next LLM call with no cache to bust.)*
+
+### 110.3 P1 — Operator override
+
+- [x] Env var ``CANTRIP_TOOL_PHASE={research|build|debug|
+  deploy|demo}`` forces a phase regardless of work-queue state.
+  Useful for operators driving cantrip in unusual flows (e.g. a
+  documentation pass through the codebase that needs
+  research-tier tools throughout).  *(Done — read in
+  ``CantripAgent.workflow_phase``; unrecognised values log a warning
+  and are ignored.  Documented in ``docs/src/reference-cli.md``.)*
+- [x] Surface the active phase + its tool count in the TUI
+  status bar / Web UI badge so operators can see what's been
+  curated for the current turn.  *(Done — ``CantripAgent.tool_phase_badge()``
+  returns ``"build · 11"``-style text when curation is active and
+  ``""`` otherwise; TUI ``StatusBar.tool_phase`` chip (primed on
+  mount, refreshed on every task-update event), Web ``#tool-phase-badge``
+  header chip primed from ``/api/state``, and a ``/cost`` line that
+  names the phase.  Live Web push on task transitions is left for a
+  follow-up — the badge refreshes on page load / reconnect.)*
+
+### 110.4 P1 — Tests
+
+- [x] Unit test: ``_tools_for_llm()`` with a build-category
+  active task returns the build set.
+- [x] Unit test: ``CANTRIP_TOOL_PHASE=research`` overrides the
+  active-task category.
+- [x] Unit test: when an active-task category transitions
+  (e.g. build → debug because a test failed), the next call to
+  ``_tools_for_llm()`` picks the new phase's set.
+- [x] ~~Recorded-trace test~~ — covered by the direct
+  ``_tools_for_llm`` / ``workflow_phase`` assertions across phases
+  in ``tests/unit/agent/test_tool_curation.py`` (24 cases) plus the
+  table-invariant tests (every phase has a ≤ 11-name table; build
+  carries ``charmlint`` + ``quick_pack``); a recorded LLM trace
+  would add wire-format coverage but no behavioural coverage the
+  unit tests don't already give.
+
+### What this phase is *not*
+
+- **Not a generic plug-in framework for tool curation.**  We
+  ship five hand-curated phases; we don't build a registry that
+  third-party packages plug new phases into.
+- **Not a change to ``InferenceSnapProvider.max_tools``.**  The
+  12-tool cap stays.  This phase is about picking the *right*
+  ≤12 tools, not lifting the cap.
+- **Not a tool-routing / sub-agent feature.**  The autonomous
+  loop still has access to all phases over time as the work-
+  queue task category shifts.  This phase is just the per-turn
+  filter.
+
+**Exit criteria:** ``_CORE_TOOL_NAMES`` is gone; the build /
+debug / deploy / research / demo phases are defined and tested;
+the demo dry run that oscillated on YAML errors no longer does
+because ``charmlint`` is in the build set; ``CANTRIP_TOOL_PHASE``
+override works; ``/cost`` (or equivalent) shows the active phase.
+
+---
+
 ## Completed Milestones
 
 Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROADMAP.md).
@@ -15356,6 +15910,10 @@ Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROA
 | M83: Pause-and-Edit Research | 83 ✓ | Written decision (ship / defer / drop) on whether Cantrip's hard cancel should soften into a pausable, editable mid-turn affordance; verdict is *defer*, with queue-next-instruction sketched as the leaner follow-up shape against three named revisit triggers |
 | M86: K8s/kubectl Research | 86 ✓ | Written decision (typed tool, skill expansion, or stay-as-is) on whether the agent should grow first-class kubectl support for diagnostics and recovery paths the ``fix-broken-juju-k8s`` skill currently escalates to the user |
 | M91: Canonical/skills Adoption | 91 ✓ | Four upstream 12-factor scripts (framework detect, rock-contract check, env-key inspect, preflight targets) ship as Cantrip tools with attribution and tests; ``twelve-factor`` skill body adopts the upstream checkpoint workflow and handoff payload; framework-specific contract tables inlined into the charm and rock skill bodies |
+| M92: Skill-derived Lint Rules | 92 ✓ | Six deterministic helpers — action-handler coverage, config-option coverage, charm-library semver, relation-data missing-guards, Pebble layer validation, harness-call inventory plus scenario-test event-shape coverage — ship as charmlint rule modules or standalone Cantrip tools, derived from existing skill bodies; affected skills shed their rule-recitation passages |
+| M92: Review Follow-Ups | 92 ✓ | Deterministic pre-scan finished and wired into ``analyse_framework``; ``charmlint`` / ``quickpack`` validation hardened with regression tests; flaky fixed-sleep cases replaced by polling helpers and coverage threshold enforced in ``make check``; eval corpus broadened across machine and k8s substrates with a cheap CI lane; docs surface ``audit``, ``permissions``, Web UI, CLI mode, print mode, onboarding, and env-var setup as discoverable features |
+| M94: K8s Diagnostics Binary | 94 ✓ | A read-only ``cantrip-kdiag`` Go binary powers a first-class typed tool that diagnoses the common pod-layer failure modes, with tests locking the JSON report contract and the Python integration |
+| M96: Chiselled Rocks | 96 ✓ | Cantrip recognises when a workload suits a chiselled-Ubuntu rock, generates and explains that path, and cleanly falls back to the fuller-base path when it does not |
 | M99: Goal Lifecycle | 99 ✓ | `/pause` and `/resume` toggle the autonomous loop mid-run; `cantrip resume` preserves `/budget` caps; user-prose objective is a first-class session field surfaced via `/goal`; status bar projects running / paused / done / blocked / budget-limited |
 | M100: Wait For | 100 ✓ | Typed-predicate ``wait_for`` tool with file/process/port/command/juju-app waits, hard timeouts, policy-gated commands, and reference docs; streaming-stream monitoring stays deferred behind named triggers |
 | M101: ops-tracing Refresh | 101 ✓ | System prompt, subagent guidance, and the ``_inject_ops_tracing`` injection helper teach the modern ``ops_tracing.Tracing(charm, "<rel>")`` constructor instead of the long-removed ``setup`` shorthand; a regression test exercises the recipe against the live PyPI ``ops-tracing`` API |
@@ -15364,6 +15922,7 @@ Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROA
 | M104: Short-Session Mode | 104 ✓ | Providers below ~16 K context auto-flip into a short-session mode: 0.50 compaction threshold, ledger-and-drop strategy that collapses past tool calls into one-line history entries, per-turn ephemeral conversation that resets to ``system + ledger + new user message``, and a ``[short-session]`` UI chip; frontier providers keep the existing rich-history flow unchanged |
 | M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
 | M107: Tool-Call Failure Cap | 107 ✓ | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; one round before the cap a SYSTEM message nudges the model to change approach; a "tool retrying (n/cap)" status-bar badge surfaces the streak live; regression tests pin the shape |
+| M110: Phase-Aware Tool Curation | 110 ✓ | The static ``_CORE_TOOL_NAMES`` keep-list is replaced by a curator that picks the right tool slice for the active workflow phase (build / debug / deploy / research); inference-snap providers no longer need to drop ``quick_pack`` / ``charmlint`` / ``run_command`` to fit the 12-tool budget when they're load-bearing for the current phase; an env-var override lets operators pin a custom set; tests pin each phase's expected tool list |
 
 ---
 
