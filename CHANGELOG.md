@@ -4,6 +4,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Tests
+- **Phase 93.5 — advanced controllers and automation workflows.**  Added
+  `tests/integration/test_controllers_automation.py` (78 tests) covering
+  MCPController lifecycle and elicitation forwarding, ArenaController
+  begin/pick flows, TriageController start/stop/retriage, ExecutorController
+  pause/resume seam, WatcherController event routing and no-model fallback,
+  git automation (`auto_commit` message/trailer logic, `git_branch`
+  create/slugify/current/build-PR-body) in real repos, provider failover with
+  FlakyProvider, and an end-to-end triage→confirm→build improvement path.
 ### Added
 - **Kubernetes pod-layer diagnostics tool (Phase 94).**  A new `k8s_diagnostics`
   tool backed by a small read-only Go binary (`cantrip-kdiag`) gives the agent
