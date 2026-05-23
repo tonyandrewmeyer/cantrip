@@ -13,8 +13,11 @@ env:
 
 jobs:
   warden:
-    # Skip fork PRs: WARDEN_ANTHROPIC_API_KEY is exposed to the runner.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Skip fork PRs and dependabot PRs: WARDEN_ANTHROPIC_API_KEY is not
+    # exposed to either (forks for security, dependabot by GitHub policy).
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

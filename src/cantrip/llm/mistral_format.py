@@ -64,8 +64,7 @@ def rewrite_for_mistral(messages: list[Message]) -> list[Message]:
                 j += 1
 
             calls_payload = [
-                {"name": tc.name, "arguments": tc.arguments, "id": tc.id}
-                for tc in msg.tool_calls
+                {"name": tc.name, "arguments": tc.arguments, "id": tc.id} for tc in msg.tool_calls
             ]
             tool_calls_marker = (
                 f"{_TOOL_CALLS_OPEN}"

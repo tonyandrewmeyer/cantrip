@@ -13,10 +13,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from cantrip.llm.base import Chunk, Message, Response, Role, ToolCall, ToolResult
+from cantrip.llm.base import Message, Role, ToolCall, ToolResult
 from cantrip.llm.inference_snap import InferenceSnapProvider, _detect_message_format
 from cantrip.llm.mistral_format import parse_mistral_tool_call_content, rewrite_for_mistral
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,7 +34,7 @@ def _make_provider(snap_name: str, *, model: str = "test-model") -> InferenceSna
         return InferenceSnapProvider(
             snap_name=snap_name,
             model=model,
-            base_url=f"http://test:8346/v1",
+            base_url="http://test:8346/v1",
         )
 
 
@@ -66,7 +65,9 @@ class TestRewriteForMistral:
             Message(
                 role=Role.ASSISTANT,
                 content="",
-                tool_calls=[ToolCall(id="tc1", name="get_weather", arguments={"location": "Paris"})],
+                tool_calls=[
+                    ToolCall(id="tc1", name="get_weather", arguments={"location": "Paris"})
+                ],
             ),
             Message(
                 role=Role.TOOL,
@@ -492,9 +493,7 @@ class TestMessageFormatEnvVar:
         provider = _make_provider("qwen3-14b")
         assert provider._message_format == "openai"
 
-    def test_unrecognised_env_value_logs_warning_and_falls_back(
-        self, monkeypatch, caplog
-    ):
+    def test_unrecognised_env_value_logs_warning_and_falls_back(self, monkeypatch, caplog):
         monkeypatch.setenv("CANTRIP_MESSAGE_FORMAT", "llama")
         with caplog.at_level("WARNING"):
             provider = _make_provider("mistral-nemo-12b")
@@ -538,7 +537,7 @@ class TestMistralWireFormatComplete:
 
         captured: dict = {}
 
-        async def fake_post(url, *, json=None, **_kw):
+        async def fake_post(_url, *, json=None, **_kw):
             captured.update(json or {})
             return self._fake_complete_response()
 
@@ -549,7 +548,9 @@ class TestMistralWireFormatComplete:
             Message(
                 role=Role.ASSISTANT,
                 content="",
-                tool_calls=[ToolCall(id="tc1", name="get_weather", arguments={"location": "Paris"})],
+                tool_calls=[
+                    ToolCall(id="tc1", name="get_weather", arguments={"location": "Paris"})
+                ],
             ),
             Message(
                 role=Role.TOOL,
@@ -570,7 +571,7 @@ class TestMistralWireFormatComplete:
 
         captured: dict = {}
 
-        async def fake_post(url, *, json=None, **_kw):
+        async def fake_post(_url, *, json=None, **_kw):
             captured.update(json or {})
             return self._fake_complete_response()
 
@@ -611,7 +612,7 @@ class TestMistralWireFormatComplete:
 
         captured: dict = {}
 
-        async def fake_post(url, *, json=None, **_kw):
+        async def fake_post(_url, *, json=None, **_kw):
             captured.update(json or {})
             return self._fake_complete_response()
 
@@ -751,7 +752,10 @@ class TestInboundParserOnComplete:
             request=httpx.Request("POST", "http://test:8346/v1/chat/completions"),
             json={
                 "choices": [
-                    {"finish_reason": "stop", "message": {"role": "assistant", "content": raw_content}}
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": raw_content},
+                    }
                 ],
                 "usage": {},
             },
@@ -813,13 +817,9 @@ class TestMistralWireFormatStream:
         provider = self._make_mistral_provider()
 
         # Build the SSE JSON properly so inner quotes in the call JSON are escaped.
-        raw_call = json.dumps(
-            [{"name": "write_file", "arguments": {"path": "f.py"}, "id": "wf1"}]
-        )
+        raw_call = json.dumps([{"name": "write_file", "arguments": {"path": "f.py"}, "id": "wf1"}])
         content_text = f"[TOOL_CALLS]{raw_call}[/TOOL_CALLS]"
-        content_line = "data: " + json.dumps(
-            {"choices": [{"delta": {"content": content_text}}]}
-        )
+        content_line = "data: " + json.dumps({"choices": [{"delta": {"content": content_text}}]})
 
         sse_lines = [
             content_line,
@@ -854,7 +854,11 @@ class TestMistralWireFormatStream:
                     {
                         "delta": {
                             "tool_calls": [
-                                {"index": 0, "id": "srv1", "function": {"name": "juju", "arguments": "{"}}
+                                {
+                                    "index": 0,
+                                    "id": "srv1",
+                                    "function": {"name": "juju", "arguments": "{"},
+                                }
                             ]
                         }
                     }
