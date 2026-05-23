@@ -1,3 +1,6 @@
+# cantrip-kdiag built binary (built by: go build -o cantrip-kdiag ./cmd/cantrip-kdiag/)
+src/cantrip-kdiag/cantrip-kdiag
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
