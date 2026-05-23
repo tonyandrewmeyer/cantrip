@@ -7,17 +7,20 @@ permissions:
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 env:
   WARDEN_ANTHROPIC_API_KEY: ${{ secrets.WARDEN_ANTHROPIC_API_KEY }}
 
 jobs:
   warden:
-    # Skip fork PRs and dependabot PRs: WARDEN_ANTHROPIC_API_KEY is not
+    # On PRs: skip forks and dependabot — WARDEN_ANTHROPIC_API_KEY is not
     # exposed to either (forks for security, dependabot by GitHub policy).
+    # Manual dispatches always run (the person dispatching has secret access).
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository
-      && github.actor != 'dependabot[bot]'
+      github.event_name == 'workflow_dispatch'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
