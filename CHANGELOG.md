@@ -4,6 +4,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Tests
+- **Phase 93.4 — isolation and security system tests.**  Added
+  `tests/integration/test_isolation_security.py` (56 tests) covering sandbox
+  argv construction for all three mechanisms (bwrap/unshare/none), path-traversal
+  and symlink-escape boundary checks, worktree lifecycle and git isolation
+  (allocate/release, isolation between tasks, orphan reaping, failure cleanup),
+  permission-boundary flows (plan-mode overlay, destructive-command gates,
+  category-scoped per-agent overlays), and GovernancePolicy enforcement.
+  These act as regression guards for Phase 49's sandbox promise.
+- **Phase 93.5 — advanced controllers and automation workflows.**  Added
+  `tests/integration/test_controllers_automation.py` (78 tests) covering
+  MCPController lifecycle and elicitation forwarding, ArenaController
+  begin/pick flows, TriageController start/stop/retriage, ExecutorController
+  pause/resume seam, WatcherController event routing and no-model fallback,
+  git automation (`auto_commit` message/trailer logic, `git_branch`
+  create/slugify/current/build-PR-body) in real repos, provider failover with
+  FlakyProvider, and an end-to-end triage→confirm→build improvement path.
+
 ### Changed
 - **Phase-aware tool curation (Phase 110).**  Tight-context providers
   (inference snaps cap the LLM's tool array at 12; short-session mode

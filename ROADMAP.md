@@ -1108,32 +1108,32 @@ All four bullets land in ``tests/integration/test_durability_resume.py``
 
 ### 93.4 High — Add isolation and security-oriented system tests
 
-- [ ] Add tests proving the sandbox/workspace/worktree boundaries hold under
+- [x] Add tests proving the sandbox/workspace/worktree boundaries hold under
   pressure: path traversal attempts, symlink escapes, out-of-tree writes,
   temporary-file leakage, and cleanup after cancellation/failure.
-- [ ] Add integration coverage for worktree lifecycle and git isolation:
+- [x] Add integration coverage for worktree lifecycle and git isolation:
   branch creation, temporary worktree setup/teardown, dirty-tree handling,
   merge/reconcile paths, and failure cleanup.
-- [ ] Add system tests around the policy/permission boundary so "plan mode",
+- [x] Add system tests around the policy/permission boundary so "plan mode",
   destructive-command gates, and category-scoped tool access are verified in
   real flows rather than only at unit granularity.
-- [ ] Treat these as regression guards for Phase 49's sandbox promise, not as
+- [x] Treat these as regression guards for Phase 49's sandbox promise, not as
   optional hardening.
 
 ### 93.5 Medium — Cover advanced controllers and automation workflows
 
-- [ ] Add integration coverage for the controller surfaces that currently have
+- [x] Add integration coverage for the controller surfaces that currently have
   little or no non-unit protection: ``MCPController``,
   ``ArenaController``, ``TriageController``, and the extracted
   ``ExecutorController`` / ``WatcherController`` seams where real message flow
   matters.
-- [ ] Add non-unit tests for git automation workflows: ``git_branch`` branch
+- [x] Add non-unit tests for git automation workflows: ``git_branch`` branch
   tracking, PR/open-feedback loops, and ``auto_commit`` message/trailer logic
   in realistic repositories rather than fake objects only.
-- [ ] Add end-to-end coverage for at least one **triage → confirm → build
+- [x] Add end-to-end coverage for at least one **triage → confirm → build
   improvement** path so the improvement workflow is tested across handoff
   boundaries, not only as isolated controller pieces.
-- [ ] Add provider-routing / failover tests so a primary-provider problem does
+- [x] Add provider-routing / failover tests so a primary-provider problem does
   not silently strand the work loop when a fallback is configured.
 
 ### 93.6 Medium — Broaden the higher-level test portfolio
