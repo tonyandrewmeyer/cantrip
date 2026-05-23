@@ -21,6 +21,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   git automation (`auto_commit` message/trailer logic, `git_branch`
   create/slugify/current/build-PR-body) in real repos, provider failover with
   FlakyProvider, and an end-to-end triage→confirm→build improvement path.
+### Added
+- **Mistral-format message rewriting for inference snaps (Phase 109).**
+  Cantrip's internal OpenAI-shaped conversation history (with separate
+  ``tool``-role messages) is now transparently converted to Mistral's
+  Tekken wire format before each call when an ``inference-snap`` provider
+  detects a Mistral family model.  ``mistral-nemo-*`` and ``magistral-*``
+  snap names auto-select the Mistral path; all other snaps keep the
+  existing OpenAI wire format.  A new ``CANTRIP_MESSAGE_FORMAT``
+  environment variable lets operators override the auto-detection (e.g.
+  for a custom Mistral fine-tune with a non-standard snap name).  A
+  client-side inbound parser handles the complementary direction: when
+  llama.cpp's ``--jinja`` fails to convert the model's native
+  ``[TOOL_CALLS]…[/TOOL_CALLS]`` output into structured ``tool_calls``,
+  Cantrip falls back to parsing the markers from ``content``.
+  (Phase 109 re-run smoke test — 109.3 — is deferred pending local GPU
+  hardware.)
 
 ### Changed
 - **Phase-aware tool curation (Phase 110).**  Tight-context providers
