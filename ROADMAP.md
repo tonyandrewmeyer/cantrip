@@ -1043,6 +1043,25 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
   export entrypoints such as transcript fence/export rendering and raw
   HTML/search-result parsers.  Keep this as an advisory or nightly lane rather
   than a default per-PR requirement unless it proves cheap enough.
+  *(Partial — Python parser side now covered.  Transcript fence/export
+  rendering already pinned by
+  ``tests/unit/transcript/test_transcript_properties.py`` (21 properties,
+  incl. ``_fence_for`` strictly longer than the worst inner backtick run
+  and a backtick-heavy tool-result fenced-safely check).  HTML and
+  search-result parsers covered by two new fuzz-style files using
+  Hypothesis with byte-oriented + adversarial-text strategies:
+  ``tests/unit/agent/tools/test_web_parser_properties.py`` (17 properties)
+  asserts ``_strip_html`` and the DDG-lite structured + regex-fallback
+  search parsers never raise, are deterministic, honour the
+  ``max_results`` cap, dedupe by URL, and skip empty fields / DDG
+  internal links; ``tests/unit/docs_index/test_crawl_parser_properties.py``
+  (9 properties) asserts ``extract_html`` is total on arbitrary bytes
+  (including broken UTF-8) and drops every recognised skip-tag opener,
+  and that ``parse_sitemap`` either succeeds with on-host URLs or
+  raises *only* ``xml.etree.ElementTree.ParseError`` — never an
+  unexpected exception type — for any byte input.  ``cargo-fuzz``
+  harnesses for ``charmlint-rs`` / ``quickpack-rs`` remain pending and
+  fit a dedicated Rust-tooling commit when the user wants it.)*
 
 ### What this phase is *not*
 

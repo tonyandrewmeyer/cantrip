@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Tests
+- **Phase 93.6 — HTML / sitemap parser fuzz properties.**  Added two
+  fuzz-style property test files using Hypothesis with byte-oriented
+  and adversarial-text strategies.
+  `tests/unit/agent/tools/test_web_parser_properties.py` (17 properties)
+  asserts `_strip_html` and the DDG-lite structured + regex-fallback
+  search parsers never raise on arbitrary input, are deterministic,
+  honour the `max_results` cap, deduplicate by URL, drop empty fields,
+  and suppress DDG-internal links in the fallback path.
+  `tests/unit/docs_index/test_crawl_parser_properties.py` (9 properties)
+  asserts `extract_html` is total on arbitrary bytes (including broken
+  UTF-8) and drops every recognised skip-tag opener; and that
+  `parse_sitemap` either returns on-host URLs or raises *only*
+  `xml.etree.ElementTree.ParseError` for any byte input, never an
+  unexpected exception type that would break documented callers.
+  Closes the Python parser side of Phase 93.6's targeted-fuzzing bullet;
+  the `cargo-fuzz` harnesses for `charmlint-rs` / `quickpack-rs` remain
+  pending as a Rust-tooling follow-up.
 - **Phase 93.6 — permission policy differential / metamorphic property
   tests.**  Added `tests/unit/agent/test_permissions_properties.py`
   (17 Hypothesis properties) closing the permission-enforcement slice of
