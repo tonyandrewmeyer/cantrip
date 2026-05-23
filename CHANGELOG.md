@@ -4,6 +4,34 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **`quickpack-rs` panic on invalid `.jujuignore` patterns.**
+  `JujuIgnore::new` used to `Regex::new(...).unwrap()` on the
+  rule-derived regex, so a glob whose expansion produced an invalid
+  character class (e.g. `[0-]` → regex `[0-]\z` with backwards range)
+  panicked the packer mid-run.  `Matcher::new` now returns
+  `Option<Self>` and `JujuIgnore::extend` silently drops patterns that
+  fail to compile, matching the existing fall-through behaviour for
+  empty / comment lines.  Found by the new `cargo-fuzz`
+  `fuzz_jujuignore_match` target on its first smoke run; regression
+  pinned by `pattern_producing_invalid_regex_is_skipped_silently` in
+  `src/quickpack-rs/src/jujuignore.rs`.
+
+### Added
+- **`cargo-fuzz` harnesses for `charmlint-rs` and `quickpack-rs`
+  (Phase 93.6).**  Each Rust crate gained a `fuzz/` subdirectory and a
+  thin `src/lib.rs` re-exporting the modules so the fuzz targets can
+  reach them (the binary's `main.rs` is unchanged).  `charmlint-rs`
+  carries `fuzz_lint_config_yaml` (random YAML → `LintConfig::from_yaml`)
+  and `fuzz_severity_from_str` (`Severity::from_str_loose`).
+  `quickpack-rs` carries `fuzz_jujuignore_match`
+  (`JujuIgnore::new` + `is_ignored`) and `fuzz_metadata_resolvers`
+  (`resolve_base` + `resolve_entrypoint` + `generate_metadata` over
+  arbitrary YAML mappings).  `design/FUZZING.md` documents prerequisites
+  (Rust nightly + `cargo install cargo-fuzz`), the per-target table,
+  and the advisory / nightly workflow.  `fuzz/target`, `fuzz/corpus`,
+  and `fuzz/artifacts` are git-ignored per crate.
+
 ### Tests
 - **Phase 93.6 — HTML / sitemap parser fuzz properties.**  Added two
   fuzz-style property test files using Hypothesis with byte-oriented

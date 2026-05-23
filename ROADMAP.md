@@ -1036,32 +1036,44 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
   ``arguments``, parser identity on marker-free and unclosed-marker
   content, parser fails safe on garbage payloads, and parser idempotence
   on the remainder.)*
-- [ ] Add **targeted traditional fuzzing** alongside the Hypothesis suite
+- [x] Add **targeted traditional fuzzing** alongside the Hypothesis suite
   where coverage-guided or byte-oriented exploration is higher leverage than
   property tests alone: start with ``cargo-fuzz`` harnesses for
   ``charmlint-rs`` / ``quickpack-rs``, then add a small set of Python parser /
   export entrypoints such as transcript fence/export rendering and raw
   HTML/search-result parsers.  Keep this as an advisory or nightly lane rather
   than a default per-PR requirement unless it proves cheap enough.
-  *(Partial — Python parser side now covered.  Transcript fence/export
-  rendering already pinned by
-  ``tests/unit/transcript/test_transcript_properties.py`` (21 properties,
-  incl. ``_fence_for`` strictly longer than the worst inner backtick run
-  and a backtick-heavy tool-result fenced-safely check).  HTML and
-  search-result parsers covered by two new fuzz-style files using
-  Hypothesis with byte-oriented + adversarial-text strategies:
+  *(Done — both lanes shipped.  Python parser side: transcript
+  fence/export rendering pinned by
+  ``tests/unit/transcript/test_transcript_properties.py`` (21 properties);
+  HTML / search-result parsers pinned by
   ``tests/unit/agent/tools/test_web_parser_properties.py`` (17 properties)
-  asserts ``_strip_html`` and the DDG-lite structured + regex-fallback
-  search parsers never raise, are deterministic, honour the
-  ``max_results`` cap, dedupe by URL, and skip empty fields / DDG
-  internal links; ``tests/unit/docs_index/test_crawl_parser_properties.py``
-  (9 properties) asserts ``extract_html`` is total on arbitrary bytes
-  (including broken UTF-8) and drops every recognised skip-tag opener,
-  and that ``parse_sitemap`` either succeeds with on-host URLs or
-  raises *only* ``xml.etree.ElementTree.ParseError`` — never an
-  unexpected exception type — for any byte input.  ``cargo-fuzz``
-  harnesses for ``charmlint-rs`` / ``quickpack-rs`` remain pending and
-  fit a dedicated Rust-tooling commit when the user wants it.)*
+  and ``tests/unit/docs_index/test_crawl_parser_properties.py`` (9
+  properties) using Hypothesis with byte-oriented + adversarial-text
+  strategies — the headline invariant is *the parser never raises* on
+  any byte input, with ``parse_sitemap`` further restricted to raising
+  *only* ``xml.etree.ElementTree.ParseError``.  Rust ``cargo-fuzz`` lane:
+  each crate gained a ``fuzz/`` subdirectory (per ``cargo +nightly fuzz
+  init``) plus a thin ``src/lib.rs`` that re-exports the modules so the
+  fuzz targets can reach them — the binary's ``main.rs`` is unchanged.
+  ``charmlint-rs/fuzz/`` carries ``fuzz_lint_config_yaml`` (random YAML
+  → ``LintConfig::from_yaml``) and ``fuzz_severity_from_str``
+  (``Severity::from_str_loose``).  ``quickpack-rs/fuzz/`` carries
+  ``fuzz_jujuignore_match`` (random patterns + path →
+  ``JujuIgnore::new`` + ``is_ignored``) and ``fuzz_metadata_resolvers``
+  (random YAML → ``resolve_base`` + ``resolve_entrypoint`` +
+  ``generate_metadata``).  ``design/FUZZING.md`` documents the
+  prerequisites, the per-target table, and the workflow.  ``fuzz/target``,
+  ``fuzz/corpus``, and ``fuzz/artifacts`` are git-ignored per crate.
+  The fuzz lane is advisory / nightly — not gated on every PR.  First
+  smoke run found and the team fixed one real panic:
+  ``JujuIgnore::new`` used to ``Regex::new(...).unwrap()`` on the
+  rule-derived regex, so a glob pattern whose expansion produced an
+  invalid character class (``[0-]`` → regex ``[0-]\z`` with backwards
+  range) panicked.  ``Matcher::new`` now returns ``Option<Self>`` and
+  ``extend`` silently drops patterns that fail to compile; the regression
+  is pinned by ``pattern_producing_invalid_regex_is_skipped_silently``
+  in ``src/quickpack-rs/src/jujuignore.rs``.)*
 
 ### What this phase is *not*
 

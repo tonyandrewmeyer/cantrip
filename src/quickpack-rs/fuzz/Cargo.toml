@@ -1,0 +1,29 @@
+[package]
+name = "quickpack-rs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_yaml = "0.9"
+
+[dependencies.quickpack-rs]
+path = ".."
+
+[[bin]]
+name = "fuzz_jujuignore_match"
+path = "fuzz_targets/fuzz_jujuignore_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_metadata_resolvers"
+path = "fuzz_targets/fuzz_metadata_resolvers.rs"
+test = false
+doc = false
+bench = false

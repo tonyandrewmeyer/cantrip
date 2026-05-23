@@ -133,14 +133,19 @@ struct Matcher {
 }
 
 impl Matcher {
-    fn new(invert: bool, only_dirs: bool, regex: &str) -> Self {
+    fn new(invert: bool, only_dirs: bool, regex: &str) -> Option<Self> {
         // Anchor at start to mirror Python's `re.match` semantics;
-        // the `\z` in rule_to_regex already anchors the end.
-        Self {
+        // the `\z` in rule_to_regex already anchors the end.  A
+        // user-supplied glob pattern can produce a regex that fails
+        // to compile (e.g. `[0-]` becomes an invalid character-class
+        // range); skip those rather than panicking so a single bad
+        // pattern in `.jujuignore` doesn't take the packer down.
+        let compiled = Regex::new(&format!("(?s)^{regex}")).ok()?;
+        Some(Self {
             invert,
             only_dirs,
-            compiled: Regex::new(&format!("(?s)^{regex}")).unwrap(),
-        }
+            compiled,
+        })
     }
 
     fn matches(&self, path: &str, is_dir: bool) -> &'static str {
@@ -205,7 +210,9 @@ impl JujuIgnore {
             }
 
             let regex = rule_to_regex(&rule);
-            self.matchers.push(Matcher::new(invert, only_dirs, &regex));
+            if let Some(matcher) = Matcher::new(invert, only_dirs, &regex) {
+                self.matchers.push(matcher);
+            }
         }
     }
 
@@ -254,6 +261,22 @@ mod tests {
     fn ignore(patterns: &[&str]) -> JujuIgnore {
         let owned: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
         JujuIgnore::new(Some(&owned))
+    }
+
+    #[test]
+    fn pattern_producing_invalid_regex_is_skipped_silently() {
+        // `[0-]` is a glob bracket expression that expands to a regex
+        // character class whose range is backwards (`0` > `]`).  The
+        // matcher constructor used to `unwrap` the resulting Err and
+        // crash the process; now the bad pattern is dropped silently
+        // and the rest of the ruleset keeps working.  Regression
+        // pinned by `fuzz/fuzz_targets/fuzz_jujuignore_match.rs`.
+        let ji = ignore(&["[0-]", "*.pyc"]);
+        // The well-formed pattern still works.
+        assert!(ji.is_ignored("module.pyc", false));
+        // The malformed pattern produced no matcher, so paths that
+        // would otherwise match it are kept.
+        assert!(!ji.is_ignored("anything", false));
     }
 
     #[test]
