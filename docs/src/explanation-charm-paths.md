@@ -8,6 +8,7 @@ breadcrumb_label: "The three charm paths"
 on_this_page:
   - { anchor: "why-three", label: "Why three paths?" }
   - { anchor: "path-a", label: "Path A: 12-factor PaaS" }
+  - { anchor: "chiselled-rocks", label: "Chiselled rocks" }
   - { anchor: "path-b", label: "Path B: Custom applications" }
   - { anchor: "path-c", label: "Path C: Infrastructure" }
   - { anchor: "selection", label: "How the agent chooses" }
@@ -46,11 +47,31 @@ under two minutes from description to active/idle.
 
 ### What you get
 
-- OCI image via Rockcraft
+- OCI image via Rockcraft — chiselled (smaller, tighter) when the workload passes the eligibility check, or a fuller Ubuntu base when it does not
 - paas-charm base with framework-specific configuration
 - Ingress integration
 - COS integration (traces, metrics)
 - Config options mapped from environment variables
+
+{#chiselled-rocks}
+### Chiselled rocks
+
+Cantrip can generate chiselled rocks for Path A workloads — OCI images
+that contain only the filesystem slices the workload actually needs,
+with no shell, no apt, and no unneeded OS utilities. The result is a
+smaller image with a reduced attack surface and faster pulls.
+
+Before generating a chiselled rock, Cantrip runs the
+`check_chisel_eligibility` tool to verify that the workload does not
+invoke a shell at runtime, does not call apt at runtime, and has no
+opaque vendor install scripts. If the workload passes, Cantrip keeps
+the default `base: bare` emitted by `rockcraft init` and adds a short
+explanation to `rockcraft.yaml`. If the workload does not pass, Cantrip
+falls back to `base: ubuntu@24.04` and explains why.
+
+The escape hatch is always one line: change `base: bare` to
+`base: ubuntu@24.04` in `rockcraft.yaml` to get the full Ubuntu
+filesystem back.
 
 {#path-b}
 ## Path B: Custom applications
