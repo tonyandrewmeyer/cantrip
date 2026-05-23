@@ -5,6 +5,17 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Tests
+- **Phase 93.6 — queue/task property tests.**  Added
+  `tests/unit/agent/test_queue_properties.py` (29 Hypothesis properties)
+  pinning the `WorkQueue` / `AgentTask` invariants: auto-assigned ID shape +
+  uniqueness, add/duplicate-rejection atomicity (single and batch), the
+  deep-copy contract on `all_tasks()`, status-counter consistency across
+  random transition sequences, `set_done` / `set_failed` / `set_blocked` /
+  `unblock` payload writes, `all_ready` PENDING-only + dependency-gating +
+  insertion-order + `next_ready` agreement + `limit=` truncation,
+  cancel-as-resolved unblocking of dependents, `clear` / `cancel` /
+  `move_to_front` shape, and the `WorkflowPhase.from_category` mapping
+  (total, deterministic, None→BUILD).
 - **Phase 93.5 — advanced controllers and automation workflows.**  Added
   `tests/integration/test_controllers_automation.py` (78 tests) covering
   MCPController lifecycle and elicitation forwarding, ArenaController

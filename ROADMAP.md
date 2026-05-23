@@ -984,6 +984,15 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
 - [ ] Where a "fuzz" or property style makes more sense than examples
   (workspace paths, provider payload normalisation, queue/task invariants),
   prefer that style over adding another list of hand-authored cases.
+  *(Partial — queue/task invariants now covered by
+  ``tests/unit/agent/test_queue_properties.py`` (29 Hypothesis properties
+  across seven classes: ``AgentTask`` auto-ID, add/duplicate-rejection
+  atomicity, deep-copy snapshots, counter consistency, status-transition
+  payload, dependency-gating + readiness ordering + cancel-as-resolved,
+  cancel/clear/move_to_front shape, and the ``WorkflowPhase.from_category``
+  mapping).  Workspace paths and provider payload normalisation are still
+  pending — they fit the same style and should follow the same
+  ``test_*_properties.py`` convention.)*
 - [ ] Add **targeted traditional fuzzing** alongside the Hypothesis suite
   where coverage-guided or byte-oriented exploration is higher leverage than
   property tests alone: start with ``cargo-fuzz`` harnesses for
