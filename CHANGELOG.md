@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Tests
+- **Phase 93.6 — workspace path + Mistral payload property tests.**  Added
+  `tests/unit/agent/tools/test_path_aware_properties.py` (10 Hypothesis
+  properties) pinning `PathAwareTool._resolve_path`: result is always
+  absolute, safe relative paths land at `base_path / path`, resolution is
+  idempotent, `..`-traversal is rejected across relative / absolute /
+  deeply-nested forms, and `base_path=None` is permissive.  Added
+  `tests/unit/llm/test_mistral_format_properties.py` (10 properties)
+  pinning `rewrite_for_mistral` / `parse_mistral_tool_call_content`: no
+  input mutation, length never grows, folded assistants carry the marker
+  with empty `tool_calls`, non-assistant messages pass through unchanged,
+  the rewrite→parse round-trip recovers the original `name` / `arguments`,
+  the parser is identity on marker-free and unclosed-marker content, fails
+  safe on garbage payloads, and is idempotent on the remainder.  Closes
+  the workspace-path and provider-payload slices of Phase 93.6's
+  fuzz/property bullet, alongside the earlier queue/task work.
 - **Phase 93.6 — queue/task property tests.**  Added
   `tests/unit/agent/test_queue_properties.py` (29 Hypothesis properties)
   pinning the `WorkQueue` / `AgentTask` invariants: auto-assigned ID shape +

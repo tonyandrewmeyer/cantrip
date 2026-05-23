@@ -981,18 +981,29 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
 - [ ] Extend accessibility regression coverage beyond the current Web-only
   smoke test where feasible, and at minimum document the deliberate boundary
   if TUI accessibility remains manual.
-- [ ] Where a "fuzz" or property style makes more sense than examples
+- [x] Where a "fuzz" or property style makes more sense than examples
   (workspace paths, provider payload normalisation, queue/task invariants),
   prefer that style over adding another list of hand-authored cases.
-  *(Partial — queue/task invariants now covered by
-  ``tests/unit/agent/test_queue_properties.py`` (29 Hypothesis properties
-  across seven classes: ``AgentTask`` auto-ID, add/duplicate-rejection
-  atomicity, deep-copy snapshots, counter consistency, status-transition
-  payload, dependency-gating + readiness ordering + cancel-as-resolved,
-  cancel/clear/move_to_front shape, and the ``WorkflowPhase.from_category``
-  mapping).  Workspace paths and provider payload normalisation are still
-  pending — they fit the same style and should follow the same
-  ``test_*_properties.py`` convention.)*
+  *(Done — three new ``test_*_properties.py`` files cover the called-out
+  slices: ``tests/unit/agent/test_queue_properties.py`` (29 properties)
+  pins the ``WorkQueue`` / ``AgentTask`` invariants (auto-ID,
+  add/duplicate-rejection atomicity, deep-copy snapshots, counter
+  consistency, status-transition payloads, dependency-gating with
+  insertion-order, cancel-as-resolved, clear/move_to_front shape, and the
+  ``WorkflowPhase.from_category`` mapping);
+  ``tests/unit/agent/tools/test_path_aware_properties.py`` (10 properties)
+  pins ``PathAwareTool._resolve_path`` — always-absolute return,
+  base-path containment, safe-relative-to-``base_path / path``,
+  idempotence, ``..``-traversal rejection across relative / absolute /
+  deeply-nested forms, and the permissive ``base_path=None`` branch;
+  ``tests/unit/llm/test_mistral_format_properties.py`` (10 properties)
+  pins ``rewrite_for_mistral`` / ``parse_mistral_tool_call_content`` —
+  no input mutation, length-never-grows, folded assistants carry the
+  marker with empty ``tool_calls``, non-assistant passthrough, the full
+  rewrite→parse round-trip recovers the original ``name`` /
+  ``arguments``, parser identity on marker-free and unclosed-marker
+  content, parser fails safe on garbage payloads, and parser idempotence
+  on the remainder.)*
 - [ ] Add **targeted traditional fuzzing** alongside the Hypothesis suite
   where coverage-guided or byte-oriented exploration is higher leverage than
   property tests alone: start with ``cargo-fuzz`` harnesses for
