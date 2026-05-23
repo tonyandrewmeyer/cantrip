@@ -8,9 +8,9 @@ this file is the artefact each sweep reads and re-stamps.
 
 **Current cadence:** quarterly.
 
-**Last audit:** 2026-04-26.
+**Last audit:** 2026-05-19.
 
-**Next audit due:** 2026-07-26 — set a `/schedule` reminder when this
+**Next audit due:** 2026-08-19 — set a `/schedule` reminder when this
 file is next opened so the cadence does not rely on someone
 remembering.
 
@@ -18,6 +18,9 @@ remembering.
 
 - **Not fired** — the original revisit trigger has not happened; the
   deferral stands.
+- **Trigger fired — not yet assessed** — the trigger condition appears
+  to have been met, but the catalogue sweep (84.1) does not re-evaluate;
+  the 84.2 pass should confirm and open a follow-up phase or task.
 - **Fired** — the trigger has happened; a follow-up phase or task is
   linked in the *Notes* column.  Move the row to a "Resolved"
   section once the follow-up lands.
@@ -50,10 +53,34 @@ remembering.
 | 36 (Claude Code best practices) | Re-run the source-repo review | Anthropic ships a feature Cantrip's harness genuinely cannot replicate (e.g. cross-session multi-agent collaboration with shared write surface — Agent Teams maturing out of experimental), **or** a Cantrip user reports concrete frustration mapping onto a recommendation rejected in Phase 36 | Not fired | Source repo (`shanraisshan/claude-code-best-practice`) updates often; current recommendations triaged April 2026 |
 | 72.3 (Provider roles) | Quantified benchmark of local EmbeddingGemma snap vs Voyage on the cantrip docs index, deciding whether to default the local snap or keep it a power-user opt-in | Target run 2026-05-11 (snap has bedded in ~2 weeks), **or** a user reports cost concerns with Voyage on a real `@docs` workload, **or** Voyage rate-limit / outage forces an opt-in fallback path | Not fired | Script lives at `scripts/embed_benchmark.py`; emits `design/EMBED_BENCHMARK.md`. Default-to-local trigger: top-3 URL overlap ≥ 70% AND wall-clock within 3× of Voyage. Token counts not captured today — would need `--json` on `cantrip docs index` first |
 
+## New entries — 2026-05-19 sweep
+
+Twelve deferrals not present in the 2026-04-26 table were found in this
+sweep.  Three (47.4, 72.2, 72.3) have trigger conditions that appear to
+have fired; they are marked for 84.2 re-evaluation rather than resolved
+here, since 84.1 is a catalogue-only pass.  One resolved item (55.7) is
+noted below.
+
+| Phase / Sub-task | What was deferred | Revisit trigger | Status (2026-05-19) | Notes |
+|---|---|---|---|---|
+| 35.3 (Charmhub trusted publishing) | OIDC/trusted-publishing release workflow — generate a release workflow that uses OIDC identity from GitHub Actions with a dedicated deployment environment | Charmhub adds OIDC / trusted-publishing support | Not fired | Long-lived token isolation path was shipped instead; OIDC path opens when the feature lands upstream. `ROADMAP_ARCHIVE.md` ~3343 |
+| 39.4 (ACP research) | ACP (Agent Client Protocol) integration — either as a new transport for subagent calls (Option B) or as a remote-control surface letting an editor drive Cantrip (Option C) | Option B: a user asks for it, subagent evaluation scores indicate tool-heavier agents would benefit, **or** the ACP remote transport stabilises. Option C: a non-trivial number of users want to drive Cantrip from an editor | Not fired | Decision and triggers documented in `design/ACP_RESEARCH.md`. `ROADMAP_ARCHIVE.md` ~10121 |
+| 47.4 (Cost guardrails) | Mid-flight race-mode budget accounting — counting streaming tokens as they arrive so the race downgrade fires during a task rather than only on completion | Phase 41.6 streaming-usage aggregation lands | Trigger fired — not yet assessed | Phase 41.6 shipped (`ROADMAP_ARCHIVE.md` ~3815); mid-flight accounting not yet implemented per code search. 84.2 should confirm and open a follow-up. `ROADMAP_ARCHIVE.md` ~4935 |
+| 72.1 (Indexed docs) | `cantrip docs refresh` subcommand with `If-Modified-Since` honouring to avoid a full re-crawl on incremental updates | The corpus size makes the full re-crawl painful in practice (renamed internally as Phase 72.1b) | Not fired | Full re-index is already incremental by `sha256(url\|ordinal)` hash; the `If-Modified-Since` path adds an HTTP-level skip before parsing. `ROADMAP_ARCHIVE.md` ~11727 |
+| 72.2 (Context providers) | `@terminal` context provider — injects the last shell-mode block into the prompt via the `@`-mention registry | Phase 69.3 shell-mode output buffer exists | Trigger fired — not yet assessed | Phase 69.3 shipped (shell-mode captures output to the transcript, `ROADMAP_ARCHIVE.md` ~14474), but `@terminal` was never wired into `context_providers_builtin`. 84.2 should confirm and open a follow-up. `ROADMAP_ARCHIVE.md` ~11781 |
+| 72.3 (Model roles) | `sentence-transformers` offline fallback for the embed provider role — lets sessions without a remote embed key still serve `@docs` at reduced accuracy | A concrete caller exercises the embed path with no remote embed provider configured, **or** Phase 72.1 `@docs` explicitly needs it | Trigger fired — not yet assessed | Phase 72.1 `@docs` has shipped; sessions without a remote embed provider see `RoleNotConfigured` and skip `@docs` registration. 84.2 should confirm whether the fallback is now warranted. `ROADMAP_ARCHIVE.md` ~11825 |
+| 73.4 (Declarative retry) | Hook-driven custom check types for structured retry validators (v1 only ships built-in check types `file_exists` and `json_schema`) | A real consumer asks for a hook-driven check type | Not fired | Built-in pair already covers known retry shapes. `ROADMAP.md` ~413 |
+| 74 (Charm documentation) | Multi-version docs per Charmhub channel (e.g. `latest/edge`, `2/stable`) — a separate generated doc set per channel | A real demand surfaces for channel-differentiated documentation | Not fired | Charm docs are currently channel-agnostic; Charmhub channel versioning is a Sphinx/readthedocs concern not yet reaching Cantrip. `ROADMAP_ARCHIVE.md` ~8392 |
+| 87 (COS follow-on — Parca/Pyroscope) | Parca / Pyroscope profiling tooling — a typed `parca_query_tool` / `pyroscope_query_tool` (flame graph → PNG + hot-path caption) mirroring `TempoWaterfallTool`, plus skill guidance | Any one of: (1) a charm in a real session shows hook timings the agent cannot explain without a profiler; (2) an SLO breach after Phase 87.4 ships makes "show me where the time went" the natural next step; (3) a user explicitly asks; (4) Parca/Pyroscope becomes the default profiler in the canonical COS stack | Not fired | Decision and full trigger specification in `design/PROFILING.md`. `ROADMAP_ARCHIVE.md` ~9508 |
+| 93.2a (Failure-injection tests) | Deterministic integration-test coverage for Juju-command failures — a controllable stand-in for `juju status` against a bad model | A deterministic Juju stand-in is available for CI, **or** a gap surfaces that the existing live-juju `test_e2e_tools.py` cases do not cover | Not fired | Live-juju e2e cases already cover `juju status` against a bad model; no deterministic stand-in was added. `ROADMAP.md` ~1036 |
+| 93.2b (Failure-injection tests) | Explicit assertion that cleanup hooks run on final task failure — an integration test confirming the hook fires even when every attempt fails | Phase 93.5 git-automation work ships, bringing the hook-surface plumbing where this assertion naturally lives | Not fired | The cleanup-hook surface belongs with 93.5's git-automation scope. `ROADMAP.md` ~1036 |
+| 105.6 (InferenceSnap in-flight changes) | `InferenceSnapProvider` httpx timeout of 1 200 s is a hard-coded stop-gap — it should become operator-tunable rather than baked in at build time | Phase 102 streaming-reconnect work lands, providing the right surface for an operator-tunable timeout | Not fired | Hard-coded to avoid blocking long model responses during the Phase 105.1 smoke; Phase 102 is the right place to expose the knob. `ROADMAP.md` ~1693 |
+
 ## Resolved deferrals
 
-*(none yet — move "fired" rows here when the follow-up phase lands,
-keep one line per row for traceability.)*
+| Phase / Sub-task | What was deferred | Resolution |
+|---|---|---|
+| 55.7 (Path B scanner) | Full implementation of the deterministic Path B codebase pre-scanner (`src/cantrip/agent/tools/_scan.py`) — shipped as a stub in Phase 55.7 pending a real Path B user demonstrating the round-trip cost | Implementation landed in a later phase; `_scan.py` grew to 658 lines with 100% test coverage (`tests/unit/test_scan.py`). No further action needed. |
 
 ## Sweep procedure
 
