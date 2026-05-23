@@ -1375,38 +1375,40 @@ with a fuller Ubuntu base for debugging or runtime reasons.
 
 ### 96.1 Eligibility rules
 
-- [ ] Write the deterministic "is chiselled a good fit?" rubric:
+- [x] Write the deterministic "is chiselled a good fit?" rubric:
   12-factor or otherwise simple container workloads, no shell-dependent
   runtime, no apt-at-runtime behaviour, package slices available, and a
   workable debug / support story.
-- [ ] Record explicit blockers: workloads that expect a shell or
+- [x] Record explicit blockers: workloads that expect a shell or
   ad-hoc OS utilities in production, opaque vendor install scripts,
   packages without the needed slices, or charm logic that would make the
   minimised filesystem shape too brittle.
-- [ ] Decide whether the eligibility logic lives purely in skill /
+- [x] Decide whether the eligibility logic lives purely in skill /
   prompt guidance or deserves a small deterministic helper next to the
-  existing Rockcraft tooling.
+  existing Rockcraft tooling. **Decision:** deterministic helper
+  (`chisel_eligibility.py`) alongside `rock_contract.py`, exposed as the
+  `check_chisel_eligibility` tool.
 
 ### 96.2 Generation and escape hatches
 
-- [ ] Extend Rockcraft generation guidance so Cantrip can emit
+- [x] Extend Rockcraft generation guidance so Cantrip can emit
   chiselled-rock examples when the workload passes the rubric, including
   a short explanation to the user about *why* the smaller base is safe
   here.
-- [ ] Preserve a clear escape hatch back to ordinary Ubuntu bases when
+- [x] Preserve a clear escape hatch back to ordinary Ubuntu bases when
   the workload needs shell tooling, the user prioritises operability
   over footprint, or the chiselled build fails for a slice-availability
   reason.
-- [ ] Ensure the generated charm and rock wiring still compose cleanly
+- [x] Ensure the generated charm and rock wiring still compose cleanly
   with Pebble plans, health checks, and the existing 12-factor /
   custom-app flows.
 
 ### 96.3 Validation and user-facing docs
 
-- [ ] Add tests / fixtures proving Cantrip's chiselled output still
+- [x] Add tests / fixtures proving Cantrip's chiselled output still
   launches correctly and keeps the expected runtime files, entrypoints,
   and libraries.
-- [ ] Update the relevant user-facing docs and examples so
+- [x] Update the relevant user-facing docs and examples so
   "Cantrip can build smaller, tighter rocks when appropriate" is a
   visible feature rather than an invisible prompt tweak.
 

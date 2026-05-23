@@ -4,6 +4,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Chiselled rocks — chisel-aware Rockcraft output (Phase 96).**
+  Cantrip now understands Canonical's chiselled-Ubuntu packaging story
+  for 12-factor rocks.  A new deterministic helper
+  (`cantrip.agent.tools.chisel_eligibility`) implements the eligibility
+  rubric: eligible workloads are 12-factor apps with no shell-at-runtime
+  invocations, no apt/dpkg calls, and no opaque vendor install scripts;
+  blockers are flagged with file-level evidence.  The rubric is exposed
+  as the `check_chisel_eligibility` tool (run after
+  `check_rock_contract`), which returns an eligibility verdict, any
+  blockers, advisories, and a rationale string ready to embed as a
+  comment in `rockcraft.yaml`.  The twelve-factor skill gains a
+  "Chiselled Rocks" section covering when to use the chiselled base,
+  how to generate a chiselled `rockcraft.yaml`, the one-line escape
+  hatch back to `ubuntu@24.04`, and Pebble / health-check composition.
+  44 new unit tests cover the rubric, the tool wrapper, and
+  representative typical workloads.
+
 ### Changed
 - **Phase-aware tool curation (Phase 110).**  Tight-context providers
   (inference snaps cap the LLM's tool array at 12; short-session mode
