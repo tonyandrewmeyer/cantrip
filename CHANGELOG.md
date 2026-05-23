@@ -5,6 +5,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Tests
+- **Phase 93.6 — transcript renderer differential / metamorphic property
+  tests.**  Added `tests/unit/transcript/test_transcript_properties.py`
+  (21 Hypothesis properties) pinning the export-shape and
+  transcript/event-consistency dimensions of Phase 93.6's
+  differential/metamorphic bullet: `_fence_for` returns a backtick
+  string strictly longer than the worst inner run; `render_message` is
+  deterministic, non-mutating, and respects `include_header`;
+  backtick-heavy tool-result content stays inside a safely-sized fence;
+  `render_markdown` is deterministic and always carries the top heading,
+  the `## Conversation` divider, a `### ROLE` line per input message,
+  and a single trailing newline; `render_jsonl` is deterministic, the
+  line count equals `messages + events + tasks + Σ subagent_messages`,
+  every line is valid JSON tagged with a `type` field, and the source
+  buckets emit in fixed order.  Empty data renders to the empty string.
 - **Phase 93.6 — workspace path + Mistral payload property tests.**  Added
   `tests/unit/agent/tools/test_path_aware_properties.py` (10 Hypothesis
   properties) pinning `PathAwareTool._resolve_path`: result is always

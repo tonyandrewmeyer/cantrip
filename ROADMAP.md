@@ -978,6 +978,23 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
 - [ ] Build **differential / metamorphic** checks where Cantrip should preserve
   invariants across providers or surfaces: stable task-graph validity, export
   shape, permission enforcement, and transcript/event consistency.
+  *(Partial — export-shape + transcript/event-consistency dimensions now
+  covered by ``tests/unit/transcript/test_transcript_properties.py``
+  (21 properties): ``_fence_for`` always returns a backtick string strictly
+  longer than the worst inner run, ``render_message`` is deterministic and
+  respects ``include_header``, backtick-heavy tool results are fenced
+  safely, ``render_markdown`` is deterministic + non-mutating and always
+  carries the ``# Cantrip Transcript`` heading, ``## Conversation``
+  section, single trailing newline, and a ``### ROLE`` line per input
+  message, ``render_jsonl`` is deterministic with a line count equal to
+  ``messages + events + tasks + Σ subagent_messages`` and every line is
+  valid JSON tagged with a ``type`` field in source-bucket order
+  (message → event → task → subagent_message); empty data renders to the
+  empty string.  Task-graph validity is incidentally covered by the
+  existing ``test_planner_properties.py`` (Kahn-based acyclicity check
+  on ``_validate_dependencies``).  Permission-enforcement differential
+  checks remain pending — they fit a Phase 68 / 80 follow-up if the user
+  wants the next bite.)*
 - [ ] Extend accessibility regression coverage beyond the current Web-only
   smoke test where feasible, and at minimum document the deliberate boundary
   if TUI accessibility remains manual.
