@@ -92,6 +92,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   falls back to emergency truncation without wedging the loop, and an
   already-exhausted compaction budget carries through resume and keeps
   the conversation answering.
+- **Isolation / security integration tests (Phase 93.4).**  A new
+  ``tests/integration/test_isolation_security.py`` turns the sandbox,
+  worktree, and policy / permission promises into regression guards
+  exercised in real flows rather than only at unit granularity.  The
+  workspace boundary is pushed with ``../`` traversal, escaping
+  symlinks, and out-of-tree absolute paths through the actual file
+  tools (the write / read / edit / list escapes all land an error and
+  never touch the target).  ``RunCommandTool`` is pinned to its
+  no-network, cwd-only sandbox policy, refuses a working directory
+  outside the project tree, and gates ``rm -rf`` behind
+  ``approve_destructive``.  The worktree lifecycle runs against a real
+  git repo: concurrently-allocated worktrees stay isolated until the
+  serialised merge-back lands both branches, a dirty main tree blocks
+  the merge and preserves the branch, and a crashing subagent leaves no
+  worktree directory or ephemeral branch behind.  Finally, real
+  ``Subagent.run`` loops prove plan mode denies an edit, a RESEARCH
+  subagent cannot run a deploy-only tool, the destructive shell is held
+  behind an approval boundary, and an ``ask`` with no approval surface
+  degrades to deny instead of hanging.
 - **F5 now pauses/resumes the watcher's reactions instead of
   stopping it.**  The Juju event watcher always keeps observing the
   model — the status panes and `[Watcher]` chat notices stay

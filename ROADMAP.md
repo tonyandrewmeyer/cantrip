@@ -1108,16 +1108,32 @@ All four bullets land in ``tests/integration/test_durability_resume.py``
 
 ### 93.4 High — Add isolation and security-oriented system tests
 
-- [ ] Add tests proving the sandbox/workspace/worktree boundaries hold under
+- [x] Add tests proving the sandbox/workspace/worktree boundaries hold under
   pressure: path traversal attempts, symlink escapes, out-of-tree writes,
   temporary-file leakage, and cleanup after cancellation/failure.
-- [ ] Add integration coverage for worktree lifecycle and git isolation:
+  (``tests/integration/test_isolation_security.py`` —
+  ``TestWorkspaceBoundaryUnderPressure`` covers traversal / symlink-escape /
+  out-of-tree paths through the real file tools;
+  ``TestRunCommandSandboxAndDestructiveGate`` pins the no-network, cwd-only
+  sandbox policy and the out-of-tree-cwd refusal; and the failed-subagent
+  worktree case proves no temporary-tree leakage after a crash.  Cancellation
+  shares the same ``_execute_task`` ``finally`` cleanup path as the failure
+  case exercised here.)
+- [x] Add integration coverage for worktree lifecycle and git isolation:
   branch creation, temporary worktree setup/teardown, dirty-tree handling,
   merge/reconcile paths, and failure cleanup.
-- [ ] Add system tests around the policy/permission boundary so "plan mode",
+  (``TestWorktreeIsolationAndLifecycle`` against a real git repo: concurrent
+  allocation isolation + serialised merge-back, dirty-main-tree merge refusal
+  with branch preservation, and full worktree+branch cleanup after a crashing
+  subagent.)
+- [x] Add system tests around the policy/permission boundary so "plan mode",
   destructive-command gates, and category-scoped tool access are verified in
   real flows rather than only at unit granularity.
-- [ ] Treat these as regression guards for Phase 49's sandbox promise, not as
+  (``TestPermissionAndPolicyBoundaryInRealFlows`` drives real ``Subagent.run``
+  loops: plan-mode denies an edit, RESEARCH cannot run a deploy-only tool, the
+  destructive shell is gated behind approval, and an ``ask`` with no approval
+  surface degrades to deny.)
+- [x] Treat these as regression guards for Phase 49's sandbox promise, not as
   optional hardening.
 
 ### 93.5 Medium — Cover advanced controllers and automation workflows
