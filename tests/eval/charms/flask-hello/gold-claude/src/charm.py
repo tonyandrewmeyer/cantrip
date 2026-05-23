@@ -23,6 +23,7 @@ Description=Flask Hello web application
 After=network.target
 
 [Service]
+PassEnvironment=DATABASE_URL
 EnvironmentFile=/etc/flask-hello/config.env
 ExecStart={venv}/bin/gunicorn \\
   --bind 0.0.0.0:{port} \\
@@ -102,6 +103,9 @@ class FlaskHelloCharm(ops.CharmBase):
     def _on_postgresql_broken(self, event: ops.RelationBrokenEvent) -> None:
         """Stop the service and block when the database relation is removed."""
         try:
+            subprocess.run(
+                ["systemctl", "unset-environment", "DATABASE_URL"], check=True, capture_output=True
+            )
             subprocess.run(["systemctl", "stop", _SERVICE], check=True, capture_output=True)
         except subprocess.CalledProcessError:
             pass
@@ -161,15 +165,30 @@ class FlaskHelloCharm(ops.CharmBase):
         debug = typing.cast(bool, self.config.get("debug", False))
 
         _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        self._set_database_url_env(db_url)
         _CONFIG_ENV.write_text(
             "\n".join(
                 [
-                    f"DATABASE_URL={db_url}",
                     f"FLASK_LOG_LEVEL={log_level}",
                     f"FLASK_DEBUG={'1' if debug else '0'}",
                     "",
                 ]
             )
+        )
+
+    def _set_database_url_env(self, db_url: str) -> None:
+        """Expose the database URL to systemd without persisting it on disk."""
+        if db_url:
+            subprocess.run(
+                ["systemctl", "set-environment", f"DATABASE_URL={db_url}"],
+                check=True,
+                capture_output=True,
+            )
+            return
+        subprocess.run(
+            ["systemctl", "unset-environment", "DATABASE_URL"],
+            check=True,
+            capture_output=True,
         )
 
     def _install_systemd_unit(self) -> None:
