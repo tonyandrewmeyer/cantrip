@@ -170,6 +170,7 @@ def build_tools(
     )
     from cantrip.agent.tools.report import TestReportTool
     from cantrip.agent.tools.rockcraft import (
+        ChiselEligibilityCheckTool,
         LocalRegistryStatusTool,
         RegistryImageExistsTool,
         RegistryMirrorTool,
@@ -255,6 +256,7 @@ def build_tools(
         # Rockcraft operations
         RockcraftInitTool(),
         RockContractCheckTool(),
+        ChiselEligibilityCheckTool(),
         RockcraftPackTool(),
         SkopeoRegistryPushTool(),
         RegistryImageExistsTool(),
