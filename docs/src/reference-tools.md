@@ -209,6 +209,7 @@ Coverage starts deliberately narrow: Python source plus charm metadata YAML (`ch
 | `rockcraft_init` | Scaffold a rockcraft project |
 | `rockcraft_pack` | Pack a rock (OCI image) |
 | `check_rock_contract` | Validate a repo against the rockcraft framework contract for a 12-factor framework (Flask, Django, FastAPI, Express, Spring Boot, Go) — blocking issues, advisory warnings, supported `base:` values |
+| `check_chisel_eligibility` | Evaluate whether a workload is a good candidate for a chiselled rock (smaller image, reduced attack surface). Returns an eligibility verdict, any blocking reasons (shell-at-runtime, apt-at-runtime, opaque vendor scripts), advisories, and a short rationale to include as a comment in `rockcraft.yaml`. Run after `check_rock_contract`. |
 | `skopeo_registry_push` | Push an OCI image to a registry |
 
 {#environment}

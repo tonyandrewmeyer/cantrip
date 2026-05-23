@@ -5,14 +5,6 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Tests
-- **Phase 93.4 — isolation and security system tests.**  Added
-  `tests/integration/test_isolation_security.py` (56 tests) covering sandbox
-  argv construction for all three mechanisms (bwrap/unshare/none), path-traversal
-  and symlink-escape boundary checks, worktree lifecycle and git isolation
-  (allocate/release, isolation between tasks, orphan reaping, failure cleanup),
-  permission-boundary flows (plan-mode overlay, destructive-command gates,
-  category-scoped per-agent overlays), and GovernancePolicy enforcement.
-  These act as regression guards for Phase 49's sandbox promise.
 - **Phase 93.5 — advanced controllers and automation workflows.**  Added
   `tests/integration/test_controllers_automation.py` (78 tests) covering
   MCPController lifecycle and elicitation forwarding, ArenaController
@@ -22,6 +14,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   create/slugify/current/build-PR-body) in real repos, provider failover with
   FlakyProvider, and an end-to-end triage→confirm→build improvement path.
 ### Added
+- **Expanded eval corpus (Phase 92.3).**  Two new machine-substrate gold
+  charms join the eval suite: ``alertmanager-machine`` (Path C infrastructure,
+  machine, peer + provides relations, systemd management via snap, COS
+  integration) and ``flask-hello`` (Path B custom app, machine, PostgreSQL
+  requires, nginx-route, virtualenv install, systemd).  The corpus now spans
+  all three charm-building paths (A/B/C) across both substrates (k8s and
+  machine) with peer, requires, and provides relation shapes, making prompt
+  and planner regressions on machine or non-PaaS paths easier to catch.
+- **CI eval gate (Phase 92.3).**  ``.github/workflows/eval.yaml`` runs the
+  static eval suite (gold-standard rubric validation, runner CLI tests,
+  ablation helper tests) on every PR that touches ``tests/eval/`` or the
+  prompts directory — no API keys required, ~10 minutes bound.  A new
+  ``make eval-static`` target provides the same no-key lane locally.
 - **Mistral-format message rewriting for inference snaps (Phase 109).**
   Cantrip's internal OpenAI-shaped conversation history (with separate
   ``tool``-role messages) is now transparently converted to Mistral's
@@ -37,6 +42,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Cantrip falls back to parsing the markers from ``content``.
   (Phase 109 re-run smoke test — 109.3 — is deferred pending local GPU
   hardware.)
+- **Chiselled rocks — chisel-aware Rockcraft output (Phase 96).**
+  Cantrip now understands Canonical's chiselled-Ubuntu packaging story
+  for 12-factor rocks.  A new deterministic helper
+  (`cantrip.agent.tools.chisel_eligibility`) implements the eligibility
+  rubric: eligible workloads are 12-factor apps with no shell-at-runtime
+  invocations, no apt/dpkg calls, and no opaque vendor install scripts;
+  blockers are flagged with file-level evidence.  The rubric is exposed
+  as the `check_chisel_eligibility` tool (run after
+  `check_rock_contract`), which returns an eligibility verdict, any
+  blockers, advisories, and a rationale string ready to embed as a
+  comment in `rockcraft.yaml`.  The twelve-factor skill gains a
+  "Chiselled Rocks" section covering when to use the chiselled base,
+  how to generate a chiselled `rockcraft.yaml`, the one-line escape
+  hatch back to `ubuntu@24.04`, and Pebble / health-check composition.
+  44 new unit tests cover the rubric, the tool wrapper, and
+  representative typical workloads.
 
 ### Changed
 - **Phase-aware tool curation (Phase 110).**  Tight-context providers
@@ -93,6 +114,25 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   falls back to emergency truncation without wedging the loop, and an
   already-exhausted compaction budget carries through resume and keeps
   the conversation answering.
+- **Isolation / security integration tests (Phase 93.4).**  A new
+  ``tests/integration/test_isolation_security.py`` turns the sandbox,
+  worktree, and policy / permission promises into regression guards
+  exercised in real flows rather than only at unit granularity.  The
+  workspace boundary is pushed with ``../`` traversal, escaping
+  symlinks, and out-of-tree absolute paths through the actual file
+  tools (the write / read / edit / list escapes all land an error and
+  never touch the target).  ``RunCommandTool`` is pinned to its
+  no-network, cwd-only sandbox policy, refuses a working directory
+  outside the project tree, and gates ``rm -rf`` behind
+  ``approve_destructive``.  The worktree lifecycle runs against a real
+  git repo: concurrently-allocated worktrees stay isolated until the
+  serialised merge-back lands both branches, a dirty main tree blocks
+  the merge and preserves the branch, and a crashing subagent leaves no
+  worktree directory or ephemeral branch behind.  Finally, real
+  ``Subagent.run`` loops prove plan mode denies an edit, a RESEARCH
+  subagent cannot run a deploy-only tool, the destructive shell is held
+  behind an approval boundary, and an ``ask`` with no approval surface
+  degrades to deny instead of hanging.
 - **F5 now pauses/resumes the watcher's reactions instead of
   stopping it.**  The Juju event watcher always keeps observing the
   model — the status panes and `[Watcher]` chat notices stay

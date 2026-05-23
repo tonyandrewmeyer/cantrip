@@ -12,6 +12,10 @@ import httpx
 import jubilant
 
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.chisel_eligibility import (
+    CHISEL_ELIGIBLE_FRAMEWORKS,
+    check_chisel_eligibility,
+)
 from cantrip.agent.tools.juju_subprocess import juju_available as _juju_available
 from cantrip.agent.tools.rock_contract import (
     SUPPORTED_FRAMEWORKS,
@@ -202,6 +206,95 @@ class RockContractCheckTool(Tool):
                 "issues": list(report.issues),
                 "warnings": list(report.warnings),
                 "supported_bases": list(report.supported_bases),
+            },
+            caption=caption,
+        )
+
+
+class ChiselEligibilityCheckTool(Tool):
+    """Check whether a workload is a good chisel candidate.
+
+    Chisel produces sliced OCI images containing only the filesystem
+    slices a workload actually needs, giving smaller images and a reduced
+    attack surface.  This tool applies the deterministic eligibility rubric
+    from :mod:`cantrip.agent.tools.chisel_eligibility` — no network, no
+    subprocess — and returns a verdict, any blockers, and a short rationale
+    the agent can surface to the user.
+
+    Run this *after* :func:`check_rock_contract` confirms the repo fits the
+    12-factor contract.  The two checks are orthogonal: rock-contract fit is
+    a prerequisite; chisel eligibility is an optimisation question.
+    """
+
+    @property
+    def name(self) -> str:
+        return "check_chisel_eligibility"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Check whether a repository workload is a good candidate for a "
+            "chiselled rock (smaller OCI image, reduced attack surface). "
+            "Returns an eligibility verdict, blocking reasons, advisories, "
+            "and a short rationale to include in the generated rockcraft.yaml "
+            "comment. Run after check_rock_contract. "
+            "Eligible frameworks: flask, django, fastapi, go, express, spring-boot."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Repository path to evaluate.",
+                },
+                "framework": {
+                    "type": "string",
+                    "description": "Target 12-factor framework.",
+                    "enum": sorted(CHISEL_ELIGIBLE_FRAMEWORKS),
+                },
+            },
+            "required": ["path", "framework"],
+        }
+
+    async def execute(self, path: str, framework: str) -> ToolResult:
+        repo = pathlib.Path(path).resolve()
+        if not repo.exists():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Path not found: {path}",
+            )
+
+        report = check_chisel_eligibility(repo, framework)
+
+        verdict = "ELIGIBLE" if report.eligible else "NOT ELIGIBLE"
+        lines = [f"Chisel eligibility for {framework} at {repo}: {verdict}"]
+        if report.blockers:
+            lines.append("Blockers:")
+            lines.extend(f"  - {b}" for b in report.blockers)
+        if report.advisories:
+            lines.append("Advisories:")
+            lines.extend(f"  - {a}" for a in report.advisories)
+        lines.append("")
+        lines.append(f"Rationale: {report.rationale}")
+
+        caption = (
+            f"check_chisel_eligibility({framework}) → eligible"
+            if report.eligible
+            else f"check_chisel_eligibility({framework}) → {len(report.blockers)} blockers"
+        )
+        return ToolResult(
+            success=True,
+            output="\n".join(lines),
+            data={
+                "framework": report.framework,
+                "eligible": report.eligible,
+                "blockers": list(report.blockers),
+                "advisories": list(report.advisories),
+                "rationale": report.rationale,
             },
             caption=caption,
         )

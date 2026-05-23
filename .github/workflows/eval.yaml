@@ -1,0 +1,57 @@
+name: Eval (gold standards)
+
+# Run the static eval suite — gold-standard rubric validation — on every PR
+# and push to main.  This lane is intentionally free of API keys and LLM
+# calls; the full provider-matrix ambition lives in Phase 79 and only runs
+# where those secrets are available.
+#
+# What runs here:
+#   - tests/eval/test_gold_standards.py: every gold charm scores 100%.
+#   - tests/eval/test_runner_generate.py: runner CLI / generate logic.
+#   - tests/eval/test_ablate.py: ablation helper (static, no API calls).
+#   - runner validate: cross-checks gold dirs against rubrics a second time.
+#
+# What does NOT run here:
+#   - tests/eval/test_system_prompt_smoke.py — needs provider API keys;
+#     lives in prompt-smoke.yaml instead.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/eval/**"
+      - ".github/workflows/eval.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tests/eval/**"
+      - "src/cantrip/agent/prompts/**"
+      - ".github/workflows/eval.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: Eval (gold standards + rubric validation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run eval suite (gold standards + static tests)
+        run: uv run pytest tests/eval/test_gold_standards.py tests/eval/test_runner_generate.py tests/eval/test_ablate.py -v
+
+      - name: Validate gold standards via runner CLI
+        run: uv run python -m tests.eval.runner validate

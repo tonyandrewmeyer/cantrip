@@ -826,14 +826,25 @@ identified rather than opening a new product line.
   pytest-cov consumes the threshold during ``make unit``, which
   ``make check`` already invokes, so any drop below 88% fails the
   developer loop and CI.
-- [ ] Expand the eval corpus beyond the current minimal set of gold
+- [x] Expand the eval corpus beyond the current minimal set of gold
   charms: cover more substrates (machine + k8s), at least one custom /
   non-framework application path, and more relation / observability
   shapes so prompt or planner regressions are easier to detect.
-- [ ] Add CI wiring for the eval work that is cheap enough to run
+  Two new machine-substrate charms added: ``alertmanager-machine``
+  (Path C infrastructure, machine substrate, peer + provides relations,
+  systemd management, COS integration) and ``flask-hello`` (Path B
+  custom app, machine substrate, PostgreSQL requires, nginx-route,
+  virtualenv install, systemd management).  Corpus now covers all
+  three paths (A/B/C) across both substrates (k8s and machine) with
+  peer, requires, and provides relation shapes.
+- [x] Add CI wiring for the eval work that is cheap enough to run
   regularly: keep the full provider-matrix ambition in Phase 79, but
   make the static gold-standard / rubric path and any cheap smoke path
   first-class rather than manual-only.
+  ``.github/workflows/eval.yaml`` runs the static eval suite (gold
+  standards, runner, ablation tests) on every PR touching
+  ``tests/eval/`` or the prompts directory — no API keys required.
+  ``make eval-static`` provides the same no-key lane locally.
 - [x] Reduce test-maintenance drag in the heaviest files and fixtures.
   - [x] Split the monolithic ``tests/unit/agent/test_agent.py`` into
     feature-scoped modules.  ~1.5 kloc went into eight new siblings —
@@ -1111,29 +1122,45 @@ All four bullets land in ``tests/integration/test_durability_resume.py``
 - [x] Add tests proving the sandbox/workspace/worktree boundaries hold under
   pressure: path traversal attempts, symlink escapes, out-of-tree writes,
   temporary-file leakage, and cleanup after cancellation/failure.
+  (``tests/integration/test_isolation_security.py`` —
+  ``TestWorkspaceBoundaryUnderPressure`` covers traversal / symlink-escape /
+  out-of-tree paths through the real file tools;
+  ``TestRunCommandSandboxAndDestructiveGate`` pins the no-network, cwd-only
+  sandbox policy and the out-of-tree-cwd refusal; and the failed-subagent
+  worktree case proves no temporary-tree leakage after a crash.  Cancellation
+  shares the same ``_execute_task`` ``finally`` cleanup path as the failure
+  case exercised here.)
 - [x] Add integration coverage for worktree lifecycle and git isolation:
   branch creation, temporary worktree setup/teardown, dirty-tree handling,
   merge/reconcile paths, and failure cleanup.
+  (``TestWorktreeIsolationAndLifecycle`` against a real git repo: concurrent
+  allocation isolation + serialised merge-back, dirty-main-tree merge refusal
+  with branch preservation, and full worktree+branch cleanup after a crashing
+  subagent.)
 - [x] Add system tests around the policy/permission boundary so "plan mode",
   destructive-command gates, and category-scoped tool access are verified in
   real flows rather than only at unit granularity.
+  (``TestPermissionAndPolicyBoundaryInRealFlows`` drives real ``Subagent.run``
+  loops: plan-mode denies an edit, RESEARCH cannot run a deploy-only tool, the
+  destructive shell is gated behind approval, and an ``ask`` with no approval
+  surface degrades to deny.)
 - [x] Treat these as regression guards for Phase 49's sandbox promise, not as
   optional hardening.
 
 ### 93.5 Medium — Cover advanced controllers and automation workflows
 
-- [x] Add integration coverage for the controller surfaces that currently have
+- [ ] Add integration coverage for the controller surfaces that currently have
   little or no non-unit protection: ``MCPController``,
   ``ArenaController``, ``TriageController``, and the extracted
   ``ExecutorController`` / ``WatcherController`` seams where real message flow
   matters.
-- [x] Add non-unit tests for git automation workflows: ``git_branch`` branch
+- [ ] Add non-unit tests for git automation workflows: ``git_branch`` branch
   tracking, PR/open-feedback loops, and ``auto_commit`` message/trailer logic
   in realistic repositories rather than fake objects only.
-- [x] Add end-to-end coverage for at least one **triage → confirm → build
+- [ ] Add end-to-end coverage for at least one **triage → confirm → build
   improvement** path so the improvement workflow is tested across handoff
   boundaries, not only as isolated controller pieces.
-- [x] Add provider-routing / failover tests so a primary-provider problem does
+- [ ] Add provider-routing / failover tests so a primary-provider problem does
   not silently strand the work loop when a fallback is configured.
 
 ### 93.6 Medium — Broaden the higher-level test portfolio
@@ -1375,38 +1402,40 @@ with a fuller Ubuntu base for debugging or runtime reasons.
 
 ### 96.1 Eligibility rules
 
-- [ ] Write the deterministic "is chiselled a good fit?" rubric:
+- [x] Write the deterministic "is chiselled a good fit?" rubric:
   12-factor or otherwise simple container workloads, no shell-dependent
   runtime, no apt-at-runtime behaviour, package slices available, and a
   workable debug / support story.
-- [ ] Record explicit blockers: workloads that expect a shell or
+- [x] Record explicit blockers: workloads that expect a shell or
   ad-hoc OS utilities in production, opaque vendor install scripts,
   packages without the needed slices, or charm logic that would make the
   minimised filesystem shape too brittle.
-- [ ] Decide whether the eligibility logic lives purely in skill /
+- [x] Decide whether the eligibility logic lives purely in skill /
   prompt guidance or deserves a small deterministic helper next to the
-  existing Rockcraft tooling.
+  existing Rockcraft tooling. **Decision:** deterministic helper
+  (`chisel_eligibility.py`) alongside `rock_contract.py`, exposed as the
+  `check_chisel_eligibility` tool.
 
 ### 96.2 Generation and escape hatches
 
-- [ ] Extend Rockcraft generation guidance so Cantrip can emit
+- [x] Extend Rockcraft generation guidance so Cantrip can emit
   chiselled-rock examples when the workload passes the rubric, including
   a short explanation to the user about *why* the smaller base is safe
   here.
-- [ ] Preserve a clear escape hatch back to ordinary Ubuntu bases when
+- [x] Preserve a clear escape hatch back to ordinary Ubuntu bases when
   the workload needs shell tooling, the user prioritises operability
   over footprint, or the chiselled build fails for a slice-availability
   reason.
-- [ ] Ensure the generated charm and rock wiring still compose cleanly
+- [x] Ensure the generated charm and rock wiring still compose cleanly
   with Pebble plans, health checks, and the existing 12-factor /
   custom-app flows.
 
 ### 96.3 Validation and user-facing docs
 
-- [ ] Add tests / fixtures proving Cantrip's chiselled output still
+- [x] Add tests / fixtures proving Cantrip's chiselled output still
   launches correctly and keeps the expected runtime files, entrypoints,
   and libraries.
-- [ ] Update the relevant user-facing docs and examples so
+- [x] Update the relevant user-facing docs and examples so
   "Cantrip can build smaller, tighter rocks when appropriate" is a
   visible feature rather than an invisible prompt tweak.
 
