@@ -1211,65 +1211,74 @@ boundary, and Python integration.
 
 ### 94.1 High — Ship the Go binary itself
 
-- [ ] Add a new Go module under ``src/cantrip-kdiag/`` with a small,
+- [x] Add a new Go module under ``src/cantrip-kdiag/`` with a small,
   explicit package layout (`cmd/`, `internal/cli`, `internal/kube`,
   `internal/collect`, `internal/summarise`, `internal/output`) matching
   the design doc.
-- [ ] Implement the three v1 commands from the design:
+- [x] Implement the three v1 commands from the design:
   ``summary``, ``pod``, and ``preflight``.
-- [ ] Support kubeconfig/context loading, namespace selection, and
+- [x] Support kubeconfig/context loading, namespace selection, and
   bounded targeting by exact pod, Juju app, or Juju unit.
-- [ ] Collect the initial read-only diagnostic set only: pods, container
+- [x] Collect the initial read-only diagnostic set only: pods, container
   statuses, warning events, PVC state, previous log tails for crashed
   containers, and pod metrics when the metrics API is present.
-- [ ] Emit deterministic JSON with an explicit schema version and crisp,
+- [x] Emit deterministic JSON with an explicit schema version and crisp,
   documented exit codes for usage error, kubeconfig/context failure, API
   reachability failure, target-not-found, metrics unavailable, and
   internal error.
 
 ### 94.2 High — Integrate the binary into the Python tool layer
 
-- [ ] Add a typed Python wrapper in ``src/cantrip/agent/tools/`` (likely
-  ``k8s.py``) that invokes ``cantrip-kdiag`` via ``subprocess.run``,
+- [x] Add a typed Python wrapper in ``src/cantrip/agent/tools/k8s.py``
+  that invokes ``cantrip-kdiag`` via ``subprocess.run``,
   parses the JSON output, and returns a structured ``ToolResult`` with a
   concise caption plus the full report in ``data``.
-- [ ] Register the new tool in ``build_tools()`` and scope its
+- [x] Register the new tool in ``build_tools()`` and scope its
   description/schema so the agent reaches for it only when Juju does not
   explain a pod-layer problem.
-- [ ] Mirror the existing Juju-tool pattern for environment handling:
+- [x] Mirror the existing Juju-tool pattern for environment handling:
   bypass the subprocess sandbox, thread through ``KUBECONFIG`` /
   explicit context inputs, and fail clearly when the binary is missing.
-- [ ] Decide whether v1 uses a single ``k8s_diagnostics`` tool with a
-  mode parameter or a thin pair (summary vs pod drilldown); keep the
-  external contract aligned with the Go commands rather than inventing a
-  Python-only abstraction.
+- [x] v1 uses a single ``k8s_diagnostics`` tool with a ``mode``
+  parameter (``summary`` / ``pod`` / ``preflight``), aligned to the
+  three Go commands without inventing a Python-only abstraction.
 
 ### 94.3 Medium — Teach the agent when to use it
 
-- [ ] Update the Kubernetes diagnostic guidance so the agent prefers the
-  typed tool over prescribing raw ``kubectl`` when the binary is
-  available, while keeping the existing `fix-broken-juju-k8s` skill for
-  substrate-rebuild flows and manual fallback.
-- [ ] Add or update the relevant prompt/skill/tool guidance so the tool
-  is used specifically for the documented gap cases:
-  ``CrashLoopBackOff``, ``ImagePullBackOff``, ``OOMKilled``, PVC binding
-  failures, and namespace-event clues that Juju does not surface.
-- [ ] Keep the scope charm-focused and read-only; do not expose a raw
-  generic Kubernetes command runner or write-path surface.
+- [x] Updated the Kubernetes diagnostic guidance in ``system.md.j2`` so
+  the agent prefers the typed tool over prescribing raw ``kubectl`` when
+  the binary is available, while keeping the existing
+  `fix-broken-juju-k8s` skill for substrate-rebuild flows and manual
+  fallback.
+- [x] Updated ``fix-broken-juju-k8s/SKILL.md`` so the skill directs the
+  agent to ``k8s_diagnostics`` for pod/PVC/event reads when the binary
+  is present, with ``kubectl`` as the fallback.
+- [x] Scope is charm-focused and read-only; no raw kubectl wrapper or
+  write-path surface is exposed.
 
 ### 94.4 Medium — Validation, tests, and packaging hygiene
 
-- [ ] Add Go tests for target resolution, warning synthesis, output
-  shape, and the read-only collectors using fake clients where practical.
-- [ ] Add Python unit tests for the wrapper tool covering happy path,
-  missing binary, malformed JSON, non-zero exit codes, and missing
-  kubeconfig/context.
-- [ ] Decide the developer and CI build path for the binary (including
-  where the built executable lives during tests) and document that path
-  alongside the new subsystem rather than leaving it implicit.
-- [ ] Add user/developer docs for the new tool surface only where the
-  feature becomes externally visible; keep internal implementation notes
-  in the design doc.
+- [x] Go tests covering target resolution (``kube/target_test.go``),
+  warning synthesis (``summarise/warnings_test.go``), output shape
+  (``output/json_test.go``), and the read-only collectors using fake
+  clients (``collect/pods_test.go``, ``collect/events_test.go``,
+  ``collect/pvcs_test.go``).
+- [x] Python unit tests in ``tests/unit/test_k8s_tool.py`` covering
+  happy path, missing binary, malformed JSON, non-zero exit codes,
+  structured error responses, missing kubeconfig, arg building, and
+  caption generation (24 tests, all passing).
+- [x] Build/CI path decided and documented:
+  - **Development**: ``cd src/cantrip-kdiag && go build -o cantrip-kdiag ./cmd/cantrip-kdiag/``
+    (binary searched at PATH, then in-tree at ``src/cantrip-kdiag/cantrip-kdiag``,
+    then at ``~/.local/bin/cantrip-kdiag``).
+  - **Go tests**: ``make go-test`` added to the Makefile, included in
+    ``make check``; skips gracefully when Go is absent (same pattern as
+    ``rust-test``).
+  - **Python tests**: mock ``subprocess.run`` via ``_run_binary`` — no live
+    cluster or real binary required.
+- [x] User docs updated in ``docs/src/reference-tools.md`` with a new
+  "Kubernetes diagnostics" section covering modes, targeting, safety
+  boundary, and the binary prerequisite.
 
 ### What this phase is *not*
 

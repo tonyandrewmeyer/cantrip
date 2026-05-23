@@ -250,6 +250,15 @@ K8s charms need an OCI image as a container resource. Choose the right approach:
 
 **Local-registry substrate caveat** — `localhost:32000` only works on **MicroK8s with the registry add-on enabled**. The canonical `k8s` snap has no built-in registry. Call `local_registry_status` before assuming a local registry exists; on `k8s`-snap dev boxes, call `setup_local_registry` to deploy a registry charm into the dev model (the tool surfaces the containerd-trust sudo block to apply once). Avoid pushing to a public registry unless the image is already there or the user has asked for it; `registry_mirror` is for rate-limited cases (Docker Hub) where copying once into the local registry saves repeated round-trips.
 
+**Kubernetes pod-layer diagnostics** — when a Juju unit shows `error`/`lost`/`waiting` on a Kubernetes substrate and the Juju tools (`juju_status`, `juju_debug_log`) do not explain the root cause, call `k8s_diagnostics` before prescribing raw `kubectl` commands. Use it specifically for:
+- `CrashLoopBackOff` — container crash loop with unknown root cause
+- `ImagePullBackOff` — image pull failure (registry auth, wrong tag, network)
+- `OOMKilled` — container terminated by the OOM killer
+- PVC stuck `Pending` — storage class or binding failure
+- Namespace event storms — flood of warning events that Juju doesn't surface
+
+`k8s_diagnostics` is **read-only** — it never writes to the cluster. Use `mode="summary"` for namespace/app triage and `mode="pod"` for single-pod drilldown. `mode="preflight"` checks connectivity only. The `fix-broken-juju-k8s` skill remains the right escalation path for substrate-level failures (broken controller, wedged k8s snap, concierge failures).
+
 **Evaluation heuristics:**
 - Prefer **official** images (`[official]` badge) over community alternatives
 - Prefer images **updated recently** (within the last few months)

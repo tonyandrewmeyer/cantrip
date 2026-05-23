@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test rust-coverage docs docs-check docs-check-strict
+.PHONY: format lint unit integration e2e tui live eval eval-validate test check all clean coverage rust-test rust-coverage go-test docs docs-check docs-check-strict
 
 # Format code with ruff
 format:
@@ -43,8 +43,8 @@ live:
 test:
 	uv run pytest tests -v
 
-# Run all checks (lint + unit tests + Rust crate tests)
-check: lint unit rust-test
+# Run all checks (lint + unit tests + Rust crate tests + Go tests)
+check: lint unit rust-test go-test
 
 # Run everything (format + check)
 all: format check
@@ -62,6 +62,14 @@ rust-test:
 		cd ../quickpack-rs && cargo test; \
 	else \
 		echo "cargo not found — skipping Rust tests"; \
+	fi
+
+# Run Go tests for the cantrip-kdiag binary (skip gracefully when Go is absent)
+go-test:
+	@if command -v go >/dev/null 2>&1; then \
+		cd src/cantrip-kdiag && go test ./...; \
+	else \
+		echo "go not found — skipping cantrip-kdiag tests"; \
 	fi
 
 # Run cargo-llvm-cov for each Rust crate (advisory — see Phase 58.4).
@@ -118,6 +126,7 @@ help:
 	@echo "  check       - Run lint + unit tests"
 	@echo "  all         - Run format + check"
 	@echo "  coverage    - Run unit tests with coverage report"
+	@echo "  go-test     - Run go test for cantrip-kdiag binary"
 	@echo "  rust-test   - Run cargo test for charmlint-rs and quickpack-rs"
 	@echo "  rust-coverage - Run cargo-llvm-cov summary for each Rust crate"
 	@echo "  docs        - Rebuild docs/docs/*.html from docs/src/*.md"
