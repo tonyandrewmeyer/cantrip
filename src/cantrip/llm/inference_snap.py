@@ -10,14 +10,18 @@ module only adds the snap-specific discovery bits (``snap status`` /
 ``/models`` probing, vision allowlist).
 """
 
+import dataclasses
 import logging
 import os
 import subprocess
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
 from cantrip.llm._openai_compat import OpenAICompatBase
-from cantrip.llm.base import ProviderError
+from cantrip.llm.base import Chunk, Message, ProviderError, Tool
+from cantrip.llm.mistral_format import parse_mistral_tool_call_content, rewrite_for_mistral
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +69,33 @@ _TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset(
         "mistral-nemo-12b",
     }
 )
+
+
+# Operator-visible env var to override snap-family detection (Phase 109.4).
+# Accepted values: "openai" (default) or "mistral".  An unrecognised value
+# logs a warning and falls back to auto-detection from the snap name.
+_MESSAGE_FORMAT_ENV = "CANTRIP_MESSAGE_FORMAT"
+
+# Snap-name prefixes that indicate Mistral's Tekken chat-template format.
+# The Tekken template rejects separate "tool" role messages and requires tool
+# calls and results folded into adjacent assistant/user turns with the
+# [TOOL_CALLS]/[TOOL_RESULTS] markers.  Snap names matching these prefixes
+# receive the Mistral rewriter automatically; operators can override via
+# CANTRIP_MESSAGE_FORMAT for non-standard names.
+_MISTRAL_NAME_PREFIXES: tuple[str, ...] = ("mistral-nemo", "magistral-")
+
+
+def _detect_message_format(snap_name: str) -> str:
+    """Derive the message-format convention for *snap_name* from its name.
+
+    Returns ``"mistral"`` for snap names that belong to the Mistral model
+    family (whose Tekken chat template requires tool calls and results folded
+    into assistant turns), and ``"openai"`` for everything else.
+    """
+    for prefix in _MISTRAL_NAME_PREFIXES:
+        if snap_name.startswith(prefix):
+            return "mistral"
+    return "openai"
 
 
 def discover_snap_endpoint(snap_name: str) -> str:
@@ -186,24 +217,171 @@ class InferenceSnapProvider(OpenAICompatBase):
         """
         return 0.2
 
-    def _build_request_body(self, *args, **kwargs):  # type: ignore[override]
-        """Suppress Qwen3-style chain-of-thought reasoning.
+    def _build_request_body(self, messages: list[Message], *args, **kwargs):  # type: ignore[override]
+        """Apply outbound message rewriting then suppress Qwen3 chain-of-thought.
 
-        Thinking models served via llama.cpp's ``--jinja`` (the Qwen3
-        family especially) emit their reasoning into ``reasoning_content``
-        and routinely exhaust the completion budget before producing any
-        ``content`` / tool calls — the empty ``(no response)`` turn that
-        stalls the agent loop, made worse on a tight (16 K) per-slot
-        context where the prompt alone leaves little room for both a
-        ``<think>`` block *and* an answer.  Passing ``enable_thinking=false``
-        through to the chat template skips the reasoning block so the
-        model answers — and calls tools — directly.  Chat templates that
-        don't recognise the kwarg (gemma3, deepseek-r1, …) ignore it, so
-        this is safe to send unconditionally.
+        Phase 109.1: ``rewrite_messages`` fires here — once per call, before
+        the request body is assembled — so the wire format matches what the
+        snap's chat template expects.  For most snaps (OpenAI / Qwen format)
+        this is the identity.  For Mistral-family snaps the rewriter folds
+        ``tool``-role messages into the preceding assistant turn.
+
+        The ``enable_thinking=false`` kwarg suppresses the ``<think>``
+        reasoning block on Qwen3-family models (see original comment below);
+        templates that don't recognise the kwarg ignore it safely.
         """
-        body = super()._build_request_body(*args, **kwargs)
+        messages = self.rewrite_messages(messages)
+        body = super()._build_request_body(messages, *args, **kwargs)
         body.setdefault("chat_template_kwargs", {})["enable_thinking"] = False
         return body
+
+    @staticmethod
+    def _resolve_message_format(snap_name: str) -> str:
+        """Resolve the outbound message-format for *snap_name*.
+
+        Precedence: ``CANTRIP_MESSAGE_FORMAT`` env var → snap-name family
+        detection.  Accepted env values are ``"openai"`` (explicit identity)
+        and ``"mistral"``; unrecognised values log a warning and fall back to
+        name-based detection.
+        """
+        raw = os.environ.get(_MESSAGE_FORMAT_ENV, "").strip().lower()
+        if raw == "mistral":
+            return "mistral"
+        if raw == "openai":
+            # Explicit override: always use the identity rewriter regardless of
+            # what the snap name would normally suggest.
+            return "openai"
+        if raw == "":
+            return _detect_message_format(snap_name)
+        log.warning(
+            "Ignoring %s=%r — unrecognised value; use 'openai' or 'mistral'",
+            _MESSAGE_FORMAT_ENV,
+            raw,
+        )
+        return _detect_message_format(snap_name)
+
+    def rewrite_messages(self, messages: list[Message]) -> list[Message]:
+        """Rewrite messages for the snap's expected wire format.
+
+        Delegates to :func:`~cantrip.llm.mistral_format.rewrite_for_mistral`
+        for Mistral-family snaps; returns the input list unchanged for
+        everything else.
+        """
+        if self._message_format == "mistral":
+            return rewrite_for_mistral(messages)
+        return messages
+
+    async def complete(
+        self,
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
+    ):
+        """Complete a turn, applying the Mistral inbound parser when needed.
+
+        Phase 109.2: after the upstream response arrives, the Mistral-format
+        inbound parser fires as a client-side fallback.  When llama.cpp's
+        ``--jinja`` correctly converts the model's ``[TOOL_CALLS]`` output
+        into OpenAI-shaped ``tool_calls``, the response already has
+        ``tool_calls`` populated and the parser is a no-op.  When ``--jinja``
+        fails and the markers land in ``content`` instead, the parser extracts
+        the tool calls and sets ``content`` to the remainder.
+        """
+        response = await super().complete(
+            messages,
+            tools,
+            temperature,
+            max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
+            response_schema=response_schema,
+        )
+        if self._message_format == "mistral" and not response.tool_calls:
+            tool_calls, content = parse_mistral_tool_call_content(response.content)
+            if tool_calls:
+                return dataclasses.replace(response, tool_calls=tool_calls, content=content)
+        return response
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
+        response_schema: dict[str, Any] | None = None,
+    ) -> AsyncIterator[Chunk]:
+        """Stream a turn, applying the Mistral inbound parser on the final chunk.
+
+        Phase 109.2: for non-Mistral snaps, chunks are yielded as they arrive
+        (no change from the base behaviour).  For Mistral snaps, content
+        chunks are buffered so the full content can be inspected for inline
+        ``[TOOL_CALLS]`` markers.  When ``--jinja`` handles tool calls
+        correctly the final chunk already carries ``tool_calls`` (OpenAI
+        format) and the buffer is re-yielded as a single content chunk before
+        the final.  When ``--jinja`` fails and the markers are in ``content``,
+        the parser extracts the tool calls, suppresses the buffered content
+        (which was the raw marker text), and yields a single final chunk with
+        the parsed calls.
+        """
+        if self._message_format != "mistral":
+            async for chunk in super().stream(
+                messages,
+                tools,
+                temperature,
+                max_tokens=max_tokens,
+                thinking_budget=thinking_budget,
+                response_schema=response_schema,
+            ):
+                yield chunk
+            return
+
+        # Mistral path: buffer content to detect inline tool-call markers.
+        accumulated: list[str] = []
+        last_final: Chunk | None = None
+
+        async for chunk in super().stream(
+            messages,
+            tools,
+            temperature,
+            max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
+            response_schema=response_schema,
+        ):
+            if chunk.is_final:
+                last_final = chunk
+            elif chunk.content:
+                accumulated.append(chunk.content)
+
+        if last_final is None:
+            return
+
+        full_content = "".join(accumulated)
+
+        if not last_final.tool_calls:
+            tool_calls, remainder = parse_mistral_tool_call_content(full_content)
+            if tool_calls:
+                # --jinja failed; the markers were in content.  Yield the
+                # parsed calls on the final chunk and suppress the raw marker
+                # text so the caller never sees the literal [TOOL_CALLS] tags.
+                yield Chunk(
+                    tool_calls=tool_calls,
+                    is_final=True,
+                    usage=last_final.usage,
+                    metadata=last_final.metadata,
+                )
+                return
+            # Regular text response — re-yield buffered content then the final.
+            if full_content:
+                yield Chunk(content=full_content)
+        else:
+            # --jinja handled it; re-yield any buffered content before the final.
+            if full_content:
+                yield Chunk(content=full_content)
+
+        yield last_final
 
     #: Default httpx read timeout (seconds) for snap chat completions.
     #: 20 min is enough headroom for any plausible single-turn
@@ -256,6 +434,9 @@ class InferenceSnapProvider(OpenAICompatBase):
         # upgrade this to True if the server advertises a vision
         # capability at runtime.
         self._supports_vision = snap_name in _VISION_SNAP_NAMES
+        # Phase 109.4: resolve the outbound message format from the env var
+        # first, falling back to snap-name-based family detection.
+        self._message_format = self._resolve_message_format(snap_name)
 
         # Always auto-detect the model from the /models endpoint.  The snap
         # name (e.g. "gemma3") is NOT a valid model ID — the actual served

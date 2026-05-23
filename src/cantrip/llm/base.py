@@ -308,6 +308,21 @@ class LLMProvider(ABC):
         """
         return estimate_message_tokens(messages)
 
+    def rewrite_messages(self, messages: list[Message]) -> list[Message]:
+        """Rewrite messages for this provider's wire format before each call.
+
+        The default implementation is the identity — messages are returned
+        unchanged.  Providers whose chat templates expect a different message
+        shape (e.g. Mistral's Tekken format, which folds tool results into the
+        preceding assistant turn) override this to produce serialisation-time
+        copies that match the expected conventions.
+
+        The internal ``Message`` dataclass is never mutated here; overrides must
+        likewise produce a new list (which may share unchanged ``Message``
+        objects with the input) rather than mutating in place.
+        """
+        return messages
+
     async def count_tokens_accurate(self, messages: list[Message]) -> int:
         """Accurate token count via provider API when available.
 
