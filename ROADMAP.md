@@ -920,19 +920,51 @@ All four bullets land in ``tests/integration/test_durability_resume.py``
 
 ### 93.5 Medium — Cover advanced controllers and automation workflows
 
-- [ ] Add integration coverage for the controller surfaces that currently have
+All four bullets land in ``tests/integration/test_controllers_automation.py``
+(78 tests, eleven classes — landed in commit ``33b8bb0``).
+
+- [x] Add integration coverage for the controller surfaces that currently have
   little or no non-unit protection: ``MCPController``,
   ``ArenaController``, ``TriageController``, and the extracted
   ``ExecutorController`` / ``WatcherController`` seams where real message flow
-  matters.
-- [ ] Add non-unit tests for git automation workflows: ``git_branch`` branch
+  matters.  *(Done — ``TestMCPController`` covers lazy registry, idempotent
+  ``start()``, the ``MCP_ELICITATION_REQUEST`` event bridge, and
+  ``complete_elicitation`` before-load handling; ``TestArenaController``
+  drives ``begin()`` async + ``handle_pick`` A/B/skip + the no-light-provider
+  error path; ``TestTriageController`` exercises ``start()``/``stop()``
+  lifecycle, retriage, and CONFIRM-task enqueue on issues found;
+  ``TestExecutorController`` pins the pause/resume seam plus user-pause vs
+  transient-pause and state-change events; ``TestWatcherControllerRouting``
+  asserts ``route_event`` enqueues tasks, ``start()`` returns ``False`` with
+  no model, and stop-before-start is a no-op.)*
+- [x] Add non-unit tests for git automation workflows: ``git_branch`` branch
   tracking, PR/open-feedback loops, and ``auto_commit`` message/trailer logic
   in realistic repositories rather than fake objects only.
-- [ ] Add end-to-end coverage for at least one **triage → confirm → build
+  *(Done — ``TestAutoCommitInRealRepo`` drives ``pre_turn_commit_dirty`` /
+  ``post_turn_commit_agent_edits`` against an on-disk git repo, including the
+  cantrip trailer, long-subject truncation, fallback subject derivation,
+  summary override, touched-file listing, and confirmation that pre-turn and
+  post-turn produce *separate* commits; ``TestCollectTouchedFiles`` parses
+  ``write_file`` / ``edit_file`` / ``multi_edit`` tool calls out of assistant
+  messages and confirms non-mutating tools and user messages are ignored;
+  ``TestGitBranchOperations`` exercises ``current_branch``, ``create_branch``,
+  ``slugify`` (lowercase + hyphenate + truncate + leading/trailing strip), and
+  ``suggest_repo_name`` (appends ``-operator``, no double-append);
+  ``TestBuildPrBody`` pins the summary header, task-title list,
+  issue-reference, ✓/✗ status rows, and result truncation.)*
+- [x] Add end-to-end coverage for at least one **triage → confirm → build
   improvement** path so the improvement workflow is tested across handoff
   boundaries, not only as isolated controller pieces.
-- [ ] Add provider-routing / failover tests so a primary-provider problem does
+  *(Done — ``TestTriageToConfirmToBuildPath`` proves the triage controller
+  enqueues a CONFIRM task when issues are found, and a CONFIRM ``set_done()``
+  drives the executor to dispatch the follow-up BUILD task and run it to
+  DONE.)*
+- [x] Add provider-routing / failover tests so a primary-provider problem does
   not silently strand the work loop when a fallback is configured.
+  *(Done — ``TestProviderFailover`` runs ``FlakyProvider`` through ≥ 3 calls
+  to recover after blips, drives two independent tasks under a partially-
+  failing provider to confirm one failure doesn't strand the other, and
+  drains all tasks to FAILED under a permanently-failing primary.)*
 
 ### 93.6 Medium — Broaden the higher-level test portfolio
 
