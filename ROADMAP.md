@@ -1769,12 +1769,12 @@ non-Qwen candidates can be evaluated fairly.
 
 ### 109.1 P0 — Provider hook for outbound message rewriting
 
-- [ ] Add ``LLMProvider.rewrite_messages(messages: list[Message])
+- [x] Add ``LLMProvider.rewrite_messages(messages: list[Message])
   -> list[Message]`` (or equivalent) — default identity, Mistral
   family overrides to fold consecutive ``tool``-role messages
   into the *prior* ``assistant`` message's ``content`` /
   ``tool_calls`` payload using Mistral's required markers.
-- [ ] Wire the hook into ``InferenceSnapProvider.complete()`` /
+- [x] Wire the hook into ``InferenceSnapProvider.complete()`` /
   ``stream()`` so rewriting fires once per LLM call before the
   request body is built.  Frontier providers (Gemini, Claude,
   OpenAI-compatible) inherit the identity default — they already
@@ -1782,7 +1782,7 @@ non-Qwen candidates can be evaluated fairly.
 
 ### 109.2 P0 — Inbound parser for Mistral-format tool calls
 
-- [ ] Mistral models emit
+- [x] Mistral models emit
   ``[TOOL_CALLS][{"name":"…","arguments":{…}}][/TOOL_CALLS]``
   inline within assistant content rather than the OpenAI-shaped
   ``tool_calls`` array.  Add a parser that splits
@@ -1791,7 +1791,7 @@ non-Qwen candidates can be evaluated fairly.
   this on the server side, but Phase 105.1.7 showed it doesn't
   always — fall back to client-side parsing when the server
   returns ``content`` containing the markers.
-- [ ] Negative test: when no ``[TOOL_CALLS]`` markers are present,
+- [x] Negative test: when no ``[TOOL_CALLS]`` markers are present,
   treat ``content`` as a plain assistant reply.  Don't false-
   positive on an LLM that mentions the literal token in regular
   prose.
@@ -1809,26 +1809,26 @@ non-Qwen candidates can be evaluated fairly.
 
 ### 109.4 P1 — Family detection + opt-in
 
-- [ ] ``InferenceSnapProvider`` should pick the right rewriter
+- [x] ``InferenceSnapProvider`` should pick the right rewriter
   based on the snap name (``mistral-nemo-*``,
   ``magistral-*`` → Mistral path; everything else →
   identity).
-- [ ] Operator-visible env var
+- [x] Operator-visible env var
   ``CANTRIP_MESSAGE_FORMAT={openai,mistral,…}`` overrides the
   family detection for unknown snaps (e.g. a new Mistral fine-
   tune with a non-standard name).  Defaults to ``openai``.
 
 ### 109.5 P1 — Tests
 
-- [ ] Unit test ``rewrite_messages`` for the Mistral path: a
+- [x] Unit test ``rewrite_messages`` for the Mistral path: a
   conversation containing ``[user, assistant(with tool_calls),
   tool(result)]`` rewrites to ``[user, assistant(content
   containing the [TOOL_CALLS]/[/TOOL_CALLS] +
   [TOOL_RESULTS]/[/TOOL_RESULTS] markers folded in)]``.
-- [ ] Unit test the inbound parser: response with
+- [x] Unit test the inbound parser: response with
   ``[TOOL_CALLS][...][/TOOL_CALLS]`` content splits into a
   ``ToolCall`` array and an empty ``content`` field.
-- [ ] Recorded-trace test pinning the wire format (the same way
+- [x] Recorded-trace test pinning the wire format (the same way
   Phase 41 pins frontier-provider streaming).
 
 ### What this phase is *not*
