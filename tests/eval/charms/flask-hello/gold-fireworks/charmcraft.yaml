@@ -1,0 +1,73 @@
+# This file configures Charmcraft.
+# See https://documentation.ubuntu.com/charmcraft/stable/reference/files/charmcraft-yaml-file/
+type: charm
+name: flask-hello
+title: Flask Hello
+summary: A simple Flask web application with a page-view counter.
+description: |
+  Flask Hello is a machine charm that deploys a simple Flask web application.
+  The application tracks page views in a PostgreSQL database and is served
+  behind an nginx reverse proxy. It includes COS observability integration
+  and supports configuration of log level, debug mode, and worker count.
+
+base: ubuntu@24.04
+platforms:
+  amd64:
+  arm64:
+
+parts:
+  charm:
+    plugin: uv
+    source: .
+    build-snaps:
+      - astral-uv
+  flask-app:
+    plugin: dump
+    source: src/
+    organize:
+      app.py: opt/flask-hello/app.py
+      requirements-app.txt: opt/flask-hello/requirements-app.txt
+    stage:
+      - opt/flask-hello/app.py
+      - opt/flask-hello/requirements-app.txt
+
+config:
+  options:
+    log-level:
+      description: |
+        Configures the log level of gunicorn.
+
+        Acceptable values are: "info", "debug", "warning", "error" and "critical"
+      default: "info"
+      type: string
+    debug:
+      description: |
+        Enable Flask debug mode. Do not use in production.
+      default: false
+      type: boolean
+    workers:
+      description: |
+        Number of gunicorn worker processes.
+      default: 2
+      type: int
+
+requires:
+  postgresql:
+    interface: postgresql_client
+    limit: 1
+  nginx-route:
+    interface: reverseproxy
+    limit: 1
+  tracing:
+    interface: tracing
+    limit: 1
+
+provides:
+  cos-agent:
+    interface: cos_agent
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+actions:
+  reset-counter:
+    description: Clear the page-view counter in the database.
