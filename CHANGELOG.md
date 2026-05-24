@@ -15,6 +15,31 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   new TUI binding smoke test below.
 
 ### Tests
+- **Phase 93.6 — stateful e2e scenarios.**  Added a new
+  `tests/e2e/test_scenarios.py::TestStatefulFlows` class with four
+  multi-turn / multi-session scenarios driven through the top-level
+  `CantripAgent` API (so the wiring the TUI / CLI actually use is
+  exercised end to end, not just a raw `BackgroundExecutor`):
+  `test_interrupted_session_resumes_and_finishes_pending_deploy`
+  saves a session with a DONE BUILD + PENDING DEPLOY, reloads it into
+  a fresh agent, asserts the full state round-trip (charm identity /
+  decisions / conversation history / queue contents), and lets the
+  resumed executor finish the deploy + verify chain without re-running
+  the already-DONE build;
+  `test_failed_verify_creates_debug_task_through_agent` drives
+  BUILD → DEPLOY → Verify(FAIL) → DEBUG via a `CallbackProvider` keyed
+  on the verify system-prompt fragment;
+  `test_improvement_flow_audits_existing_charm_and_runs_fixes` seeds an
+  existing charm dir, drives `handle_improvement_confirmation` from a
+  DONE audit task carrying a real audit-report string, approves the
+  CONFIRM the way the TUI does, and converges every BUILD-category fix
+  task; `test_user_override_steers_design_to_machine_path` wraps
+  `MultiRoleProvider` with a USER-message-capturing subclass to prove
+  the override string reaches the planner verbatim, then feeds the
+  planner a machine-substrate plan that *replaces* the synthesised k8s
+  direction and confirms the override plan runs to completion.  Added
+  a `fast_executor` fixture to `tests/e2e/conftest.py` mirroring the
+  integration-suite one.
 - **Phase 93.6 — TUI keyboard accessibility smoke.**  Added
   `tests/unit/tui/test_accessibility_smoke.py` (4 tests) that walks
   every `BINDINGS` list in the App and Screen subclasses and asserts

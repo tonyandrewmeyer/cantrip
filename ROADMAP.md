@@ -972,9 +972,41 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
   at least one more machine-oriented charm, one more custom/non-framework app,
   and one case that stresses relations / observability / operational actions
   more heavily than the current set.
-- [ ] Add more **stateful e2e** scenarios: interrupted deploy, failed verify
+- [x] Add more **stateful e2e** scenarios: interrupted deploy, failed verify
   followed by debug task creation, improvement flows on an existing charm, and
   "user says no" / override branches that materially change the plan.
+  *(Done — four scenarios in ``tests/e2e/test_scenarios.py::TestStatefulFlows``,
+  each driven through the top-level ``CantripAgent`` API (``process_message`` +
+  ``start_executor`` + ``handle_*_confirmation`` + ``save_state`` /
+  ``load_state``) rather than via a raw ``BackgroundExecutor``, so the wiring
+  the TUI / CLI actually use is exercised end to end.
+  ``test_interrupted_session_resumes_and_finishes_pending_deploy`` saves a
+  session mid-flow (DONE BUILD + PENDING DEPLOY), spins up a fresh agent at
+  the same ``.cantrip``, round-trips charm identity / decisions / conversation
+  history / queue contents, then drives the resumed executor through the
+  auto-follow-up chain (the previously-DONE BUILD is *not* re-run, the pending
+  DEPLOY converges, and the Verify follow-up lands as DONE);
+  ``test_failed_verify_creates_debug_task_through_agent`` uses a
+  ``CallbackProvider`` keyed on the ``Verify deployment:`` system-prompt
+  fragment to drive BUILD → DEPLOY → Verify(FAIL) → DEBUG end to end on the
+  agent's own work queue, asserting the DEBUG follow-up exists and depends on
+  the failed verify task;
+  ``test_improvement_flow_audits_existing_charm_and_runs_fixes`` seeds an
+  existing charm directory, drives ``handle_improvement_confirmation`` from a
+  DONE audit task carrying a real audit-report string (tracing + tests gaps),
+  approves the CONFIRM the way the TUI does
+  (``work_queue.set_done(confirm_id, "Approved by user")``), and lets the
+  executor converge every BUILD-category fix task — verifying that
+  ``state.audit_report`` is persisted and that ``fill-observability-*`` /
+  ``fill-tests-*`` materialise as DONE;
+  ``test_user_override_steers_design_to_machine_path`` wraps
+  :class:`MultiRoleProvider` with a USER-message-capturing subclass so it can
+  prove the override string reached the planner verbatim, then feeds the
+  planner a machine-substrate JSON plan that *replaces* the synthesised
+  k8s direction, and confirms the executor runs the override plan (not the
+  deterministic one-shot path).  Added a ``fast_executor`` fixture to
+  ``tests/e2e/conftest.py`` mirroring the integration-suite one so the new
+  executor-driven scenarios don't pay the 1-second poll interval.)*
 - [x] Build **differential / metamorphic** checks where Cantrip should preserve
   invariants across providers or surfaces: stable task-graph validity, export
   shape, permission enforcement, and transcript/event consistency.
