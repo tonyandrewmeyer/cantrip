@@ -1,0 +1,36 @@
+{
+  "title": "Gitea",
+  "description": "Self-hosted Git service metrics — request rate, repository activity, and database connection pool.",
+  "tags": ["gitea", "vcs"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "title": "HTTP request rate",
+      "type": "graph",
+      "targets": [
+        {"expr": "sum(rate(http_requests_total{juju_application=~\"$juju_application\"}[5m])) by (method, status)", "legendFormat": "{{method}} {{status}}"}
+      ]
+    },
+    {
+      "title": "Active repositories",
+      "type": "stat",
+      "targets": [
+        {"expr": "sum(gitea_repositories{juju_application=~\"$juju_application\"})", "legendFormat": "repos"}
+      ]
+    },
+    {
+      "title": "Database connections in use",
+      "type": "graph",
+      "targets": [
+        {"expr": "sum(gitea_database_connections_in_use{juju_application=~\"$juju_application\"})", "legendFormat": "in use"}
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      {"name": "juju_application", "type": "query", "query": "label_values(gitea_repositories, juju_application)"}
+    ]
+  },
+  "schemaVersion": 36,
+  "version": 1
+}

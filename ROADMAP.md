@@ -622,9 +622,9 @@ sanity check that can run on every prompt change.
   ``run`` verb is the recipe: generate, hand-tune, rename
   to ``gold-<provider>``, then ``validate``.  *Partial
   (2026-05-24): ``gold-fireworks`` landed for ntfy and
-  flask-hello, alertmanager-machine, meilisearch, and
-  vaultwarden — all single-shot Kimi K2 default, ~30 min
-  generation each.  ntfy scored 46/47 (96 %) raw with one
+  flask-hello, alertmanager-machine, meilisearch,
+  vaultwarden, and gitea — all single-shot Kimi K2
+  default, ~30 min generation each.  ntfy scored 46/47 (96 %) raw with one
   import-style hand-tune (``from ops import testing`` →
   ``import ops.testing``) to reach 47/47.  flask-hello
   scored 42/49 (86 %) raw with three rubric-shape
@@ -654,9 +654,16 @@ sanity check that can run on every prompt change.
   scored 60/64 (94 %) raw with two cosmetic hand-tunes
   (metrics relation renamed ``prometheus-scrape`` →
   ``metrics-endpoint`` to match the rubric, plus the usual
-  import-style scenario fix) to reach 64/64.
-  ``gold-gemini`` and one remaining spec (gitea) across
-  both providers remain pending.  A first haproxy-machine + Fireworks
+  import-style scenario fix) to reach 64/64.  gitea (the
+  largest spec in the corpus at 448 lines) scored 84/89
+  (94 %) raw with three hand-tunes to reach 89/89: a
+  documentation-only ``src/templates/app.ini.j2``
+  Jinja2 template mirroring the ``app.ini`` shape the
+  charm already writes inline, a minimal
+  ``src/grafana_dashboards/gitea.json`` dashboard, plus
+  the usual import-style scenario fix.  ``gold-gemini``
+  remains pending across all specs once provider funds
+  are sorted.  A first haproxy-machine + Fireworks
   attempt scored 42/63 (67 %) — full metadata + ops
   framework but a 40-line charm.py pushed most code-pattern
   responsibilities into the helper module, and no

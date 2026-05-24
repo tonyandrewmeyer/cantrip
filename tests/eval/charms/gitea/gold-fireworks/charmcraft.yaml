@@ -1,0 +1,165 @@
+# Copyright 2026 Ubuntu
+# See LICENSE file for licensing details.
+
+type: charm
+name: gitea-k8s
+title: Gitea
+summary: A lightweight self-hosted Git service
+description: |
+  Gitea is a community managed lightweight code hosting solution written in Go.
+  It provides a web UI, Git repository management, issue tracking, pull requests,
+  wikis, and more. This charm deploys Gitea on Kubernetes with support for
+  PostgreSQL, Redis, SMTP, S3 object storage, ingress, and COS observability.
+
+base: ubuntu@24.04
+platforms:
+  amd64:
+  arm64:
+
+parts:
+  charm:
+    plugin: uv
+    source: .
+    build-snaps:
+      - astral-uv
+
+config:
+  options:
+    app-name:
+      description: The name displayed in the Gitea UI.
+      default: "Gitea"
+      type: string
+    allow-only-external-registration:
+      description: |
+        Only allow external registration (e.g. via OAuth/OIDC).
+        Disables local user registration.
+      default: true
+      type: boolean
+    default-private-repos:
+      description: Newly created repositories default to private.
+      default: true
+      type: boolean
+    log-level:
+      description: |
+        Gitea log level. Acceptable values are: Trace, Debug, Info, Warn, Error, Critical.
+      default: "Info"
+      type: string
+    disable-git-hooks:
+      description: |
+        Disable Git hooks for operator safety. Prevents users from running
+        arbitrary scripts on the server via repository hooks.
+      default: true
+      type: boolean
+    cron-update-mirrors:
+      description: Cron expression for updating mirrored repositories.
+      default: "@every 10m"
+      type: string
+
+containers:
+  gitea:
+    resource: gitea-image
+    mounts:
+      - storage: data
+        location: /data
+      - storage: config
+        location: /data/gitea/conf
+
+resources:
+  gitea-image:
+    type: oci-image
+    description: OCI image for Gitea
+    upstream-source: gitea/gitea:1.21.5
+
+storage:
+  data:
+    type: filesystem
+    description: Persistent storage for Gitea data (repositories, attachments, LFS).
+    minimum-size: 10G
+    location: /data
+  config:
+    type: filesystem
+    description: Persistent storage for Gitea configuration.
+    minimum-size: 1G
+    location: /data/gitea/conf
+
+peers:
+  gitea-peers:
+    interface: gitea_peers
+
+requires:
+  database:
+    interface: postgresql_client
+    limit: 1
+  cache:
+    interface: redis
+    limit: 1
+  ingress:
+    interface: ingress
+    limit: 1
+  smtp:
+    interface: smtp
+    limit: 1
+  object-storage:
+    interface: s3
+    limit: 1
+  tracing:
+    interface: tracing
+    limit: 1
+
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+  logging:
+    interface: loki_push_api
+
+actions:
+  create-admin:
+    description: Create a new Gitea admin user inside the workload container.
+    params:
+      username:
+        description: Username for the new admin.
+        type: string
+      email:
+        description: Email address for the new admin.
+        type: string
+      random-password:
+        description: Generate a random password instead of prompting.
+        type: boolean
+        default: true
+    required: [username, email]
+  change-admin-password:
+    description: Change the password of an existing Gitea admin user.
+    params:
+      username:
+        description: Username of the admin to update.
+        type: string
+      password:
+        description: Explicit new password (ignored if random-password is true).
+        type: string
+      random-password:
+        description: Generate a random password instead of using the provided one.
+        type: boolean
+        default: true
+    required: [username]
+  run-housekeeping:
+    description: |
+      Run Gitea housekeeping tasks flush queues, clean archived repos older than 30 days,
+      and run git garbage collection. Safe to schedule periodically.
+  backup-data:
+    description: |
+      Create a backup of Gitea data using gitea dump. Returns the backup path
+      and SHA-256 fingerprint.
+  restore-data:
+    description: |
+      Restore Gitea from a gitea dump archive. Verifies SHA-256, stops services,
+      unpacks, and restarts. Requires the database relation to be connected.
+    params:
+      archive-path:
+        description: Path to the gitea dump archive inside the container.
+        type: string
+      sha256:
+        description: Expected SHA-256 fingerprint of the archive.
+        type: string
+    required: [archive-path, sha256]
