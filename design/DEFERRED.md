@@ -53,6 +53,18 @@ remembering.
 | 36 (Claude Code best practices) | Re-run the source-repo review | Anthropic ships a feature Cantrip's harness genuinely cannot replicate (e.g. cross-session multi-agent collaboration with shared write surface — Agent Teams maturing out of experimental), **or** a Cantrip user reports concrete frustration mapping onto a recommendation rejected in Phase 36 | Not fired | Source repo (`shanraisshan/claude-code-best-practice`) updates often; current recommendations triaged April 2026 |
 | 72.3 (Provider roles) | Quantified benchmark of local EmbeddingGemma snap vs Voyage on the cantrip docs index, deciding whether to default the local snap or keep it a power-user opt-in | Target run 2026-05-11 (snap has bedded in ~2 weeks), **or** a user reports cost concerns with Voyage on a real `@docs` workload, **or** Voyage rate-limit / outage forces an opt-in fallback path | Not fired | Script lives at `scripts/embed_benchmark.py`; emits `design/EMBED_BENCHMARK.md`. Default-to-local trigger: top-3 URL overlap ≥ 70% AND wall-clock within 3× of Voyage. Token counts not captured today — would need `--json` on `cantrip docs index` first |
 
+## New entries — 2026-05-24
+
+Three explicit deferrals were carved out of Phase 73.1 (Recipes) when the
+bulk of the work landed (commits `aee660c`, `15199c4`).  Schema-accepting
+today; dispatch not yet wired.
+
+| Phase / Sub-task | What was deferred | Revisit trigger | Status (2026-05-24) | Notes |
+|---|---|---|---|---|
+| 73.1 (Recipes) | Parallel sub-recipe dispatch via Phase 44 worktrees when `sequential_when_repeated: false` | A real recipe needs to map the same sub-recipe across N inputs (e.g., "apply this audit to every charm in a bundle") | Not fired | `sequential_when_repeated` parses cleanly; `_run_sub_recipes` runs every child sequentially today.  `src/cantrip/agent/commands/recipes.py:_run_sub_recipes` |
+| 73.1 (Recipes) | `settings.model` / `settings.temperature` / `settings.max_turns` mid-session swap at dispatch | A recipe needs to pin to a non-session model (e.g., a `charm-architect` recipe forced onto Opus) — surfaces as a user request or a built-in recipe whose quality depends on a specific model | Not fired | Settings parse and are surfaced in `--help` ("recorded but not yet applied at dispatch"); active provider is unchanged.  `src/cantrip/agent/recipes.py:RecipeSettings`, dispatcher in `commands/recipes.py` |
+| 73.1 (Recipes) | Interactive prompt surface for `prompted` parameters in TUI / Web UI | TUI / Web prompt manager is wired through to slash-command handlers (no current ticket for this surface) | Not fired | `_make_prompt_callback` returns `None`; binder treats `prompted` identically to `required` until a UI surface is wired.  `src/cantrip/agent/commands/recipes.py:_make_prompt_callback` |
+
 ## New entries — 2026-05-19 sweep
 
 Twelve deferrals not present in the 2026-04-26 table were found in this

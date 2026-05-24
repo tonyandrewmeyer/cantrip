@@ -255,48 +255,70 @@ deferred**:
 
 ### 73.1 High — Recipes: parameterised repeatable workflows
 
-- [ ] Recipe schema in ``.cantrip/recipes/*.yaml`` (repo) and
-  ``~/.config/cantrip/recipes/*.yaml`` (user).  Top-level
-  fields: ``version``, ``title``, ``description``,
-  ``parameters`` (list), ``instructions`` (Jinja-templated
-  prompt), ``settings`` (provider/model/temperature/
-  max_turns, all optional — inherit session defaults),
-  ``extensions`` (list of required MCP servers or Phase 30
-  tool names), ``response`` (see 73.3), ``retry`` (see
-  73.4), ``sub_recipes`` (list of nested invocations).
-- [ ] Parameter types: ``string``, ``number``, ``boolean``,
+- [x] Recipe schema in ``<charm>/.cantrip-recipes/*.yaml`` (repo),
+  ``~/.config/cantrip/recipes/*.yaml`` (user), and bundled
+  ``cantrip/recipes/*.yaml`` (built-ins).  Top-level fields:
+  ``version``, ``title``, ``description``, ``parameters`` (list),
+  ``instructions`` (Jinja-templated prompt), ``settings``
+  (model/temperature/max_turns — parsed, applied at dispatch
+  deferred), ``extensions`` (list of required ``mcp:`` / ``tool:``
+  names), ``response`` (see 73.3), ``retry`` (see 73.4),
+  ``sub_recipes`` (list of nested invocations).  Lives in
+  ``src/cantrip/agent/recipes.py``.
+- [x] Parameter types: ``string``, ``number``, ``boolean``,
   ``date``, ``file``, ``select`` (with ``options``).
-  Requirement: ``required`` / ``optional`` / ``prompted``
-  (interactive ask-at-invocation).  Defaults supported.
-- [ ] Invocation surface: ``/recipe <name> [key=value …]``
-  slash command.  Unknown required params trigger an
-  interactive prompt (or fail with a clear list in print
-  mode, Phase 67.3).  Sub-recipes invoke the same way from
-  within a parent's template.
-- [ ] Sub-recipes support ``sequential_when_repeated`` like
-  Goose; default is parallel when the parent runs them in a
-  loop, sequential when invoked once.  Uses Phase 44
-  worktree dispatch for parallel sub-recipes.
-- [ ] Template engine: reuse Cantrip's existing Jinja2
-  integration (Phase 32 planner / Phase 53 prompt templates)
-  with the same template-injection guard.  ``{{
-  recipe_dir }}`` and the parent's scope available.
-- [ ] Ship three charm-relevant built-in recipes:
-  - ``charm-new`` — parameterised "create a new charm for
-    workload X" wrapping the Phase 1 research→scaffold flow
-  - ``charm-cos-add`` — adds COS observability to an
-    existing charm
-  - ``charm-reactive-to-ops`` — upgrades a reactive charm
-    to ops (overlaps with Phase 69.4 Flow skill; they
-    compose — the Flow diagram is the decision tree,
-    the Recipe is the parameterised execution)
-- [ ] Document in ``docs/docs/howto-recipes.html`` and
-  ``design/RECIPES.md`` (new — recipe schema reference,
-  authoring guide, worked examples).
-- [ ] ``tests/unit/test_recipes.py`` — schema parse,
-  parameter validation, template expansion (including
-  escape sequences), sub-recipe invocation, interactive-
-  prompt path, failure on missing required param.
+  Requirement: ``required`` / ``optional`` / ``prompted``.
+  Defaults supported.  Interactive ``prompted`` callback returns
+  ``None`` today — binder treats it identically to ``required``
+  and surfaces a clear missing-parameter error when no argv
+  value is supplied.
+- [x] Invocation surface: ``/recipe`` lists the catalogue,
+  ``/recipe <name> --help`` shows the parameter list,
+  ``/recipe <name> key=value …`` runs the recipe through
+  ``agent.process_message`` with Phase 73.4 retry and Phase
+  73.3 response validation when declared.  Lives in
+  ``src/cantrip/agent/commands/recipes.py``.
+- [x] Sub-recipes parse, validate, and run **sequentially**
+  after the parent reply with cycle detection
+  (``_run_sub_recipes`` in ``src/cantrip/agent/commands/
+  recipes.py``).  The ``sequential_when_repeated`` flag is
+  parsed and accepted today but always sequential in v1.
+- [ ] **Deferred:** parallel sub-recipe dispatch via Phase 44
+  worktrees when ``sequential_when_repeated: false`` and the
+  parent loops over the sub-recipe.  Revisit when a real
+  consumer asks (e.g., a recipe that maps the same operation
+  across N charms in a bundle).
+- [x] Template engine: ``jinja2.sandbox.SandboxedEnvironment``
+  with the existing template-injection guard.  ``{{
+  recipe_dir }}``, ``{{ recipe_name }}``, and bound parameters
+  are exposed.
+- [x] Three built-in recipes ship in the wheel under
+  ``src/cantrip/recipes/``: ``charm-new`` (research →
+  design → build), ``charm-cos-add`` (add COS observability
+  to an existing charm), and ``charm-reactive-to-ops``
+  (migrate a reactive charm onto the Operator Framework).
+- [x] Documented in ``design/RECIPES.md`` (schema reference +
+  authoring guide) and ``docs/src/howto-recipes.md`` →
+  ``docs/docs/howto-recipes.html`` (worked examples,
+  catalogue, parameter cookbook).
+- [x] ``tests/unit/agent/test_recipes.py`` and
+  ``tests/unit/agent/commands/test_recipe_slash.py`` (92
+  cases) — schema parse, parameter validation, template
+  expansion incl. escape sequences and cross-parameter
+  references, sub-recipe sequential invocation, cycle
+  detection, extension enforcement, retry / response
+  composition, missing-required-param error path.
+- [ ] **Deferred:** ``settings.model`` / ``settings.temperature``
+  / ``settings.max_turns`` mid-session swap at dispatch.  The
+  YAML is forward-compatible today; the help renderer notes
+  the recipe carries non-default settings, but the active
+  provider is unchanged.  Revisit when a recipe genuinely
+  needs to run against a different model from the session
+  default (e.g., a ``charm-architect`` recipe pinned to Opus).
+- [ ] **Deferred:** interactive prompt surface for ``prompted``
+  parameters in the TUI / Web UI.  ``_make_prompt_callback``
+  returns ``None`` today.  Revisit when the TUI prompt manager
+  is wired through to slash-command handlers.
 
 ### 73.2 Medium — MCP Apps: interactive HTML in the chat
 
