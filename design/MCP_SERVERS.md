@@ -213,6 +213,43 @@ Anyone shipping one of these can register it in a marketplace
 `/mcp marketplace` will list it for end users.
 
 
+## Safety defaults for the Canonical bundle
+
+`examples/mcp/canonical/marketplace.json` ships an example catalogue
+for the three highest-leverage Canonical surfaces — Launchpad,
+Snapcraft, and Charmcraft.  The catalogue is `directory:`-loadable
+without any external network, so a user can copy a working descriptor
+without inventing one from scratch.
+
+The Canonical bundle splits each server's tools into a read set (safe
+by default) and a write set (allowlist-gated).  Cantrip's authoritative
+gate is the per-server `allowed_tools` list in `cantrip.mcp.yaml`: an
+empty list exposes every tool the server publishes; a non-empty list
+filters to exactly the named tools.  The marketplace descriptor's
+`description` field repeats the split so the policy surfaces in the
+`/mcp marketplace` listing.
+
+| Server     | Read (safe default)                                                | Write (opt in via `allowed_tools`)             | Credential          |
+| ---------- | ------------------------------------------------------------------ | ---------------------------------------------- | ------------------- |
+| Launchpad  | `bug_search`, `bug_view`, `merge_proposal_view`, `project_view`    | `bug_comment`, `bug_status_set`                | OAuth token         |
+| Snapcraft  | `snap_search`, `snap_info`, `snap_releases`                        | `snap_register`, `snap_upload`, `snap_release` | `SNAPCRAFT_MACAROON`|
+| Charmcraft | `lint`, `analyse`                                                  | `register`, `upload`, `release`                | `CHARMHUB_MACAROON` |
+
+The default posture is therefore "discovery and inspection without
+credentials"; any tool that mutates remote state has to be named
+explicitly in `allowed_tools` and supplied with its credential
+environment variable.  This mirrors the destructive-operation gate that
+Cantrip applies to its own built-in tools — empty `allowed_tools` is
+the wrong default for a server that exposes publish verbs.
+
+Authors of new Canonical-adjacent servers should follow the same shape:
+declare a clear read/write split in the description text, and document
+which verbs require which credentials.  Cantrip does not impose
+additional safety machinery on top of the allowlist; the
+`/mcp marketplace` listing and this design note are the only places the
+policy is recorded, so making it visible at the server boundary matters.
+
+
 ## Testing servers locally
 
 Before publishing, point Cantrip at the directory containing the

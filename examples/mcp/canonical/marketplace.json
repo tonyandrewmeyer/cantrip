@@ -1,0 +1,24 @@
+{
+  "name": "canonical-mcp-catalogue",
+  "description": "Canonical-native MCP servers for charm research, packaging, and discovery (Launchpad, Snapcraft, Charmcraft). Read-only verbs are safe by default; publish/edit verbs require explicit allowed_tools entries.",
+  "servers": {
+    "launchpad": {
+      "description": "Launchpad: bug search, bug view, merge proposals, project lookup. Read-only by default. Modifying verbs (bug_comment, bug_status_set) require an OAuth token and must be opted in via allowed_tools.",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["launchpad-mcp"]
+    },
+    "snapcraft": {
+      "description": "Snap Store: snap_search, snap_info, snap_releases. Read-only by default. Publish verbs (snap_register, snap_upload, snap_release) require a Snapcraft macaroon (SNAPCRAFT_MACAROON) and must be opted in via allowed_tools.",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["snapcraft-mcp"]
+    },
+    "charmcraft": {
+      "description": "Charmcraft: lint and analyse a local charm directory; second-opinion register/upload/release on Charmhub. Read/inspect verbs (lint, analyse) are safe by default. Publish verbs (register, upload, release) require a Charmhub macaroon (CHARMHUB_MACAROON) and must be opted in via allowed_tools.",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["charmcraft-mcp"]
+    }
+  }
+}

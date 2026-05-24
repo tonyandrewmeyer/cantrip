@@ -220,6 +220,85 @@ Override the marketplace cache directory with
 sits at `~/.cache/cantrip/marketplaces/` with a 24-hour
 TTL.
 
+{#canonical-bundle}
+## Canonical-native catalogue (Launchpad, Snapcraft, Charmcraft)
+
+Cantrip ships an example marketplace under
+`examples/mcp/canonical/marketplace.json` covering the three
+highest-leverage Canonical surfaces — **Launchpad** (bug search,
+merge proposals, project lookup), **Snapcraft** (snap search,
+info, release-channel data), and **Charmcraft**
+(`lint`, `analyse`, plus opt-in
+`register` / `upload` / `release`).
+
+Point your marketplace at the shipped directory to discover the
+descriptors from inside Cantrip:
+
+```
+marketplaces:
+  - directory: /path/to/cantrip/examples/mcp/canonical
+```
+
+Then `/mcp marketplace` lists each Canonical server with its
+description and install hint. The MCP servers themselves
+(`launchpad-mcp`, `snapcraft-mcp`,
+`charmcraft-mcp`) live in their own repositories; Cantrip
+ships the client and the descriptor catalogue, not the servers.
+
+### Safety story
+
+Each server's tools split into a **read set** (safe by default)
+and a **write set** (`allowed_tools`-gated). Cantrip's
+authoritative gate is the per-server `allowed_tools`
+list — an empty list exposes every tool the server publishes,
+which is the wrong default for any server that ships publish
+verbs.
+
+| Server | Read (safe default) | Write (opt in via `allowed_tools`) | Credential |
+| --- | --- | --- | --- |
+| Launchpad | `bug_search`, `bug_view`, `merge_proposal_view`, `project_view` | `bug_comment`, `bug_status_set` | OAuth token |
+| Snapcraft | `snap_search`, `snap_info`, `snap_releases` | `snap_register`, `snap_upload`, `snap_release` | `SNAPCRAFT_MACAROON` |
+| Charmcraft | `lint`, `analyse` | `register`, `upload`, `release` | `CHARMHUB_MACAROON` |
+
+The read-only starting point — copy this into the
+`servers:` block of your `cantrip.mcp.yaml`:
+
+```
+servers:
+  launchpad:
+    command: uvx
+    args: ["launchpad-mcp"]
+    allowed_tools: ["bug_search", "bug_view", "merge_proposal_view", "project_view"]
+
+  snapcraft:
+    command: uvx
+    args: ["snapcraft-mcp"]
+    allowed_tools: ["snap_search", "snap_info", "snap_releases"]
+
+  charmcraft:
+    command: uvx
+    args: ["charmcraft-mcp"]
+    allowed_tools: ["lint", "analyse"]
+```
+
+When you actually want the agent to publish, add the specific
+write verb to `allowed_tools` and supply the credential.
+Each call still goes through the user-confirmation gate as well:
+
+```
+servers:
+  charmcraft:
+    command: uvx
+    args: ["charmcraft-mcp"]
+    env:
+      CHARMHUB_MACAROON: ${CHARMHUB_MACAROON}
+    allowed_tools: ["lint", "analyse", "upload", "release"]
+```
+
+The same pattern applies to Launchpad bug edits and Snapcraft
+revisions — name the verb, supply the credential, leave everything
+else off the list.
+
 {#security}
 ## Security notes
 

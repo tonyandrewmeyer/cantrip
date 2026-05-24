@@ -437,6 +437,45 @@ class TestMcpMarketplaceCommand:
         assert "No MCP servers" in out
 
 
+# ── Shipped Canonical example catalogue (Phase 95.2) ─────────────────
+
+
+class TestCanonicalExampleCatalogue:
+    """The bundled ``examples/mcp/canonical/marketplace.json`` must stay
+    parseable; otherwise the howto-mcp copy-paste workflow silently rots.
+    """
+
+    @pytest.fixture
+    def catalogue_path(self) -> pathlib.Path:
+        # Walk up from this test file to the repo root, then to examples/.
+        repo_root = pathlib.Path(__file__).resolve().parents[3]
+        path = repo_root / "examples" / "mcp" / "canonical" / "marketplace.json"
+        assert path.is_file(), f"missing shipped catalogue: {path}"
+        return path
+
+    @pytest.mark.asyncio
+    async def test_catalogue_parses_via_directory_source(
+        self, catalogue_path: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        source = parse_source(
+            {"directory": str(catalogue_path.parent)},
+            source_label="shipped",
+        )
+        loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
+        market = await loader.load(source)
+        names = {s.name for s in market.servers}
+        assert names == {"launchpad", "snapcraft", "charmcraft"}
+
+    def test_catalogue_descriptions_carry_safety_note(self, catalogue_path: pathlib.Path) -> None:
+        data = json.loads(catalogue_path.read_text())
+        for name, descriptor in data["servers"].items():
+            description = descriptor["description"].lower()
+            assert "allowed_tools" in description, (
+                f"server {name!r} description must mention allowed_tools so the "
+                "/mcp marketplace listing carries the safety policy"
+            )
+
+
 # ── End-to-end with a fake marketplace stored locally ────────────────
 
 

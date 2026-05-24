@@ -253,6 +253,93 @@ surfaces.</p>
 <code>CANTRIP_MCP_MARKETPLACE_CACHE</code>. The default cache
 sits at <code>~/.cache/cantrip/marketplaces/</code> with a 24-hour
 TTL.</p>
+<h2 id="canonical-bundle">Canonical-native catalogue (Launchpad, Snapcraft, Charmcraft)</h2>
+<p>Cantrip ships an example marketplace under
+<code>examples/mcp/canonical/marketplace.json</code> covering the three
+highest-leverage Canonical surfaces &mdash; <strong>Launchpad</strong> (bug search,
+merge proposals, project lookup), <strong>Snapcraft</strong> (snap search,
+info, release-channel data), and <strong>Charmcraft</strong>
+(<code>lint</code>, <code>analyse</code>, plus opt-in
+<code>register</code> / <code>upload</code> / <code>release</code>).</p>
+<p>Point your marketplace at the shipped directory to discover the
+descriptors from inside Cantrip:</p>
+<pre><code>marketplaces:
+  - directory: /path/to/cantrip/examples/mcp/canonical
+</code></pre>
+<p>Then <code>/mcp marketplace</code> lists each Canonical server with its
+description and install hint. The MCP servers themselves
+(<code>launchpad-mcp</code>, <code>snapcraft-mcp</code>,
+<code>charmcraft-mcp</code>) live in their own repositories; Cantrip
+ships the client and the descriptor catalogue, not the servers.</p>
+<h3>Safety story</h3>
+<p>Each server's tools split into a <strong>read set</strong> (safe by default)
+and a <strong>write set</strong> (<code>allowed_tools</code>-gated). Cantrip's
+authoritative gate is the per-server <code>allowed_tools</code>
+list &mdash; an empty list exposes every tool the server publishes,
+which is the wrong default for any server that ships publish
+verbs.</p>
+<table>
+<thead>
+<tr>
+<th>Server</th>
+<th>Read (safe default)</th>
+<th>Write (opt in via <code>allowed_tools</code>)</th>
+<th>Credential</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Launchpad</td>
+<td><code>bug_search</code>, <code>bug_view</code>, <code>merge_proposal_view</code>, <code>project_view</code></td>
+<td><code>bug_comment</code>, <code>bug_status_set</code></td>
+<td>OAuth token</td>
+</tr>
+<tr>
+<td>Snapcraft</td>
+<td><code>snap_search</code>, <code>snap_info</code>, <code>snap_releases</code></td>
+<td><code>snap_register</code>, <code>snap_upload</code>, <code>snap_release</code></td>
+<td><code>SNAPCRAFT_MACAROON</code></td>
+</tr>
+<tr>
+<td>Charmcraft</td>
+<td><code>lint</code>, <code>analyse</code></td>
+<td><code>register</code>, <code>upload</code>, <code>release</code></td>
+<td><code>CHARMHUB_MACAROON</code></td>
+</tr>
+</tbody>
+</table>
+<p>The read-only starting point &mdash; copy this into the
+<code>servers:</code> block of your <code>cantrip.mcp.yaml</code>:</p>
+<pre><code>servers:
+  launchpad:
+    command: uvx
+    args: [&quot;launchpad-mcp&quot;]
+    allowed_tools: [&quot;bug_search&quot;, &quot;bug_view&quot;, &quot;merge_proposal_view&quot;, &quot;project_view&quot;]
+
+  snapcraft:
+    command: uvx
+    args: [&quot;snapcraft-mcp&quot;]
+    allowed_tools: [&quot;snap_search&quot;, &quot;snap_info&quot;, &quot;snap_releases&quot;]
+
+  charmcraft:
+    command: uvx
+    args: [&quot;charmcraft-mcp&quot;]
+    allowed_tools: [&quot;lint&quot;, &quot;analyse&quot;]
+</code></pre>
+<p>When you actually want the agent to publish, add the specific
+write verb to <code>allowed_tools</code> and supply the credential.
+Each call still goes through the user-confirmation gate as well:</p>
+<pre><code>servers:
+  charmcraft:
+    command: uvx
+    args: [&quot;charmcraft-mcp&quot;]
+    env:
+      CHARMHUB_MACAROON: ${CHARMHUB_MACAROON}
+    allowed_tools: [&quot;lint&quot;, &quot;analyse&quot;, &quot;upload&quot;, &quot;release&quot;]
+</code></pre>
+<p>The same pattern applies to Launchpad bug edits and Snapcraft
+revisions &mdash; name the verb, supply the credential, leave everything
+else off the list.</p>
 <h2 id="security">Security notes</h2>
 <ul>
 <li><strong>Token files live at <code>0600</code> in a <code>0700</code>

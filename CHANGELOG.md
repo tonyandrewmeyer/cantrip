@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 95.2 — Canonical MCP catalogue example.**  Shipped
+  `examples/mcp/canonical/marketplace.json` with descriptors for
+  **Launchpad**, **Snapcraft**, and **Charmcraft** MCP servers.  Point a
+  marketplace at the directory (`marketplaces: [- directory:
+  /path/to/cantrip/examples/mcp/canonical]`) and `/mcp marketplace`
+  lists each one with its description and install hint.  Each server's
+  tools split into a read set (safe by default — `bug_search`,
+  `bug_view`, `merge_proposal_view`, `project_view`, `snap_search`,
+  `snap_info`, `snap_releases`, `lint`, `analyse`) and a write set
+  (`allowed_tools`-gated — `bug_comment`, `bug_status_set`,
+  `snap_register`, `snap_upload`, `snap_release`, `register`, `upload`,
+  `release`).  Both the descriptor `description` fields and the new
+  "Canonical-native catalogue" section in
+  [`howto-mcp.html`](docs/docs/howto-mcp.html) carry the read-only-default
+  and read+opt-in-write copy-paste recipes; the policy decisions are
+  recorded in `design/MCP_SERVERS.md`.  A
+  `TestCanonicalExampleCatalogue` test pins both that the catalogue
+  parses cleanly through `MarketplaceLoader` and that every server
+  description mentions `allowed_tools` so the safety policy stays
+  visible.
 - **Phase 73.2 — MCP Apps: interactive HTML in the chat.**  When an
   MCP tool result includes a `ui` block with `mime: text/html` (the
   [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)),

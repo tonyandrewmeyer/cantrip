@@ -1354,17 +1354,32 @@ mentioning them in docs.
 
 ### 95.2 Marketplace descriptors and discoverability
 
-- [ ] Ship documented marketplace / descriptor examples for
-  **Launchpad**, **Snapcraft**, and **Charmcraft** MCP servers so a
-  user can enable Canonical-native servers without reading design docs
-  or inventing YAML from scratch.
-- [ ] Decide the default exposure / safety story per server.  Search,
-  info, and lint / analyse verbs should be read-only by default;
-  publishing verbs (if exposed at all) require explicit allowlisting
-  and the same confirmation posture as other destructive or external
-  operations.
-- [ ] Update the MCP docs so the Canonical servers are a first-class
-  example alongside the generic Grafana / GitHub-style examples.
+- [x] Shipped ``examples/mcp/canonical/marketplace.json`` with
+  descriptors for **Launchpad**, **Snapcraft**, and **Charmcraft**
+  servers (and an adjacent ``README.md`` that documents the
+  ``directory:`` marketplace workflow plus the read-only / write
+  copy-paste recipes).  ``tests/unit/mcp/test_mcp_marketplace.py``
+  ``TestCanonicalExampleCatalogue`` pins both that the catalogue
+  parses cleanly through ``MarketplaceLoader`` and that every server
+  description mentions ``allowed_tools`` so the safety policy
+  surfaces in ``/mcp marketplace`` listings.
+- [x] Per-server safety story documented in
+  ``design/MCP_SERVERS.md`` (new "Safety defaults for the Canonical
+  bundle" section) and in the shipped catalogue's README.  Read
+  verbs (``bug_search`` / ``snap_search`` / ``snap_info`` /
+  ``snap_releases`` / ``lint`` / ``analyse`` / ``bug_view`` /
+  ``merge_proposal_view`` / ``project_view``) are safe by default;
+  write verbs (``bug_comment``, ``bug_status_set``,
+  ``snap_register``, ``snap_upload``, ``snap_release``,
+  ``register``, ``upload``, ``release``) are opt-in via explicit
+  ``allowed_tools`` entries and their named credential environment
+  variable.  The descriptor ``description`` text repeats the split
+  so the policy is visible in the listing too.
+- [x] ``docs/src/howto-mcp.md`` (rendered to
+  ``docs/docs/howto-mcp.html``) gained a "Canonical-native catalogue"
+  subsection between the generic marketplaces section and the
+  security notes, with the read-only-default and read+opt-in-write
+  copy-paste snippets.
 
 ### 95.3 Agent-side adoption
 
