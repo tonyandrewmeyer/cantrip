@@ -1892,14 +1892,39 @@ non-Qwen candidates can be evaluated fairly.
 
 ### 109.3 P1 — Re-run the Mistral Nemo 12B smoke
 
-- [ ] With 109.1 + 109.2 landed, retry the
-  ``inference-snaps/mistral-nemo-12b/`` smoke (server scaffold
-  already in place).  Pass criterion: produce ≥ 80 % of the
-  improve-02 feature target in ≤ 30 min, OR exit cleanly with a
-  Phase 102 / 103 / 106 / 107 failure mode that doesn't imply a
-  message-format issue.
-- [ ] Document measured findings in
-  ``design/LOCAL_MODELS.md`` §5.2.2.
+- [x] With 109.1 + 109.2 landed, retried the
+  ``inference-snaps/mistral-nemo-12b/`` smoke against the same
+  ``smoke-server.sh`` shape on RTX 5070 12 GiB (2026-05-24/25).
+  The three pre-flight checks pass cleanly (``/v1/models``,
+  plain hello with no thinking overhead, synthetic
+  ``get_weather`` tool call) — zero ``role must alternate``
+  500s, the rewriter substrate works end-to-end.  The
+  ntfy-improve run produces a packable 1.13 MiB charm whose
+  ``charmcraft.yaml`` matches improve-02 (4/4 COS relations,
+  3/3 actions, OCI image binding) and whose ``src/charm.py``
+  is an exact match for the prompt's shape constraints (right
+  ``ops_tracing`` import, single ``super().__init__``, four
+  ``framework.observe``, all four ``_on_*`` methods correct).
+  Two cantrip-side wedges remain open and motivate follow-up
+  work: (a) ``tests/unit/test_charm.py`` came out as
+  ``unittest`` + ``Harness`` despite the prompt's "NOT Harness"
+  directive (same negative-instruction-adherence pattern
+  §5.1.1 and §5.5 flagged for Qwen3-8B / gemma4); (b) after the
+  successful ``charmcraft_pack`` the model invoked
+  ``plan_tasks`` twelve times in 3m39s and the resulting
+  CONFIRM tasks wedged the executor (``--yolo`` covers
+  permission ``ask`` events but not work-queue CONFIRMs) →
+  exit 1 at 15m17s wall clock.  Wedge (b) is a Phase 106-shape
+  failure mode that doesn't imply a message-format issue, so
+  the phase's OR-criterion is met.
+- [x] Documented measured findings in
+  ``design/LOCAL_MODELS.md`` §5.2.2 — pre-flight, full tool
+  sequence with timing, per-file output assessment,
+  decode-speed observation (time to first pack ~2.1×
+  Qwen3-14B Run #3's 5m19s), the post-success planner-spiral
+  failure mode, and follow-up phase candidates (convergence
+  heuristic after a successful pack; ``--yolo`` scope vs
+  CONFIRM tasks).
 
 ### 109.4 P1 — Family detection + opt-in
 

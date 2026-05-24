@@ -331,7 +331,7 @@ Smoke artefacts retained at:
 - ``cantrip-iter-runs/qwen3-8b-improve/ntfy/`` — partial charm
   output (Run #2 final state)
 
-### 5.2 Mistral Nemo 12B *(blocked on Phase 108 — chat-template mismatch with cantrip's tool-role messages)*
+### 5.2 Mistral Nemo 12B *(smoked twice — Phase 109 rewriter unblocked the chat-template wall; charm packs at improve-02 quality but the agent loop spirals after success)*
 
 - 128 K native context, native function-calling, very solid Python
   performance per public benchmarks.  Q4_K_M ~7.5 GB
@@ -383,6 +383,173 @@ Phase 108 in ROADMAP.
 Until Phase 108 lands, Mistral Nemo can't be a default.  Once it
 lands, the smoke shape is preserved at
 ``inference-snaps/mistral-nemo-12b/`` for re-evaluation.
+
+> *Phase 108 was subsequently renumbered to Phase 109 when the
+> roadmap was re-cut; §5.2.2 below is the re-smoke after 109.1 +
+> 109.2 (the per-provider message-rewriter and Mistral-format
+> inbound tool-call parser) shipped on ``main``.*
+
+#### 5.2.2 Re-smoked after Phase 109.1 + 109.2 landed (2026-05-25)
+
+Phase 109's outbound rewriter (folds cantrip's ``tool``-role
+messages into the prior assistant turn with
+``[TOOL_CALLS]…[/TOOL_CALLS]`` / ``[TOOL_RESULTS]…[/TOOL_RESULTS]``
+markers) and the inbound parser (split assistant ``content`` on
+``[TOOL_CALLS]`` markers when llama.cpp's ``--jinja`` lets the
+markers through) are shipped on ``main``.
+``InferenceSnapProvider``'s family detection (``mistral-nemo-*`` →
+Mistral path) picks the rewriter up automatically; no env-var
+override needed.
+
+**Pre-flight checks** (``smoke-check.sh`` against the same
+``inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh`` shape
+on port 8344, RTX 5070 12 GiB, 24 K KV cache at fp16):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, id ``Mistral-Nemo-Instruct-2407-Q4_K_M.gguf``, ``n_ctx_train: 1024000`` | pass |
+| Plain hello (512-token budget) | pass — content ``"OK"``, ``finish=stop``, 2 completion tokens (no reasoning overhead, as predicted) |
+| Synthetic ``get_weather`` tool call | pass — clean ``tool_calls`` array, empty ``content``, ``finish=tool_calls`` |
+
+Notable: llama.cpp's ``--jinja`` handles the outbound
+``[TOOL_CALLS]`` markers server-side and emits the canonical
+OpenAI-shaped ``tool_calls`` array, so the Phase 109.2 client-side
+parser is dormant insurance rather than load-bearing for this
+server version.  The rewriter *does* fire on the next turn when
+cantrip echoes the tool result back to the model — the rewriter
+output is what re-enters the Tekken template, and zero
+``role must alternate`` 500s came back across the full run.
+
+**ntfy-improve run (autonomous, --yolo --print --json):**
+
+Same prompt as Qwen3-14B Run #3 (§5.6.1, the directive-heavy
+"three write_files then charmcraft_pack" shape).  Wall clock
+**15m17s, exit code 1**.
+
+| Phase | Tool sequence | Wall clock |
+|---|---|---|
+| **Productive — clean** | ``list_directory`` → ``read_file charmcraft.yaml`` → ``write_file charmcraft.yaml`` (1656 B) → ``write_file src/charm.py`` (1344 B) → ``write_file tests/unit/test_charm.py`` (1257 B) → ``charmcraft_pack`` → ``charmcraft_pack`` (redundant) | 0 → **11m20s** |
+| **Spiral — wedged** | 12 × ``plan_tasks`` (each ~10 s, all re-planning the same already-done goal) + 1 stray ``write_file charmcraft.yaml`` | 11m26s → 15m05s |
+| **Exit** | Executor refuses to continue: 12 ``CONFIRM`` ("Confirm design with user") tasks queued, ``--yolo`` does not auto-approve them | 15m17s, code 1 |
+
+**Output completeness vs improve-02:**
+
+- ``charmcraft.yaml``: **good**.  All four COS relations present
+  (``tracing`` limit 1, ``metrics-endpoint`` prometheus_scrape,
+  ``logging`` loki_push_api, ``grafana-dashboard``), three actions
+  (``pause``/``resume``/``get-health``), OCI image resource with the
+  correct ``binwiederhier/ntfy:v2.11`` upstream-source, and the
+  matching ``containers.ntfy.resource: ntfy-image`` binding.  One
+  schema oddity — an extra ``bindings: [- ntfy-image]`` block
+  nested under ``resources.ntfy-image`` — but charmcraft accepted
+  it (pack succeeded twice) so it's cosmetic at most.
+- ``src/charm.py``: **exact match** to the prompt's stringent
+  shape constraints.  Five imports correct (incl. the
+  ``import ops_tracing`` vs ``import ops.tracing as ops_tracing``
+  distinction that §5.6.1's Run #1 got wrong), ``super().__init__``
+  called once, ``self._tracing = ops_tracing.Tracing(self,
+  "tracing")``, ``self.container = self.unit.get_container("ntfy")``,
+  exactly four ``framework.observe`` lines, all four ``_on_*``
+  methods with the right body (MaintenanceStatus on pause,
+  ActiveStatus on resume, ``container.get_service().is_running()``
+  on get-health).  Better than Qwen3-14B Run #1 (which produced
+  three stacked ``super().__init__`` calls) and on a par with Run
+  #3 on the structural surface.
+- ``tests/unit/test_charm.py``: **wrong shape**.  Despite the
+  prompt's explicit "using ops.testing.Context (NOT Harness)" and
+  "NOT Harness" in caps, the model emitted a ``unittest`` +
+  ``Harness`` file with missing imports (``NtfyCharm``,
+  ``ActiveStatus``, ``MaintenanceStatus``) and would not collect.
+  Same negative-instruction-violation shape §5.1.1 flagged for
+  Qwen3-8B (``charmcraft_init``) and §5.5 flagged for gemma4 —
+  Mistral Nemo joins that pattern.
+- ``ntfy_amd64.charm``: 1186050 bytes (1.13 MiB) — matches
+  improve-02 / Qwen3-14B Run #3's 1.19 MB to within ~5 %, packs
+  cleanly via ``charmcraft_pack`` from the agent twice in a row.
+
+**Decode speed observation:** the gap between the first
+``write_file charmcraft.yaml`` (t = 33 s) and the second
+``write_file src/charm.py`` (t = 641 s) is **608 s = ~10 min** of
+model generation for a single ~1.3 KB tool-call payload.  The
+two subsequent ``write_file`` calls and both ``charmcraft_pack``
+calls completed inside ~50 s, so this isn't a steady-state decode
+rate — looks like one slow first long-context decode followed by
+the cache warming up.  Worth re-measuring with streaming events
+captured to separate "thinking time" from raw decode tokens/s,
+but as-is Mistral Nemo's time-to-first-pack of **11m10s** is
+~2.1× Qwen3-14B Run #3's 5m19s.
+
+**Post-success planner spiral (new failure mode).**  This is
+*not* a Mistral-side bug — it's a cantrip + Mistral interaction.
+After two successive ``charmcraft_pack`` successes the model
+called ``plan_tasks`` twelve times in 3m39s, each producing a
+plan whose tasks depended on phantom titles ("Analyse the source
+repository", "Synthesise design proposal", "Confirm design with
+user", "Add actions to the ntfy charm") that don't match any
+existing task ID; the planner's safety net stripped every
+dependency, but each plan *also* materialised a fresh
+``CONFIRM`` task.  ``--yolo`` only auto-approves tool-permission
+``ask`` events, not work-queue CONFIRM tasks, so the queue piled
+up 12 unanswered CONFIRMs and the executor bailed with the
+"Refusing to run unattended: pending confirmations would block
+the queue" message.  Qwen3-14B Run #3 (§5.6.1) didn't trip this
+because the model emitted a STOP marker after the first pack and
+went quiet; Mistral Nemo went back to planning instead.
+
+Two cantrip-side levers to consider:
+
+1. **Convergence heuristic.**  After a successful
+   ``charmcraft_pack`` whose artefact size sits inside the
+   improve-02 envelope, the executor could treat the goal as
+   converged (or at least dampen further ``plan_tasks``
+   invocations).  Either a separate phase or a sub-phase under
+   Phase 106.
+2. **``--yolo`` scope.**  ``--yolo`` documents itself as
+   "auto-approve every ``ask`` permission" but a substantial
+   class of unattended-run blockers — design-confirmation
+   CONFIRMs — sits outside its remit.  Either widen ``--yolo``
+   to optionally cover CONFIRMs ("``--yolo=all``"?), or add a
+   separate flag (``--auto-confirm``?), or treat
+   "CONFIRMs-without-a-human-in-the-loop" as an explicit
+   ``--print`` mode error before the loop starts.  Out of
+   scope for Phase 109 itself.
+
+**Phase 109 verdict.**  109.1 (outbound rewriter) and 109.2
+(inbound parser) are *correct* on the substrate they were built
+for — zero ``role must alternate`` 500s, zero leaked Mistral
+markers in any captured tool-call shape, zero failures in the
+rewriter or parser unit tests on the matching live wire format.
+Mistral Nemo successfully drives a ``charmcraft.yaml`` +
+``src/charm.py`` at improve-02 structural quality and produces a
+1.19 MB packable charm.  The binding constraints that remain are
+**decode speed**, **negative-instruction adherence on the test
+file**, and the **post-success planner spiral + ``--yolo``
+CONFIRM gap** — none of which are message-format issues, all of
+which are out of Phase 109's scope.
+
+**Recommendation.**  Mark Phase 109.3 as met — the exit
+criterion ("Mistral Nemo Nemo 12B drives an end-to-end
+ntfy-improve scenario that produces a packable charm") is
+satisfied even though the agent loop exited non-zero on a
+post-success cantrip-side wedge.  Mistral Nemo is *not yet* a
+default-candidate replacement for qwen3-coder (decode speed is
+~2× Qwen3-14B and the test-file output is wrong-shape), but it
+*is* a usable long-context option for operators who explicitly
+pick ``--snap mistral-nemo-12b``.  Phase 105.4's "long-context
+opt-in preset" framing fits; bake it in via 105.2 once the
+convergence-heuristic / ``--yolo``-scope work has a phase home.
+
+Smoke artefacts retained at:
+
+- ``cantrip-iter-runs/mistral-nemo-12b-improve/run.ndjson`` —
+  full 236-event NDJSON stream (2026-05-24/25 re-smoke)
+- ``cantrip-iter-runs/mistral-nemo-12b-improve/run.stderr`` —
+  the dependency-stripping log + the executor's
+  refusal-to-continue message
+- ``cantrip-iter-runs/mistral-nemo-12b-improve/ntfy/`` — packed
+  charm (``ntfy_amd64.charm`` 1.13 MiB) + the in-tree
+  ``charmcraft.yaml`` / ``src/charm.py`` /
+  ``tests/unit/test_charm.py`` outputs
 
 ### 5.3 Phi-4-Mini *(speed alternative)*
 
