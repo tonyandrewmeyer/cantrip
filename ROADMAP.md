@@ -1450,14 +1450,25 @@ lowest-friction high-value pieces first.
 
 ### 97.1 Substrate-role design
 
-- [ ] Write the design note that decides the role of each surface:
-  **MAAS** as machine inventory / provisioning, **OpenStack / Sunbeam**
-  as a target cloud for infra charms and demos, and **MicroCloud** as a
-  compact private-cloud / edge lab.
-- [ ] Decide how these surfaces relate to **Concierge** rather than
-  bypassing it ad hoc.  The outcome may be extra presets, extra profile
-  data, or documented MCP / tool integration — but not a second,
-  conflicting environment abstraction.
+- [x] Wrote the design note that decides the role of each surface in
+  [`design/SUBSTRATES.md`](design/SUBSTRATES.md): **MAAS** as machine
+  inventory / provisioning surfaced through Juju + an MCP-shaped
+  read/write split that mirrors the Phase 95.2 Canonical bundle;
+  **OpenStack / Sunbeam** as a target cloud for IaaS-shaped charms
+  with substrate-aware design + acceptance hints (no tooling);
+  **MicroCloud** as a compact private-cloud / edge lab consumed via
+  detection-plus-routing of an existing controller (no installer).
+- [x] Decided how these surfaces relate to **Concierge** rather than
+  bypassing it ad hoc.  Outcome: Concierge stays the only environment
+  provisioner Cantrip launches; new substrates show up as Concierge
+  presets *if and when* Concierge upstream adopts them, otherwise as
+  profile data + MCP surfaces.  The user-visible substrate vocabulary
+  stays binary (`k8s` vs `machine`); MAAS / OpenStack / MicroCloud
+  ride on `machine` as cloud-type refinements surfaced in DESIGN.md,
+  acceptance plans, and runbooks rather than as peer enum members.
+  Full design rationale, the per-substrate "what Cantrip does and
+  doesn't do" matrix, and the implementation hooks for 97.2 / 97.3 /
+  97.4 live in [`design/SUBSTRATES.md`](design/SUBSTRATES.md).
 
 ### 97.2 MAAS path
 

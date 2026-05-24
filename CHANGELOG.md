@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 97.1 — Substrate-role design note for MAAS / OpenStack /
+  MicroCloud.**  Wrote [`design/SUBSTRATES.md`](design/SUBSTRATES.md)
+  deciding the role each of the three Canonical substrate surfaces
+  plays inside Cantrip's existing environment story and how each
+  relates to Concierge.  Outcome: Concierge stays the only environment
+  provisioner Cantrip launches; MAAS gets a Phase-95.2-shaped MCP
+  descriptor (read verbs safe, capacity verbs allowlist-gated);
+  OpenStack / Sunbeam gets substrate-aware design + acceptance hints
+  rather than tooling; MicroCloud is consumed via detection + routing
+  of an existing controller.  The user-visible substrate vocabulary
+  stays binary (`k8s` vs `machine`); MAAS / OpenStack / MicroCloud
+  ride on the `machine` path as cloud-type refinements rather than
+  becoming peer enum members.  Unblocks the implementation in
+  Phase 97.2 (MAAS), 97.3 (OpenStack / MicroCloud profiles), and
+  97.4 (examples and docs).
 - **Phase 36b — Four `charming-with-claude` skills adopted.**  After
   reviewing the twelve skills in
   [`tonyandrewmeyer/charming-with-claude`](https://github.com/tonyandrewmeyer/charming-with-claude)
