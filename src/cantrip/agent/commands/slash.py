@@ -98,7 +98,7 @@ COMMAND_CATALOGUE: tuple[CommandInfo, ...] = (
     CommandInfo("/build", "Leave plan mode and resume executing changes"),
     CommandInfo("/architect", "Toggle architect/editor two-model split"),
     CommandInfo("/auto-commit", "Toggle per-turn auto-commit of agent edits"),
-    CommandInfo("/yolo", "Toggle unattended mode — auto-approve every ask"),
+    CommandInfo("/yolo", "Toggle unattended mode — auto-approve asks and print-mode CONFIRMs"),
     CommandInfo("/pause", "Pause the autonomous loop (chat and CONFIRM tasks keep working)"),
     CommandInfo("/resume", "Resume a paused autonomous loop"),
     CommandInfo("/ralph", "Run a bounded iterate-until-green loop (Ralph)"),
@@ -638,9 +638,11 @@ def help_text(agent: CantripAgent | None = None) -> str:
         "`--no-auto-commit` on the command line disables it at "
         "startup.\n"
         "- `/yolo [on|off]` — toggle unattended mode: every `ask` "
-        "permission auto-approves for the rest of the session.  "
-        "`deny` rules still block.  `--yolo` on the command line "
-        "enables it at startup.\n"
+        "permission auto-approves for the rest of the session, and "
+        "in `--print` runs any work-queue CONFIRM task still pending "
+        "after the drain is auto-resolved.  `deny` rules still "
+        "block.  `--yolo` on the command line enables it at "
+        "startup.\n"
         "- `/pause` — stop the autonomous loop picking new tasks.  "
         "Chat and CONFIRM tasks keep working; in-flight tasks run "
         "to completion.  Run `/resume` to restart.\n"

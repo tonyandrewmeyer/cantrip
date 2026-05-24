@@ -202,6 +202,117 @@ class TestCharmcraftPackBranches:
 
 
 # ---------------------------------------------------------------------------
+# Phase 110.1 — CharmcraftPackTool flips state.pack_succeeded on success
+# ---------------------------------------------------------------------------
+
+
+class TestCharmcraftPackConvergenceFlag:
+    """``CharmcraftPackTool`` signals convergence on success only.
+
+    Drives the Phase 110.1 planner gate that closes the
+    ``design/LOCAL_MODELS.md`` §5.2.2 Mistral Nemo post-pack spiral.
+    """
+
+    @pytest.mark.asyncio
+    async def test_success_flips_pack_succeeded(self, tmp_path: pathlib.Path) -> None:
+        from cantrip.agent.state import AgentState
+
+        state = AgentState()
+        assert state.pack_succeeded is False
+        # Drop a stub .charm so the success branch resolves it.
+        (tmp_path / "test_amd64.charm").write_bytes(b"")
+        with patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=_proc(returncode=0, stdout="ok"),
+        ):
+            result = await CharmcraftPackTool(state=state).execute(path=str(tmp_path))
+        assert result.success is True
+        assert state.pack_succeeded is True
+
+    @pytest.mark.asyncio
+    async def test_failure_leaves_pack_succeeded_unset(self, tmp_path: pathlib.Path) -> None:
+        from cantrip.agent.state import AgentState
+
+        state = AgentState()
+        with patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=_proc(returncode=1, stderr="bad metadata"),
+        ):
+            result = await CharmcraftPackTool(state=state).execute(path=str(tmp_path))
+        assert result.success is False
+        assert state.pack_succeeded is False
+
+    @pytest.mark.asyncio
+    async def test_no_state_does_not_raise(self, tmp_path: pathlib.Path) -> None:
+        # Legacy instantiation without state is still supported — the
+        # success path just skips the flag flip rather than crashing.
+        (tmp_path / "test_amd64.charm").write_bytes(b"")
+        with patch(
+            "cantrip.agent.tools.charm.subprocess.run",
+            return_value=_proc(returncode=0, stdout="ok"),
+        ):
+            result = await CharmcraftPackTool().execute(path=str(tmp_path))
+        assert result.success is True
+
+
+class TestQuickPackConvergenceFlag:
+    """``QuickPackTool`` flips ``state.pack_succeeded`` on both backends."""
+
+    @pytest.mark.asyncio
+    async def test_rust_success_flips_pack_succeeded(self, tmp_path: pathlib.Path) -> None:
+        from cantrip.agent.state import AgentState
+
+        state = AgentState()
+        (tmp_path / "test.charm").write_bytes(b"")
+        with (
+            patch.object(QuickPackTool, "_find_rust_binary", return_value="/bin/qp"),
+            patch(
+                "cantrip.agent.tools.charm.subprocess.run",
+                return_value=_proc(returncode=0, stdout="ok"),
+            ),
+        ):
+            result = await QuickPackTool(state=state).execute(path=str(tmp_path))
+        assert result.success is True
+        assert state.pack_succeeded is True
+
+    @pytest.mark.asyncio
+    async def test_python_success_flips_pack_succeeded(self, tmp_path: pathlib.Path) -> None:
+        from cantrip.agent.state import AgentState
+
+        state = AgentState()
+        charm = tmp_path / "test.charm"
+        charm.write_bytes(b"x" * 100)
+        fake_pack = MagicMock()
+        fake_pack.quick_pack.return_value = charm
+        fake_module = MagicMock(pack=fake_pack)
+        import sys
+
+        with (
+            patch.object(QuickPackTool, "_find_rust_binary", return_value=None),
+            patch.dict(sys.modules, {"quickpack": fake_module, "quickpack.pack": fake_pack}),
+        ):
+            result = await QuickPackTool(state=state).execute(path=str(tmp_path))
+        assert result.success is True
+        assert state.pack_succeeded is True
+
+    @pytest.mark.asyncio
+    async def test_rust_failure_leaves_pack_succeeded_unset(self, tmp_path: pathlib.Path) -> None:
+        from cantrip.agent.state import AgentState
+
+        state = AgentState()
+        with (
+            patch.object(QuickPackTool, "_find_rust_binary", return_value="/bin/qp"),
+            patch(
+                "cantrip.agent.tools.charm.subprocess.run",
+                return_value=_proc(returncode=1, stderr="bad"),
+            ),
+        ):
+            result = await QuickPackTool(state=state).execute(path=str(tmp_path))
+        assert result.success is False
+        assert state.pack_succeeded is False
+
+
+# ---------------------------------------------------------------------------
 # CharmValidateTool — coverage-pct branches
 # ---------------------------------------------------------------------------
 

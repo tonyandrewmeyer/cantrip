@@ -271,3 +271,36 @@ class TestCantripAgent:
         await agent.process_message("loop")
 
         assert agent._execute_tool.await_count == 20
+
+    @pytest.mark.asyncio
+    async def test_pack_succeeded_resets_at_top_of_turn(self):
+        """A new user turn always gets a fresh ``pack_succeeded`` flag.
+
+        Phase 110.1 — once a charm packed in a *previous* turn, we
+        still want the *next* user goal to be able to call
+        ``plan_tasks`` cleanly.  The reset happens at the top of
+        ``process_message`` before any inner work runs.
+        """
+        provider = FakeProvider([Response(content="ack")])
+        agent = CantripAgent(provider=provider)
+        # Simulate a successful pack in the previous turn.
+        agent.state.pack_succeeded = True
+
+        await agent.process_message("Now do something else")
+
+        # The flag was cleared at the top of the new turn — the
+        # planner gate doesn't survive across user messages.
+        assert agent.state.pack_succeeded is False
+
+    @pytest.mark.asyncio
+    async def test_pack_succeeded_resets_at_top_of_streaming_turn(self):
+        """Streaming variant of the per-turn reset."""
+        provider = FakeProvider([Response(content="ack")])
+        agent = CantripAgent(provider=provider)
+        agent.state.pack_succeeded = True
+
+        chunks: list[str] = []
+        async for chunk in agent.process_message_streaming("again"):
+            chunks.append(chunk)
+
+        assert agent.state.pack_succeeded is False

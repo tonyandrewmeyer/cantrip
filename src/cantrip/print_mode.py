@@ -123,14 +123,37 @@ def _format_pending_confirmations(tasks: list[AgentTask]) -> str:
     """Return a human-readable summary of unresolved CONFIRM tasks."""
     lines = [
         "Refusing to run unattended: pending confirmations would block the queue.",
-        "Re-run with --yolo to auto-approve `ask` permissions, or resolve them",
-        "interactively in the TUI/CLI mode first.",
+        "Re-run with --yolo to auto-approve both permission `ask` events and",
+        "work-queue CONFIRM tasks, or resolve them interactively in the",
+        "TUI/CLI mode first.",
         "",
         "Pending confirmations:",
     ]
     for task in tasks:
         lines.append(f"  - [{task.id}] {task.title}")
     return "\n".join(lines)
+
+
+def _auto_approve_confirmations(agent: CantripAgent, tasks: list[AgentTask]) -> None:
+    """Mark each pending CONFIRM task DONE under ``--yolo``.
+
+    Phase 110.2: ``--yolo`` documents itself as covering unattended
+    runs.  Until this change it auto-approved permission ``ask``
+    events but not work-queue CONFIRMs, which left ``--print --yolo``
+    runs exiting 1 whenever a local model emitted a post-success
+    ``confirm-design-…`` task (see ``design/LOCAL_MODELS.md`` §5.2.2).
+
+    The auto-approval just flips the task to ``DONE`` with a marker
+    note; it does *not* invoke the per-CONFIRM handler (e.g.
+    ``handle_design_confirmation``) because the handlers' job is to
+    materialise follow-up work, and in the §5.2.2 failure mode the
+    follow-up work is precisely what we're trying to suppress (the
+    charm has already packed in this turn).  Operators who want a
+    handler-driven response to a CONFIRM in unattended mode should
+    not use ``--print --yolo`` — they should resolve interactively.
+    """
+    for task in tasks:
+        agent.work_queue.set_done(task.id, "Auto-approved by --yolo")
 
 
 def _pending_confirmations(agent: CantripAgent) -> list[AgentTask]:
@@ -275,8 +298,14 @@ async def _run_async(
         # Re-check for confirmations queued *during* the run — a
         # subagent that hits a destructive tool gate can produce a
         # CONFIRM task even with --yolo if the rule is ``deny`` (yolo
-        # only flips ``ask``).
+        # only short-circuits ``ask``).  Phase 110.2: when ``--yolo``
+        # is set, auto-approve any pending CONFIRMs and re-drain so
+        # downstream work can settle before the exit-code check.
         pending = _pending_confirmations(agent)
+        if pending and agent.state.yolo_mode:
+            _auto_approve_confirmations(agent, pending)
+            await _drain_queue(agent)
+            pending = _pending_confirmations(agent)
         if pending:
             print(_format_pending_confirmations(pending), file=sys.stderr)
             return 1
@@ -365,6 +394,11 @@ async def _run_ralph_loop(
             )
             raise _RalphAbortError()
         pending = _pending_confirmations(agent)
+        # Phase 110.2: same auto-approval as the non-Ralph path.
+        if pending and agent.state.yolo_mode:
+            _auto_approve_confirmations(agent, pending)
+            await _drain_queue(agent)
+            pending = _pending_confirmations(agent)
         if pending:
             abort_message["error"] = _format_pending_confirmations(pending)
             raise _RalphAbortError()
@@ -518,9 +552,16 @@ def run_print(args: argparse.Namespace) -> int:
     agent.load_state()
 
     pending = _pending_confirmations(agent)
-    if pending and not agent.state.yolo_mode:
-        print(_format_pending_confirmations(pending), file=sys.stderr)
-        return 1
+    if pending:
+        if agent.state.yolo_mode:
+            # Phase 110.2: pre-existing CONFIRMs from a resumed session
+            # don't block an unattended run any more — auto-approve them
+            # so the executor can dispatch downstream work immediately
+            # rather than parking on the up-front refusal check.
+            _auto_approve_confirmations(agent, pending)
+        else:
+            print(_format_pending_confirmations(pending), file=sys.stderr)
+            return 1
 
     try:
         return asyncio.run(

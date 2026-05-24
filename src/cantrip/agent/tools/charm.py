@@ -663,6 +663,13 @@ class CharmcraftPackTool(Tool):
             else:
                 caption = "Packed charm (no .charm file located)"
 
+            # Phase 110.1: signal convergence so further mid-turn
+            # ``plan_tasks`` invocations short-circuit instead of
+            # spiralling.  ``self._state`` is optional for legacy
+            # instantiations (see ``__init__``); guard accordingly.
+            if self._state is not None:
+                self._state.pack_succeeded = True
+
             return ToolResult(
                 success=True,
                 output=f"Packed charm successfully\n{result.stdout}",
@@ -819,6 +826,14 @@ class CharmValidateTool(Tool):
 class QuickPackTool(Tool):
     """Fast local charm packing for development workflows."""
 
+    def __init__(self, state: Any = None) -> None:
+        # ``state`` is optional so existing instantiations (and tests
+        # that build the tool without a full agent) keep working.  When
+        # set, a successful pack flips ``state.pack_succeeded = True``
+        # so the Phase 110.1 planner gate fires for both
+        # ``charmcraft_pack`` and ``quick_pack``.
+        self._state = state
+
     @property
     def name(self) -> str:
         return "quick_pack"
@@ -910,6 +925,10 @@ class QuickPackTool(Tool):
             caption = f"Packed → {charm_file.name} ({size_mb:.1f} MB)"
         else:
             caption = "Packed charm (no .charm located)"
+        # Phase 110.1: signal convergence so further mid-turn
+        # ``plan_tasks`` invocations short-circuit instead of spiralling.
+        if self._state is not None:
+            self._state.pack_succeeded = True
         return ToolResult(
             success=True,
             output=f"Packed charm successfully (rust): {charm_file.name if charm_file else '?'}",
@@ -921,8 +940,7 @@ class QuickPackTool(Tool):
             caption=caption,
         )
 
-    @staticmethod
-    def _execute_python(path: str, output_dir: str | None) -> ToolResult:
+    def _execute_python(self, path: str, output_dir: str | None) -> ToolResult:
         """Pack using the Python quickpack library."""
         try:
             from quickpack import pack as _pack
@@ -939,6 +957,10 @@ class QuickPackTool(Tool):
                 caption = f"Packed → {result_path.name} ({size_mb:.1f} MB)"
             except OSError:
                 caption = f"Packed → {result_path.name}"
+            # Phase 110.1: signal convergence here too — same flag, same
+            # gate.  Mirrors the rust-backend path above.
+            if self._state is not None:
+                self._state.pack_succeeded = True
             return ToolResult(
                 success=True,
                 output=f"Packed charm successfully: {result_path.name}",

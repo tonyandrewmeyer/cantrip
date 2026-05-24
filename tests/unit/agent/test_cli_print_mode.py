@@ -190,6 +190,40 @@ class TestPendingConfirmations:
         assert "Approve push" in msg
         assert "[c1]" in msg
         assert "--yolo" in msg
+        # Phase 110.2: the refusal hint now spells out that --yolo
+        # also covers work-queue CONFIRMs.
+        assert "CONFIRM" in msg
+
+
+# ---------------------------------------------------------------------------
+# Phase 110.2 — _auto_approve_confirmations
+# ---------------------------------------------------------------------------
+
+
+class TestAutoApproveConfirmations:
+    """``--yolo`` auto-resolves pending CONFIRM tasks in print mode."""
+
+    def test_sets_each_pending_confirm_to_done(self, tmp_path: pathlib.Path) -> None:
+        agent = _make_agent(tmp_path)
+        t1 = AgentTask(title="Approve push", category=TaskCategory.CONFIRM, id="c1")
+        t2 = AgentTask(title="Confirm design with user", category=TaskCategory.CONFIRM, id="c2")
+        agent.work_queue.add_task(t1)
+        agent.work_queue.add_task(t2)
+
+        print_mode._auto_approve_confirmations(agent, [t1, t2])
+
+        # Both tasks are now DONE with the --yolo marker note.
+        resolved = {t.id: t for t in agent.work_queue.all_tasks()}
+        assert resolved["c1"].status == TaskStatus.DONE
+        assert resolved["c2"].status == TaskStatus.DONE
+        assert resolved["c1"].result == "Auto-approved by --yolo"
+        assert resolved["c2"].result == "Auto-approved by --yolo"
+
+    def test_empty_list_is_noop(self, tmp_path: pathlib.Path) -> None:
+        agent = _make_agent(tmp_path)
+        # Should not raise — no work queue mutation.
+        print_mode._auto_approve_confirmations(agent, [])
+        assert not agent.work_queue.all_tasks()
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +358,8 @@ class TestRunPrint:
         fake_agent.start_executor.assert_not_called()
 
     def test_pending_confirm_allowed_under_yolo(self, tmp_path: pathlib.Path) -> None:
-        """``--yolo`` skips the up-front refusal."""
+        """``--yolo`` skips the up-front refusal *and* auto-approves
+        the pending CONFIRMs so they don't park downstream tasks."""
         fake_agent = mock.MagicMock()
         fake_agent.state.yolo_mode = True
         fake_agent.work_queue.all_tasks.return_value = [
@@ -344,6 +379,9 @@ class TestRunPrint:
 
         assert rc == 0
         run_async.assert_called_once()
+        # Phase 110.2: the up-front gate auto-approves rather than
+        # parking the pre-existing CONFIRM in the queue.
+        fake_agent.work_queue.set_done.assert_called_once_with("c1", "Auto-approved by --yolo")
 
     def test_keyboard_interrupt_returns_130(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -468,6 +506,49 @@ class TestRunAsync:
         err = capsys.readouterr().err
         assert "Refusing to run unattended" in err
         assert "Approve push" in err
+
+    @pytest.mark.asyncio
+    async def test_post_run_confirm_auto_approved_under_yolo(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Phase 110.2: a CONFIRM created mid-run is auto-resolved
+        rather than refusing the print-mode exit."""
+        agent = _make_agent(tmp_path)
+        agent.state.yolo_mode = True
+
+        async def _fake_process(_message: str) -> str:
+            # Same shape as the §5.2.2 spiral: model emits a stray
+            # ``confirm-design-…`` after a successful pack.
+            agent.work_queue.add_task(
+                AgentTask(
+                    title="Confirm design with user",
+                    category=TaskCategory.CONFIRM,
+                    id="confirm-design-spiral",
+                )
+            )
+            return "ok"
+
+        agent.process_message = _fake_process  # type: ignore[method-assign]
+        agent.start_executor = lambda: None  # type: ignore[method-assign]
+
+        async def _noop_stop():
+            return None
+
+        agent.stop_executor = _noop_stop  # type: ignore[method-assign]
+
+        rc = await print_mode._run_async(agent, "improve", json_output=False)
+
+        # No refusal printed to stderr; exit code reflects the queue
+        # terminal status (DONE, so 0).
+        err = capsys.readouterr().err
+        assert "Refusing to run unattended" not in err
+        assert rc == 0
+        # The CONFIRM is now resolved with the auto-approval marker.
+        resolved = agent.work_queue.all_tasks()[0]
+        assert resolved.status == TaskStatus.DONE
+        assert resolved.result == "Auto-approved by --yolo"
 
     @pytest.mark.asyncio
     async def test_provider_error_returns_one(

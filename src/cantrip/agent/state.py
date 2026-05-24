@@ -307,10 +307,27 @@ class AgentState:
 
     # Phase 69.2: unattended ("yolo") mode.  When ``True`` every
     # Phase 68.2 ``ask`` decision auto-approves instead of parking
-    # on a user CONFIRM — useful for CI runs.  ``deny`` rules still
-    # block outright.  Toggled via ``/yolo`` or the ``--yolo`` CLI
-    # flag; sticky for the session and not persisted.
+    # on a user CONFIRM, and (Phase 110.2) any work-queue CONFIRM
+    # task still pending after a ``--print`` drain is auto-resolved
+    # so the run exits with the queue's terminal status rather than
+    # the unattended-refusal error.  ``deny`` rules still block
+    # outright.  Toggled via ``/yolo`` or the ``--yolo`` CLI flag;
+    # sticky for the session and not persisted.
     yolo_mode: bool = False
+
+    # Phase 110.1: post-pack convergence flag.  Flipped to ``True``
+    # by ``CharmcraftPackTool`` / ``QuickPackTool`` on a successful
+    # pack so the planner can short-circuit further mid-turn
+    # ``plan_tasks`` invocations — closes the §5.2.2 Mistral Nemo
+    # post-success spiral where a local model that doesn't emit
+    # ``STOP`` after a pack kept calling the planner and
+    # materialising fresh ``confirm-design-…`` tasks.  Reset to
+    # ``False`` at the top of every ``process_message`` /
+    # ``process_message_streaming`` call so a new user turn always
+    # gets a fresh chance to re-plan.  Not persisted across
+    # restarts: a resumed session starts at ``False`` until the next
+    # in-turn pack succeeds.
+    pack_succeeded: bool = False
 
     # Phase 69.1: Ralph Loop refinement cap.  ``0`` disables the
     # outer iterate-until-green loop (single-shot); ``-1`` means

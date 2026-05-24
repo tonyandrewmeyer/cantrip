@@ -97,8 +97,9 @@ confirmations, or one appears mid-run, the runner exits non-zero
 with the list:</p>
 
 <pre><code>Refusing to run unattended: pending confirmations would block the queue.
-Re-run with --yolo to auto-approve `ask` permissions, or resolve them
-interactively in the TUI/CLI mode first.
+Re-run with --yolo to auto-approve both permission `ask` events and
+work-queue CONFIRM tasks, or resolve them interactively in the
+TUI/CLI mode first.
 
 Pending confirmations:
   - [c1] Approve git push origin main</code></pre>
@@ -107,8 +108,9 @@ Pending confirmations:
 
 <ul>
   <li><strong>Pass <code>--yolo</code>.</strong> Auto-approves every
-<em>ask</em> permission for the run. <em>Deny</em>
-rules still block. See
+<em>ask</em> permission for the run, and in print mode also auto-resolves
+any work-queue CONFIRM still pending after the conversation loop
+drains. <em>Deny</em> rules still block. See
 <a href="howto-unattended.html">Run Cantrip unattended</a> for
 the safety story.</li>
   <li><strong>Resolve interactively first.</strong> Launch

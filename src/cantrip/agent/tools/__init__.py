@@ -218,7 +218,7 @@ def build_tools(
         # active charm directory after sprint mode reroots it; without
         # the link the tool resolves against the process cwd and 404s.
         CharmcraftPackTool(state=state),
-        QuickPackTool(),
+        QuickPackTool(state=state),
         CharmValidateTool(),
         CharmcraftFetchLibsTool(),
         AnalyseFrameworkTool(),

@@ -48,9 +48,10 @@ is rejected with a usage line.</p>
 
 <h2 id="what-changes">What changes under yolo</h2>
 
-<p>Only the <em>ask</em> tier of the
+<p>The <em>ask</em> tier of the
 <a href="howto-permissions.html">permission policy</a>
-flips.  Concretely:</p>
+flips, and print-mode runs also auto-resolve work-queue CONFIRM
+tasks.  Concretely:</p>
 
 <ul>
   <li>Every call whose ruleset lookup resolves to <code>ask</code>
@@ -62,6 +63,15 @@ message. Yolo does <em>not</em> escalate denies.</li>
 <code>permission_auto_approved</code> event so the transcript
 captures the rule that would otherwise have prompted &mdash;
 audit trails stay honest.</li>
+  <li>In <code>--print</code> runs, any work-queue CONFIRM task
+still pending after the conversation loop drains
+(<code>confirm-design-…</code>, <code>confirm-push-…</code>,
+<code>confirm-improvements-…</code>, etc.) is marked
+<code>DONE</code> with the note <code>Auto-approved by --yolo</code>
+so the executor finishes with the queue's terminal status
+instead of refusing the run.  Interactive sessions are
+unchanged &mdash; the TUI/CLI still surfaces the CONFIRM
+for an explicit user decision.</li>
 </ul>
 
 <p>Plan mode, hooks, and the subprocess sandbox are unaffected.

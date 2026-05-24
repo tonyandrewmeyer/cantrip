@@ -331,9 +331,11 @@ def _add_run_loop_options(parser: argparse.ArgumentParser) -> None:
         help=(
             "Unattended mode: auto-approve every `ask` permission "
             "for the session so CI scripts don't stall on prompts.  "
-            "`deny` rules still block — review your `permissions.yaml` "
-            "before a destructive run.  Toggle mid-session with "
-            "`/yolo`."
+            "In `--print` runs, also auto-approves any work-queue "
+            "CONFIRM task left pending after the conversation loop "
+            "drains.  `deny` rules still block — review your "
+            "`permissions.yaml` before a destructive run.  Toggle "
+            "mid-session with `/yolo`."
         ),
     )
     parser.add_argument(

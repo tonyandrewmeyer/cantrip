@@ -1970,6 +1970,216 @@ the measured outcome.
 
 ---
 
+## Phase 110: Close the Post-Pack Wedge — Convergence Heuristic and --yolo CONFIRM Scope
+
+**Goal:** ``design/LOCAL_MODELS.md`` §5.2.2 surfaced two cantrip-
+side failure modes the Phase 109.3 Mistral Nemo re-smoke tripped
+*after* the agent had already produced a packable improve-02-quality
+charm.  Neither is a message-format issue; both block any
+unattended (``--print --yolo``) run from exiting zero on a local
+model that doesn't naturally STOP after a successful pack:
+
+1. **Post-success ``plan_tasks`` spiral.**  Mistral kept calling
+   the planner for 3m39s after the second successful
+   ``charmcraft_pack``, producing twelve fresh
+   ``confirm-design-…`` CONFIRM tasks against phantom
+   dependencies.  Qwen3-14B Run #3 (§5.6.1) avoided this only
+   because the model emitted a STOP marker after the first pack;
+   counting on every local model to do the same is fragile.
+2. **``--yolo`` doesn't cover CONFIRM tasks.**  ``--yolo``
+   documents itself as "auto-approve every ``ask`` permission",
+   but a substantial class of unattended-run blockers — design
+   confirmations, day-2 confirmations, improvement confirmations
+   — sits outside its remit.  The executor refused to continue
+   with twelve queued CONFIRMs and exited 1.
+
+### 110.1 P0 — Convergence heuristic after a successful pack
+
+- [ ] Add an ``AgentState.pack_succeeded: bool`` flag (default
+  ``False``, not persisted across restarts).  Resets to ``False``
+  at the top of every ``CantripAgent.process_message`` /
+  ``process_message_streaming`` call so a *new* user turn always
+  gets a fresh chance to (re-)plan, matching §5.2.2's failure-
+  mode scope (the spiral was within a single user turn).
+- [ ] ``CharmcraftPackTool.execute`` flips
+  ``state.pack_succeeded = True`` on the success path (after
+  ``charmcraft pack`` exited zero, before the success
+  ``ToolResult`` is returned).  ``QuickPackTool`` mirrors the
+  flip on its success path so the gate fires for both packers.
+- [ ] ``PlanTasksTool.execute`` refuses with a non-error
+  ``ToolResult`` ("Charm already packed in this turn — no
+  further planning needed.  STOP, or ask the user for a new
+  goal.") when ``state.pack_succeeded`` is true.  No tasks are
+  enqueued; the planner LLM call is skipped entirely so the
+  10-second-per-spiral-iteration cost is gone.
+- [ ] Unit tests in ``tests/unit/agent/`` cover: the flag
+  defaults to ``False``; ``CharmcraftPackTool`` flips it on
+  success and leaves it alone on failure; ``QuickPackTool``
+  flips it on success; ``PlanTasksTool`` refuses with the
+  documented message when set, without contacting the planner
+  provider; ``process_message`` resets the flag at the top of
+  the next turn (a once-packed session can re-plan when the
+  user types a new goal).
+
+### 110.2 P1 — Widen --yolo to cover work-queue CONFIRMs
+
+- [ ] In ``print_mode._run_async`` (and the Ralph variant),
+  when ``state.yolo_mode`` is ``True`` and ``pending`` CONFIRM
+  tasks remain after the drain, walk the list and call
+  ``work_queue.set_done(task.id, "Auto-approved by --yolo")``
+  for each rather than printing the refusal and returning 1.
+  Re-drain after the auto-approval pass so any unblocked
+  follow-up tasks settle before the exit check.
+- [ ] The refusal-message wording (still used when
+  ``yolo_mode`` is ``False``) gets a clarifying line so
+  operators know ``--yolo`` *does* now cover CONFIRMs ("Re-run
+  with ``--yolo`` to auto-approve both permission ``ask``
+  events and work-queue CONFIRM tasks, or resolve them
+  interactively in the TUI/CLI mode first.").
+- [ ] CLI help text for ``--yolo`` updated to reflect the
+  widened scope.  The ``/yolo`` slash command (Phase 69.2)
+  toggles the same flag, so its help string gets the same
+  update.
+- [ ] Unit tests in ``tests/unit/agent/test_cli_print_mode.py``
+  + ``tests/unit/agent/test_yolo.py``: print-mode without
+  ``--yolo`` still prints the refusal and exits 1; print-mode
+  with ``--yolo`` and a pending design-CONFIRM auto-approves
+  + drains + exits with the queue's terminal status (0 when
+  follow-ups settle to DONE).
+
+### What this phase is *not*
+
+- **Not a fix for ``Harness``-not-``Context`` test-file
+  regressions** (§5.2.2's other Mistral observation) — that's a
+  model-side negative-instruction-adherence problem; a prompt
+  re-engineering pass is a separate decision.
+- **Not a generalised "agent has converged" detector.**  The
+  convergence flag is one bit, scoped to "a charm was packed in
+  this turn".  More elaborate convergence signals (Ralph's STOP,
+  red-green, acceptance pass) keep their own state.
+- **Not a change to ``CharmcraftPackTool``'s success contract.**
+  The flag flip is orthogonal to what the tool returns — the
+  ``ToolResult`` shape, audit row, and caption all stay the same.
+
+**Exit criteria:** a fresh ``--print --yolo`` run of the §5.2.2
+ntfy-improve prompt against Mistral Nemo (or any other local
+model that doesn't emit STOP after a pack) exits 0 instead of 1 —
+the planner gate prevents the post-pack spiral from materialising
+fresh CONFIRMs, and any CONFIRM already in flight when ``--yolo``
+auto-approves on drain unwedges the queue.  The two failure
+modes §5.2.2 documented stop counting against future smokes.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Convergence flag (110.1) | Phase 32 (planner / state plumbing), Phase 33 (work-queue) | Touches state, two tools, the planner — pure additive plus one gate |
+| ``--yolo`` widening (110.2) | Phase 69.2 (``--yolo`` flag), Phase 32 (CONFIRM tasks) | Lives entirely in ``print_mode.py`` plus a help-text refresh |
+
+**Discovered:** Phase 109.3 re-smoke on 2026-05-25
+(``design/LOCAL_MODELS.md`` §5.2.2).  The Mistral Nemo run produced
+a packable improve-02-quality charm by minute 11 then spun in a
+``plan_tasks`` loop for ~4 more minutes before the executor bailed
+on twelve unresolved CONFIRM tasks ``--yolo`` did not cover.
+
+---
+
+## Phase 111: llama.cpp Build Refresh — b8589 → b9050 Re-smoke
+
+**Goal:** Every operational llama.cpp pin in the repo (snap
+manifests + host smoke-server scripts) moved from upstream
+``b8589`` (2026-03-30) to Canonical-mirror ``b9050``
+(2026-05-08) — ~461 upstream commits, ~5 weeks of MoE / quant
+kernel work, and the fused-kernel fixes that
+``design/LOCAL_MODELS.md`` §5.7 specifically called out as
+unblocking DeepSeek-Coder-V2-Lite-Instruct.  Bump landed in this
+commit; the validation work to confirm no regressions is the
+phase.
+
+### 111.1 P0 — Re-smoke each candidate on b9050
+
+- [ ] ``inference-snaps/qwen3-8b/scripts/smoke-server.sh`` —
+  re-run §5.1.1 smoke; confirm ``/v1/models``, plain-hello, and
+  synthetic ``get_weather`` tool call still pass.  Record any
+  decode-rate / TTFT delta against the b8589 baseline in
+  ``design/LOCAL_MODELS.md``.
+- [ ] ``inference-snaps/qwen3-14b/scripts/smoke-server.sh`` —
+  same protocol; the §5.6 Run #3 charm-build prompt is the
+  load-bearing comparison.
+- [ ] ``inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh``
+  — re-run the §5.2 / Phase 109.3 smoke; the post-pack spiral
+  (Phase 110) is orthogonal, but a kernel-level change *could*
+  alter decode shape.
+- [ ] ``inference-snaps/qwen3-coder/`` (snap) — re-pack with
+  ``snapcraft`` against the new ``llamacpp_b9050`` components;
+  re-run the qwen3-coder smoke; check the long-generation
+  reconnect failure mode (§1) hasn't worsened.
+- [ ] ``inference-snaps/embeddinggemma/`` (snap) — re-pack;
+  confirm the embedding HTTP surface still answers
+  ``/v1/embeddings`` correctly.
+
+### 111.2 P0 — Retry DeepSeek-Coder-V2-Lite-Instruct
+
+- [ ] ``inference-snaps/deepseek-coder-v2-lite/scripts/smoke-server.sh``
+  — the §5.7 blocker was a b8589 segfault in the fused
+  "Gated Delta" path during init.  b9050 sits well past the
+  ``b9000+`` threshold ``design/LOCAL_MODELS.md`` flagged as
+  the fix horizon.  If init succeeds, run smoke-check.sh; if
+  the synthetic tool call also passes, promote the candidate
+  into the §5 comparison table.
+- [ ] If b9050 still segfaults: update §5.7 with the new
+  failure trace and move the unblock target to b9200+ (or
+  the next stable Canonical mirror cut), so future-us doesn't
+  re-attempt blind.
+
+### 111.3 P1 — Historical-comment cleanup
+
+- [ ] ``inference-snaps/mistral-nemo-12b/prepare-models.sh``,
+  ``inference-snaps/deepseek-coder-v2-lite/prepare-models.sh``,
+  ``inference-snaps/qwen3-coder/engines/amd-gpu/engine.yaml``
+  still reference ``b8589`` in *comment* prose (e.g. "the b8589
+  build cutoff").  These are descriptive, not operational —
+  update them only if 111.1 / 111.2 produces a behaviour change
+  that contradicts the comment.  Otherwise leave as historical
+  record and let ``design/LOCAL_MODELS.md`` carry the
+  authoritative timeline.
+- [ ] READMEs under ``inference-snaps/*/README.md`` likewise
+  mention ``b8589`` as the build they were validated against.
+  Update each as the corresponding 111.1 re-smoke completes,
+  with the new tag and the date.
+
+### What this phase is *not*
+
+- **Not a llama.cpp upgrade to upstream-latest.**  b9050 is
+  the most recent tag on the Canonical mirror as of 2026-05-25.
+  Upstream ``b9305`` exists but isn't packaged for our
+  release pipeline yet; a separate phase covers picking up
+  further mirror cuts when they land.
+- **Not a model-selection re-evaluation.**  If a re-smoke
+  shows materially different decode-rate or quality, that's a
+  data point for a *future* selection phase — Phase 111 just
+  re-establishes the baseline on the new engine.
+
+**Exit criteria:** every operational ``b8589`` reference has
+moved to ``b9050``; each smoke target re-passes; ``design/
+LOCAL_MODELS.md`` carries a dated "re-smoke on b9050" addendum
+per candidate; DeepSeek-Coder-V2-Lite is either unblocked
+(promoted into §5 with a real datapoint row) or re-blocked with
+a fresh failure trace and an updated minimum-build target.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 111.1 / 111.2 re-smokes | Phase 105.1 smoke infrastructure | Host ``llama-server`` + socat forwarder pattern unchanged |
+| 111.3 doc cleanup | 111.1 / 111.2 results | Wait for re-smoke to know whether comments are still accurate |
+
+**Discovered:** 2026-05-25 audit of llama.cpp pin staleness.
+b8589 was ~716 upstream builds (~8 weeks) behind ``b9305``;
+b9050 (mirror) is ~3 weeks newer than the pin and crosses the
+``b9000+`` fix horizon ``design/LOCAL_MODELS.md`` §5.7 had
+already identified as the DeepSeek-V2-Lite unblock target.
+
+---
+
 ## Milestones
 
 High-level targets for **open** work. Completed milestones are listed in [`ROADMAP_ARCHIVE.md`](ROADMAP_ARCHIVE.md).
@@ -2030,3 +2240,4 @@ High-level targets for **open** work. Completed milestones are listed in [`ROADM
 | M105: Local Model Refresh | 105 | A locally-runnable model that matches or beats qwen3-coder's measured improve-02 completeness ships as a documented snap + ``--snap`` preset (Qwen3-14B and DeepSeek-Coder-V2-Lite are the next smoke targets after 105.1's Qwen3-8B negative result); Mistral Nemo 12B and Phi-4-Mini ship as long-context / speed alternatives regardless of which candidate wins; ``design/LOCAL_MODELS.md`` captures the smoke evidence |
 | M108: TUI Visual Refresh | 108 | Welcome state has identity (wordmark + tagline); double frames around the chat are gone; modal screens use single rounded borders without manual ``─`` underlines; ``$primary`` is reserved for focus / accent and shows up in under ten places per screen; ModelInfoBar collapses to one line by default; tool-block captions read as English (``▸ read backend/pyproject.toml``); timestamps appear only on gaps; loading indicator is on-brand; header carries actual context; file tree surfaces charm content first |
 | M109: Non-Qwen Local Models | 109 | An ``LLMProvider.rewrite_messages`` hook + Mistral-shape inbound tool-call parser unblocks providers whose chat templates expect tool calls / results inline within assistant turns (Mistral Tekken format); Mistral Nemo 12B drives the ntfy improve scenario end-to-end; ``CANTRIP_MESSAGE_FORMAT`` env var lets operators force the rewriter for unknown snaps; recorded-trace tests pin the wire format |
+| M110: Post-Pack Convergence | 110 | An ``--print --yolo`` run that produces a packable charm exits 0 instead of 1: ``state.pack_succeeded`` short-circuits further ``plan_tasks`` invocations in the same user turn, and ``--yolo`` auto-approves any work-queue CONFIRM still pending at drain time |

@@ -2531,6 +2531,9 @@ class CantripAgent:
         The background executor is paused while the conversation loop is
         active so that user steering takes priority over autonomous work.
         """
+        # Phase 110.1: a new user turn always gets a fresh chance to
+        # re-plan, even after a previous turn produced a packed charm.
+        self.state.pack_succeeded = False
         self._pause_executor()
         try:
             response = await self._process_message_inner(user_message)
@@ -2832,6 +2835,8 @@ class CantripAgent:
         The background executor is paused while the conversation loop is
         active so that user steering takes priority over autonomous work.
         """
+        # Phase 110.1: same per-turn reset as the non-streaming path.
+        self.state.pack_succeeded = False
         self._pause_executor()
         try:
             async for chunk in self._run_conversation_loop_streaming(user_message):

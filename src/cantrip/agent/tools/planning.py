@@ -104,6 +104,26 @@ class PlanTasksTool(Tool):
                 error="Intent must not be empty.",
             )
 
+        # Phase 110.1: short-circuit further mid-turn planning once the
+        # charm has packed in this turn.  Local models that don't emit
+        # a STOP marker after a successful pack (see
+        # ``design/LOCAL_MODELS.md`` §5.2.2) used to spiral through a
+        # dozen ``plan_tasks`` calls in a row, each creating a fresh
+        # ``confirm-design-…`` CONFIRM task that wedged the executor.
+        # The flag resets at the top of the next ``process_message``
+        # turn, so a *new* user goal still gets to plan; what we're
+        # refusing is the same-turn post-success replan.
+        if self._state.pack_succeeded:
+            return ToolResult(
+                success=True,
+                output=(
+                    "Charm already packed in this turn — no further "
+                    "planning needed.  STOP, or ask the user for a new "
+                    "goal."
+                ),
+                data={"task_count": 0, "skipped": "pack_succeeded"},
+            )
+
         # Determine existing charm path for improvement mode.
         existing_charm_path: str | None = None
         if self._state.mode == "improve" and self._state.charm_path:

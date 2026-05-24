@@ -202,6 +202,60 @@ class TestPlanTasksTool:
 
 
 # ===================================================================
+# TestPostPackConvergence — Phase 110.1 gate
+# ===================================================================
+
+
+class TestPostPackConvergence:
+    """``plan_tasks`` short-circuits once a charm has packed this turn.
+
+    ``design/LOCAL_MODELS.md`` §5.2.2 documents the Mistral Nemo
+    failure mode that motivates this: after a successful
+    ``charmcraft_pack`` the model called ``plan_tasks`` twelve times
+    in 3m39s, each emitting a fresh ``confirm-design-…`` task that
+    wedged the print-mode executor.
+    """
+
+    @pytest.mark.asyncio
+    async def test_refuses_replan_after_pack_succeeded(self) -> None:
+        """When ``state.pack_succeeded`` is set, ``plan_tasks`` returns
+        a no-op success without calling the planner provider."""
+        provider = FakeProvider()  # zero canned responses
+        state = AgentState()
+        state.pack_succeeded = True
+        queue = WorkQueue()
+        tool = PlanTasksTool(provider=provider, state=state, queue=queue)
+
+        result = await tool.execute(intent="Plan something else")
+
+        assert result.success
+        # No tasks were enqueued.
+        assert queue.pending_count == 0
+        assert result.data == {"task_count": 0, "skipped": "pack_succeeded"}
+        # Planner LLM was not called — the provider's response queue
+        # is untouched even though we didn't seed any responses.
+        assert provider._call_count == 0
+        # The refusal message tells the model what to do next.
+        assert "already packed" in result.output.lower()
+        assert "stop" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_pack_succeeded_default_lets_planner_run(self) -> None:
+        """The default ``pack_succeeded=False`` is the existing behaviour."""
+        provider = FakeProvider()
+        state = AgentState()
+        assert state.pack_succeeded is False
+        queue = WorkQueue()
+        tool = PlanTasksTool(provider=provider, state=state, queue=queue)
+
+        result = await tool.execute(intent="Build a charm for Redis")
+
+        assert result.success
+        # Deterministic first-plan path produces tasks.
+        assert queue.pending_count == 4
+
+
+# ===================================================================
 # TestDetectCurrentJujuModel — substrate-aware auto-detection
 # ===================================================================
 
