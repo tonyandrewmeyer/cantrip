@@ -87,7 +87,48 @@ class MCPToolInfo:
         return f"mcp__{self.server_name}__{self.name}"
 
 
+@dataclasses.dataclass(frozen=True)
+class MCPAppRender:
+    """One ``ui`` block extracted from a tool result (Phase 73.2).
+
+    The MCP Apps extension lets a server return interactive HTML
+    alongside a textual reply.  Conformant hosts (cantrip's Web UI,
+    Claude Desktop, VS Code Copilot, Goose, …) render the HTML in a
+    sandboxed iframe and bridge ``postMessage`` events back through
+    the host's tool pipeline.
+
+    *fallback_text* is what surfaces in non-rendering hosts (the TUI,
+    a text-only transcript export) so the call is never silently lost.
+    *max_height_px* is the server's suggested vertical cap; the Web UI
+    clamps it to a safe upper bound before applying.
+    """
+
+    server_name: str
+    title: str
+    mime: str
+    html: str
+    fallback_text: str = ""
+    max_height_px: int | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class MCPCallResult:
+    """Structured return shape of :meth:`MCPClient.call_tool` (Phase 73.2).
+
+    ``text`` is the legacy textual collation that callers (other than
+    :class:`~cantrip.agent.tools.mcp_tool.MCPTool`) used to receive
+    directly.  ``app_renders`` carries any ``ui`` content blocks the
+    server attached so the agent's tool adapter can emit per-render
+    events without re-parsing the SDK shape.
+    """
+
+    text: str
+    app_renders: tuple[MCPAppRender, ...] = ()
+
+
 __all__ = [
+    "MCPAppRender",
+    "MCPCallResult",
     "MCPToolInfo",
     "OAuthConfig",
     "ServerConfig",

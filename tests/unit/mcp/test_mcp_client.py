@@ -109,7 +109,8 @@ class TestCallTool:
     @pytest.mark.asyncio
     async def test_echo(self, client: MCPClient) -> None:
         out = await client.call_tool("echo", {"text": "hello"})
-        assert out == "hello"
+        assert out.text == "hello"
+        assert out.app_renders == ()
 
     @pytest.mark.asyncio
     async def test_boom_surfaces_error(self, client: MCPClient) -> None:
@@ -158,7 +159,7 @@ class TestReconnect:
         await c.stop()
         await c.start()
         out = await c.call_tool("echo", {"text": "second"})
-        assert out == "second"
+        assert out.text == "second"
         await c.stop()
 
     @pytest.mark.asyncio

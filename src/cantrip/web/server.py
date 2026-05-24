@@ -620,6 +620,38 @@ async def _ws_logs_stream(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+async def _handle_mcp_app_tool_call(agent: CantripAgent, data: dict[str, Any]) -> None:
+    """Route an MCP App iframe-emitted tool call through the controller.
+
+    Defensive against frontend payload drift — silently ignores requests
+    missing any of the four required string fields rather than crashing
+    the background task.  The controller itself enforces app-id
+    validity, permission gating, and audit; this wrapper only adapts
+    the WebSocket payload shape into the controller's keyword call.
+    """
+    app_id = data.get("app_id")
+    request_id = data.get("request_id")
+    name = data.get("name")
+    arguments = data.get("arguments")
+    if not isinstance(app_id, str) or not app_id:
+        return
+    if not isinstance(request_id, str) or not request_id:
+        return
+    if not isinstance(name, str) or not name:
+        return
+    if not isinstance(arguments, dict):
+        arguments = {}
+    try:
+        await agent._mcp.handle_app_tool_call(
+            app_id=app_id,
+            request_id=request_id,
+            name=name,
+            arguments=arguments,
+        )
+    except (RuntimeError, ValueError, TypeError, AttributeError):
+        log.exception("MCP App tool-call dispatch failed for %r", name)
+
+
 async def _expand_mentions(
     agent: CantripAgent,
     content: str,
@@ -712,6 +744,16 @@ async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     current = request.app[CURRENT_TURN_KEY].get("task")
                     if current is not None and not current.done():
                         current.cancel()
+                    continue
+
+                if payload.get("type") == "mcp_app_tool_call":
+                    # Phase 73.2: an MCP App iframe emitted a structured
+                    # ``{type: 'tool_call', requestId, name, arguments}``
+                    # postMessage; the frontend forwarded it here so we
+                    # can route it through the permission gate + tool
+                    # registry.  Fire-and-forget — ASK gates can park
+                    # for minutes and we mustn't block the read loop.
+                    _spawn_background(_handle_mcp_app_tool_call(agent, payload.get("data") or {}))
                     continue
 
                 if payload.get("type") == "chat_input":

@@ -24,6 +24,7 @@ def build_tools(
     queue: Any = None,
     memory_manager: MemoryManager | None = None,
     mcp_registry: MCPRegistry | None = None,
+    mcp_controller: MCPController | None = None,
     store_getter: Callable[[], Any] | None = None,
     role_router: Any = None,
     invalidate_tools_cache: Callable[[], None] | None = None,
@@ -430,7 +431,7 @@ def build_tools(
         )
     if mcp_registry is not None:
         for info in mcp_registry.aggregated_tools():
-            tools.append(MCPTool(info, mcp_registry))
+            tools.append(MCPTool(info, mcp_registry, controller=mcp_controller))
 
     # Phase 72b: read-only code intelligence.  Skipped when no getter
     # is supplied — the agent gets the getter wired up at construction
@@ -443,6 +444,7 @@ def build_tools(
 
 if TYPE_CHECKING:
     from cantrip.agent.context import VirtualFileStore
+    from cantrip.agent.mcp_controller import MCPController
     from cantrip.agent.memory import MemoryManager
     from cantrip.agent.skills import SkillsIndex
     from cantrip.mcp import MCPRegistry

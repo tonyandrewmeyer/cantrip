@@ -13,7 +13,13 @@ from cantrip.mcp.exceptions import (
     MCPConnectionError,
     MCPInvocationError,
 )
-from cantrip.mcp.types import MCPToolInfo, ServerConfig, TransportKind
+from cantrip.mcp.types import (
+    MCPAppRender,
+    MCPCallResult,
+    MCPToolInfo,
+    ServerConfig,
+    TransportKind,
+)
 
 if TYPE_CHECKING:
     from mcp import ClientSession
@@ -125,8 +131,13 @@ class MCPClient:
 
     # ── Tool invocation ────────────────────────────────────────────────
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        """Invoke ``name`` on the server and return its content as text.
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> MCPCallResult:
+        """Invoke ``name`` on the server and return its content.
+
+        The result carries the textual collation under
+        :attr:`MCPCallResult.text` plus any ``ui`` blocks extracted from
+        the server's response under :attr:`MCPCallResult.app_renders`
+        (Phase 73.2 — MCP Apps).
 
         Raises :class:`MCPConnectionError` if the client was never started
         or has already been stopped.  On a transient connection error
@@ -148,17 +159,17 @@ class MCPClient:
             await self._reconnect()
             return await self._call_tool_once(name, arguments)
 
-    async def _call_tool_once(self, name: str, arguments: dict[str, Any]) -> str:
+    async def _call_tool_once(self, name: str, arguments: dict[str, Any]) -> MCPCallResult:
         if self._session is None:
             raise MCPConnectionError(f"server {self._config.name!r} is not connected")
         try:
             result = await self._session.call_tool(name, arguments)
         except (ConnectionError, BrokenPipeError, OSError) as exc:
             raise MCPConnectionError(str(exc)) from exc
-        text = _content_to_text(result.content)
+        structured = _content_to_structured(result.content, server_name=self._config.name)
         if getattr(result, "isError", False):
-            raise MCPInvocationError(text or f"tool {name!r} reported an error")
-        return text
+            raise MCPInvocationError(structured.text or f"tool {name!r} reported an error")
+        return structured
 
     # ── Internal connection management ─────────────────────────────────
 
@@ -379,21 +390,128 @@ def _build_tool_infos(
     return out
 
 
-def _content_to_text(content: list[Any]) -> str:
-    """Join textual parts of an MCP ``CallToolResult.content`` list.
+def _content_to_structured(content: list[Any], *, server_name: str) -> MCPCallResult:
+    """Split an MCP ``CallToolResult.content`` list into text + ui parts.
 
-    Non-text parts (images, embedded resources) are surfaced as a short
-    ``[<type>]`` placeholder so the result text is always non-lossy.
+    Textual parts are joined into a single string (the same shape the
+    pre-Phase-73.2 ``_content_to_text`` returned).  Content blocks that
+    look like an MCP Apps ``ui`` block (``type == "ui"`` with a
+    ``text/html`` mime type) are extracted into :class:`MCPAppRender`
+    entries so the agent's tool adapter can publish an app-render event
+    without re-parsing the SDK shape.
+
+    Unknown non-text blocks fall through to a ``[<type>]`` placeholder
+    so the textual result is still non-lossy.  ``ui`` blocks also leave
+    a placeholder in the text collation so a chat surface that drops
+    the iframe (e.g. plain-text transcript export) still sees that an
+    app render existed at this position.
     """
-    parts: list[str] = []
+    text_parts: list[str] = []
+    app_renders: list[MCPAppRender] = []
     for item in content or []:
+        render = _extract_app_render(item, server_name=server_name)
+        if render is not None:
+            app_renders.append(render)
+            placeholder = render.fallback_text or f"[MCP App: {render.title}]"
+            text_parts.append(placeholder)
+            continue
         text = getattr(item, "text", None)
         if isinstance(text, str):
-            parts.append(text)
+            text_parts.append(text)
             continue
         kind = getattr(item, "type", item.__class__.__name__)
-        parts.append(f"[{kind}]")
-    return "\n".join(parts)
+        text_parts.append(f"[{kind}]")
+    return MCPCallResult(
+        text="\n".join(text_parts),
+        app_renders=tuple(app_renders),
+    )
+
+
+def _extract_app_render(item: Any, *, server_name: str) -> MCPAppRender | None:
+    """Detect an MCP Apps ``ui`` content block; ``None`` if not a render.
+
+    Defensive against the two shapes the spec permits in the wild: a
+    first-class ``type == "ui"`` block with the HTML on ``html`` /
+    ``text``, and an OpenAI-widget-style ``_meta`` annotation on a
+    plain resource block.  Either way the HTML payload, title, fallback
+    text, and optional max-height are pulled into a :class:`MCPAppRender`.
+    """
+    item_type = getattr(item, "type", None)
+    meta = _coerce_meta(getattr(item, "meta", None) or getattr(item, "_meta", None))
+
+    # Shape A — explicit ``type: "ui"`` block (the canonical MCP Apps shape).
+    if item_type == "ui":
+        mime = getattr(item, "mimeType", None) or getattr(item, "mime_type", None) or "text/html"
+        if mime != "text/html":
+            return None
+        html = _coerce_string(
+            getattr(item, "html", None) or getattr(item, "text", None) or meta.get("html")
+        )
+        if not html:
+            return None
+        return MCPAppRender(
+            server_name=server_name,
+            title=_coerce_string(meta.get("title") or getattr(item, "title", None)) or "App",
+            mime="text/html",
+            html=html,
+            fallback_text=_coerce_string(meta.get("fallback") or meta.get("text_fallback")),
+            max_height_px=_coerce_max_height(meta.get("max_height_px") or meta.get("maxHeightPx")),
+        )
+
+    # Shape B — generic content with an MCP-Apps ``_meta`` annotation.
+    app_meta = meta.get("app") if isinstance(meta.get("app"), dict) else None
+    if app_meta is None and "html" in meta and meta.get("mime") == "text/html":
+        app_meta = meta
+    if app_meta is None:
+        return None
+    html = _coerce_string(app_meta.get("html"))
+    if not html:
+        return None
+    return MCPAppRender(
+        server_name=server_name,
+        title=_coerce_string(app_meta.get("title")) or "App",
+        mime="text/html",
+        html=html,
+        fallback_text=_coerce_string(app_meta.get("fallback") or app_meta.get("text_fallback")),
+        max_height_px=_coerce_max_height(
+            app_meta.get("max_height_px") or app_meta.get("maxHeightPx")
+        ),
+    )
+
+
+def _coerce_meta(value: Any) -> dict[str, Any]:
+    """Best-effort cast of an SDK-supplied ``_meta`` field to ``dict``."""
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+    # Pydantic models, namedtuples — pull out the canonical attributes.
+    as_dict = getattr(value, "model_dump", None)
+    if callable(as_dict):
+        try:
+            dumped = as_dict()
+        except (TypeError, ValueError):
+            return {}
+        return dumped if isinstance(dumped, dict) else {}
+    return {}
+
+
+def _coerce_string(value: Any) -> str:
+    """Return *value* as a string, treating ``None`` / non-strings as empty."""
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _coerce_max_height(value: Any) -> int | None:
+    """Cast to ``int`` when *value* is a positive number; ``None`` otherwise."""
+    if isinstance(value, bool):  # bools are ints in Python — exclude explicitly.
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, float) and value > 0:
+        return int(value)
+    return None
 
 
 __all__ = ["MCPClient"]

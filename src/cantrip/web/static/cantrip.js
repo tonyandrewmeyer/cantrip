@@ -258,6 +258,21 @@ const cantrip = (() => {
         // the TUI modelbar's ``cache: X% hit`` readout.
         _updateCacheMetrics(msg.data || {});
         break;
+      case "mcp_app_render":
+        // Phase 73.2: render an MCP App's HTML in a sandboxed iframe
+        // (``allow-scripts allow-forms`` only — no allow-same-origin,
+        // no parent-DOM access, no cookie/storage access).  Tracked
+        // by ``app_id`` so a later ``mcp_app_tool_result`` can post
+        // the dispatched-tool reply back into the right iframe.
+        appendMcpAppBlock(msg.data || {});
+        break;
+      case "mcp_app_tool_result":
+        // Phase 73.2: the backend has finished routing the iframe-
+        // emitted tool call through the permission gate + tool
+        // registry; relay the result back into the iframe so the app
+        // can update its UI.
+        deliverMcpAppToolResult(msg.data || {});
+        break;
     }
   }
 
@@ -638,6 +653,126 @@ const cantrip = (() => {
     if (wasAtBottom) container.scrollTop = container.scrollHeight;
     _updateScrollBottomButton();
   }
+
+  // Phase 73.2 — MCP Apps bridge.
+  //
+  // ``_mcpApps`` maps the agent-side ``app_id`` to the live ``<iframe>``
+  // so an ``mcp_app_tool_result`` event can route the dispatched
+  // tool's reply back into the right iframe via ``postMessage``.  We
+  // also stash the iframe's ``contentWindow`` separately because
+  // strict CSP + Firefox can null the ``contentWindow`` getter on a
+  // detached iframe; using the stored handle avoids surprising drops.
+  const _mcpApps = new Map();
+
+  // Default and ceiling for the iframe's vertical extent.  Servers
+  // can suggest a size via ``max_height_px``; we clamp to the ceiling
+  // so a malicious or buggy server can't blow out the chat layout.
+  const _MCP_APP_DEFAULT_HEIGHT = 400;
+  const _MCP_APP_MAX_HEIGHT = 800;
+
+  function appendMcpAppBlock(data) {
+    const container = chatMessages();
+    if (!container) return;
+    const empty = document.getElementById("chat-empty");
+    if (empty) empty.remove();
+
+    const appId = data.app_id;
+    const html = typeof data.html === "string" ? data.html : "";
+    if (!appId || !html) return;
+
+    const title = typeof data.title === "string" && data.title ? data.title : "MCP App";
+    let height = Number(data.max_height_px);
+    if (!Number.isFinite(height) || height <= 0) height = _MCP_APP_DEFAULT_HEIGHT;
+    if (height > _MCP_APP_MAX_HEIGHT) height = _MCP_APP_MAX_HEIGHT;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "msg msg-mcp-app";
+    wrapper.dataset.appId = appId;
+
+    const header = document.createElement("div");
+    header.className = "msg-header";
+    const role = document.createElement("span");
+    role.className = "msg-role";
+    role.textContent = `mcp app · ${title}`;
+    header.appendChild(role);
+    wrapper.appendChild(header);
+
+    const iframe = document.createElement("iframe");
+    // Spec: ``allow-scripts allow-forms`` — explicitly *no*
+    // ``allow-same-origin`` so the iframe cannot read the parent's
+    // cookies, storage, or DOM.  All host ↔ app traffic flows over
+    // ``postMessage``.
+    iframe.setAttribute("sandbox", "allow-scripts allow-forms");
+    iframe.setAttribute("title", title);
+    iframe.style.width = "100%";
+    iframe.style.height = `${height}px`;
+    iframe.style.border = "0";
+    iframe.srcdoc = html;
+    wrapper.appendChild(iframe);
+
+    const wasAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight
+        < _SCROLL_BOTTOM_THRESHOLD;
+    container.appendChild(wrapper);
+    _mcpApps.set(appId, iframe);
+    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    _updateScrollBottomButton();
+  }
+
+  function deliverMcpAppToolResult(data) {
+    const appId = data.app_id;
+    const requestId = data.request_id;
+    if (typeof appId !== "string" || typeof requestId !== "string") return;
+    const iframe = _mcpApps.get(appId);
+    if (!iframe || !iframe.contentWindow) return;
+    try {
+      iframe.contentWindow.postMessage(
+        {
+          type: "tool_result",
+          requestId,
+          success: Boolean(data.success),
+          output: typeof data.output === "string" ? data.output : "",
+          error: typeof data.error === "string" ? data.error : null,
+        },
+        "*",
+      );
+    } catch { /* iframe may have been torn down; nothing to do. */ }
+  }
+
+  // Bridge: an MCP App emits a structured postMessage event; route it
+  // through the backend so the permission gate + tool registry fire.
+  // We *require* a known source iframe so an unrelated browser tab
+  // (or a malicious sub-iframe) cannot synthesise a tool call against
+  // our agent.  ``event.source`` returns the iframe's contentWindow
+  // even when allow-same-origin is off, so the lookup is reliable.
+  function _handleMcpAppMessage(event) {
+    if (!event || typeof event.data !== "object" || event.data === null) return;
+    if (event.data.type !== "tool_call") return;
+    let originAppId = null;
+    for (const [appId, iframe] of _mcpApps) {
+      if (iframe.contentWindow === event.source) {
+        originAppId = appId;
+        break;
+      }
+    }
+    if (originAppId === null) return;
+    const name = typeof event.data.name === "string" ? event.data.name : "";
+    const requestId =
+      typeof event.data.requestId === "string" ? event.data.requestId : "";
+    const args =
+      event.data.arguments && typeof event.data.arguments === "object"
+        ? event.data.arguments
+        : {};
+    if (!name || !requestId) return;
+    _send("mcp_app_tool_call", {
+      app_id: originAppId,
+      request_id: requestId,
+      name,
+      arguments: args,
+    });
+  }
+
+  window.addEventListener("message", _handleMcpAppMessage);
 
   // Phase 82: convert any orphan pending blocks (e.g. cancelled mid-
   // tool, server crash) into failed tool blocks so the chat never
@@ -1276,5 +1411,7 @@ const cantrip = (() => {
     connect, appendMessage, updateTask, replaceAllTasks, setThinking,
     toggleHelp, toggleLogs, toggleGraph, refreshJujuStatus, cancelTurn,
     scrollChatToBottom,
+    // Phase 73.2 — MCP Apps surface exposed for the test harness.
+    appendMcpAppBlock, deliverMcpAppToolResult,
   };
 })();

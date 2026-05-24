@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP Apps in the chat &mdash; Cantrip</title>
+<meta name="description" content="How Cantrip renders MCP server HTML responses as sandboxed iframes in the Web UI and bridges postMessage tool calls through the permission gate.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>Explanation</h4>
+    <ul>
+      <li><a href="explanation-architecture.html">How Cantrip works</a></li>
+      <li><a href="explanation-charm-paths.html">The three charm paths</a></li>
+      <li><a href="explanation-repo-map.html">The repository map</a></li>
+      <li><a href="explanation-observability.html">Observability and debugging</a></li>
+      <li><a href="explanation-quickpack-rs.html">Quickpack Rust backend</a></li>
+      <li><a href="explanation-charmlint-rs.html">Charmlint Rust backend</a></li>
+      <li><a href="explanation-emotions.html">Emotion subagents</a></li>
+      <li><a href="explanation-race.html">Multi-model patterns</a></li>
+      <li><a href="explanation-tui-screens.html">TUI screens and shortcuts</a></li>
+      <li><a href="explanation-mcp-apps.html" class="current">MCP Apps in the chat</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#what">What is an MCP App</a></li>
+      <li><a href="#render">How the iframe is rendered</a></li>
+      <li><a href="#bridge">The postMessage bridge</a></li>
+      <li><a href="#permissions">Permissions and audit</a></li>
+      <li><a href="#tui">TUI fallback</a></li>
+      <li><a href="#example">Worked example: a pebble-layer editor</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>Explanation<span class="sep">/</span>MCP Apps
+    </div>
+
+    <h1>MCP Apps in the chat</h1>
+    <p class="subtitle">
+      Some configuration is easier as a form than as a JSON blob. Cantrip's Web UI renders MCP-server-returned HTML inline and routes the app's tool calls through the same permission and audit machinery as any agent-initiated call.
+    </p>
+
+<h2 id="what">What is an MCP App</h2>
+<p>The Model Context Protocol's <a href="https://modelcontextprotocol.io/extensions/apps/overview" target="_blank" rel="noopener">MCP Apps extension</a> lets a server
+return interactive HTML alongside its textual reply. The standard is
+supported by Claude Desktop, VS Code Copilot, Goose, Postman, and
+MCPJam &mdash; and now by Cantrip's Web UI.</p>
+<p>Concretely: when an MCP tool result includes a content block tagged
+<code>type: &quot;ui&quot;</code> with <code>mime: text/html</code>, conformant hosts render that HTML
+in a sandboxed iframe inline in the chat. A small <code>postMessage</code> protocol
+lets the iframe ask the host to run tool calls and receive structured
+results.</p>
+<p>For Cantrip this turns awkward configuration JSON &mdash; pebble layers,
+relation databags, COS dashboards, bundle topologies &mdash; into forms a
+user can drive directly, instead of pasting YAML into a chat box.</p>
+<h2 id="render">How the iframe is rendered</h2>
+<p>When <code>MCPClient.call_tool()</code> returns a result containing one or more
+<code>ui</code> blocks, Cantrip's MCP controller mints an <code>app_id</code> for each one
+and publishes an <code>mcp_app_render</code> event on the shared event bus. The
+Web UI's dispatcher catches the event, creates a chat-block container,
+and attaches a sandboxed <code>&lt;iframe&gt;</code>:</p>
+<pre><code class="language-html">&lt;iframe sandbox=&quot;allow-scripts allow-forms&quot; srcdoc=&quot;...server html...&quot;&gt;&lt;/iframe&gt;
+</code></pre>
+<p>The sandbox attributes are mandatory and intentionally narrow:</p>
+<ul>
+<li><strong><code>allow-scripts</code></strong> &mdash; the app's own JavaScript can run.</li>
+<li><strong><code>allow-forms</code></strong> &mdash; the app can submit forms (handled in-iframe, not
+by the host).</li>
+<li><strong>No <code>allow-same-origin</code></strong> &mdash; the iframe is treated as a <em>different</em>
+origin from the parent. It cannot read the parent's cookies, its
+<code>localStorage</code>, or any DOM node outside itself. All communication
+with the host happens via <code>postMessage</code>.</li>
+</ul>
+<p>The iframe's height defaults to 400&nbsp;px (cantrip clamps to a 800&nbsp;px
+ceiling regardless of what the server suggests via <code>max_height_px</code>) so
+a malicious or buggy app cannot blow out the chat layout.</p>
+<h2 id="bridge">The postMessage bridge</h2>
+<p>Inside the iframe, the app's JavaScript can send a structured tool
+call to the host:</p>
+<pre><code class="language-js">window.parent.postMessage(
+  {
+    type: 'tool_call',
+    requestId: 'r1',
+    name: 'read_file',
+    arguments: { path: 'README.md' },
+  },
+  '*',
+);
+</code></pre>
+<p>Cantrip's Web UI listens for messages on <code>window</code>, validates that the
+sender is one of the iframes it knows about (matched by
+<code>event.source === iframe.contentWindow</code>), and forwards the call over
+the WebSocket as an <code>mcp_app_tool_call</code> message:</p>
+<pre><code class="language-json">{
+  &quot;type&quot;: &quot;mcp_app_tool_call&quot;,
+  &quot;data&quot;: { &quot;app_id&quot;: &quot;...&quot;, &quot;request_id&quot;: &quot;r1&quot;, &quot;name&quot;: &quot;read_file&quot;, &quot;arguments&quot;: { &quot;path&quot;: &quot;README.md&quot; } }
+}
+</code></pre>
+<p>The backend routes the call through <code>MCPController.handle_app_tool_call</code>,
+which runs it through Cantrip's permission gate and tool registry (see
+below), then publishes an <code>mcp_app_tool_result</code> event. The Web UI
+catches the result event and posts it back into the iframe:</p>
+<pre><code class="language-js">iframe.contentWindow.postMessage(
+  { type: 'tool_result', requestId: 'r1', success: true, output: '...' },
+  '*',
+);
+</code></pre>
+<p>The app's own listener resolves the pending request and updates its UI.</p>
+<h2 id="permissions">Permissions and audit</h2>
+<p>An iframe-emitted tool call is <strong>not</strong> trusted ambiently. It goes
+through exactly the same <code>evaluate_permissions()</code> gate as any
+agent-initiated call, with one extra signal: the per-agent overlay
+name is <code>&quot;mcp-app&quot;</code>, so users can write rules that scope only to
+iframe-emitted calls:</p>
+<pre><code class="language-yaml"># .cantrip/permissions.yaml
+tools:
+  edit_file: deny     # the agent itself can edit
+  read_file: allow
+agents:
+  mcp-app:
+    tools:
+      &quot;*&quot;: ask        # but any iframe call asks first
+      read_file: allow
+</code></pre>
+<ul>
+<li><strong>ALLOW</strong> dispatches via the agent's shared tool registry; the
+iframe sees the tool's output.</li>
+<li><strong>DENY</strong> rejects without dispatching; the iframe sees an error
+result with the matched rule's reason.</li>
+<li><strong>ASK</strong> parks on the same <code>PermissionManager</code> the rest of the
+agent uses &mdash; a CONFIRM task appears in the TUI / Web UI; once the
+user approves, the call proceeds and the iframe sees the result.</li>
+</ul>
+<p>Every decision (ALLOWED / DENIED / REVIEW_REQUESTED) writes one row
+to <code>.cantrip-audit.jsonl</code> with <code>policy_name=&quot;mcp-app:&lt;server&gt;&quot;</code> so an
+operator can <code>grep</code> the audit trail for exactly what an MCP App did
+during the session. The same call also fires <code>tool_invoked_pending</code>
+and <code>tool_invoked</code> events tagged <code>source=&quot;mcp-app&quot;</code> so the transcript
+exporter records the call alongside agent-initiated ones.</p>
+<h2 id="tui">TUI fallback</h2>
+<p>The TUI has no iframe. When an <code>mcp_app_render</code> event arrives it
+renders a one-line marker in chat:</p>
+<pre><code class="language-text">[MCP App: Pebble Editor; open in web UI at http://localhost:8471]
+</code></pre>
+<p>&hellip;followed by any text-form fallback the server attached. Users who
+want to drive the form can switch to the Web UI; the app stays in the
+chat history of the same session because both UIs subscribe to the
+same event bus.</p>
+<h2 id="example">Worked example: a pebble-layer editor</h2>
+<p>The MCP Apps spec is most useful for shapes that are awkward to edit
+as JSON. A reference example (not shipped in tree) is a
+<strong>pebble-layer editor</strong> MCP server with one tool:</p>
+<pre><code>edit_pebble_layer(charm: str, container: str, existing_yaml: str) -&gt; result
+</code></pre>
+<p>When called, the server returns:</p>
+<ol>
+<li>A text reply (&quot;Here is the current layer; edit it below&quot;), and</li>
+<li>A <code>ui</code> block with HTML for a form: a <code>&lt;textarea&gt;</code> pre-filled with
+<code>existing_yaml</code>, a &quot;Validate&quot; button (calls a YAML-parsing tool in
+the iframe), and a &quot;Save&quot; button.</li>
+</ol>
+<p>The Save button's handler builds the tool call:</p>
+<pre><code class="language-js">function save() {
+  window.parent.postMessage({
+    type: 'tool_call',
+    requestId: crypto.randomUUID(),
+    name: 'mcp__pebble__commit_layer',
+    arguments: {
+      charm: charm,
+      container: container,
+      yaml: document.querySelector('#layer').value,
+    },
+  }, '*');
+}
+</code></pre>
+<p>If the operator's <code>permissions.yaml</code> says <code>mcp__pebble__commit_layer: ask</code> for <code>agents.mcp-app</code>, Cantrip parks the request on the CONFIRM
+surface; the operator approves it; the iframe sees <code>{success: true, output: &quot;Committed.&quot;}</code> and shows a green checkmark. The whole exchange
+is recorded in <code>.cantrip-audit.jsonl</code> and the transcript export.</p>
+<p>See also:</p>
+<ul>
+<li><a href="explanation-architecture.html">How Cantrip works</a></li>
+<li><a href="howto-permissions.html">Configure tool permissions</a></li>
+<li><a href="howto-mcp.html">Configure MCP servers</a></li>
+</ul>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+
+(function() {
+  document.querySelectorAll('.doc-content pre').forEach(function(pre) {
+    var code = pre.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.setAttribute('aria-label', 'Copy code to clipboard');
+    btn.addEventListener('click', function() {
+      var text = code.innerText;
+      var done = function() {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function() {});
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  });
+})();
+</script>
+
+</body>
+</html>

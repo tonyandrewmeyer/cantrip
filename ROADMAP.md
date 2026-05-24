@@ -351,34 +351,61 @@ deferred**:
 
 ### 73.2 Medium — MCP Apps: interactive HTML in the chat
 
-- [ ] Adopt the MCP Apps extension spec
+- [x] Adopt the MCP Apps extension spec
   (``modelcontextprotocol.io/extensions/apps/overview``) in
-  Cantrip's MCP client (Phase 45).  When a tool result
-  includes an ``ui`` block with ``mime: text/html``, route
-  it to the UI layer as an app-render event.
-- [ ] Web UI (Phase 15) renders the HTML in a sandboxed
-  iframe with ``sandbox="allow-scripts allow-forms"`` (no
-  ``allow-same-origin`` — must communicate only via
-  ``postMessage``).  Size constraints, no parent-DOM
-  access, no cookie/storage access — match the MCP Apps
-  security model verbatim.
-- [ ] ``postMessage`` bridge: the app can emit structured
-  events (``{type: 'tool_call', name, arguments}``) that
-  Cantrip routes back through the agent's tool pipeline
-  (with the Phase 68.2 permission layer gating them
-  normally).  App events are audited in the transcript.
-- [ ] TUI fallback: an MCP-App tool result renders as a
-  one-line summary (``[MCP App: <title>; open in web UI
-  at <url>]``) plus the text-form of any fallback content
-  the server provides.
-- [ ] Document one worked example — a "pebble-layer
-  editor" MCP server (out of tree, reference only) that
-  takes a layer YAML, renders a form in the Web UI, and
-  returns the edited YAML.  Belongs in
-  ``docs/docs/explanation-mcp-apps.html``.
-- [ ] ``tests/unit/test_mcp_apps.py`` — sandbox attrs
-  correct, postMessage round-trip, permission gate
-  applied to emitted tool calls, TUI fallback.
+  Cantrip's MCP client (Phase 45).  ``MCPClient.call_tool()`` now
+  returns a structured ``MCPCallResult(text, app_renders)`` —
+  ``_content_to_structured`` in ``src/cantrip/mcp/client.py``
+  extracts ``type: "ui"`` content blocks (the canonical shape) and
+  the OpenAI-widget-style ``_meta.app`` shape into
+  :class:`cantrip.mcp.types.MCPAppRender` entries.  The textual
+  collation still carries a placeholder line so plain-text transcript
+  exports record that a render existed at that position.
+- [x] Web UI (Phase 15) renders the HTML in a sandboxed iframe with
+  ``sandbox="allow-scripts allow-forms"`` (no ``allow-same-origin``);
+  height defaults to 400 px with an 800 px ceiling regardless of the
+  server's suggested ``max_height_px``.  The ``appendMcpAppBlock``
+  dispatcher (in ``src/cantrip/web/static/cantrip.js``) sets the
+  attribute verbatim; a unit test
+  (``TestWebUIIframeShape::test_sandbox_attrs_are_spec_compliant``)
+  pins both the literal value and the absence of
+  ``allow-same-origin`` in any ``setAttribute("sandbox", …)`` call.
+- [x] ``postMessage`` bridge end to end: iframe-emitted
+  ``{type: 'tool_call', requestId, name, arguments}`` messages flow
+  over a new ``mcp_app_tool_call`` WebSocket frame into
+  ``MCPController.handle_app_tool_call``, which runs them through the
+  same ``evaluate_permissions`` gate as agent-initiated calls under
+  the new ``agents.mcp-app`` overlay name, dispatches via the shared
+  ``execute_tool(...)`` helper, audits as
+  ``policy_name="mcp-app:<server>"`` in ``.cantrip-audit.jsonl``,
+  fires ``TOOL_INVOKED_PENDING`` / ``TOOL_INVOKED`` events tagged
+  ``source="mcp-app"``, and publishes an ``MCP_APP_TOOL_RESULT``
+  event that the Web UI ``postMessage``\\ s back into the
+  originating iframe.  ASK gates park on the existing
+  :class:`PermissionManager` so a CONFIRM task surfaces in the TUI /
+  Web UI and resumes the iframe call on approval.
+- [x] TUI fallback in ``_on_bus_mcp_app_render`` /
+  ``ChatWidget.add_mcp_app_fallback`` renders the spec marker
+  ``[MCP App: <title>; open in web UI at <url>]`` plus any
+  server-supplied text fallback when an ``MCP_APP_RENDER`` event
+  arrives — the TUI cannot host the iframe, so users who want to
+  drive the form are nudged toward the Web UI.
+- [x] Worked example documented in ``docs/src/explanation-mcp-apps.md``
+  → ``docs/docs/explanation-mcp-apps.html``: a "pebble-layer editor"
+  MCP server (out of tree, reference only) returns a form for the
+  current Pebble layer YAML, the Save button posts a
+  ``commit_layer`` tool call back through the bridge, and the
+  permission gate / audit machinery records the exchange.  Sidebar
+  entry under Explanation in ``docs/src/_site.yaml``.
+- [x] ``tests/unit/test_mcp_apps.py`` (16 cases) — ``ui``-block
+  extraction (canonical + ``_meta`` shapes, non-HTML mime rejected,
+  ``max_height_px`` parsing), ``MCPTool`` publishes one
+  ``MCP_APP_RENDER`` event per ``ui`` block, the sandbox attributes
+  pinned against drift, ALLOW dispatches + audits + emits result,
+  DENY skips dispatch and writes the DENIED audit row, ASK awaits
+  the manager and audits both REVIEW_REQUESTED and the final ALLOWED
+  outcome, unknown ``app_id`` rejects without dispatching, TUI
+  fallback wording matches the spec.
 
 ### 73.3 Medium — Structured JSON response with schema enforcement
 

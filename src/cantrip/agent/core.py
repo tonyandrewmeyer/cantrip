@@ -50,6 +50,7 @@ from cantrip.agent.memory import (
 )
 from cantrip.agent.permissions import (
     PLAN_MODE_ALLOWED_TOOLS,
+    PermissionDecision,
     plan_mode_message,
 )
 from cantrip.agent.persistence import PersistenceController
@@ -1394,6 +1395,7 @@ class CantripAgent:
             queue=self._work_queue,
             memory_manager=self._memory_manager,
             mcp_registry=self._mcp.registry_if_loaded(),
+            mcp_controller=self._mcp,
             store_getter=lambda: self._store,
             role_router=self.role_router if self.role_router.has_embed() else None,
             # Sprint mode reroots ``state.charm_path`` into a freshly
@@ -3583,6 +3585,55 @@ class CantripAgent:
             hook_runner=self._hook_runner,
             ensure_store=self._ensure_store,
             max_concurrency=max_concurrency,
+        )
+        # Phase 73.2: wire MCP App iframe tool calls through the same
+        # permission gate and audit writer the executor uses.  Done
+        # after start so ``self._executor`` exists; the controller
+        # silently rejects iframe calls until this fires (defensive —
+        # the Web UI doesn't render any iframes before tool dispatch
+        # has happened anyway).
+        self._wire_mcp_app_dispatcher()
+
+    def _wire_mcp_app_dispatcher(self) -> None:
+        """Register the MCP-App permission + dispatch hooks on the controller.
+
+        Permission evaluation reads the *current* executor ruleset on
+        every call so a runtime ``/plan`` / ``/build`` mode flip is
+        picked up without re-registering.  Dispatch routes through the
+        same :func:`execute_tool` helper the agent's tool loop uses,
+        so MCP-App calls share validation, error shaping, and post-edit
+        lint hooks with agent-initiated calls.  Audit writes land in
+        the same ``.cantrip-audit.jsonl`` the rest of the dispatch path
+        appends to.
+        """
+        from cantrip.agent.audit import AUDIT_FILENAME, AuditWriter
+        from cantrip.agent.permissions import evaluate as evaluate_permissions
+        from cantrip.agent.tools.base import execute_tool as base_execute_tool
+
+        executor = self._executor
+        if executor is None:
+            return
+
+        def _evaluate(name: str, arguments: dict[str, Any]) -> PermissionDecision:
+            return evaluate_permissions(
+                executor.permissions,
+                name,
+                arguments,
+                agent_name="mcp-app",
+            )
+
+        async def _dispatch(name: str, arguments: dict[str, Any]) -> ToolResult:
+            return await base_execute_tool(self._tool_map, name, arguments)
+
+        audit_writer: AuditWriter | None = None
+        if self.state.charm_path is not None:
+            audit_writer = AuditWriter(pathlib.Path(self.state.charm_path) / AUDIT_FILENAME)
+
+        self._mcp.register_app_dispatcher(
+            evaluate_permission=_evaluate,
+            dispatch_tool=_dispatch,
+            permission_manager=executor.permission_manager,
+            audit_writer=audit_writer,
         )
 
     async def stop_executor(self) -> None:

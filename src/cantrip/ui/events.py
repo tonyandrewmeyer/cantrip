@@ -32,6 +32,8 @@ class EventType(enum.StrEnum):
     MEMORY_WRITTEN = "memory_written"
     MEMORY_RECALLED = "memory_recalled"
     MCP_ELICITATION_REQUEST = "mcp_elicitation_request"
+    MCP_APP_RENDER = "mcp_app_render"
+    MCP_APP_TOOL_RESULT = "mcp_app_tool_result"
     TOOL_INVOKED = "tool_invoked"
     TOOL_INVOKED_PENDING = "tool_invoked_pending"
     MODEL_SWITCHED = "model_switched"
@@ -631,6 +633,71 @@ def permission_auto_approved(
             "reason": reason,
             "request_id": request_id,
             "command": command,
+        },
+    )
+
+
+def mcp_app_render(
+    *,
+    app_id: str,
+    server_name: str,
+    tool_name: str,
+    tool_call_id: str | None,
+    title: str,
+    html: str,
+    fallback_text: str = "",
+    max_height_px: int | None = None,
+) -> Event:
+    """Build an ``MCP_APP_RENDER`` event (Phase 73.2).
+
+    Emitted when an MCP tool result includes a ``ui`` block with
+    ``mime: text/html`` (the MCP Apps extension).  The Web UI renders
+    *html* in a sandboxed ``<iframe sandbox="allow-scripts allow-forms">``
+    keyed by *app_id*; the TUI surfaces a one-line marker plus
+    *fallback_text* because no iframe is available.  *tool_call_id*
+    pairs the render with the originating tool call so the chat
+    surface can place the iframe near the matching tool block.
+    """
+    return Event(
+        type=EventType.MCP_APP_RENDER,
+        payload={
+            "app_id": app_id,
+            "server_name": server_name,
+            "tool_name": tool_name,
+            "tool_call_id": tool_call_id,
+            "title": title,
+            "html": html,
+            "fallback_text": fallback_text,
+            "max_height_px": max_height_px,
+        },
+    )
+
+
+def mcp_app_tool_result(
+    *,
+    app_id: str,
+    request_id: str,
+    success: bool,
+    output: str = "",
+    error: str | None = None,
+) -> Event:
+    """Build an ``MCP_APP_TOOL_RESULT`` event (Phase 73.2).
+
+    The completion side of the postMessage bridge: after an iframe
+    emits a ``{type: 'tool_call', requestId, name, arguments}``
+    message and cantrip routes it through the permission gate +
+    tool registry, the result is broadcast on this event so the
+    Web UI can ``postMessage`` it back into the originating iframe
+    (matched by *app_id* + *request_id*).
+    """
+    return Event(
+        type=EventType.MCP_APP_TOOL_RESULT,
+        payload={
+            "app_id": app_id,
+            "request_id": request_id,
+            "success": success,
+            "output": output,
+            "error": error,
         },
     )
 

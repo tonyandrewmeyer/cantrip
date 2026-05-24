@@ -328,6 +328,19 @@ class TestBusBroadcastContract:
             events.ralph_converged(iteration=1, signal="STOP").type,
             events.ralph_stalled(iteration=2, reason="x").type,
             events.ralph_exhausted(iteration=3, cap=3).type,
+            events.mcp_app_render(
+                app_id="a",
+                server_name="srv",
+                tool_name="mcp__srv__t",
+                tool_call_id=None,
+                title="App",
+                html="<p></p>",
+            ).type,
+            events.mcp_app_tool_result(
+                app_id="a",
+                request_id="r",
+                success=True,
+            ).type,
         }
         enum_types = set(events.EventType)
         assert factory_types == enum_types

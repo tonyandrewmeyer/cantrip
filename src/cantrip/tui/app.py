@@ -757,6 +757,14 @@ class CantripApp(App):
         self._agent.event_bus.subscribe(
             ui_events.EventType.CACHE_METRICS_UPDATED, self._on_bus_cache_metrics
         )
+        # Phase 73.2 — MCP Apps fallback.  The TUI cannot host the
+        # sandboxed iframe the Web UI uses, so render a one-line
+        # marker plus any text fallback the server attached so the
+        # user knows an app was returned and can switch to the Web
+        # UI if they want to interact with it.
+        self._agent.event_bus.subscribe(
+            ui_events.EventType.MCP_APP_RENDER, self._on_bus_mcp_app_render
+        )
 
         self._agent.start_executor(max_concurrency=self._max_concurrency)
 
@@ -900,6 +908,33 @@ class CantripApp(App):
             return
         caption = payload.get("caption") or payload.get("tool_name", "?")
         chat.add_pending_tool_block(caption, tool_call_id=tool_call_id)
+
+    def _on_bus_mcp_app_render(self, event: ui_events.Event) -> None:
+        """Render the TUI fallback for an MCP App render (Phase 73.2).
+
+        The TUI cannot host the Web UI's sandboxed iframe, so we
+        surface the spec-mandated one-line marker plus any text-form
+        fallback the server provided.  Users who need to interact
+        with the app are nudged toward the Web UI.
+        """
+        chat = self.query_one("#chat", chat_widget.ChatWidget)
+        payload = event.payload
+        title = payload.get("title")
+        if not isinstance(title, str) or not title:
+            title = "MCP App"
+        fallback = payload.get("fallback_text")
+        chat.add_mcp_app_fallback(
+            title=title,
+            fallback_text=fallback if isinstance(fallback, str) else "",
+            web_url=self._web_url_or_none(),
+        )
+
+    def _web_url_or_none(self) -> str | None:
+        """Best-effort URL for the running Web UI surface (Phase 73.2)."""
+        port = getattr(self, "_web_port", None)
+        if isinstance(port, int) and port > 0:
+            return f"http://localhost:{port}"
+        return None
 
     def _on_bus_status_bar(self, event: ui_events.Event) -> None:
         """Apply a STATUS_BAR_CHANGED event to the status bar reactives."""

@@ -305,6 +305,35 @@ main {
   display: none;
 }
 
+/* Phase 73.2 — MCP App iframe block.  Bordered to set it apart from
+   plain chat bubbles, with a tinted header strip carrying the app
+   title so users see at a glance which server's UI they're looking
+   at.  Iframe sandbox lives in JS (``sandbox="allow-scripts
+   allow-forms"``); the CSS only owns the framing. */
+.msg-mcp-app {
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  margin: 0.4rem 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-elevated, #161b22);
+}
+
+.msg-mcp-app .msg-header {
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  background: var(--bg-subtle, #21262d);
+  border-bottom: 1px solid var(--border, #30363d);
+  font-size: 12px;
+}
+
+.msg-mcp-app iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: white;
+}
+
 .msg-tool .msg-body {
   margin: 0;
 }

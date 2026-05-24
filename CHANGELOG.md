@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 73.2 — MCP Apps: interactive HTML in the chat.**  When an
+  MCP tool result includes a `ui` block with `mime: text/html` (the
+  [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)),
+  Cantrip's Web UI renders it inline in a sandboxed iframe
+  (`sandbox="allow-scripts allow-forms"` — no `allow-same-origin`, no
+  parent-DOM access, no cookie or storage access) and bridges the
+  iframe's `postMessage` tool calls (`{type: 'tool_call', requestId,
+  name, arguments}`) back through the agent.  Iframe-emitted calls run
+  through the same `evaluate_permissions()` gate as agent-initiated
+  calls, with a new `agents.mcp-app` overlay name so users can write
+  per-iframe rules; ASK gates park on the existing CONFIRM surface and
+  resume the iframe call on approval.  Every decision audits in
+  `.cantrip-audit.jsonl` with `policy_name="mcp-app:<server>"`, and the
+  call appears in the transcript tagged `source="mcp-app"`.  The TUI,
+  which has no iframe, surfaces the spec-mandated
+  `[MCP App: <title>; open in web UI at <url>]` marker plus the
+  server's text fallback.  Worked-example docs in
+  [`explanation-mcp-apps.html`](docs/docs/explanation-mcp-apps.html);
+  `MCPClient.call_tool()` now returns an `MCPCallResult(text,
+  app_renders)` rather than a bare `str`.
 - **Phase 56 — Juju Skills Bundle for `canonical/skills`.**  Ten of
   cantrip's source skills are now regenerated into
   `bundles/canonical-skills-juju/skills/products/juju/` in the

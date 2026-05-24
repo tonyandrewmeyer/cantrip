@@ -59,6 +59,7 @@ sections:
       - { slug: explanation-emotions, label: "Emotion subagents" }
       - { slug: explanation-race, label: "Multi-model patterns" }
       - { slug: explanation-tui-screens, label: "TUI screens and shortcuts" }
+      - { slug: explanation-mcp-apps, label: "MCP Apps in the chat" }
 
   tutorial:
     heading: "Tutorial"

@@ -1362,6 +1362,29 @@ class ChatWidget(Widget):
         widget.message.reasoning = reasoning
         widget._rerender()
 
+    def add_mcp_app_fallback(
+        self,
+        *,
+        title: str,
+        fallback_text: str = "",
+        web_url: str | None = None,
+    ) -> MessageWidget:
+        """Render the TUI fallback for an MCP App render (Phase 73.2).
+
+        Per the MCP Apps spec, hosts that cannot render the interactive
+        HTML surface a one-line marker plus any text fallback the
+        server attached.  Returned as a system-style chat block so the
+        styling matches existing "the agent did X" notices.
+        """
+        if web_url:
+            header = f"[MCP App: {title}; open in web UI at {web_url}]"
+        else:
+            header = f"[MCP App: {title}]"
+        body = header
+        if fallback_text:
+            body = f"{header}\n\n{fallback_text}"
+        return self.add_system_message(body)
+
     def add_system_message(
         self,
         content: str,
