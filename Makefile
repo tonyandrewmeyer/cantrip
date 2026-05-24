@@ -1,4 +1,4 @@
-.PHONY: format lint unit integration e2e tui live eval eval-static eval-validate test check all clean coverage rust-test rust-coverage go-test docs docs-check docs-check-strict
+.PHONY: format lint unit integration e2e tui live eval eval-static eval-validate test check all clean coverage rust-test rust-coverage go-test docs docs-check docs-check-strict juju-skills-bundle juju-skills-bundle-check
 
 # Format code with ruff
 format:
@@ -102,6 +102,17 @@ docs-check:
 # exactly.  Useful once the committed output has been regenerated.
 docs-check-strict:
 	uv run python docs/src/_build.py --check --strict
+
+# Regenerate the canonical/skills Juju bundle from the cantrip source skills.
+# Source of truth: src/cantrip/skills/<name>/SKILL.md
+# Output: bundles/canonical-skills-juju/
+juju-skills-bundle:
+	uv run python scripts/build_juju_skills_bundle.py
+
+# Drift guard — exit 1 if the regenerated bundle differs from the committed copy.
+# Wired into the unit suite via tests/unit/test_juju_skills_bundle.py.
+juju-skills-bundle-check:
+	uv run python scripts/build_juju_skills_bundle.py --check
 
 # Clean build artifacts
 clean:

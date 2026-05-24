@@ -4,6 +4,37 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Phase 56 — Juju Skills Bundle for `canonical/skills`.**  Ten of
+  cantrip's source skills are now regenerated into
+  `bundles/canonical-skills-juju/skills/products/juju/` in the
+  agentskills.io frontmatter the
+  [`canonical/skills`](https://github.com/canonical/skills) catalogue
+  expects (`name`, `description` with `WHEN:` trigger phrases,
+  `license: Apache-2.0`, `metadata.author`/`version`/`summary`/`tags`),
+  ready to drop into a `canonical/skills` PR.  Initial v1 covers every
+  Phase 56.1 enumerated slice: `juju-charmcraft-yaml`,
+  `juju-charm-py-custom`, `juju-charm-py-infrastructure`,
+  `juju-relation-data`, `juju-observability-cos`, `juju-scenario-tests`,
+  `juju-jubilant-tests`, `juju-harness-to-scenario`,
+  `juju-charm-actions`, `juju-charm-config`.  Cantrip's `twelve-factor`
+  skill is intentionally skipped — upstream already ships
+  `12factor-fit` / `12factor-charm` / `12factor-rock`.  Source of truth
+  stays in `src/cantrip/skills/<name>/SKILL.md`; the build pipeline
+  (`scripts/build_juju_skills_bundle.py`, `make juju-skills-bundle`)
+  rewrites the frontmatter, collapses cantrip's bundled-tool aliases
+  (`charmcraft_pack` → `charmcraft pack`, `juju_deploy` →
+  `juju deploy`, `juju_relate` → `juju integrate`, …) to their CLI
+  equivalents, and prepends a banner pointing back at the source.
+  `make juju-skills-bundle-check` is the drift guard, wired into the
+  unit suite via `tests/unit/test_juju_skills_bundle.py` (33 cases —
+  drift, presence, the canonical/skills validator's frontmatter rules,
+  banner sanity, no-leaked-bundled-aliases).  All ten outputs pass the
+  upstream `validate_skills.py` cleanly (0 errors, 0 warnings).
+  Publishing to `canonical/skills` remains a manual PR in v1; design
+  doc and deferred follow-ups live in
+  [`design/JUJU_SKILLS_BUNDLE.md`](design/JUJU_SKILLS_BUNDLE.md).
+
 ### Tests
 - **Phase 79.4 — first gold-fireworks baselines.**  `gold-fireworks`
   for the ntfy, flask-hello, alertmanager-machine, meilisearch,
