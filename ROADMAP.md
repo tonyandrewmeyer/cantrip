@@ -646,7 +646,13 @@ sanity check that can run on every prompt change.
   ``gold-gemini`` and the remaining five specs
   (miniflux, alertmanager-machine, haproxy-machine,
   meilisearch, vaultwarden, gitea) across both providers
-  remain pending.*
+  remain pending.  A first miniflux + Fireworks attempt
+  scored only 13/42 (31 %) — Kimi K2 declared the build
+  "done" after 14 cycles (vs. 30+ for ntfy/flask-hello)
+  and left a 28-line bare-scaffold charm; recorded as a
+  per-provider signal rather than hand-authored to
+  passing.  Revisit when Fireworks defaults change or a
+  different Fireworks model is tried.*
 - [x] Document the end-to-end loop in
   ``docs/src/howto-eval.md`` (new).  Linked from the
   sidebar nav alongside ``howto-print-mode``.

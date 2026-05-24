@@ -33,6 +33,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   `gold-gemini` and five remaining specs (miniflux,
   alertmanager-machine, haproxy-machine, meilisearch,
   vaultwarden, gitea) across both providers ship as follow-ups.
+  A first miniflux + Fireworks attempt scored only 13/42 (31 %) —
+  Fireworks/Kimi K2 declared the build "done" after 14 cycles
+  (vs. 30+ for ntfy/flask-hello) and left a 28-line bare-scaffold
+  charm with no relations, no containers, no tests; recorded as a
+  per-provider signal rather than hand-authored to passing so the
+  gold standard would actually reflect what Fireworks produces.
+  Revisit when Fireworks defaults change or a different Fireworks
+  model is tried.
 - **Phase 93.6 — eval-corpus expansion.**  Three new specs land under
   `tests/eval/charms/` to fill gaps the existing five did not exercise.
   `haproxy-machine` is a Path C / machine reverse proxy: apt-installed
