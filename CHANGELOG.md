@@ -36,15 +36,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   already laid down a complete charm by then, so timeout was
   cosmetic.  Same single import-style hand-tune as ntfy
   (`from ops import testing` → `import ops.testing as testing`)
-  brought it to 47/47.  `gold-gemini` and four remaining specs
-  (haproxy-machine, meilisearch, vaultwarden, gitea) across both
-  providers ship as follow-ups.  A first miniflux + Fireworks
-  attempt scored only 13/42 (31 %) —
-  Fireworks/Kimi K2 declared the build "done" after 14 cycles
-  (vs. 30+ for ntfy/flask-hello) and left a 28-line bare-scaffold
-  charm with no relations, no containers, no tests; recorded as a
-  per-provider signal rather than hand-authored to passing so the
-  gold standard would actually reflect what Fireworks produces.
+  brought it to 47/47.  `gold-gemini` and three remaining specs
+  (meilisearch, vaultwarden, gitea) across both providers ship as
+  follow-ups.  Two per-provider Fireworks failures recorded
+  rather than hand-authored to passing.  miniflux scored 13/42
+  (31 %) — Kimi K2 declared the build "done" after 14 cycles
+  (vs. 30+ for ntfy/flask-hello/alertmanager-machine) and left a
+  28-line bare-scaffold charm with no relations, no containers,
+  no tests.  haproxy-machine scored 42/63 (67 %) — full metadata
+  and ops framework with all relations / actions / config options
+  declared, but the 40-line charm.py pushed almost every
+  code-pattern responsibility (apt-install, `haproxy -c`
+  validation, systemctl reload, `/etc/haproxy/haproxy.cfg`
+  writing, TLS certificate handling, reverseproxy backend reads)
+  into the helper `haproxy.py`, and the run produced no
+  `src/templates/haproxy*` Jinja2 template or
+  `src/grafana_dashboards/*.json` dashboard.  Both cases:
+  hand-tuning the gap up to 100 % would mean writing the missing
+  features myself rather than tuning what Fireworks produced.
   Revisit when Fireworks defaults change or a different Fireworks
   model is tried.
 - **Phase 93.6 — eval-corpus expansion.**  Three new specs land under
