@@ -620,7 +620,20 @@ sanity check that can run on every prompt change.
 - [ ] Add ``gold-gemini`` and ``gold-fireworks`` baseline
   directories over time as each provider passes.  The
   ``run`` verb is the recipe: generate, hand-tune, rename
-  to ``gold-<provider>``, then ``validate``.
+  to ``gold-<provider>``, then ``validate``.  *Partial
+  (2026-05-24): ``gold-fireworks`` landed for the ntfy
+  spec — single-shot Kimi K2 default, ~30 min generation,
+  46/47 (96 %) raw and one minor import-style hand-tune
+  (``from ops import testing`` → ``import ops.testing``)
+  to reach 47/47 (100 %).  Surfaced + fixed a latent bug
+  in ``tests/eval/generator.py``: a relative ``spec_dir``
+  caused the subprocess to re-resolve the positional
+  charm-path under its own cwd and nest the directory;
+  the generator now resolves to absolute before subprocess
+  invocation, pinned by
+  ``test_generate_charm_passes_absolute_paths_to_subprocess``.
+  ``gold-gemini`` and the other six specs across both
+  providers remain pending.*
 - [x] Document the end-to-end loop in
   ``docs/src/howto-eval.md`` (new).  Linked from the
   sidebar nav alongside ``howto-print-mode``.

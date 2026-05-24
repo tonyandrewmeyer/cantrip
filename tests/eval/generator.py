@@ -163,7 +163,13 @@ def generate_charm(
     caller decides whether to score the result, archive it, or discard
     it — this function is deliberately I/O only.
     """
-    charm_dir = make_charm_dir(spec_dir, provider=provider, model=model, timestamp=timestamp)
+    # Resolve to absolute so the subprocess sees the same path regardless
+    # of the caller's cwd.  When ``cwd`` and the positional charm-path
+    # argument were both relative, ``cantrip`` re-resolved the positional
+    # against its own cwd (the new charm dir) and created a nested copy.
+    charm_dir = make_charm_dir(
+        spec_dir, provider=provider, model=model, timestamp=timestamp
+    ).resolve()
     charm_dir.mkdir(parents=True, exist_ok=False)
 
     cmd = build_command(

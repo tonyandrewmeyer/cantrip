@@ -1,0 +1,107 @@
+# This file configures Charmcraft.
+# See https://documentation.ubuntu.com/charmcraft/stable/reference/files/charmcraft-yaml-file/
+type: charm
+name: ntfy-k8s
+title: ntfy push notification server
+summary: Self-hosted push notification server.
+description: |
+  ntfy is a simple HTTP-based pub-sub notification service. It allows you to
+  send push notifications to your phone or desktop via scripts from any
+  computer, and/or using a REST API. It is designed to be self-hosted and
+  lightweight, using SQLite for persistence and optionally storing attachments
+  on disk.
+
+  This charm deploys ntfy on Kubernetes, generates its configuration from
+  charm options, manages persistent storage for the message cache and
+  attachments, and integrates with COS for observability.
+
+base: ubuntu@24.04
+platforms:
+  amd64:
+  arm64:
+
+parts:
+  charm:
+    plugin: uv
+    source: .
+
+
+config:
+  options:
+    base-url:
+      description: |
+        The externally reachable base URL of the ntfy server. This is used
+        to generate notification URLs and for the web UI. Must include the
+        protocol (e.g. https://ntfy.example.com).
+      default: ""
+      type: string
+    cache-duration:
+      description: |
+        Duration for which messages are cached in the local database.
+        Accepts a Go duration string such as "12h" or "7d".
+      default: "12h"
+      type: string
+    log-level:
+      description: |
+        Log level for the ntfy server. Acceptable values are: "trace",
+        "debug", "info", "warn", and "error".
+      default: "info"
+      type: string
+    enable-metrics:
+      description: |
+        Enable the optional Prometheus /v1/metrics endpoint. When enabled,
+        the charm will also provide a metrics-endpoint relation for COS
+        scraping.
+      default: false
+      type: boolean
+    auth-default-access:
+      description: |
+        Default access level for unauthenticated users. "deny-all" is
+        strongly recommended for production. Use "read-only" or "write-only"
+        only if you intend to run a fully open server.
+      default: "deny-all"
+      type: string
+
+containers:
+  ntfy:
+    resource: ntfy-image
+    mounts:
+      - storage: cache-dir
+        location: /var/cache/ntfy
+      - storage: attachments-dir
+        location: /var/lib/ntfy/attachments
+
+resources:
+  ntfy-image:
+    type: oci-image
+    description: OCI image for the ntfy server
+    upstream-source: binwiederhier/ntfy:v2.19.2
+
+storage:
+  cache-dir:
+    type: filesystem
+    description: Storage for the SQLite message cache and auth database.
+  attachments-dir:
+    type: filesystem
+    description: Storage for uploaded notification attachments.
+
+requires:
+  tracing:
+    interface: tracing
+    limit: 1
+  ingress:
+    interface: ingress
+    limit: 1
+    optional: true
+  metrics-endpoint:
+    interface: prometheus_scrape
+    limit: 1
+    optional: true
+
+charm-libs:
+  - lib: traefik_k8s.ingress
+    version: "2"
+  - lib: prometheus_k8s.prometheus_scrape
+    version: "0"
+  - lib: loki_k8s.loki_push_api
+    version: "0"

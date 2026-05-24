@@ -174,6 +174,28 @@ def test_generate_charm_creates_dir_and_passes_argv(tmp_path: pathlib.Path):
     assert captured["cwd"] == result.charm_dir
 
 
+def test_generate_charm_passes_absolute_paths_to_subprocess(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A relative ``spec_dir`` must reach the subprocess as an absolute path.
+
+    Cantrip resolves the positional charm-path argument relative to its own
+    ``cwd``; if both were relative the subprocess would re-resolve under the
+    new charm dir and create a nested copy of the path.
+    """
+    monkeypatch.chdir(tmp_path)
+    spec_dir = pathlib.Path("relative-spec")  # deliberately not absolute
+    spec_dir.mkdir()
+    spec = _make_spec()
+    fake, captured = _fake_runner_factory(files={"charmcraft.yaml": "name: dummy\n"})
+
+    result = generator.generate_charm(spec, spec_dir, provider="claude", runner=fake)
+
+    assert result.charm_dir.is_absolute()
+    assert pathlib.Path(captured["cwd"]).is_absolute()
+    assert pathlib.Path(captured["args"][-1]).is_absolute()
+
+
 def test_generate_charm_propagates_failure(tmp_path: pathlib.Path):
     spec = _make_spec()
     fake, _ = _fake_runner_factory(
