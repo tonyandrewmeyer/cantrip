@@ -1,0 +1,123 @@
+type: charm
+name: meilisearch-k8s
+title: Meilisearch
+summary: Meilisearch is a lightning-fast, open-source full-text search engine.
+description: |
+  Meilisearch is a RESTful search API that delivers instant, relevant results.
+  It is designed to be developer-friendly with features like typo-tolerance,
+  faceted search, and geosearch out of the box.
+
+  This charm deploys Meilisearch on Kubernetes with persistent storage,
+  configurable environment variables, snapshot/dump actions, and client
+  relation integration.
+
+base: ubuntu@24.04
+platforms:
+  amd64:
+  arm64:
+
+parts:
+  charm:
+    plugin: charm
+    source: .
+
+config:
+  options:
+    master-key:
+      description: |
+        The master key for Meilisearch API authentication. Required in
+        production mode. If unset, Meilisearch runs without authentication
+        (only safe for development).
+      type: string
+      default: ""
+    environment:
+      description: |
+        Meilisearch environment mode. "production" enables the master key
+        requirement; "development" disables it and enables more verbose
+        error messages.
+      type: string
+      default: "production"
+    log-level:
+      description: |
+        Log level for Meilisearch. Acceptable values: ERROR, WARN, INFO, DEBUG.
+      type: string
+      default: "INFO"
+    max-indexing-memory:
+      description: |
+        Maximum amount of RAM Meilisearch can use during indexing (in bytes).
+        If unset, Meilisearch uses 2/3 of available memory.
+      type: int
+      default: 0
+    scheduled-snapshot-interval:
+      description: |
+        Interval in seconds between automatic snapshots. Set to 0 to disable
+        scheduled snapshots.
+      type: int
+      default: 0
+
+containers:
+  meilisearch:
+    resource: meilisearch-image
+    mounts:
+      - storage: data
+        location: /meili_data
+      - storage: snapshots
+        location: /meili_snapshots
+      - storage: dumps
+        location: /meili_dumps
+
+resources:
+  meilisearch-image:
+    type: oci-image
+    description: OCI image for Meilisearch
+    upstream-source: getmeili/meilisearch:v1.39.0
+
+storage:
+  data:
+    type: filesystem
+    description: Persistent storage for the LMDB database
+    minimum-size: 1G
+  snapshots:
+    type: filesystem
+    description: Persistent storage for Meilisearch snapshots
+    minimum-size: 1G
+  dumps:
+    type: filesystem
+    description: Persistent storage for Meilisearch dumps
+    minimum-size: 1G
+
+actions:
+  create-snapshot:
+    description: Create a Meilisearch snapshot of the current database.
+  create-dump:
+    description: Create a Meilisearch dump of all indexes.
+  get-keys:
+    description: |
+      Retrieve the list of API keys from Meilisearch. Requires the master
+      key to be configured.
+
+provides:
+  meilisearch-client:
+    interface: meilisearch
+
+requires:
+  tracing:
+    interface: tracing
+    limit: 1
+  logging:
+    interface: loki_push_api
+    limit: 1
+  metrics-endpoint:
+    interface: prometheus_scrape
+    limit: 1
+  grafana-dashboard:
+    interface: grafana_dashboard
+    limit: 1
+
+charm-libs:
+  - lib: prometheus-k8s.prometheus_scrape
+    version: "0"
+  - lib: loki-k8s.loki_push_api
+    version: "1"
+  - lib: grafana-k8s.grafana_dashboard
+    version: "0"

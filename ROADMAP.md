@@ -622,8 +622,8 @@ sanity check that can run on every prompt change.
   ``run`` verb is the recipe: generate, hand-tune, rename
   to ``gold-<provider>``, then ``validate``.  *Partial
   (2026-05-24): ``gold-fireworks`` landed for ntfy and
-  flask-hello, and alertmanager-machine — all single-shot
-  Kimi K2 default, ~30 min generation each.  ntfy scored 46/47 (96 %) raw with one
+  flask-hello, alertmanager-machine, and meilisearch — all
+  single-shot Kimi K2 default, ~30 min generation each.  ntfy scored 46/47 (96 %) raw with one
   import-style hand-tune (``from ops import testing`` →
   ``import ops.testing``) to reach 47/47.  flask-hello
   scored 42/49 (86 %) raw with three rubric-shape
@@ -648,9 +648,10 @@ sanity check that can run on every prompt change.
   to reach 47/47; the run hit the 30-min subprocess
   timeout but Fireworks had already produced the full
   charm by then so the timeout was cosmetic.
-  ``gold-gemini`` and the remaining three specs
-  (meilisearch, vaultwarden, gitea) across both providers
-  remain pending.  A first haproxy-machine + Fireworks
+  meilisearch scored 49/51 (96 %) raw with the same single
+  import-style hand-tune to reach 51/51.  ``gold-gemini``
+  and the remaining two specs (vaultwarden, gitea) across
+  both providers remain pending.  A first haproxy-machine + Fireworks
   attempt scored 42/63 (67 %) — full metadata + ops
   framework but a 40-line charm.py pushed most code-pattern
   responsibilities into the helper module, and no
