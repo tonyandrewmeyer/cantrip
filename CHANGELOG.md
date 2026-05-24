@@ -4,6 +4,30 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Documentation
+- **TUI accessibility boundary (Phase 93.6).**  New design note
+  `design/TUI_ACCESSIBILITY.md` explains why the TUI doesn't reach
+  for WCAG conformance (terminal + screen-reader bridge dependent),
+  catalogues the keyboard / colour / focus invariants Cantrip
+  already holds, and pins the manual VoiceOver / NVDA recipe
+  maintainers run before a release.  Cross-references the existing
+  `WEB_UI_ACCESSIBILITY_AUDIT.md` for the web-side audit and the
+  new TUI binding smoke test below.
+
+### Tests
+- **Phase 93.6 — TUI keyboard accessibility smoke.**  Added
+  `tests/unit/tui/test_accessibility_smoke.py` (4 tests) that walks
+  every `BINDINGS` list in the App and Screen subclasses and asserts
+  every shown binding has a non-empty description, every binding's
+  action name resolves to an `action_<name>` method on the class
+  (Cantrip methods *or* Textual built-ins via the MRO), no two shown
+  bindings collide on a key inside one `BINDINGS` block, and the
+  discovery walk still finds the well-known screens.  Closes the
+  TUI half of Phase 93.6's "extend accessibility regression coverage
+  beyond Web" bullet; the deeper screen-reader narration / braille
+  fidelity / cognitive accessibility checks remain documented as
+  manual per the new design note.
+
 ### Fixed
 - **`quickpack-rs` panic on invalid `.jujuignore` patterns.**
   `JujuIgnore::new` used to `Regex::new(...).unwrap()` on the

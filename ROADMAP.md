@@ -1010,9 +1010,31 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
   monotonicity invariant.  Task-graph validity is incidentally covered
   by the existing ``test_planner_properties.py`` (Kahn-based acyclicity
   check on ``_validate_dependencies``).)*
-- [ ] Extend accessibility regression coverage beyond the current Web-only
+- [x] Extend accessibility regression coverage beyond the current Web-only
   smoke test where feasible, and at minimum document the deliberate boundary
   if TUI accessibility remains manual.
+  *(Done — both halves shipped.  ``design/TUI_ACCESSIBILITY.md`` is a
+  new design note explaining why TUI accessibility doesn't reach for
+  WCAG conformance (it's bridge-dependent on the terminal + screen
+  reader), cataloguing what Cantrip already does right (every action
+  has a keyboard binding, the Footer renders descriptions, every F-key
+  screen has an equivalent slash command, status carries text not just
+  colour), and laying out the manual VoiceOver / NVDA recipe maintainers
+  run before a release.  Automated coverage is the keyboard-binding
+  surface — the most important TUI accessibility lever — in
+  ``tests/unit/tui/test_accessibility_smoke.py`` (4 tests): walks every
+  ``BINDINGS`` declaration in the App and every Screen subclass under
+  ``src/cantrip/tui/screens/`` and asserts every shown binding has a
+  non-empty description, every binding's action name resolves to an
+  ``action_<name>`` method on the class (covers Cantrip methods and
+  the Textual built-ins inherited from ``App`` / ``Screen``), no two
+  shown bindings collide on a key inside one ``BINDINGS`` block, and
+  the discovery walk still finds the well-known screens
+  (``TranscriptScreen``, ``LogScreen``, ``ResumePromptScreen``,
+  ``HelpScreen``, ``GraphScreen``).  The deeper checks — screen-reader
+  narration fidelity, braille bridge accuracy, cognitive accessibility
+  — remain on the manual recipe and the rationale for keeping them
+  manual is recorded in the design note.)*
 - [x] Where a "fuzz" or property style makes more sense than examples
   (workspace paths, provider payload normalisation, queue/task invariants),
   prefer that style over adding another list of hand-authored cases.
