@@ -1,14 +1,20 @@
 # Canonical MCP catalogue (example)
 
-This directory ships an example `marketplace.json` describing three
-Canonical-native MCP server surfaces — **Launchpad**, **Snapcraft**, and
-**Charmcraft**.  It exists so a user wanting to enable any of these can
-copy a working descriptor instead of inventing one from scratch.
+This directory ships an example `marketplace.json` describing four
+Canonical-native MCP server surfaces — **Launchpad**, **Snapcraft**,
+**Charmcraft**, and **MAAS**.  It exists so a user wanting to enable any
+of these can copy a working descriptor instead of inventing one from
+scratch.
 
 The MCP servers themselves (`launchpad-mcp`, `snapcraft-mcp`,
-`charmcraft-mcp`) live in their own repositories — Cantrip ships an MCP
-*client*, not the servers.  See [`design/MCP_SERVERS.md`](../../../design/MCP_SERVERS.md)
-for the authoring guide.
+`charmcraft-mcp`, `maas-mcp`) live in their own repositories — Cantrip
+ships an MCP *client*, not the servers.  See
+[`design/MCP_SERVERS.md`](../../../design/MCP_SERVERS.md) for the
+authoring guide.
+
+`maas-mcp` is not yet published on PyPI; the descriptor ships as a
+template that names the intended invocation, the same way the Snapcraft
+and Charmcraft descriptors did before their servers shipped.
 
 ## Discover the catalogue
 
@@ -33,7 +39,7 @@ of your own `cantrip.mcp.yaml` and edit `allowed_tools` to taste.
 
 ## Safety story
 
-The three Canonical surfaces split into **read** verbs (safe by default)
+The four Canonical surfaces split into **read** verbs (safe by default)
 and **write** verbs (allowlist-gated).  Cantrip's authoritative gate is
 the per-server `allowed_tools` list in `cantrip.mcp.yaml`: an empty list
 means "expose every tool the server publishes"; a non-empty list filters
@@ -44,9 +50,17 @@ to exactly the named tools.
 | Launchpad | `bug_search`, `bug_view`, `merge_proposal_view`, `project_view` | `bug_comment`, `bug_status_set` | OAuth token |
 | Snapcraft | `snap_search`, `snap_info`, `snap_releases` | `snap_register`, `snap_upload`, `snap_release` | `SNAPCRAFT_MACAROON` |
 | Charmcraft | `lint`, `analyse` | `register`, `upload`, `release` | `CHARMHUB_MACAROON` |
+| MAAS | `machine_list`, `machine_view`, `tag_search`, `subnet_list`, `pool_list`, `version` | `machine_acquire`, `machine_release`, `machine_deploy` | `MAAS_API_KEY` |
 
 The descriptor `description` fields in `marketplace.json` repeat the
 read/write split so it surfaces in the `/mcp marketplace` listing too.
+
+MAAS writes are *capacity-changing*, not *publish*: acquiring a machine
+removes it from the available pool for other tenants, deploying writes
+an OS image to physical hardware, and releasing wipes and returns it.
+Treat the opt-in posture for MAAS writes the way you would treat any
+production-cloud capacity verb, not the way you would treat a
+charmhub-publish verb that only affects your own namespace.
 
 ## Copy-paste: read-only defaults
 
@@ -69,7 +83,18 @@ servers:
     command: uvx
     args: ["charmcraft-mcp"]
     allowed_tools: ["lint", "analyse"]
+
+  maas:
+    command: uvx
+    args: ["maas-mcp"]
+    env:
+      MAAS_API_KEY: ${MAAS_API_KEY}
+    allowed_tools: ["machine_list", "machine_view", "tag_search", "subnet_list", "pool_list", "version"]
 ```
+
+The MAAS API key is needed for *every* MAAS call, including reads —
+MAAS does not expose an anonymous endpoint.  The split here is read vs
+write, not authenticated vs unauthenticated.
 
 ## Copy-paste: read + opt-in write
 
@@ -87,8 +112,16 @@ servers:
     env:
       CHARMHUB_MACAROON: ${CHARMHUB_MACAROON}
     allowed_tools: ["lint", "analyse", "upload", "release"]
+
+  maas:
+    command: uvx
+    args: ["maas-mcp"]
+    env:
+      MAAS_API_KEY: ${MAAS_API_KEY}
+    allowed_tools: ["machine_list", "machine_view", "tag_search", "subnet_list", "pool_list", "version", "machine_acquire", "machine_release"]
 ```
 
 Avoid the temptation to leave `allowed_tools` empty for a server that
-exposes publish verbs.  Empty means "expose everything" — including
-operations that change state on a remote registry.
+exposes publish or capacity verbs.  Empty means "expose everything" —
+including operations that change state on a remote registry or pull
+machines out of a shared MAAS pool.

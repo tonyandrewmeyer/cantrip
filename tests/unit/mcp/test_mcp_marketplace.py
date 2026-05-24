@@ -464,7 +464,7 @@ class TestCanonicalExampleCatalogue:
         loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
         market = await loader.load(source)
         names = {s.name for s in market.servers}
-        assert names == {"launchpad", "snapcraft", "charmcraft"}
+        assert names == {"launchpad", "snapcraft", "charmcraft", "maas"}
 
     def test_catalogue_descriptions_carry_safety_note(self, catalogue_path: pathlib.Path) -> None:
         data = json.loads(catalogue_path.read_text())
@@ -474,6 +474,37 @@ class TestCanonicalExampleCatalogue:
                 f"server {name!r} description must mention allowed_tools so the "
                 "/mcp marketplace listing carries the safety policy"
             )
+
+    def test_maas_descriptor_names_capacity_split_and_credential(
+        self, catalogue_path: pathlib.Path
+    ) -> None:
+        """The MAAS descriptor is the only one in the bundle whose writes
+        change shared capacity rather than just a user's own namespace.
+        The description must call out that split *and* name the credential
+        so the ``/mcp marketplace`` listing carries the policy even before
+        a user opens the README.
+        """
+        data = json.loads(catalogue_path.read_text())
+        maas = data["servers"]["maas"]
+        description = maas["description"]
+        # Read verbs surfaced in the listing.
+        for verb in ("machine_list", "machine_view"):
+            assert verb in description, (
+                f"MAAS descriptor must name the {verb!r} read verb so the "
+                "safe-by-default surface is visible without opening the README"
+            )
+        # Capacity verbs named so the listing shows what's gated.
+        for verb in ("machine_acquire", "machine_release", "machine_deploy"):
+            assert verb in description, (
+                f"MAAS descriptor must name the {verb!r} capacity verb so "
+                "users can see what allowed_tools is gating before they opt in"
+            )
+        # Credential name surfaced.
+        assert "MAAS_API_KEY" in description, (
+            "MAAS descriptor must name the MAAS_API_KEY credential — the "
+            "MAAS API requires authentication for every call, including reads, "
+            "so users need to know they always need a key"
+        )
 
 
 # ── End-to-end with a fake marketplace stored locally ────────────────

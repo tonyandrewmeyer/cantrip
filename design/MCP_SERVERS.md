@@ -216,8 +216,8 @@ Anyone shipping one of these can register it in a marketplace
 ## Safety defaults for the Canonical bundle
 
 `examples/mcp/canonical/marketplace.json` ships an example catalogue
-for the three highest-leverage Canonical surfaces — Launchpad,
-Snapcraft, and Charmcraft.  The catalogue is `directory:`-loadable
+for the four highest-leverage Canonical surfaces — Launchpad,
+Snapcraft, Charmcraft, and MAAS.  The catalogue is `directory:`-loadable
 without any external network, so a user can copy a working descriptor
 without inventing one from scratch.
 
@@ -229,18 +229,38 @@ filters to exactly the named tools.  The marketplace descriptor's
 `description` field repeats the split so the policy surfaces in the
 `/mcp marketplace` listing.
 
-| Server     | Read (safe default)                                                | Write (opt in via `allowed_tools`)             | Credential          |
-| ---------- | ------------------------------------------------------------------ | ---------------------------------------------- | ------------------- |
-| Launchpad  | `bug_search`, `bug_view`, `merge_proposal_view`, `project_view`    | `bug_comment`, `bug_status_set`                | OAuth token         |
-| Snapcraft  | `snap_search`, `snap_info`, `snap_releases`                        | `snap_register`, `snap_upload`, `snap_release` | `SNAPCRAFT_MACAROON`|
-| Charmcraft | `lint`, `analyse`                                                  | `register`, `upload`, `release`                | `CHARMHUB_MACAROON` |
+| Server     | Read (safe default)                                                                       | Write (opt in via `allowed_tools`)                       | Credential           |
+| ---------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------- |
+| Launchpad  | `bug_search`, `bug_view`, `merge_proposal_view`, `project_view`                           | `bug_comment`, `bug_status_set`                          | OAuth token          |
+| Snapcraft  | `snap_search`, `snap_info`, `snap_releases`                                               | `snap_register`, `snap_upload`, `snap_release`           | `SNAPCRAFT_MACAROON` |
+| Charmcraft | `lint`, `analyse`                                                                         | `register`, `upload`, `release`                          | `CHARMHUB_MACAROON`  |
+| MAAS       | `machine_list`, `machine_view`, `tag_search`, `subnet_list`, `pool_list`, `version`       | `machine_acquire`, `machine_release`, `machine_deploy`   | `MAAS_API_KEY`       |
 
 The default posture is therefore "discovery and inspection without
 credentials"; any tool that mutates remote state has to be named
 explicitly in `allowed_tools` and supplied with its credential
 environment variable.  This mirrors the destructive-operation gate that
 Cantrip applies to its own built-in tools — empty `allowed_tools` is
-the wrong default for a server that exposes publish verbs.
+the wrong default for a server that exposes publish or capacity verbs.
+
+MAAS is the odd one out in two ways.  First, the API requires
+authentication for every call, so the `MAAS_API_KEY` credential is
+needed for reads too — the split is *read vs write*, not
+*unauthenticated vs authenticated*.  Second, MAAS writes are
+*capacity-changing*: `machine_acquire` removes a machine from the
+available pool for other tenants, `machine_deploy` writes an OS image
+to physical hardware, and `machine_release` wipes and returns it.  The
+allowlist posture for MAAS writes should be the same as for any
+production-cloud capacity verb, not the looser one that's reasonable
+for charmhub-publish verbs that only affect your own namespace.
+
+Phase 97.2 chose the MCP-first shape for MAAS deliberately: MAAS already
+exposes a stable HTTP API and a Python client, the read verbs are a
+near-mechanical port of the Phase 95.2 Launchpad / Snapcraft / Charmcraft
+pattern, and Cantrip's deploy-side wiring for a MAAS-cloud Juju
+controller is already in place (`_controller_matches_preset("machine",
+"maas")` accepts it).  No built-in MAAS tool family — the API surface
+belongs in an out-of-tree MCP server with its own release cadence.
 
 Authors of new Canonical-adjacent servers should follow the same shape:
 declare a clear read/write split in the description text, and document

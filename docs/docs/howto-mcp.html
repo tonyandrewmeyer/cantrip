@@ -253,14 +253,16 @@ surfaces.</p>
 <code>CANTRIP_MCP_MARKETPLACE_CACHE</code>. The default cache
 sits at <code>~/.cache/cantrip/marketplaces/</code> with a 24-hour
 TTL.</p>
-<h2 id="canonical-bundle">Canonical-native catalogue (Launchpad, Snapcraft, Charmcraft)</h2>
+<h2 id="canonical-bundle">Canonical-native catalogue (Launchpad, Snapcraft, Charmcraft, MAAS)</h2>
 <p>Cantrip ships an example marketplace under
-<code>examples/mcp/canonical/marketplace.json</code> covering the three
+<code>examples/mcp/canonical/marketplace.json</code> covering four
 highest-leverage Canonical surfaces &mdash; <strong>Launchpad</strong> (bug search,
 merge proposals, project lookup), <strong>Snapcraft</strong> (snap search,
-info, release-channel data), and <strong>Charmcraft</strong>
+info, release-channel data), <strong>Charmcraft</strong>
 (<code>lint</code>, <code>analyse</code>, plus opt-in
-<code>register</code> / <code>upload</code> / <code>release</code>).</p>
+<code>register</code> / <code>upload</code> / <code>release</code>), and <strong>MAAS</strong> (machine
+inventory and bare-metal provisioning for machine-substrate
+charms &mdash; kernel modules, GPU passthrough, multi-NIC topologies).</p>
 <p>Point your marketplace at the shipped directory to discover the
 descriptors from inside Cantrip:</p>
 <pre><code>marketplaces:
@@ -269,15 +271,19 @@ descriptors from inside Cantrip:</p>
 <p>Then <code>/mcp marketplace</code> lists each Canonical server with its
 description and install hint. The MCP servers themselves
 (<code>launchpad-mcp</code>, <code>snapcraft-mcp</code>,
-<code>charmcraft-mcp</code>) live in their own repositories; Cantrip
-ships the client and the descriptor catalogue, not the servers.</p>
+<code>charmcraft-mcp</code>, <code>maas-mcp</code>) live in their own repositories;
+Cantrip ships the client and the descriptor catalogue, not the
+servers. <code>maas-mcp</code> is not yet published on PyPI; the descriptor
+ships as a template that names the intended invocation, the same
+way the Snapcraft and Charmcraft descriptors did before their
+servers shipped.</p>
 <h3>Safety story</h3>
 <p>Each server's tools split into a <strong>read set</strong> (safe by default)
 and a <strong>write set</strong> (<code>allowed_tools</code>-gated). Cantrip's
 authoritative gate is the per-server <code>allowed_tools</code>
 list &mdash; an empty list exposes every tool the server publishes,
-which is the wrong default for any server that ships publish
-verbs.</p>
+which is the wrong default for any server that ships publish or
+capacity verbs.</p>
 <table>
 <thead>
 <tr>
@@ -306,8 +312,22 @@ verbs.</p>
 <td><code>register</code>, <code>upload</code>, <code>release</code></td>
 <td><code>CHARMHUB_MACAROON</code></td>
 </tr>
+<tr>
+<td>MAAS</td>
+<td><code>machine_list</code>, <code>machine_view</code>, <code>tag_search</code>, <code>subnet_list</code>, <code>pool_list</code>, <code>version</code></td>
+<td><code>machine_acquire</code>, <code>machine_release</code>, <code>machine_deploy</code></td>
+<td><code>MAAS_API_KEY</code></td>
+</tr>
 </tbody>
 </table>
+<p>MAAS is the odd one out: the API requires authentication for
+<em>every</em> call, so <code>MAAS_API_KEY</code> is needed for reads too &mdash; the
+split is read vs write, not unauthenticated vs authenticated.
+MAAS writes are also <em>capacity-changing</em> (acquiring removes a
+machine from the shared pool, deploying writes an OS image to
+physical hardware, releasing wipes and returns it), so the opt-in
+posture should be the same as for any production-cloud capacity
+verb.</p>
 <p>The read-only starting point &mdash; copy this into the
 <code>servers:</code> block of your <code>cantrip.mcp.yaml</code>:</p>
 <pre><code>servers:
@@ -325,8 +345,16 @@ verbs.</p>
     command: uvx
     args: [&quot;charmcraft-mcp&quot;]
     allowed_tools: [&quot;lint&quot;, &quot;analyse&quot;]
+
+  maas:
+    command: uvx
+    args: [&quot;maas-mcp&quot;]
+    env:
+      MAAS_API_KEY: ${MAAS_API_KEY}
+    allowed_tools: [&quot;machine_list&quot;, &quot;machine_view&quot;, &quot;tag_search&quot;, &quot;subnet_list&quot;, &quot;pool_list&quot;, &quot;version&quot;]
 </code></pre>
-<p>When you actually want the agent to publish, add the specific
+<p>When you actually want the agent to publish a charm, file a
+Launchpad comment, or acquire a MAAS machine, add the specific
 write verb to <code>allowed_tools</code> and supply the credential.
 Each call still goes through the user-confirmation gate as well:</p>
 <pre><code>servers:
@@ -336,6 +364,13 @@ Each call still goes through the user-confirmation gate as well:</p>
     env:
       CHARMHUB_MACAROON: ${CHARMHUB_MACAROON}
     allowed_tools: [&quot;lint&quot;, &quot;analyse&quot;, &quot;upload&quot;, &quot;release&quot;]
+
+  maas:
+    command: uvx
+    args: [&quot;maas-mcp&quot;]
+    env:
+      MAAS_API_KEY: ${MAAS_API_KEY}
+    allowed_tools: [&quot;machine_list&quot;, &quot;machine_view&quot;, &quot;tag_search&quot;, &quot;subnet_list&quot;, &quot;pool_list&quot;, &quot;version&quot;, &quot;machine_acquire&quot;, &quot;machine_release&quot;]
 </code></pre>
 <p>The same pattern applies to Launchpad bug edits and Snapcraft
 revisions &mdash; name the verb, supply the credential, leave everything

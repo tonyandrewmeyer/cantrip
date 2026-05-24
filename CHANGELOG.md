@@ -5,6 +5,34 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 97.2 — MAAS joins the Canonical MCP catalogue.**  Extended
+  `examples/mcp/canonical/marketplace.json` with a `maas` descriptor
+  alongside the existing Launchpad / Snapcraft / Charmcraft trio, using
+  the same Phase-95.2 read/write split shape: read verbs
+  (`machine_list`, `machine_view`, `tag_search`, `subnet_list`,
+  `pool_list`, `version`) are safe by default; capacity-changing verbs
+  (`machine_acquire`, `machine_release`, `machine_deploy`) are
+  allowlist-gated and require a `MAAS_API_KEY` credential.  The
+  descriptor `description`, the catalogue `README.md`, the
+  "Canonical-native catalogue" section of
+  [`howto-mcp.html`](docs/docs/howto-mcp.html), and the "Safety defaults
+  for the Canonical bundle" section of `design/MCP_SERVERS.md` all
+  spell out the two ways MAAS differs from the publish-shaped Canonical
+  servers — every MAAS call needs the API key (the split is read-vs-write,
+  not unauthenticated-vs-authenticated) and MAAS writes change *shared
+  pool capacity* rather than a user's own namespace, so the allowlist
+  posture for `machine_acquire` / `machine_release` / `machine_deploy`
+  is closer to a production-cloud capacity verb than a publish verb.
+  The system-prompt substrate decision rule grew one phrase pointing at
+  MAAS as the production substrate for bare-metal / GPU / kernel-module
+  workloads when a MAAS controller or MAAS MCP server is available.  A
+  new `test_maas_descriptor_names_capacity_split_and_credential` pins
+  the read verbs, capacity verbs, and credential name in the descriptor
+  text so the `/mcp marketplace` listing keeps carrying the policy
+  without the user opening the README.  `maas-mcp` itself is not yet
+  published on PyPI; the descriptor ships as a template that names the
+  intended invocation, the same way the Snapcraft and Charmcraft
+  descriptors did before their servers shipped.
 - **Phase 97.1 — Substrate-role design note for MAAS / OpenStack /
   MicroCloud.**  Wrote [`design/SUBSTRATES.md`](design/SUBSTRATES.md)
   deciding the role each of the three Canonical substrate surfaces

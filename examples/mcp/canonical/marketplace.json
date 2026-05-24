@@ -1,6 +1,6 @@
 {
   "name": "canonical-mcp-catalogue",
-  "description": "Canonical-native MCP servers for charm research, packaging, and discovery (Launchpad, Snapcraft, Charmcraft). Read-only verbs are safe by default; publish/edit verbs require explicit allowed_tools entries.",
+  "description": "Canonical-native MCP servers for charm research, packaging, discovery, and bare-metal substrate (Launchpad, Snapcraft, Charmcraft, MAAS). Read-only verbs are safe by default; publish/edit/capacity verbs require explicit allowed_tools entries.",
   "servers": {
     "launchpad": {
       "description": "Launchpad: bug search, bug view, merge proposals, project lookup. Read-only by default. Modifying verbs (bug_comment, bug_status_set) require an OAuth token and must be opted in via allowed_tools.",
@@ -19,6 +19,12 @@
       "transport": "stdio",
       "command": "uvx",
       "args": ["charmcraft-mcp"]
+    },
+    "maas": {
+      "description": "MAAS: machine inventory and bare-metal provisioning for machine-substrate charm work (kernel modules, GPU passthrough, multi-NIC topologies). Read/inspect verbs (machine_list, machine_view, tag_search, subnet_list, pool_list, version) are safe by default. Capacity-changing verbs (machine_acquire, machine_release, machine_deploy) require a MAAS API key (MAAS_API_KEY) and must be opted in via allowed_tools.",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["maas-mcp"]
     }
   }
 }

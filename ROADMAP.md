@@ -1472,12 +1472,45 @@ lowest-friction high-value pieces first.
 
 ### 97.2 MAAS path
 
-- [ ] Decide whether the first MAAS surface is a built-in tool family,
-  an MCP-first story, or a hybrid.  Start with safe read / prepare
-  flows: list machines, inspect availability, and acquire / release
-  capacity with explicit confirmation on any destructive step.
-- [ ] Teach machine-charm workflows when MAAS is a better fit than local
-  LXD and how to say so in design proposals, test plans, and runbooks.
+- [x] Decided MCP-first, mirroring the Phase 95.2 / 95.3 Canonical-bundle
+  pattern verbatim.  Shipped a `maas` descriptor in
+  `examples/mcp/canonical/marketplace.json` alongside the existing
+  Launchpad / Snapcraft / Charmcraft trio.  Read verbs (`machine_list`,
+  `machine_view`, `tag_search`, `subnet_list`, `pool_list`, `version`)
+  are safe by default; capacity-changing verbs (`machine_acquire`,
+  `machine_release`, `machine_deploy`) are allowlist-gated and require
+  a `MAAS_API_KEY` credential.  The descriptor `description`, the
+  catalogue `README.md`, the "Canonical-native catalogue" section of
+  `docs/docs/howto-mcp.html`, and the "Safety defaults for the Canonical
+  bundle" section of `design/MCP_SERVERS.md` all spell out the two ways
+  MAAS differs from the publish-shaped Canonical servers — every MAAS
+  call needs the API key (read-vs-write, not unauthenticated-vs-authenticated)
+  and MAAS writes change *shared pool capacity*, so the allowlist posture
+  is closer to a production-cloud capacity verb than a publish verb.  A
+  new `test_maas_descriptor_names_capacity_split_and_credential` test
+  in `tests/unit/mcp/test_mcp_marketplace.py` pins the read verbs,
+  capacity verbs, and credential name in the descriptor text so the
+  `/mcp marketplace` listing keeps carrying the policy without the
+  user opening the README.  `maas-mcp` itself is not yet published on
+  PyPI; the descriptor ships as a template that names the intended
+  invocation, the same way the Snapcraft and Charmcraft descriptors
+  did before their servers shipped.  No built-in tool family — the
+  API surface belongs in an out-of-tree MCP server with its own
+  release cadence, exactly per the design-note decision.
+- [x] System-prompt substrate decision rule
+  (`src/cantrip/agent/prompts/system.md.j2`) grew one phrase pointing
+  at MAAS as the production substrate for bare-metal / GPU /
+  kernel-module workloads when a MAAS controller or MAAS MCP server is
+  available.  The rest of the "teach the agent when MAAS beats local
+  LXD" surface — DESIGN.md MAAS callouts when the controller cloud is
+  `maas`, MAAS-grounded planner enrichment ("4 machines with `gpu` tag
+  available"), and acceptance-test guidance for MAAS-backed deployments
+  — is **deferred to a follow-up** because all three depend on an actual
+  `maas-mcp` server being installable and an MAAS-cloud Juju controller
+  being reachable from the test environment.  Until either lands, the
+  agent has the substrate hint but no grounded inventory facts to feed
+  on; revisit when `uvx maas-mcp` works end-to-end against a real MAAS
+  region.
 
 ### 97.3 OpenStack and MicroCloud profiles
 
