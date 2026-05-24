@@ -622,8 +622,8 @@ sanity check that can run on every prompt change.
   ``run`` verb is the recipe: generate, hand-tune, rename
   to ``gold-<provider>``, then ``validate``.  *Partial
   (2026-05-24): ``gold-fireworks`` landed for ntfy and
-  flask-hello — both single-shot Kimi K2 default, ~30 min
-  generation each.  ntfy scored 46/47 (96 %) raw with one
+  flask-hello, and alertmanager-machine — all single-shot
+  Kimi K2 default, ~30 min generation each.  ntfy scored 46/47 (96 %) raw with one
   import-style hand-tune (``from ops import testing`` →
   ``import ops.testing``) to reach 47/47.  flask-hello
   scored 42/49 (86 %) raw with three rubric-shape
@@ -643,10 +643,14 @@ sanity check that can run on every prompt change.
   the generator now resolves to absolute before subprocess
   invocation, pinned by
   ``test_generate_charm_passes_absolute_paths_to_subprocess``.
-  ``gold-gemini`` and the remaining five specs
-  (miniflux, alertmanager-machine, haproxy-machine,
-  meilisearch, vaultwarden, gitea) across both providers
-  remain pending.  A first miniflux + Fireworks attempt
+  alertmanager-machine (machine substrate) scored 45/47
+  (96 %) raw — same single import-style hand-tune as ntfy
+  to reach 47/47; the run hit the 30-min subprocess
+  timeout but Fireworks had already produced the full
+  charm by then so the timeout was cosmetic.
+  ``gold-gemini`` and the remaining four specs
+  (haproxy-machine, meilisearch, vaultwarden, gitea)
+  across both providers remain pending.  A first miniflux + Fireworks attempt
   scored only 13/42 (31 %) — Kimi K2 declared the build
   "done" after 14 cycles (vs. 30+ for ntfy/flask-hello)
   and left a 28-line bare-scaffold charm; recorded as a
