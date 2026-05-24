@@ -648,9 +648,16 @@ sanity check that can run on every prompt change.
   to reach 47/47; the run hit the 30-min subprocess
   timeout but Fireworks had already produced the full
   charm by then so the timeout was cosmetic.
-  ``gold-gemini`` and the remaining four specs
-  (haproxy-machine, meilisearch, vaultwarden, gitea)
-  across both providers remain pending.  A first miniflux + Fireworks attempt
+  ``gold-gemini`` and the remaining three specs
+  (meilisearch, vaultwarden, gitea) across both providers
+  remain pending.  A first haproxy-machine + Fireworks
+  attempt scored 42/63 (67 %) — full metadata + ops
+  framework but a 40-line charm.py pushed most code-pattern
+  responsibilities into the helper module, and no
+  ``src/templates/haproxy*`` or
+  ``src/grafana_dashboards/*.json`` got produced; recorded
+  as a per-provider signal alongside the miniflux failure
+  rather than hand-authored.  A first miniflux + Fireworks attempt
   scored only 13/42 (31 %) — Kimi K2 declared the build
   "done" after 14 cycles (vs. 30+ for ntfy/flask-hello)
   and left a 28-line bare-scaffold charm; recorded as a
