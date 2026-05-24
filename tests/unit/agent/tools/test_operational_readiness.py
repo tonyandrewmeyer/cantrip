@@ -467,3 +467,64 @@ class TestOperationalReadinessTool:
         assert tool.name == "operational_readiness"
         assert "Operational Readiness" in tool.description
         assert tool.parameters["type"] == "object"
+
+    @pytest.mark.asyncio()
+    async def test_machine_charm_surfaces_estate_opportunities(
+        self, tmp_path: pathlib.Path, tool: OperationalReadinessTool
+    ) -> None:
+        """A machine-substrate charm with storage + peers + TLS gets
+        the full Pro/Landscape rendering wired into both the report
+        body and the structured findings."""
+        (tmp_path / "charmcraft.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "machine-charm",
+                    "bases": [{"name": "ubuntu", "channel": "22.04"}],
+                    "storage": {"data": {"type": "filesystem"}},
+                    "peers": {"cluster": {"interface": "myapp-peers"}},
+                    "requires": {"certs": {"interface": "tls-certificates"}},
+                }
+            )
+        )
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("import ops")
+
+        result = await tool.execute(path=str(tmp_path))
+        assert result.success is True
+        # Report body carries the new section and the required-vs-
+        # recommended preamble exactly once.
+        assert "## Estate Operations" in result.output
+        assert "not required for the charm to work" in result.output
+        assert "### Ubuntu Pro" in result.output
+        assert "### Landscape" in result.output
+        # Structured data exposes the opportunities under findings.
+        findings = result.data["findings"]
+        assert "estate_opportunities" in findings
+        facets = {o["facet"] for o in findings["estate_opportunities"]}
+        assert "esm-security-maintenance" in facets
+        assert "fleet-patching" in facets
+        assert "fips-compliance" in facets
+
+    @pytest.mark.asyncio()
+    async def test_k8s_charm_without_mentions_omits_estate_section(
+        self, tmp_path: pathlib.Path, tool: OperationalReadinessTool
+    ) -> None:
+        """A k8s charm with no Pro/Landscape hints stays silent —
+        the section disappears entirely rather than nagging."""
+        (tmp_path / "charmcraft.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "k8s-charm",
+                    "containers": {"workload": {"resource": "oci-image"}},
+                }
+            )
+        )
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("import ops")
+
+        result = await tool.execute(path=str(tmp_path))
+        assert result.success is True
+        assert "## Estate Operations" not in result.output
+        assert result.data["findings"]["estate_opportunities"] == []

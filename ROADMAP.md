@@ -1555,32 +1555,77 @@ Ubuntu estates, not when it is merely scaffolding a demo.
 
 ### 98.1 Operational-readiness rubric
 
-- [ ] Expand the operational-readiness guidance so the agent can ask
-  whether a workload or deployment story should mention **Ubuntu Pro**
-  (security maintenance, compliance posture, long-term patching) and/or
-  **Landscape** (fleet management, patching, access management) when
-  those are actually relevant.
-- [ ] Keep the recommendations evidence-driven.  They should show up
-  where the workload, substrate, or operator environment makes them a
-  sensible Canonical recommendation — not as generic upsell text.
+- [x] Expanded the operational-readiness rubric so a new
+  ``assess_estate_opportunities`` helper
+  (``src/cantrip/agent/tools/estate_ops.py``) drives evidence-based
+  Ubuntu Pro and Landscape advice off the charmcraft metadata
+  already loaded by ``operational_readiness``: substrate
+  (``containers:`` vs ``bases:`` / ``platforms:``), stateful
+  signals (``storage:`` declared), clustered signals (``peers:``
+  declared), and security-sensitive relations (``tls-certificates``,
+  ``oauth``, ``oauth-cli``, ``hydra-token-introspect``,
+  ``oidc-info``, ``vault-kv``).  Each opportunity carries the
+  observed evidence so the operator can audit the recommendation
+  rather than treat it as a black box.
+- [x] Detector is conservative — a pure-K8s charm with no
+  Pro/Landscape mentions returns an empty list and the ``Estate
+  Operations`` section disappears entirely from
+  ``OPERATIONAL_READINESS.md``, rather than nagging with generic
+  upsell text.  The level taxonomy (``recommended``, ``consider``,
+  ``already-mentioned``) is a closed set pinned by a parametrised
+  unit test so future consumers don't silently introduce a fourth.
 
 ### 98.2 Improvement-mode outputs
 
-- [ ] Add "Ubuntu Pro / Landscape opportunities" to the audit /
-  improvement output alongside existing observability, backup, HA, and
-  security findings when those Canonical products would materially
-  improve the charm's production story.
-- [ ] Provide consistent wording that distinguishes **recommended for a
-  supported production estate** from **required for the charm to work**.
+- [x] ``OperationalReadinessTool`` now wires ``estate_opportunities``
+  through ``_format_readiness_report`` into both a dedicated
+  ``## Estate Operations`` markdown section (rendered by
+  ``render_estate_section``) and ``findings.estate_opportunities``
+  in the tool's structured ``data`` dict.  Both the
+  standalone operability-assessment prompt
+  (``operability_assess.md.j2``) and the improvement-mode
+  readiness summary (``improvement_assess_readiness.md.j2``) ask
+  the agent to load the bundled ``estate-operations`` skill and
+  surface Pro / Landscape opportunities as a *separate* paragraph
+  after the code-level must-fix / should-fix list so the two
+  stories stay visually distinct.
+- [x] Consistent wording shipped in
+  ``src/cantrip/skills/estate-operations/SKILL.md``: the rule
+  ``recommended for a supported production estate`` (never
+  ``required for the charm to work``) is load-bearing; the skill
+  body bans imperative verbs, gives the runbook ``Production
+  deployment (optional)`` template, and gives the audit-summary
+  paragraph template.  The same phrase is repeated in the
+  ``OPERATIONAL_READINESS.md`` section preamble so the
+  distinction shows up before the reader sees any individual
+  recommendation.
 
 ### 98.3 Detection and templates
 
-- [ ] Where safe and cheap, detect hints that the operator already lives
-  in a Pro / Landscape world (repo docs, deployment notes, packaging
-  assumptions, estate-management references) and use that context in the
-  generated runbooks.
-- [ ] Add reusable templates or guidance snippets for charms that need
-  production-hardening recommendations but no direct integration code.
+- [x] Estate-mention detection runs across README, ``docs/*.md``,
+  and the metadata ``summary`` / ``description`` / ``title`` fields
+  via ``_scan_text_for_tokens``.  Token lists
+  (``PRO_MENTION_TOKENS`` covering ``ubuntu pro``, ``ua-client``,
+  ``esm-apps``, ``esm-infra``, ``livepatch``, ``fips``, ``usg``,
+  ``cis benchmark``, …; ``LANDSCAPE_MENTION_TOKENS`` covering the
+  ``landscape-*`` package names plus the bare product name) use
+  word boundaries for single-word terms so ``fips`` does not
+  fire on ``flips``.  Detected mentions promote the matched
+  facet's level to ``already-mentioned`` so the agent reinforces
+  the existing wording rather than duplicating it; a K8s charm
+  that already references Pro or Landscape emits a single
+  host-coverage entry asking the operator to confirm the wording
+  targets the cluster hosts rather than the workload container.
+- [x] Reusable wording snippets ship in
+  ``src/cantrip/skills/estate-operations/SKILL.md`` — the
+  ``Production deployment (optional)`` runbook template, the
+  audit-summary paragraph template, the per-facet trigger table
+  for Ubuntu Pro and Landscape, and explicit anti-patterns
+  (imperative verbs, generic upsell, conflating workload and
+  host layers).  Documented end-to-end in the new
+  ``docs/src/howto-estate-ops.md`` →
+  ``docs/docs/howto-estate-ops.html`` how-to, linked from the
+  sidebar nav under How-to guides.
 
 ### What this phase is *not*
 

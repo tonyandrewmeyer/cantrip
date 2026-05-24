@@ -15,6 +15,11 @@ from typing import Any
 import yaml
 
 from cantrip.agent.tools.base import Tool, ToolResult
+from cantrip.agent.tools.estate_ops import (
+    EstateOpportunity,
+    assess_estate_opportunities,
+    render_estate_section,
+)
 
 # ---------------------------------------------------------------------------
 # Constants: pillar names, check definitions, action patterns
@@ -502,8 +507,17 @@ _MUST_FIX_PREFIXES = frozenset(
 def _format_readiness_report(
     charm_name: str,
     by_pillar: dict[str, list[tuple[str, bool, str]]],
+    estate_opportunities: list[EstateOpportunity] | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Format OPERATIONAL_READINESS.md and a structured data dict."""
+    """Format OPERATIONAL_READINESS.md and a structured data dict.
+
+    ``estate_opportunities`` carries the Phase 98 Pro / Landscape
+    advisory items.  When present and non-empty they render as a
+    dedicated ``## Estate Operations`` section below the pillar
+    breakdown so the operator sees estate-level recommendations
+    alongside the code-level must-fix list, without conflating them.
+    """
+    estate_opportunities = estate_opportunities or []
     must_fix: list[str] = []
     should_fix: list[str] = []
     advisory: list[str] = []
@@ -576,10 +590,14 @@ def _format_readiness_report(
         advisory.append(item)
     lines.append("")
 
+    estate_lines = render_estate_section(estate_opportunities)
+    lines.extend(estate_lines)
+
     findings = {
         "must_fix": must_fix,
         "should_fix": should_fix,
         "advisory": advisory,
+        "estate_opportunities": [opp.to_dict() for opp in estate_opportunities],
     }
 
     data = {
@@ -707,7 +725,8 @@ class OperationalReadinessTool(Tool):
 
         # Categorise and format.
         by_pillar = _categorise_checks(all_checks)
-        report, data = _format_readiness_report(charm_name, by_pillar)
+        estate_opportunities = assess_estate_opportunities(charm_dir, metadata)
+        report, data = _format_readiness_report(charm_name, by_pillar, estate_opportunities)
 
         # Write report file.
         report_path = charm_dir / "OPERATIONAL_READINESS.md"

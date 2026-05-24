@@ -5,6 +5,45 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 98 — Ubuntu Pro and Landscape estate-ops recommendations.**
+  The `operational_readiness` tool now emits a dedicated **Estate
+  Operations** section in `OPERATIONAL_READINESS.md` listing day-2
+  Ubuntu Pro (ESM-Apps / ESM-Infra, Livepatch, FIPS-validated
+  modules, USG / CIS hardening) and Landscape (fleet patching,
+  per-machine compliance reporting, centralised access management)
+  recommendations.  Every opportunity carries the evidence that
+  triggered it — machine substrate, peer relations, declared
+  storage, TLS or identity-platform relations — and one of three
+  levels (`recommended`, `consider`, `already-mentioned`) so the
+  operator can audit the recommendation rather than treat it as a
+  black box.  Detection is conservative: a pure-K8s charm with no
+  Pro/Landscape mentions returns an empty list and the section
+  disappears entirely from the report; a K8s charm that already
+  references either product emits a single host-coverage entry
+  asking the operator to confirm the wording is aimed at the
+  cluster hosts rather than the workload container.  Structured
+  consumers read the same data via
+  `findings.estate_opportunities` in the tool's data dict.  A new
+  bundled `estate-operations` skill governs the wording so the
+  agent never confuses estate-level advice with charm
+  requirements — every recommendation is "recommended for a
+  supported production estate", never "required for the charm to
+  work".  Both the standalone operability-assessment prompt
+  (`operability_assess.md.j2`) and the improvement-mode
+  readiness summary (`improvement_assess_readiness.md.j2`) ask
+  the agent to load the skill and surface Pro / Landscape
+  opportunities as a separate paragraph after the code-level
+  findings.  Twenty-eight new unit cases in
+  `tests/unit/agent/tools/test_estate_ops.py` pin substrate
+  gating, level escalation under stateful / clustered / sensitive
+  signals, the already-mentioned promotion across README / docs /
+  metadata, the K8s host-coverage carve-out, and the rendering
+  helper; two new cases in
+  `tests/unit/agent/tools/test_operational_readiness.py` pin the
+  end-to-end integration in the report body and the structured
+  data.  Documented in the new
+  [`howto-estate-ops.html`](docs/docs/howto-estate-ops.html)
+  how-to.
 - **Phase 97.2 — MAAS joins the Canonical MCP catalogue.**  Extended
   `examples/mcp/canonical/marketplace.json` with a `maas` descriptor
   alongside the existing Launchpad / Snapcraft / Charmcraft trio, using

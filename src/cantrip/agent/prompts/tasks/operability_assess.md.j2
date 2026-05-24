@@ -3,3 +3,8 @@ Evaluate the charm at {{ charm_path }} against Canonical's Operational Readiness
 1. Run `operational_readiness` tool on the charm directory.
 2. Review the OPERATIONAL_READINESS.md report.
 3. Summarise the per-pillar scores and must-fix items.
+4. If `findings.estate_opportunities` is non-empty, load the
+   `estate-operations` skill and summarise the Ubuntu Pro and
+   Landscape recommendations as a separate paragraph after the
+   code-level findings. Mark them as recommended for a supported
+   production estate, not required for the charm to work.

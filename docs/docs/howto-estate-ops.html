@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to surface Ubuntu Pro and Landscape recommendations &mdash; Cantrip</title>
+<meta name="description" content="Understand the Estate Operations section in the operational-readiness report &mdash; when Ubuntu Pro and Landscape recommendations appear, what they mean, and how the agent phrases them.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-interface.html">Choose an interface</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-identity-platform.html">Add identity-platform login</a></li>
+      <li><a href="howto-estate-ops.html" class="current">Surface Ubuntu Pro and Landscape</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-recipes.html">Run a recipe</a></li>
+      <li><a href="howto-flows.html">Walk a flow</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-eval.html">Score against an eval spec</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+      <li><a href="howto-vm-inference-proxy.html">Run in a VM with host GPU inference</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#what">What you get</a></li>
+      <li><a href="#when">When recommendations appear</a></li>
+      <li><a href="#shape">Shape of the report</a></li>
+      <li><a href="#wording">Required vs recommended</a></li>
+      <li><a href="#skill">The bundled skill</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="reference-tools.html">Agent tools</a></li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Estate operations
+    </div>
+
+    <h1>Surface Ubuntu Pro and Landscape recommendations</h1>
+    <p class="subtitle">
+      The operational-readiness tool surfaces day-2 estate recommendations alongside the code-level findings, scoped to operators running the charm on a supported Ubuntu production estate.
+    </p>
+
+<h2 id="what">What you get</h2>
+<p>When the agent runs the <code>operational_readiness</code> tool on a charm,
+the resulting <code>OPERATIONAL_READINESS.md</code> report carries a dedicated
+<strong>Estate Operations</strong> section listing day-2 recommendations for two
+Canonical products:</p>
+<ul>
+<li><strong>Ubuntu Pro</strong> &mdash; extended security maintenance (ESM-Apps /
+ESM-Infra), Livepatch (kernel CVEs without reboot), FIPS-validated
+crypto modules, and USG / CIS / DISA-STIG hardening.</li>
+<li><strong>Landscape</strong> &mdash; fleet patching, per-machine compliance reports,
+and centralised access management across an Ubuntu estate.</li>
+</ul>
+<p>Each recommendation carries the <strong>evidence</strong> that triggered it &mdash; a
+machine substrate, a peer relation, a TLS or identity-platform
+relation, declared storage &mdash; so the operator can audit the
+recommendation rather than treat it as a black box.</p>
+<h2 id="when">When recommendations appear</h2>
+<p>The detector is deliberately conservative. The Estate Operations
+section disappears entirely from the report when no opportunities
+apply. Specifically:</p>
+<ul>
+<li>A pure-Kubernetes charm with no Pro / Landscape mentions in its
+README, <code>docs/</code>, or charmcraft metadata returns an empty list. The
+recommendation belongs on the cluster's Ubuntu <em>host</em> nodes, not
+the workload container.</li>
+<li>A K8s charm that <strong>already references</strong> Pro or Landscape (in the
+README, <code>docs/</code>, or metadata <code>summary</code> / <code>description</code>) emits a
+single host-coverage entry asking the operator to confirm the
+existing wording targets the right layer.</li>
+<li>A machine-substrate charm emits ESM, Livepatch, and fleet-patching
+baselines, with severity escalating from <code>consider</code> to
+<code>recommended</code> when the charm declares storage or peer relations.</li>
+<li>TLS or identity-platform relations add <code>fips-compliance</code> and
+<code>usg-hardening</code> <code>consider</code> entries, since those facets matter
+primarily for regulated workloads.</li>
+</ul>
+<h2 id="shape">Shape of the report</h2>
+<p>The Estate Operations section sits below the pillar breakdown and
+the Advisory block. Each opportunity carries three things:</p>
+<ul>
+<li><strong>Level</strong> &mdash; <code>recommended</code> for strong evidence, <code>consider</code> for a
+weaker but still relevant fit, <code>already-mentioned</code> when the repo
+already references the product (in which case the agent
+reinforces the existing wording rather than duplicating it).</li>
+<li><strong>Rationale</strong> &mdash; a one-sentence explanation written for the
+operator.</li>
+<li><strong>Evidence</strong> &mdash; the observed signals that triggered the
+recommendation, so it can be audited.</li>
+</ul>
+<p>Structured consumers (the improvement-mode summary, future audit
+templates) read the same data via
+<code>OperationalReadinessTool</code> output:
+<code>result.data[&quot;findings&quot;][&quot;estate_opportunities&quot;]</code> is a list of
+dictionaries with <code>product</code>, <code>facet</code>, <code>level</code>, <code>rationale</code>, and
+<code>evidence</code> fields.</p>
+<h2 id="wording">Required vs recommended</h2>
+<p>The single load-bearing rule: estate recommendations are
+<strong>recommended for a supported production estate</strong>, never <strong>required
+for the charm to work</strong>. The charm itself must pack and run on a
+stock Ubuntu image with no subscription.</p>
+<p>The report's preamble states the rule explicitly, and the bundled
+<code>estate-operations</code> skill governs how the agent phrases the
+recommendation in the user-facing summary, runbook edits, and
+README sections. The skill explicitly rejects sales-script
+phrasing &mdash; every recommendation is grounded in observed evidence,
+and the recommendation disappears when the evidence does not
+support it.</p>
+<h2 id="skill">The bundled skill</h2>
+<p>A bundled <code>estate-operations</code> skill ships with Cantrip and is
+loaded on demand. When the agent sees a non-empty
+<code>estate_opportunities</code> list in the readiness output (or when the
+user explicitly asks about Ubuntu Pro, Landscape, ESM, Livepatch,
+FIPS, or USG), it loads the skill and uses the skill's wording
+patterns:</p>
+<ul>
+<li><strong>Production-deployment runbook section</strong> &mdash; an optional section
+in the charm's README that lists relevant estate recommendations
+with a closing sentence reaffirming the charm does not depend on
+either service.</li>
+<li><strong>Audit-summary paragraph</strong> &mdash; a separate paragraph after the
+must-fix / should-fix list, visually distinct from the code-level
+findings.</li>
+<li><strong>Already-mentioned reinforcement</strong> &mdash; when the repo already
+references a product, the agent tightens the existing wording
+rather than adding a duplicate paragraph.</li>
+</ul>
+<p>See <code>src/cantrip/skills/estate-operations/SKILL.md</code> in the
+repository for the full skill body, the facet table, and the
+worded examples.</p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+
+(function() {
+  document.querySelectorAll('.doc-content pre').forEach(function(pre) {
+    var code = pre.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.setAttribute('aria-label', 'Copy code to clipboard');
+    btn.addEventListener('click', function() {
+      var text = code.innerText;
+      var done = function() {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function() {});
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  });
+})();
+</script>
+
+</body>
+</html>
