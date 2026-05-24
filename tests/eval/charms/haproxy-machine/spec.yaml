@@ -1,0 +1,313 @@
+name: haproxy-machine
+description: >
+  HAProxy reverse proxy / load balancer on a machine substrate (Path C,
+  infrastructure).  Differs from the existing machine specs by stressing
+  a *provides*-style infrastructure charm: multiple backend integrations
+  arrive via a single relation, TLS terminates on the proxy through a
+  certificates relation, and a peer relation underpins shared SSL session
+  cache for HA pairs.  Covers apt-based install, config-file templating
+  with reload-not-restart on change, and a cos-agent subordinate for
+  observability (the canonical machine COS pattern, distinct from the
+  per-interface relations used by k8s charms).
+
+charm_path: infrastructure
+substrate: machine
+
+workload:
+  package: haproxy
+  channel: "2.8/stable"
+  port: 80
+  health: /healthz
+
+prompt: >
+  Build a machine charm for HAProxy (the LTS series, currently 2.8) as a
+  TLS-terminating reverse proxy and load balancer.  HAProxy installs from
+  the Ubuntu archive via apt, runs as a systemd service (haproxy.service),
+  and reads its configuration from /etc/haproxy/haproxy.cfg.  The charm
+  should:
+
+  * Install haproxy from apt and manage the systemd unit.  When the
+    configuration changes, validate the new file with `haproxy -c -f
+    <path>` first, then issue `systemctl reload haproxy` so live
+    connections are not dropped.  Only fall back to a full restart when
+    reload is impossible (e.g. listener address change).
+  * Generate /etc/haproxy/haproxy.cfg from a Jinja2 template wired to
+    charm config plus the data on the `reverseproxy` provides relation
+    (interface `haproxy-route` or `reverseproxy`).  Multiple backends
+    can join the same relation; each contributes its service name,
+    upstream host:port list, health-check path, and optional
+    sticky-session policy.
+  * Take a `certificates` requires relation (interface
+    `tls-certificates`) for the public-facing listener — when the
+    relation is present, the charm asks a TLS provider for a
+    certificate for the unit's configured domain and writes the
+    bundle to /etc/haproxy/certs/.  Without the relation, only plain
+    HTTP listeners come up.
+  * Declare a `haproxy-peers` peer relation that is used today to
+    share the unit's hostname for stick-tables and tomorrow for
+    shared SSL session cache (peers section in haproxy.cfg).
+  * Add a `cos-agent` requires relation (interface `cos-agent`) so a
+    cos-agent subordinate can scrape HAProxy's stats socket exporter
+    and forward both metrics and logs to a Canonical Observability
+    Stack model.  Expose the embedded Prometheus exporter on
+    127.0.0.1:9101 and ship a small Grafana dashboard JSON under
+    `src/grafana_dashboards/`.
+  * Provide a `reload-config` action that runs `haproxy -c` then
+    `systemctl reload haproxy` and reports back, and a
+    `show-stats` action that snapshots `echo "show stat" |
+    socat stdio /run/haproxy/admin.sock` so operators can inspect
+    backend health without SSHing in.
+
+  Config options should include `max-connections` (int, default 4000),
+  `default-backend` (string, the relation-app name to send traffic to
+  when no host header matches), `log-level` (string, default `info`),
+  `ssl-ciphers` (string, default the Mozilla intermediate suite), and
+  `enable-stats` (boolean, default true).  Use Scenario for unit tests
+  and Jubilant for any integration tests.
+
+follow_ups: []
+
+rubric:
+  # ── Structure ──────────────────────────────────────────────────────
+  - name: charmcraft-yaml
+    description: Primary project file exists
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: charmcraft.yaml}
+    points: 3
+
+  - name: charm-source
+    description: Main charm source file
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: src/charm.py}
+    points: 3
+
+  - name: haproxy-config-template
+    description: Templated haproxy.cfg lives alongside the source
+    category: structure
+    severity: major
+    check: file_matches_pattern
+    args: {glob: "src/templates/*haproxy*"}
+    points: 2
+
+  - name: unit-test-dir
+    description: Unit test directory
+    category: structure
+    severity: major
+    check: dir_exists
+    args: {path: tests/unit}
+    points: 2
+
+  - name: integration-test-dir
+    description: Integration test directory
+    category: structure
+    severity: minor
+    check: dir_exists
+    args: {path: tests/integration}
+    points: 1
+
+  # ── Metadata ───────────────────────────────────────────────────────
+  - name: charm-name
+    description: Charm name is set
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: name}
+    points: 2
+
+  - name: machine-base
+    description: Targets a machine base
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: base}
+    points: 2
+
+  - name: reverseproxy-provides
+    description: Provides a reverseproxy / haproxy-route relation for backends
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: reverseproxy}
+    points: 3
+
+  - name: certificates-requires
+    description: Requires tls-certificates for HTTPS termination
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: certificates, interface: tls-certificates}
+    points: 3
+
+  - name: haproxy-peers-relation
+    description: Peer relation for HA pair coordination
+    category: metadata
+    severity: major
+    check: has_relation
+    args: {relation: haproxy-peers}
+    points: 2
+
+  - name: cos-agent-relation
+    description: cos-agent subordinate relation for COS forwarding
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: cos-agent, interface: cos-agent}
+    points: 3
+
+  - name: max-connections-config
+    description: Config option for HAProxy max concurrent connections
+    category: metadata
+    severity: major
+    check: has_config_option
+    args: {option: max-connections, type: int}
+    points: 1
+
+  - name: default-backend-config
+    description: Config option naming the fall-through backend
+    category: metadata
+    severity: major
+    check: has_config_option
+    args: {option: default-backend, type: string}
+    points: 1
+
+  - name: log-level-config
+    description: Config option for log verbosity
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: log-level, type: string}
+    points: 1
+
+  - name: reload-config-action
+    description: Action that validates and reloads HAProxy without dropping traffic
+    category: metadata
+    severity: critical
+    check: has_action
+    args: {action: reload-config}
+    points: 3
+
+  - name: show-stats-action
+    description: Action that snapshots the runtime stats socket
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: show-stats}
+    points: 2
+
+  # ── Code ───────────────────────────────────────────────────────────
+  - name: uses-ops
+    description: Charm uses the ops framework
+    category: code
+    severity: critical
+    check: uses_ops_framework
+    points: 3
+
+  - name: apt-install
+    description: Charm installs haproxy via apt
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "apt|charms\\.operator_libs_linux"
+      message: Charm installs haproxy from apt
+    points: 3
+
+  - name: validate-before-reload
+    description: Charm validates config with `haproxy -c` before reloading
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "haproxy.*-c|check.*config|validate"
+      message: Charm validates the new config before reloading
+    points: 3
+
+  - name: systemd-reload
+    description: Charm prefers reload over restart on config change
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "systemd|systemctl|service.*reload|Service.*reload"
+      message: Charm manages haproxy via systemd with reload preference
+    points: 3
+
+  - name: generates-haproxy-cfg
+    description: Charm writes the templated haproxy.cfg
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "haproxy\\.cfg|haproxy_cfg|render.*haproxy|write_text"
+      message: Charm renders and writes /etc/haproxy/haproxy.cfg
+    points: 3
+
+  - name: tls-cert-handling
+    description: Charm consumes the tls-certificates relation
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "tls.certificates|TLSCertificatesRequires|certificate.available|csr"
+      message: Charm requests and stores TLS certificates
+    points: 2
+
+  - name: backend-data-from-relation
+    description: Charm reads backend service data from the reverseproxy relation
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "reverseproxy|relation.*data|RelationChangedEvent"
+      message: Charm consumes backend data from the relation
+    points: 2
+
+  # ── COS ────────────────────────────────────────────────────────────
+  - name: cos-integration
+    description: COS integration for observability
+    category: cos
+    severity: critical
+    check: has_cos_integration
+    points: 3
+
+  - name: grafana-dashboard-bundled
+    description: Ships at least one Grafana dashboard JSON
+    category: cos
+    severity: minor
+    check: file_matches_pattern
+    args:
+      glob: "src/grafana_dashboards/*.json"
+      min_count: 1
+    points: 1
+
+  # ── Testing ────────────────────────────────────────────────────────
+  - name: has-unit-tests
+    description: At least one unit test file
+    category: testing
+    severity: major
+    check: has_unit_tests
+    points: 2
+
+  - name: uses-scenario
+    description: Unit tests use Scenario (ops.testing)
+    category: testing
+    severity: major
+    check: uses_scenario_tests
+    points: 2
+
+  - name: no-harness
+    description: No deprecated Harness usage
+    category: testing
+    severity: critical
+    check: no_harness
+    points: 2

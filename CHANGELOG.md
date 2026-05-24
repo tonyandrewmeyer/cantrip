@@ -4,6 +4,37 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Tests
+- **Phase 93.6 — eval-corpus expansion.**  Three new specs land under
+  `tests/eval/charms/` to fill gaps the existing five did not exercise.
+  `haproxy-machine` is a Path C / machine reverse proxy: apt-installed
+  HAProxy with TLS via a `tls-certificates` requires relation, a
+  `reverseproxy` provides relation that multiplexes multiple backends,
+  a `haproxy-peers` peer relation for HA coordination, `cos-agent` for
+  the canonical machine observability pattern, and operationally
+  critical `reload-config` / `show-stats` actions that validate with
+  `haproxy -c` before `systemctl reload` (no traffic drop).
+  `vaultwarden` is a Path B / k8s custom charm in the
+  *secret-and-storage-heavy* corner the existing custom specs avoided:
+  a single Rust binary driven entirely by env vars (no config
+  templating), persistent storage for the embedded SQLite DB +
+  attachments + sends + icon cache, a Juju-secret-backed admin token
+  with a `get-admin-token` action and a `file_not_contains`
+  anti-pattern check that the token is never logged, `smtp` and
+  `ingress` relations, and SHA-256-fingerprinted `backup-data` /
+  `restore-data` actions.  `gitea` is the relations-and-ops-heavy
+  case — five data-plane relations (`database` postgres, `cache`
+  redis, `ingress`, `smtp`, `object-storage` s3), three distinct COS
+  surfaces (`metrics-endpoint`, `grafana-dashboard`, `logging`), and
+  five ops actions (`create-admin`, `change-admin-password`,
+  `run-housekeeping`, `backup-data`, `restore-data`).  Each spec
+  defines ≥ 25 rubric criteria across structure / metadata / code /
+  cos / testing categories with at least four critical entries.
+  `tests/eval/test_gold_standards.py` picks up the new specs
+  automatically — rubric-shape checks pass; gold-standard tests skip
+  cleanly until Phase 79.4's per-provider generation loop produces
+  a gold dir for each.
+
 ### Documentation
 - **TUI accessibility boundary (Phase 93.6).**  New design note
   `design/TUI_ACCESSIBILITY.md` explains why the TUI doesn't reach

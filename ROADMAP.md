@@ -990,10 +990,42 @@ All four bullets land in ``tests/integration/test_controllers_automation.py``
 
 ### 93.6 Medium — Broaden the higher-level test portfolio
 
-- [ ] Expand the **eval corpus** beyond the current happy-path examples with
+- [x] Expand the **eval corpus** beyond the current happy-path examples with
   at least one more machine-oriented charm, one more custom/non-framework app,
   and one case that stresses relations / observability / operational actions
   more heavily than the current set.
+  *(Done — three new specs under ``tests/eval/charms/`` cover all three asks
+  with shapes distinct from the existing five.  ``haproxy-machine`` is a
+  Path C / machine reverse proxy: apt-installed haproxy with TLS via a
+  ``tls-certificates`` requires relation, a ``reverseproxy`` provides
+  relation that multiplexes multiple backends, a ``haproxy-peers``
+  peer relation for HA pair coordination, ``cos-agent`` for the
+  canonical machine observability pattern, and the operationally
+  critical ``reload-config`` / ``show-stats`` actions that exercise
+  ``haproxy -c`` validation before ``systemctl reload`` (no traffic
+  drop).  ``vaultwarden`` is a Path B / k8s custom charm with the
+  *secret-and-storage-heavy* shape the existing custom specs avoid:
+  a single Rust binary driven entirely by env vars (no config-file
+  templating), persistent storage for the embedded SQLite DB +
+  attachments + sends + icon cache, a Juju-secret-backed admin token
+  with a ``get-admin-token`` action and an explicit
+  ``file_not_contains`` anti-pattern check that the token is never
+  logged, ``smtp`` and ``ingress`` relations, and ``backup-data`` /
+  ``restore-data`` actions that SHA-256-fingerprint and verify the
+  archive.  ``gitea`` is the relations-and-ops-heavy corner case —
+  five data-plane relations (``database`` postgres, ``cache`` redis,
+  ``ingress``, ``smtp``, ``object-storage`` s3), three distinct COS
+  surfaces (``metrics-endpoint`` prometheus_scrape, ``grafana-dashboard``,
+  ``logging`` loki_push_api), and five ops actions
+  (``create-admin``, ``change-admin-password``, ``run-housekeeping``,
+  ``backup-data``, ``restore-data``) that all shell out to ``gitea``
+  CLI subcommands.  Each spec defines ≥ 25 rubric criteria across
+  structure / metadata / code / cos / testing categories with at
+  least four critical entries; gold-standard charm directories are
+  intentionally deferred to Phase 79.4's "generate, hand-tune, rename
+  to ``gold-<provider>``" loop.  ``tests/eval/test_gold_standards.py``
+  picks up the new specs automatically — rubric-shape checks pass,
+  gold-standard tests skip cleanly until a gold dir lands.)*
 - [x] Add more **stateful e2e** scenarios: interrupted deploy, failed verify
   followed by debug task creation, improvement flows on an existing charm, and
   "user says no" / override branches that materially change the plan.

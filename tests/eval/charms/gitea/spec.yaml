@@ -1,0 +1,448 @@
+name: gitea
+description: >
+  Gitea — self-hosted Git service (Path B, custom K8s charm) deliberately
+  picked as the *relations-and-ops-heavy* corner case the existing corpus
+  does not cover.  Where `ntfy` and `vaultwarden` each exercise one or two
+  data-plane integrations, Gitea legitimately needs five — PostgreSQL,
+  Redis, SMTP, S3, and ingress — and ships three distinct COS surfaces
+  (metrics, dashboards, logs).  Operationally it also needs a real
+  cadence: bootstrap an admin user that can't be created by config alone,
+  rotate it, schedule housekeeping (git-gc, repo-archive-cleanup), and
+  back up `app.ini` plus the storage volumes.  This spec stresses every
+  one of those simultaneously.
+
+charm_path: custom
+substrate: k8s
+
+workload:
+  repo: https://github.com/go-gitea/gitea
+  tag: "1.21.5"
+  image: gitea/gitea:1.21.5
+  port: 3000
+  health: /api/healthz
+
+prompt: >
+  Build a Kubernetes charm for Gitea 1.21.5 — the self-hosted Git service
+  written in Go.  The OCI image is `gitea/gitea:1.21.5`; the binary is
+  `/usr/local/bin/gitea` and it serves the web UI plus API on port 3000.
+  Configuration lives in `/data/gitea/conf/app.ini`, generated from
+  charm config and incoming relation data.
+
+  This charm is *relations-heavy* by design — wire all of:
+
+  * `database` requires (interface `postgresql_client`) — Gitea's primary
+    store.  Map the relation databag onto the `[database]` section of
+    app.ini (`DB_TYPE = postgres`, `HOST`, `NAME`, `USER`, `PASSWD`,
+    `SCHEMA`).  Without it the charm should be BlockedStatus.
+  * `cache` requires (interface `redis`) — used for session, queue, and
+    cache backends.  When connected, set `[cache] ADAPTER = redis` and
+    `[session] PROVIDER = redis` so cross-pod sessions work; without
+    it, fall back to in-process memory with a clear `MaintenanceStatus`
+    "running with degraded session storage" message.
+  * `ingress` requires (interface `ingress`) — exposes the web UI.  Set
+    `[server] ROOT_URL` from the ingress URL.
+  * `smtp` requires (interface `smtp`) — drives `[mailer]`.  Map the
+    relation databag onto `HOST`, `PORT`, `FROM`, `USER`, `PASSWD`.
+    Without it, mailer features stay disabled (no errors).
+  * `object-storage` requires (interface `s3`) — used for `[lfs]`,
+    `[attachment]`, and `[packages]` STORAGE_TYPE = `minio`.  Without
+    it, those features fall back to filesystem storage on `/data`.
+  * COS — provide three relations: `metrics-endpoint`
+    (`prometheus_scrape`, points at `/metrics` with a bearer token from
+    `[metrics] TOKEN`), `grafana-dashboard` (ship one dashboard JSON
+    under `src/grafana_dashboards/`), and `logging` (`loki_push_api`,
+    so charm-side log collection forwards Gitea's structured logs).
+
+  Operationally implement five actions — every one of these takes work
+  beyond config alone:
+
+  * `create-admin` — Gitea's `gitea admin user create` invoked inside
+    the workload container; takes `username`, `email`, and optionally
+    `random-password` (default true).  Returns the generated password
+    via the action's result without ever logging it.
+  * `change-admin-password` — `gitea admin user change-password` for an
+    existing admin; takes `username` and an optional `random-password`
+    (default true) or explicit `password`.
+  * `run-housekeeping` — runs `gitea manager flush-queues`, then
+    `gitea admin repo-archive-cleanup --older-than 720h`, then
+    triggers a git GC sweep.  Idempotent and safe to schedule.
+  * `backup-data` — runs `gitea dump` against `/data` with output
+    redirected to a timestamped tarball, returns the path and
+    SHA-256 fingerprint.
+  * `restore-data` — verifies a SHA-256 against a `gitea dump`
+    archive, stops Pebble services, unpacks into `/data`, and
+    restarts.  Refuse to run if the database relation is currently
+    detached.
+
+  Storage: declare `data` (10 GiB minimum) for `/data` (`AppDataPath`)
+  and `config` (1 GiB) for `/data/gitea/conf`.  Config options include
+  `app-name` (string, default `Gitea`), `allow-only-external-registration`
+  (bool, default true), `default-private-repos` (bool, default true),
+  `log-level` (string, default `Info`), `disable-git-hooks` (bool,
+  default true — operator-safety), and `cron-update-mirrors` (string,
+  default `@every 10m`).  Use Scenario for unit tests; Jubilant for any
+  integration tests.
+
+follow_ups: []
+
+rubric:
+  # ── Structure ──────────────────────────────────────────────────────
+  - name: charmcraft-yaml
+    description: Primary project file exists
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: charmcraft.yaml}
+    points: 3
+
+  - name: charm-source
+    description: Main charm source file
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: src/charm.py}
+    points: 3
+
+  - name: app-ini-template
+    description: Templated app.ini lives alongside the source
+    category: structure
+    severity: major
+    check: file_matches_pattern
+    args: {glob: "src/templates/*app*"}
+    points: 2
+
+  - name: unit-test-dir
+    description: Unit test directory
+    category: structure
+    severity: major
+    check: dir_exists
+    args: {path: tests/unit}
+    points: 2
+
+  - name: integration-test-dir
+    description: Integration test directory
+    category: structure
+    severity: minor
+    check: dir_exists
+    args: {path: tests/integration}
+    points: 1
+
+  # ── Metadata ───────────────────────────────────────────────────────
+  - name: charm-name
+    description: Charm name is set
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: name}
+    points: 2
+
+  - name: container-declared
+    description: OCI container declared in metadata
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: containers}
+    points: 2
+
+  - name: storage-declared
+    description: Persistent storage declared for /data
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: storage}
+    points: 3
+
+  - name: database-relation
+    description: Requires PostgreSQL database relation
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: database, interface: postgresql_client}
+    points: 3
+
+  - name: cache-relation
+    description: Requires Redis cache relation
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: cache, interface: redis}
+    points: 3
+
+  - name: ingress-relation
+    description: Requires ingress relation for external access
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: ingress}
+    points: 3
+
+  - name: smtp-relation
+    description: Requires SMTP relation for outbound mail
+    category: metadata
+    severity: major
+    check: has_relation
+    args: {relation: smtp, interface: smtp}
+    points: 2
+
+  - name: object-storage-relation
+    description: Requires S3 object storage for LFS and attachments
+    category: metadata
+    severity: major
+    check: has_relation
+    args: {relation: object-storage, interface: s3}
+    points: 2
+
+  - name: app-name-config
+    description: Config option for Gitea site name
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: app-name, type: string}
+    points: 1
+
+  - name: default-private-repos-config
+    description: Config option for default repo visibility
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: default-private-repos, type: boolean}
+    points: 1
+
+  - name: disable-git-hooks-config
+    description: Config option locking down server-side git hooks
+    category: metadata
+    severity: major
+    check: has_config_option
+    args: {option: disable-git-hooks, type: boolean}
+    points: 2
+
+  - name: log-level-config
+    description: Config option for log verbosity
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: log-level, type: string}
+    points: 1
+
+  # ── Actions ────────────────────────────────────────────────────────
+  - name: create-admin-action
+    description: Action to bootstrap an admin user
+    category: metadata
+    severity: critical
+    check: has_action
+    args: {action: create-admin}
+    points: 3
+
+  - name: change-admin-password-action
+    description: Action to rotate an admin password
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: change-admin-password}
+    points: 2
+
+  - name: run-housekeeping-action
+    description: Action that runs Gitea housekeeping (queues, archive cleanup, git gc)
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: run-housekeeping}
+    points: 2
+
+  - name: backup-data-action
+    description: Action that runs gitea dump with SHA-256 fingerprint
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: backup-data}
+    points: 2
+
+  - name: restore-data-action
+    description: Action that restores a verified gitea dump
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: restore-data}
+    points: 2
+
+  # ── Code ───────────────────────────────────────────────────────────
+  - name: uses-ops
+    description: Charm uses the ops framework
+    category: code
+    severity: critical
+    check: uses_ops_framework
+    points: 3
+
+  - name: pebble-layer
+    description: Charm defines a Pebble layer for gitea
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "pebble|Layer|add_layer|replan"
+      message: Charm configures a Pebble layer
+    points: 3
+
+  - name: generates-app-ini
+    description: Charm renders app.ini from config + relations
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "app\\.ini|app_ini|render.*ini"
+      message: Charm renders app.ini
+    points: 3
+
+  - name: postgres-relation-code
+    description: Charm consumes the PostgreSQL relation
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "DatabaseRequires|postgresql_client|database_created|endpoints"
+      message: Charm wires the PostgreSQL databag onto Gitea config
+    points: 3
+
+  - name: redis-relation-code
+    description: Charm consumes the Redis relation
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "RedisRequires|redis|cache"
+      message: Charm wires Redis as cache/session backend
+    points: 2
+
+  - name: s3-relation-code
+    description: Charm consumes the S3 object-storage relation
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "S3Requires|s3|object.storage|MINIO"
+      message: Charm wires S3 storage for LFS / attachments
+    points: 2
+
+  - name: smtp-relation-code
+    description: Charm consumes the SMTP relation
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "smtp|mailer|SMTP"
+      message: Charm wires SMTP into the [mailer] section
+    points: 2
+
+  - name: ingress-relation-code
+    description: Charm consumes the ingress relation for ROOT_URL
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "ingress|ROOT_URL|IngressRequires"
+      message: Charm sets ROOT_URL from the ingress relation
+    points: 2
+
+  - name: gitea-dump-call
+    description: backup-data action shells out to `gitea dump`
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "gitea.*dump|gitea_dump"
+      message: Charm runs gitea dump for backups
+    points: 2
+
+  - name: gitea-admin-user-call
+    description: create-admin action invokes `gitea admin user`
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "gitea.*admin.*user|admin user create|change-password"
+      message: Charm invokes Gitea's admin user CLI for bootstrap and rotation
+    points: 2
+
+  - name: disable-git-hooks-enforced
+    description: app.ini sets DISABLE_GIT_HOOKS = true when configured
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "DISABLE_GIT_HOOKS|disable.git.hooks|disable_git_hooks"
+      message: Charm propagates the disable-git-hooks config into app.ini
+    points: 2
+
+  # ── COS ────────────────────────────────────────────────────────────
+  - name: cos-integration
+    description: COS integration for observability
+    category: cos
+    severity: critical
+    check: has_cos_integration
+    points: 3
+
+  - name: metrics-endpoint
+    description: Prometheus scrape endpoint for /metrics
+    category: cos
+    severity: critical
+    check: has_relation
+    args: {relation: metrics-endpoint, interface: prometheus_scrape}
+    points: 2
+
+  - name: grafana-dashboard-relation
+    description: grafana-dashboard relation for dashboard sharing
+    category: cos
+    severity: major
+    check: has_relation
+    args: {relation: grafana-dashboard, interface: grafana_dashboard}
+    points: 2
+
+  - name: logging-relation
+    description: loki_push_api logging relation
+    category: cos
+    severity: major
+    check: has_relation
+    args: {relation: logging, interface: loki_push_api}
+    points: 2
+
+  - name: grafana-dashboard-bundled
+    description: Ships at least one Grafana dashboard JSON
+    category: cos
+    severity: minor
+    check: file_matches_pattern
+    args:
+      glob: "src/grafana_dashboards/*.json"
+      min_count: 1
+    points: 1
+
+  # ── Testing ────────────────────────────────────────────────────────
+  - name: has-unit-tests
+    description: At least one unit test file
+    category: testing
+    severity: major
+    check: has_unit_tests
+    points: 2
+
+  - name: uses-scenario
+    description: Unit tests use Scenario (ops.testing)
+    category: testing
+    severity: major
+    check: uses_scenario_tests
+    points: 2
+
+  - name: no-harness
+    description: No deprecated Harness usage
+    category: testing
+    severity: critical
+    check: no_harness
+    points: 2

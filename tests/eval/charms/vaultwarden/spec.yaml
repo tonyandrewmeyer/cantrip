@@ -1,0 +1,320 @@
+name: vaultwarden
+description: >
+  Vaultwarden — a Rust re-implementation of the Bitwarden server, packaged
+  as a single static binary in a small Alpine OCI image (Path B, custom
+  K8s charm).  Adds variety to the existing custom-charm corpus by stressing
+  the *secret-and-storage-heavy* shape: a sensitive admin token, a Pebble
+  layer driven by environment variables (no config-file templating), a
+  persistent data volume that holds an embedded SQLite database plus
+  attachments and sends, and an SMTP relation feeding password-reset mail.
+  Distinct from `ntfy` (config-file templating, no relations beyond
+  ingress) and `flask-hello` (12-factor-ish PostgreSQL backend on machine).
+
+charm_path: custom
+substrate: k8s
+
+workload:
+  repo: https://github.com/dani-garcia/vaultwarden
+  tag: "1.30.5"
+  image: vaultwarden/server:1.30.5-alpine
+  port: 80
+  health: /alive
+
+prompt: >
+  Build a Kubernetes charm for Vaultwarden 1.30.5 — the Rust
+  re-implementation of the Bitwarden server.  The OCI image is
+  `vaultwarden/server:1.30.5-alpine`; the binary is `/vaultwarden` and
+  listens on port 80 by default.  All workload configuration is driven by
+  environment variables (see the upstream `.env.template`); there is no
+  config file to template.
+
+  The charm should:
+
+  * Define a `vaultwarden` Pebble layer with a single `vaultwarden`
+    service that starts `/vaultwarden` and inherits its environment from
+    the layer's `environment:` block.  Rebuild the layer (and
+    `replan_services`) whenever config or any incoming relation changes
+    the rendered environment.
+  * Mount a persistent storage volume at `/data` (Vaultwarden's
+    `DATA_FOLDER`) and declare it under `storage:` in metadata.  The
+    SQLite database (`db.sqlite3`), attachments, sends, icon cache, and
+    RSA keys all live there — losing the volume is a full-data event,
+    so it must persist across pod restarts.
+  * Require an `ingress` relation (interface `ingress`) and set the
+    workload's `DOMAIN` env var to the ingress URL the related app
+    provides.  Without an ingress relation the charm should sit in
+    `BlockedStatus` with a clear message — Vaultwarden refuses
+    to start when its `DOMAIN` mismatches the request `Host` header.
+  * Require an `smtp` relation (interface `smtp`) for password reset
+    and invitation mail.  When connected, map the relation databag onto
+    `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
+    `SMTP_FROM`, and `SMTP_SECURITY` env vars.  Without the relation
+    the charm should still start; mail-dependent features just stay
+    disabled.
+  * Generate (or rotate) an `ADMIN_TOKEN` Juju secret on `start` and
+    surface it via a `get-admin-token` action so an operator can log
+    into the admin panel without ever seeing the value in `juju config`
+    output or unit logs.  Refuse to ever log the token.
+  * Expose a `prometheus_scrape` metrics relation (Vaultwarden's
+    `/metrics` endpoint, gated by the `--enable-prometheus` flag) plus
+    `grafana-dashboard` and `loki_push_api` for COS.
+  * Implement two actions: `backup-data` — tars `/data` to a
+    timestamped path under the workload container and returns the path
+    plus SHA-256 — and `restore-data` — verifies a supplied SHA-256
+    against an existing backup file and unpacks it back into `/data`
+    only after the Pebble service has been stopped.
+
+  Config options should include `signups-allowed` (bool, default false),
+  `invitations-allowed` (bool, default true), `domain-override` (string,
+  default empty — when empty, take from the ingress relation),
+  `web-vault-enabled` (bool, default true), and `log-level` (string,
+  default `warn`).  Use Scenario for unit tests; Jubilant for any
+  integration tests.
+
+follow_ups: []
+
+rubric:
+  # ── Structure ──────────────────────────────────────────────────────
+  - name: charmcraft-yaml
+    description: Primary project file exists
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: charmcraft.yaml}
+    points: 3
+
+  - name: charm-source
+    description: Main charm source file
+    category: structure
+    severity: critical
+    check: file_exists
+    args: {path: src/charm.py}
+    points: 3
+
+  - name: unit-test-dir
+    description: Unit test directory
+    category: structure
+    severity: major
+    check: dir_exists
+    args: {path: tests/unit}
+    points: 2
+
+  - name: integration-test-dir
+    description: Integration test directory
+    category: structure
+    severity: minor
+    check: dir_exists
+    args: {path: tests/integration}
+    points: 1
+
+  # ── Metadata ───────────────────────────────────────────────────────
+  - name: charm-name
+    description: Charm name is set
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: name}
+    points: 2
+
+  - name: container-declared
+    description: OCI container declared in metadata
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: containers}
+    points: 2
+
+  - name: data-storage-declared
+    description: Persistent storage declared for the /data volume
+    category: metadata
+    severity: critical
+    check: metadata_field
+    args: {field: storage}
+    points: 3
+
+  - name: ingress-relation
+    description: Requires an ingress relation for external access
+    category: metadata
+    severity: critical
+    check: has_relation
+    args: {relation: ingress}
+    points: 3
+
+  - name: smtp-relation
+    description: Requires an SMTP relation for mail delivery
+    category: metadata
+    severity: major
+    check: has_relation
+    args: {relation: smtp, interface: smtp}
+    points: 2
+
+  - name: signups-allowed-config
+    description: Config option toggling self-service signups
+    category: metadata
+    severity: major
+    check: has_config_option
+    args: {option: signups-allowed, type: boolean}
+    points: 1
+
+  - name: invitations-allowed-config
+    description: Config option toggling user invitations
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: invitations-allowed, type: boolean}
+    points: 1
+
+  - name: domain-override-config
+    description: Config option to override the ingress-derived DOMAIN
+    category: metadata
+    severity: minor
+    check: has_config_option
+    args: {option: domain-override, type: string}
+    points: 1
+
+  - name: get-admin-token-action
+    description: Action surfaces the admin token without logging it
+    category: metadata
+    severity: critical
+    check: has_action
+    args: {action: get-admin-token}
+    points: 3
+
+  - name: backup-data-action
+    description: Action that snapshots /data with a SHA-256 fingerprint
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: backup-data}
+    points: 2
+
+  - name: restore-data-action
+    description: Action that restores a verified backup into /data
+    category: metadata
+    severity: major
+    check: has_action
+    args: {action: restore-data}
+    points: 2
+
+  # ── Code ───────────────────────────────────────────────────────────
+  - name: uses-ops
+    description: Charm uses the ops framework
+    category: code
+    severity: critical
+    check: uses_ops_framework
+    points: 3
+
+  - name: pebble-layer
+    description: Charm defines a Pebble layer for vaultwarden
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "pebble|Layer|add_layer|replan"
+      message: Charm configures a Pebble layer
+    points: 3
+
+  - name: vaultwarden-binary
+    description: Pebble service runs the /vaultwarden binary
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "vaultwarden"
+      message: Pebble layer launches the vaultwarden binary
+    points: 3
+
+  - name: data-folder-env
+    description: Wires DATA_FOLDER to the mounted storage path
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "DATA_FOLDER|/data"
+      message: Charm sets DATA_FOLDER to the persistent volume
+    points: 3
+
+  - name: domain-from-ingress
+    description: Sets DOMAIN env from the ingress relation
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "DOMAIN|ingress"
+      message: Charm wires DOMAIN from the ingress URL
+    points: 2
+
+  - name: admin-token-secret
+    description: Charm manages ADMIN_TOKEN via a Juju secret
+    category: code
+    severity: critical
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "ADMIN_TOKEN|add_secret|Secret"
+      message: Charm stores the admin token in a Juju secret
+    points: 3
+
+  - name: smtp-env-mapping
+    description: Maps the smtp relation onto SMTP_HOST/PORT/USERNAME env vars
+    category: code
+    severity: major
+    check: file_contains
+    args:
+      path: src/charm.py
+      pattern: "SMTP_HOST|SMTP_PORT|smtp"
+      message: Charm exports SMTP_* env vars from the smtp relation
+    points: 2
+
+  - name: never-logs-token
+    description: Charm does not log the admin token (anti-pattern)
+    category: code
+    severity: critical
+    check: file_not_contains
+    args:
+      path: src/charm.py
+      pattern: "log.*ADMIN_TOKEN|logger\\..*admin_token|print.*admin_token"
+      message: Charm never logs the admin token
+    points: 3
+
+  # ── COS ────────────────────────────────────────────────────────────
+  - name: cos-integration
+    description: COS integration for observability
+    category: cos
+    severity: critical
+    check: has_cos_integration
+    points: 3
+
+  - name: metrics-endpoint
+    description: Prometheus scrape endpoint for /metrics
+    category: cos
+    severity: major
+    check: has_relation
+    args: {relation: metrics-endpoint, interface: prometheus_scrape}
+    points: 2
+
+  # ── Testing ────────────────────────────────────────────────────────
+  - name: has-unit-tests
+    description: At least one unit test file
+    category: testing
+    severity: major
+    check: has_unit_tests
+    points: 2
+
+  - name: uses-scenario
+    description: Unit tests use Scenario (ops.testing)
+    category: testing
+    severity: major
+    check: uses_scenario_tests
+    points: 2
+
+  - name: no-harness
+    description: No deprecated Harness usage
+    category: testing
+    severity: critical
+    check: no_harness
+    points: 2
