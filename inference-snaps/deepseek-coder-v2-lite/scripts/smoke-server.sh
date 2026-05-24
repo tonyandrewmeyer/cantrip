@@ -35,7 +35,7 @@ HOST="${HOST:-127.0.0.1}"
 CTX_SIZE="${CTX_SIZE:-16384}"
 N_PARALLEL="${N_PARALLEL:-1}" # llama-server defaults to 4 parallel slots; we only use 1.
 # DeepSeek-V2-Lite needs quantised KV cache to fit in 12 GB on the
-# b8589 llama.cpp build.  Flash Attention auto-disables here
+# b9050 llama.cpp build.  Flash Attention auto-disables here
 # (the FA tensor lands on CPU due to missing GPU support for this
 # attention shape), and without FA the fp16 KV cache is ~4.3 GB
 # at 16 K context — too big alongside the 7.5 GB IQ3_M weights.
@@ -50,7 +50,7 @@ MODEL_PATH="${MODEL_PATH:-cache/$GGUF_FILE}"
 
 # Pinned llama.cpp build — matches the version the qwen3-coder snap
 # uses, so tool-call behaviour is consistent between the two.
-LLAMA_BUILD_TAG="${LLAMA_BUILD_TAG:-b8589}"
+LLAMA_BUILD_TAG="${LLAMA_BUILD_TAG:-b9050}"
 LLAMA_BUILD_VARIANT="${LLAMA_BUILD_VARIANT:-cuda12}" # "cuda12" / "rocm" / "" for CPU.
 
 # Engine cache layout matches what Phase 105.3's snap will reuse.

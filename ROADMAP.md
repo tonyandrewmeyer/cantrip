@@ -2180,6 +2180,145 @@ already identified as the DeepSeek-V2-Lite unblock target.
 
 ---
 
+## Phase 112: Granite 4.1 Smoke and the Next-Generation Candidate Sweep
+
+**Goal:** Run the same §5.1.1 protocol from
+``design/LOCAL_MODELS.md`` against the shortlist from
+``design/LOCAL_MODELS_SURVEY_2026-05.md``, in priority order:
+**Granite 4.1-8B** (top recommendation), then **Ling-mini-2.0**
+(speculative MoE), then **Granite 4.1-3B** (planner/router
+companion), then **Phi-4-Mini** and **Llama-3.1-8B** as
+tool-call-sanity baselines.  Each candidate either earns a §5
+row in ``LOCAL_MODELS.md`` with a real charm-build datapoint, or
+gets a documented disqualification.
+
+### Why now
+
+``LOCAL_MODELS_SURVEY_2026-05.md`` captured a fresh sweep of
+post-survey-cutoff releases.  The headline candidate is IBM's
+**Granite 4.1-8B** (released 2026-04-29): dense 8 B, 128 K
+native context, 5.35 GB Q4_K_M (Unsloth UD-Q4_K_M), and — the
+load-bearing property — BFCL v3 = 68.27 as a *post-training*
+objective, not a bolt-on.  That directly addresses the failure
+mode that disqualified Mistral Nemo (post-pack planner spiral)
+and the Qwen2.5-Coder family (template-level ``--jinja`` bug).
+We should know whether it works before Phase 105.2 finalises a
+default provider preset.
+
+### 112.1 P0 — Granite 4.1-8B smoke
+
+- [ ] Scaffold ``inference-snaps/granite-4.1-8b/`` from the
+  ``qwen3-8b/`` template (smoke-only — no snapcraft.yaml needed
+  unless we promote to packaged-snap status in 105.3).  Copy
+  ``scripts/smoke-server.sh``, ``scripts/smoke-check.sh``,
+  ``prepare-models.sh``, README, default ``LLAMA_BUILD_TAG=b9050``.
+- [ ] ``prepare-models.sh`` pulls ``unsloth/granite-4.1-8b-GGUF``
+  at UD-Q4_K_M (5.35 GB).
+- [ ] ``smoke-server.sh`` config: ``--ctx-size 32768``,
+  ``--n-gpu-layers 99``, ``--jinja``,
+  ``--reasoning-format deepseek`` if Granite turns out to be a
+  thinking model (check the model card first).
+- [ ] Run ``smoke-check.sh``: ``/v1/models`` reachable, plain
+  hello (≤512 tokens), synthetic ``get_weather`` tool call.
+  All three must pass for promotion to the charm-build step.
+- [ ] Run the ntfy-improve scenario (the same one §5.1.1 and
+  §5.6 used) end-to-end with ``cantrip run --provider
+  inference-snap --snap granite-4.1-8b --base-url http://10.42.160.1:<port>``.
+  Record tok/s, total wall time, charm-build outcome,
+  hallucination shape, and any ``--jinja`` round-trip glitches
+  in a new ``design/LOCAL_MODELS.md`` §5.8 entry.
+
+### 112.2 P0 — Add Granite-family allowlist + provider notes
+
+- [ ] Add ``granite-4.1-8b`` (and ``granite-4.1-3b``) to
+  ``_TOOL_CAPABLE_SNAP_NAMES`` in
+  ``src/cantrip/llm/inference_snap.py``, gated on 112.1's
+  smoke passing.
+- [ ] Check whether Granite's chat template needs a
+  per-provider message rewrite (Phase 109's hook) — Granite
+  uses ``<|start_of_role|>`` markers, which are different from
+  Qwen's and Mistral's; verify llama.cpp's ``--jinja`` renders
+  outbound and parses inbound correctly before relying on
+  vanilla tool calls.
+- [ ] If a rewrite is needed, land it as a Phase 109 follow-up
+  rather than expanding 112's scope.
+
+### 112.3 P1 — Ling-mini-2.0 template verification
+
+- [ ] Pull ``bartowski/inclusionAI_Ling-mini-2.0-GGUF`` at
+  Q4_K_M (9.94 GB).
+- [ ] Test ``--jinja`` round-trip with a synthetic
+  ``get_weather`` call.  If it fails, capture the failure
+  shape and check whether overriding the template via
+  ``--chat-template-file`` works.  If a custom template is
+  required, open an upstream llama.cpp issue documenting the
+  bailingmoe2 template gap so future-us isn't relitigating it.
+- [ ] Only run the full charm-build scenario if the synthetic
+  tool call passes.  Otherwise stop and write up the negative
+  result in ``LOCAL_MODELS.md`` §5.9.
+
+### 112.4 P1 — Granite 4.1-3B as a planner/router
+
+- [ ] Scaffold ``inference-snaps/granite-4.1-3b/`` from the
+  8 B sibling once 112.1 is green.
+- [ ] Smoke-test purely as a candidate for the *planner* role
+  in a future split-provider setup (``--planner-provider`` +
+  ``--executor-provider``).  Not a charm-build candidate on its
+  own — coding strength at 3 B is unknown and the survey
+  doesn't claim it.
+- [ ] If decode rate beats Granite 4.1-8B's by ≥3× and the
+  synthetic tool call passes, note it as a candidate for the
+  short-session-mode planner path (Phase 104).
+
+### 112.5 P1 — Phi-4-Mini and Llama-3.1-8B baselines
+
+- [ ] Run the synthetic ``get_weather`` ``--jinja`` smoke
+  against both on b9050.  These are the function-calling-docs
+  reference models; if either *fails* on b9050, that's a
+  llama.cpp regression worth filing upstream, independent of
+  any cantrip decision.
+- [ ] Charm-build scenario only if there's spare time — these
+  are baselines, not adoption candidates.
+
+### What this phase is *not*
+
+- **Not a re-evaluation of already-disqualified candidates.**
+  The ``LOCAL_MODELS_SURVEY_2026-05.md`` skip list (Qwen3.5-9B,
+  Qwen3-Coder-Next, Devstral Small 2, Codestral-22B,
+  OmniCoder-9B, Llama-4 Scout, GLM-4.6) doesn't get re-litigated
+  here unless the upstream blocker that disqualified it
+  visibly moves.
+- **Not the packaged-snap work.**  Promoting a 112-winner into
+  a Cantrip-managed inference snap lives in Phase 105.3, not
+  here.  This phase only validates that a model deserves
+  promotion at all.
+- **Not a benchmark suite.**  Same caveat as 105.1: the goal is
+  a credible adoption signal, not a full HumanEval /
+  BigCodeBench / Aider sweep.
+
+**Exit criteria:** Granite 4.1-8B either earns a §5.8 row in
+``LOCAL_MODELS.md`` with a real ntfy-improve datapoint and gets
+promoted to ``_TOOL_CAPABLE_SNAP_NAMES``, or gets a documented
+disqualification with the failure mode captured.  Ling-mini-2.0,
+Granite 4.1-3B, Phi-4-Mini, and Llama-3.1-8B each get at least
+a synthetic-tool-call smoke result recorded.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 112.1 (Granite 4.1-8B smoke) | Phase 111 (b9050 engine bump) | Granite 4.1's templates rely on recent llama.cpp |
+| 112.2 (allowlist + provider notes) | 112.1 result | Don't allowlist a model that didn't pass smoke |
+| 112.3 (Ling-mini-2.0) | Phase 109's per-provider rewrite hook | Likely needed for bailingmoe2 template |
+| 112.4 (Granite 4.1-3B planner) | 112.1 + 112.2 | Template work is shared with the 8 B sibling |
+
+**Discovered:** 2026-05-25 candidate survey
+(``design/LOCAL_MODELS_SURVEY_2026-05.md``).  The original
+``LOCAL_MODELS.md`` survey closed before Granite 4.1 (2026-04-29),
+Ling-mini-2.0, Qwen3.5, Qwen3-Coder-Next, and Devstral 2 shipped;
+fresh sweep identified four candidates worth smoking on b9050.
+
+---
+
 ## Milestones
 
 High-level targets for **open** work. Completed milestones are listed in [`ROADMAP_ARCHIVE.md`](ROADMAP_ARCHIVE.md).

@@ -40,7 +40,7 @@ MODEL_PATH="${MODEL_PATH:-cache/$GGUF_FILE}"
 
 # Pinned llama.cpp build — matches the version the qwen3-coder snap
 # uses, so tool-call behaviour is consistent between the two.
-LLAMA_BUILD_TAG="${LLAMA_BUILD_TAG:-b8589}"
+LLAMA_BUILD_TAG="${LLAMA_BUILD_TAG:-b9050}"
 LLAMA_BUILD_VARIANT="${LLAMA_BUILD_VARIANT:-cuda12}" # "cuda12" / "rocm" / "" for CPU.
 
 # Engine cache layout matches what Phase 105.3's snap will reuse.

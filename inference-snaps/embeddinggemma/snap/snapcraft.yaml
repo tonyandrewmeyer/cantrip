@@ -84,8 +84,8 @@ parts:
   llamacpp:
     plugin: dump
     source:
-      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64.tar.gz
-      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-arm64.tar.gz
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-amd64.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-arm64.tar.gz
     stage-packages:
       - libgomp1
     organize:
@@ -120,7 +120,7 @@ components:
     type: standard
     summary: llama.cpp using default CPU instruction sets
     description: LLM inference in C/C++
-    version: b8589
+    version: b9050
 
   model-300m-q8-0-gguf:
     type: standard

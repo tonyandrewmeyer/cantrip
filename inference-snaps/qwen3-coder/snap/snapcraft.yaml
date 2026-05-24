@@ -127,8 +127,8 @@ parts:
   llamacpp:
     plugin: dump
     source:
-      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64.tar.gz
-      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-arm64.tar.gz
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-amd64.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-arm64.tar.gz
     stage-packages:
       - libgomp1
     organize:
@@ -137,8 +137,8 @@ parts:
   llamacpp-cuda:
     plugin: dump
     source:
-      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64+cuda12.tar.gz
-      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-arm64+cuda12.tar.gz
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-amd64+cuda12.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-arm64+cuda12.tar.gz
     stage-packages:
       - libgomp1
     organize:
@@ -148,7 +148,7 @@ parts:
     plugin: dump
     source:
       # ROCm is amd64-only upstream; arm64 falls back to CPU/CUDA.
-      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b8589/llamacpp-amd64+rocm.tar.gz
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-amd64+rocm.tar.gz
     stage-packages:
       - libgomp1
     organize:
@@ -178,19 +178,19 @@ components:
     type: standard
     summary: llama.cpp using default CPU instruction sets
     description: LLM inference in C/C++
-    version: b8589
+    version: b9050
 
   llamacpp-cuda:
     type: standard
     summary: llama.cpp with CUDA backend
     description: LLM inference in C/C++ — NVIDIA CUDA 12 build.
-    version: b8589
+    version: b9050
 
   llamacpp-rocm:
     type: standard
     summary: llama.cpp with ROCm backend
     description: LLM inference in C/C++ — AMD ROCm build (amd64 only).
-    version: b8589
+    version: b9050
 
   model-30b-a3b-q4-k-m-gguf:
     type: standard

@@ -4,6 +4,34 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **Phase 111 — llama.cpp engine bump b8589 → b9050.**  The
+  inference-snap manifests (``inference-snaps/qwen3-coder/`` and
+  ``inference-snaps/embeddinggemma/``) and the four host
+  smoke-server scripts (``qwen3-8b``, ``qwen3-14b``,
+  ``mistral-nemo-12b``, ``deepseek-coder-v2-lite``) now pull
+  ``llama.cpp`` build ``b9050`` from
+  ``canonical/llama.cpp-builds`` instead of ``b8589``.  ``b9050``
+  is ~461 upstream commits / ~5 weeks newer and crosses the
+  ``b9000+`` fix horizon that ``design/LOCAL_MODELS.md`` §5.7
+  identified as the DeepSeek-Coder-V2-Lite unblock target.  The
+  re-smoke wave that validates this bump (and retries
+  DeepSeek-V2-Lite) is the rest of Phase 111.
+
+### Documentation
+- **Late-May 2026 local-model candidate survey.**  New design
+  note ``design/LOCAL_MODELS_SURVEY_2026-05.md`` captures a
+  fresh sweep of open-weight LLMs released since the original
+  ``LOCAL_MODELS.md`` survey closed.  Top recommendation is IBM
+  **Granite 4.1-8B** (released 2026-04-29; 5.35 GB Q4_K_M; BFCL
+  v3 = 68.27 as a post-training objective).  Speculative MoE
+  follow-up is **Ling-mini-2.0** (16 B total / 1.43 B active,
+  pending ``--jinja`` template verification).  Documented skip
+  list with reasons for Qwen3.5-9B, Qwen3-Coder-Next,
+  Devstral 2, Codestral-22B, OmniCoder-9B, Llama-4 Scout, and
+  GLM-4.6.  Phase 112 in ``ROADMAP.md`` covers the smoke-test
+  campaign that validates the survey's shortlist.
+
 ### Added
 - **Phase 98 — Ubuntu Pro and Landscape estate-ops recommendations.**
   The `operational_readiness` tool now emits a dedicated **Estate
