@@ -1,0 +1,119 @@
+# Copyright 2026 Ubuntu
+# See LICENSE file for licensing details.
+
+type: charm
+name: vaultwarden-k8s
+title: Vaultwarden
+summary: Unofficial Bitwarden compatible server written in Rust.
+description: |
+  Vaultwarden is an unofficial Bitwarden compatible server written in Rust.
+  It provides a lightweight, self-hosted alternative to the official
+  Bitwarden server, supporting password management, secure sharing,
+  and organisation features.
+
+  This charm deploys Vaultwarden on Kubernetes with persistent storage,
+  ingress support, SMTP mail integration, and COS observability.
+
+base: ubuntu@24.04
+platforms:
+  amd64:
+  arm64:
+
+parts:
+  charm:
+    plugin: charm
+    source: .
+
+config:
+  options:
+    signups-allowed:
+      description: |
+        Whether new users can register. When disabled, only invited
+        users or existing users can create accounts.
+      default: false
+      type: boolean
+    invitations-allowed:
+      description: |
+        Whether organisation owners and admins can invite new users.
+      default: true
+      type: boolean
+    domain-override:
+      description: |
+        Override the public domain URL for Vaultwarden. When empty,
+        the domain is taken from the ingress relation. This must be
+        set to the URL users will use to access Vaultwarden.
+      default: ""
+      type: string
+    web-vault-enabled:
+      description: |
+        Whether the web vault interface is enabled. Disabling this
+        removes the web UI while keeping the API functional.
+      default: true
+      type: boolean
+    log-level:
+      description: |
+        The log level for Vaultwarden. Acceptable values are:
+        "trace", "debug", "info", "warn", "error", or "off".
+      default: "warn"
+      type: string
+
+containers:
+  vaultwarden:
+    resource: vaultwarden-image
+    mounts:
+      - storage: data
+        location: /data
+
+resources:
+  vaultwarden-image:
+    type: oci-image
+    description: OCI image for Vaultwarden
+    upstream-source: vaultwarden/server:1.30.5-alpine
+
+storage:
+  data:
+    type: filesystem
+    description: Persistent storage for Vaultwarden data (database, attachments, keys)
+    location: /data
+    shared: false
+
+requires:
+  ingress:
+    interface: ingress
+    limit: 1
+  smtp:
+    interface: smtp
+    limit: 1
+  tracing:
+    interface: tracing
+    limit: 1
+
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+  grafana-dashboard:
+    interface: grafana_dashboard
+  loki-push-api:
+    interface: loki_push_api
+
+actions:
+  get-admin-token:
+    description: |
+      Retrieve the admin panel token. The token is stored as a Juju
+      secret and is never logged or exposed in configuration.
+  backup-data:
+    description: |
+      Create a tarball backup of the Vaultwarden data directory.
+      Returns the backup path and SHA-256 checksum.
+  restore-data:
+    description: |
+      Restore Vaultwarden data from a backup tarball.
+      The service must be stopped before running this action.
+    params:
+      backup-path:
+        description: Path to the backup tarball in the workload container.
+        type: string
+      sha256:
+        description: Expected SHA-256 checksum of the backup tarball.
+        type: string
+    required: [backup-path, sha256]
