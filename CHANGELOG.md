@@ -5,6 +5,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 36b — Four `charming-with-claude` skills adopted.**  After
+  reviewing the twelve skills in
+  [`tonyandrewmeyer/charming-with-claude`](https://github.com/tonyandrewmeyer/charming-with-claude)
+  against cantrip's bundled set, four landed under
+  `src/cantrip/skills/` with CC BY 4.0 attribution banners:
+  `charm-logging` (Python `logging` levels, message formatting, tense,
+  printf-style templating; glob-scoped to charm source files),
+  `charm-development-commands` (standardised `format` / `lint` /
+  `unit` / `integration` / `docs` command names for tox / make /
+  just; glob-scoped to project-config files),
+  `charm-docs` (README template, Charmhub description tabs,
+  Diátaxis multi-page split, CONTRIBUTING; glob-scoped to docs
+  surfaces), and `juju-doctor` (probe-based deployment validation,
+  live or offline sosreport; unconditional).  Cantrip's bundled skill
+  count goes from 33 to 37.  The four adapt-bucket overlaps
+  (`charmcraft` / `concierge` / `jhack` / `migrate-to-jubilant`) and
+  three dev-only Claude Code plugin candidates (`cli-standards` /
+  `code-review` / `juju`) are recorded as deferrals in
+  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/CHARMING_WITH_CLAUDE_REVIEW.md);
+  `go-standards` rejected (cantrip is Python-only).
 - **Phase 95.2 — Canonical MCP catalogue example.**  Shipped
   `examples/mcp/canonical/marketplace.json` with descriptors for
   **Launchpad**, **Snapcraft**, and **Charmcraft** MCP servers.  Point a

@@ -56,16 +56,43 @@ active work. The archive preserves the full detail of each finished phase.
 and adopt them for use when building Cantrip and/or incorporate them into
 Cantrip's own agent (system prompts, subagent guidance, skills).
 
-- [ ] Clone the repo and review all available skills
-- [ ] Evaluate each skill for (a) use as a Claude Code plugin when developing
-  Cantrip itself, and (b) incorporation into Cantrip's own skill system for
-  charm generation
-- [ ] Install as a Claude Code plugin if useful for development
-- [ ] For skills relevant to charm building, either adopt directly or adapt
-  into Cantrip's agentskills.io-format skills
-- [ ] Document findings: what was adopted, what was rejected (and why)
+- [x] Cloned the repo and reviewed all twelve skills (2026-05-24
+  sweep).  Findings logged in
+  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/CHARMING_WITH_CLAUDE_REVIEW.md)
+  with a verdict per skill (adopt / adapt / dev-plugin / reject) and
+  a per-skill summary.
+- [x] Per-skill evaluation against cantrip's bundled set (33 skills at
+  the time of the sweep): four ADOPT, four ADAPT (deferred — cantrip
+  already carries equivalents and the longer external versions would
+  bloat without a triggering need), three DEV-PLUGIN (deferred for
+  the user to install on their `~/.claude/`), one REJECT
+  (`go-standards`, language mismatch).
+- [ ] **Deferred — user action:** install the three dev-only
+  Claude Code plugins (`cli-standards`, `code-review`, `juju`) on the
+  user's `~/.claude/skills/` if useful for developing cantrip itself.
+  Cantrip does not modify the user's Claude Code config without an
+  explicit request; the recipe lives in
+  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/CHARMING_WITH_CLAUDE_REVIEW.md).
+- [x] Four skills adopted directly into cantrip's bundle with
+  CC BY 4.0 attribution banners and converted to cantrip's
+  frontmatter shape: `src/cantrip/skills/charm-logging/SKILL.md`
+  (glob-scoped to charm source files),
+  `src/cantrip/skills/charm-development-commands/SKILL.md`
+  (glob-scoped to `tox.ini` / `Makefile` / `justfile` /
+  `pyproject.toml` / `CONTRIBUTING.md` / `HACKING.md`),
+  `src/cantrip/skills/charm-docs/SKILL.md` (glob-scoped to README /
+  docs / CONTRIBUTING), and `src/cantrip/skills/juju-doctor/SKILL.md`
+  (unconditional — relevant whenever the agent is asked to validate
+  or diagnose a Juju deployment).  `SkillsIndex.discover()` picks
+  all four up cleanly; cantrip's total bundled skill count goes
+  from 33 to 37.
+- [x] Findings document landed at
+  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/CHARMING_WITH_CLAUDE_REVIEW.md):
+  TL;DR verdict table, per-skill summary with reasoning, plus a
+  follow-up section recording the adapt-bucket deferrals and the
+  periodic re-sweep recommendation.
 
-**Exit criteria:** Review complete. Useful skills adopted or adapted.
+**Exit criteria:** Review complete.  Useful skills adopted or adapted.
 `make check` passes throughout.
 
 ---
