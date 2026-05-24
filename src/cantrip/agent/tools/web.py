@@ -80,7 +80,16 @@ _ACCEPT_HEADER = "text/markdown, text/plain;q=0.9, text/html;q=0.5, */*;q=0.1"
 
 
 class _HTMLTextExtractor(html.parser.HTMLParser):
-    """HTMLParser subclass that extracts visible text from HTML."""
+    """HTMLParser subclass that extracts visible text from HTML.
+
+    Tag boundaries inject a single space marker so adjacent text from
+    different elements (``<p>hello</p><p>world</p>`` → ``hello world``)
+    doesn't run together.  Consecutive ``handle_data`` callbacks
+    concatenate without an inserted separator — Python's HTMLParser
+    emits stray ``<`` / ``>`` characters from malformed input as
+    individual data chunks, and inserting a space between each one
+    would multiply length on adversarial input like ``0<0<0<0``.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -90,10 +99,14 @@ class _HTMLTextExtractor(html.parser.HTMLParser):
     def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
+        elif self._skip_depth == 0:
+            self._pieces.append(" ")
 
     def handle_endtag(self, tag: str) -> None:
         if tag in _SKIP_TAGS and self._skip_depth > 0:
             self._skip_depth -= 1
+        elif self._skip_depth == 0:
+            self._pieces.append(" ")
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth == 0:
@@ -101,7 +114,7 @@ class _HTMLTextExtractor(html.parser.HTMLParser):
 
     def get_text(self) -> str:
         """Return the collected visible text, with runs of whitespace collapsed."""
-        raw = " ".join(self._pieces)
+        raw = "".join(self._pieces)
         # Collapse runs of whitespace into single spaces, then strip.
         return " ".join(raw.split())
 
