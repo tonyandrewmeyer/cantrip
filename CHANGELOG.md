@@ -4,6 +4,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **`uses_scenario_tests` rubric check accepts `from ops import
+  testing` idiom.**  The check at ``tests/eval/checks.py:218``
+  previously substring-matched only ``"ops.testing"`` or
+  ``"scenario"``, missing the idiomatic
+  ``from ops import pebble, testing`` → ``testing.Context(...)``
+  shape — semantically valid Scenario usage that GLM-4.7
+  consistently reached for (and which gold-fireworks' own
+  ``import ops.testing as testing`` happened to satisfy
+  accidentally via the ``ops.testing`` substring).  Added a
+  multiline regex that also matches ``from ops import …testing…``.
+  New regression test in ``tests/eval/test_checks.py`` pins all
+  four Scenario import idioms plus the negative cases.  Closes the
+  ``checks.py:218`` follow-up surfaced in
+  ``design/CLOUD_GLM_2026-05.md`` §5.12.
+
 ### Added
 - **GLM via OpenRouter — first-run eval + improve-loop.**  Added
   pricing entries for ``z-ai/glm-4.6`` ($0.43/$1.74 per M) and

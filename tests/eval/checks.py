@@ -215,7 +215,18 @@ def uses_scenario_tests(charm_dir: pathlib.Path) -> tuple[bool, str]:
     if "Harness" in all_content:
         return False, "tests use deprecated Harness (should use Scenario)"
 
-    if "ops.testing" in all_content or "scenario" in all_content.lower():
+    # ``ops.testing`` catches ``import ops.testing`` and
+    # ``import ops.testing as scenario``; ``scenario`` (case-insensitive)
+    # catches ``import scenario`` / ``from scenario import ...``; the
+    # ``from ops import ... testing ...`` regex catches the idiomatic
+    # ``from ops import pebble, testing`` form, which is genuine
+    # Scenario usage but doesn't contain the dotted ``ops.testing``
+    # substring on its own.
+    if (
+        "ops.testing" in all_content
+        or "scenario" in all_content.lower()
+        or re.search(r"^\s*from\s+ops\s+import\b[^\n]*\btesting\b", all_content, re.MULTILINE)
+    ):
         return True, "tests use Scenario"
 
     return False, "tests do not appear to use Scenario"

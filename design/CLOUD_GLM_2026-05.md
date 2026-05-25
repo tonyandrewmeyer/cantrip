@@ -453,11 +453,13 @@ in-context examples rather than imperative system-prompt rules.
    one level into a single-subdir tree before declaring
    ``charmcraft.yaml missing``.  Would have turned the §5.2 2/47
    into 27/47 on first read.
-2. **Broaden ``uses_scenario_tests`` substring matching.**  The
-   ``tests/eval/checks.py:218`` check misses
-   ``from ops import testing`` even when the file genuinely uses
-   Scenario.  Accept any of ``ops.testing``, ``scenario``, or
-   ``from ops import.*testing`` patterns.
+2. **Broaden ``uses_scenario_tests`` substring matching.**  Done
+   in the same commit as this note update — ``tests/eval/checks.py``
+   now also matches ``from ops import …testing…`` via a regex.
+   New regression coverage in ``tests/eval/test_checks.py`` pins
+   each of the four Scenario import idioms (explicit dotted,
+   aliased dotted, ``from ops import testing``, ``import
+   ops.testing as scenario``) plus the negative cases.
 3. **Surface cantrip stderr from the eval runner on non-zero
    exits.**  Three of seven runner-driven runs today hit an
    empty-bootstrap failure with no diagnostic surfaced.  Either
