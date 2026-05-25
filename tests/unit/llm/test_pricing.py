@@ -43,6 +43,18 @@ class TestLookupPrice:
         assert price.prompt == 2.00
         assert price.completion == 12.00
 
+    def test_glm_4_6_matches_openrouter_slug(self):
+        # Slug as served by OpenRouter is ``z-ai/glm-4.6``; substring
+        # match on ``glm-4.6`` carries the per-million rates.
+        price = pricing.lookup_price("z-ai/glm-4.6")
+        assert price.prompt == 0.43
+        assert price.completion == 1.74
+
+    def test_glm_4_7_matches_openrouter_slug(self):
+        price = pricing.lookup_price("z-ai/glm-4.7")
+        assert price.prompt == 0.40
+        assert price.completion == 1.75
+
     def test_inference_snap_is_free(self):
         price = pricing.lookup_price("gemma3")
         assert price.prompt == 0.0

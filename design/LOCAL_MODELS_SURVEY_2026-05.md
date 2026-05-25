@@ -142,7 +142,7 @@ in llama.cpp's function-calling docs; useful as a known-good
 | **Codestral-22B** | ~13 GB Q4_K_M, over budget; community reports "GGUF doesn't support function calling yet". |
 | **OmniCoder-9B** (Tesslate, Qwen3.5 base) | 8 K native context — fails the 32 K bar.  Also inherits the Qwen3.5 ``--jinja`` risk. |
 | **Llama-4 Scout** | 109 B total MoE; doesn't fit even with aggressive quantisation. |
-| **GLM-4.6** | 200 K context but smallest published quant assumes 1×24 GB + 128 GB RAM. |
+| **GLM-4.6** | 200 K context but smallest published quant assumes 1×24 GB + 128 GB RAM.  *Local* skip stands; the cloud-via-OpenRouter angle is tracked separately in [`CLOUD_GLM_2026-05.md`](CLOUD_GLM_2026-05.md). |
 
 ## 5. Recommendation and sequencing
 

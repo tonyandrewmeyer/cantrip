@@ -73,6 +73,13 @@ _PRICES: dict[str, Price] = {
     "gemini-2.5-pro": Price(prompt=1.25, completion=10.00),
     "gemini-2.5-flash": Price(prompt=0.15, completion=0.60),
     "gemini-2.0-flash": Price(prompt=0.075, completion=0.30),
+    # Z.ai GLM via OpenRouter.  Slugs are ``z-ai/glm-4.6`` and
+    # ``z-ai/glm-4.7``; both expose a 200 K context and roughly the
+    # same rate card.  4.7 is the Dec 2025 flagship refresh of 4.6 —
+    # we keep both keyed independently so cost reporting can tell them
+    # apart when we A/B them.
+    "glm-4.7": Price(prompt=0.40, completion=1.75),
+    "glm-4.6": Price(prompt=0.43, completion=1.74),
     # Local inference — the snap runs on the user's own hardware, so
     # there's no per-token charge.  Keeping it in the table makes the
     # "unknown model → $0" branch distinguishable from "known free".

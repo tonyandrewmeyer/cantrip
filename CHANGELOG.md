@@ -4,6 +4,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **GLM via OpenRouter — first-run eval.**  Added pricing entries
+  for ``z-ai/glm-4.6`` ($0.43/$1.74 per M) and ``z-ai/glm-4.7``
+  ($0.40/$1.75 per M) so cost reporting tracks them.  The
+  OpenRouter ``/models`` probe handles context window and tool-
+  support detection dynamically, so no provider code change is
+  required.  Research note ``design/CLOUD_GLM_2026-05.md`` captures
+  the eval plan (system-prompt smoke → improve-02 → from-scratch),
+  the decision criteria, and the first-run results: GLM-4.7
+  cleared the system-prompt smoke cleanly, and the ntfy
+  from-scratch build packed a 1.19 MB charm in 66 s for ≈$0.085 —
+  rubric score 27/47 (57%), full marks on structure and COS
+  integration, two CRITICAL gaps on workload-specific ntfy
+  implementation.  GLM-4.6 hit a "reasoning-only, no answer"
+  empty-response failure on first smoke (passed on rerun); 4.7 is
+  the candidate.
+
 ### Changed
 - **Phase 111 — llama.cpp engine bump b8589 → b9050.**  The
   inference-snap manifests (``inference-snaps/qwen3-coder/`` and
