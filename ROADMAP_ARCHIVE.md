@@ -15868,6 +15868,116 @@ override works; ``/cost`` (or equivalent) shows the active phase.
 
 ---
 
+## Phase 110: Close the Post-Pack Wedge — Convergence Heuristic and --yolo CONFIRM Scope ✓
+
+**Goal:** ``design/LOCAL_MODELS.md`` §5.2.2 surfaced two cantrip-
+side failure modes the Phase 109.3 Mistral Nemo re-smoke tripped
+*after* the agent had already produced a packable improve-02-quality
+charm.  Neither is a message-format issue; both block any
+unattended (``--print --yolo``) run from exiting zero on a local
+model that doesn't naturally STOP after a successful pack:
+
+1. **Post-success ``plan_tasks`` spiral.**  Mistral kept calling
+   the planner for 3m39s after the second successful
+   ``charmcraft_pack``, producing twelve fresh
+   ``confirm-design-…`` CONFIRM tasks against phantom
+   dependencies.  Qwen3-14B Run #3 (§5.6.1) avoided this only
+   because the model emitted a STOP marker after the first pack;
+   counting on every local model to do the same is fragile.
+2. **``--yolo`` doesn't cover CONFIRM tasks.**  ``--yolo``
+   documents itself as "auto-approve every ``ask`` permission",
+   but a substantial class of unattended-run blockers — design
+   confirmations, day-2 confirmations, improvement confirmations
+   — sits outside its remit.  The executor refused to continue
+   with twelve queued CONFIRMs and exited 1.
+
+### 110.1 P0 — Convergence heuristic after a successful pack
+
+- [x] Add an ``AgentState.pack_succeeded: bool`` flag (default
+  ``False``, not persisted across restarts).  Resets to ``False``
+  at the top of every ``CantripAgent.process_message`` /
+  ``process_message_streaming`` call so a *new* user turn always
+  gets a fresh chance to (re-)plan, matching §5.2.2's failure-
+  mode scope (the spiral was within a single user turn).
+- [x] ``CharmcraftPackTool.execute`` flips
+  ``state.pack_succeeded = True`` on the success path (after
+  ``charmcraft pack`` exited zero, before the success
+  ``ToolResult`` is returned).  ``QuickPackTool`` mirrors the
+  flip on its success path so the gate fires for both packers.
+- [x] ``PlanTasksTool.execute`` refuses with a non-error
+  ``ToolResult`` ("Charm already packed in this turn — no
+  further planning needed.  STOP, or ask the user for a new
+  goal.") when ``state.pack_succeeded`` is true.  No tasks are
+  enqueued; the planner LLM call is skipped entirely so the
+  10-second-per-spiral-iteration cost is gone.
+- [x] Unit tests in ``tests/unit/agent/`` cover: the flag
+  defaults to ``False``; ``CharmcraftPackTool`` flips it on
+  success and leaves it alone on failure; ``QuickPackTool``
+  flips it on success; ``PlanTasksTool`` refuses with the
+  documented message when set, without contacting the planner
+  provider; ``process_message`` resets the flag at the top of
+  the next turn (a once-packed session can re-plan when the
+  user types a new goal).
+
+### 110.2 P1 — Widen --yolo to cover work-queue CONFIRMs
+
+- [x] In ``print_mode._run_async`` (and the Ralph variant),
+  when ``state.yolo_mode`` is ``True`` and ``pending`` CONFIRM
+  tasks remain after the drain, walk the list and call
+  ``work_queue.set_done(task.id, "Auto-approved by --yolo")``
+  for each rather than printing the refusal and returning 1.
+  Re-drain after the auto-approval pass so any unblocked
+  follow-up tasks settle before the exit check.
+- [x] The refusal-message wording (still used when
+  ``yolo_mode`` is ``False``) gets a clarifying line so
+  operators know ``--yolo`` *does* now cover CONFIRMs ("Re-run
+  with ``--yolo`` to auto-approve both permission ``ask``
+  events and work-queue CONFIRM tasks, or resolve them
+  interactively in the TUI/CLI mode first.").
+- [x] CLI help text for ``--yolo`` updated to reflect the
+  widened scope.  The ``/yolo`` slash command (Phase 69.2)
+  toggles the same flag, so its help string gets the same
+  update.
+- [x] Unit tests in ``tests/unit/agent/test_cli_print_mode.py``
+  + ``tests/unit/agent/test_yolo.py``: print-mode without
+  ``--yolo`` still prints the refusal and exits 1; print-mode
+  with ``--yolo`` and a pending design-CONFIRM auto-approves
+  + drains + exits with the queue's terminal status (0 when
+  follow-ups settle to DONE).
+
+### What this phase was *not*
+
+- **Not a fix for ``Harness``-not-``Context`` test-file
+  regressions** (§5.2.2's other Mistral observation) — that's a
+  model-side negative-instruction-adherence problem; a prompt
+  re-engineering pass is a separate decision.
+- **Not a generalised "agent has converged" detector.**  The
+  convergence flag is one bit, scoped to "a charm was packed in
+  this turn".  More elaborate convergence signals (Ralph's STOP,
+  red-green, acceptance pass) keep their own state.
+- **Not a change to ``CharmcraftPackTool``'s success contract.**
+  The flag flip was orthogonal to what the tool returns — the
+  ``ToolResult`` shape, audit row, and caption stayed the same.
+
+**Exit criteria (met):** a fresh ``--print --yolo`` run of the
+§5.2.2 ntfy-improve prompt against Mistral Nemo (or any other
+local model that doesn't emit STOP after a pack) exits 0 instead
+of 1 — the planner gate prevents the post-pack spiral from
+materialising fresh CONFIRMs, and any CONFIRM already in flight
+when ``--yolo`` auto-approves on drain unwedges the queue.  The
+two failure modes §5.2.2 documented stop counting against future
+smokes.
+
+**Discovered:** Phase 109.3 re-smoke on 2026-05-25
+(``design/LOCAL_MODELS.md`` §5.2.2).  The Mistral Nemo run
+produced a packable improve-02-quality charm by minute 11 then
+spun in a ``plan_tasks`` loop for ~4 more minutes before the
+executor bailed on twelve unresolved CONFIRM tasks ``--yolo``
+did not cover.  Landed in commit ``c1d0209`` on 2026-05-25
+(roadmap checkboxes ticked in ``47b6e9f`` on 2026-05-26).
+
+---
+
 ## Completed Milestones
 
 Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROADMAP.md).
@@ -15923,6 +16033,7 @@ Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROA
 | M106: Loop Deadlock Fixed | 106 ✓ | ``CantripAgent.process_message`` returns within 5 s of its active task transitioning to ``BLOCKED``; ``--print --yolo`` runs that exhaust retries on a tool exit cleanly with code 1 and a stderr reason instead of hanging; a regression test in ``tests/unit/agent/`` pins the shape so future autonomous-loop changes can't reintroduce the hang |
 | M107: Tool-Call Failure Cap | 107 ✓ | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; one round before the cap a SYSTEM message nudges the model to change approach; a "tool retrying (n/cap)" status-bar badge surfaces the streak live; regression tests pin the shape |
 | M110: Phase-Aware Tool Curation | 110 ✓ | The static ``_CORE_TOOL_NAMES`` keep-list is replaced by a curator that picks the right tool slice for the active workflow phase (build / debug / deploy / research); inference-snap providers no longer need to drop ``quick_pack`` / ``charmlint`` / ``run_command`` to fit the 12-tool budget when they're load-bearing for the current phase; an env-var override lets operators pin a custom set; tests pin each phase's expected tool list |
+| M110: Post-Pack Convergence | 110 ✓ | An ``--print --yolo`` run that produces a packable charm exits 0 instead of 1: ``state.pack_succeeded`` short-circuits further ``plan_tasks`` invocations in the same user turn, and ``--yolo`` auto-approves any work-queue CONFIRM still pending at drain time |
 
 ---
 
