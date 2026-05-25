@@ -35,15 +35,41 @@ GGUF_FILE="${GGUF_FILE:-inclusionAI_Ling-mini-2.0-Q4_K_M.gguf}"
 DEST_DIR="cache"
 DEST="${DEST_DIR}/${GGUF_FILE}"
 
-if [[ -f "$DEST" ]]; then
-  echo "Model already present: $DEST"
-  echo "(set GGUF_REPO / GGUF_FILE to fetch a different quant.)"
-  exit 0
-fi
-
 mkdir -p "$DEST_DIR"
 URL="https://huggingface.co/${GGUF_REPO}/resolve/main/${GGUF_FILE}"
+
+# Determine the expected size from a HEAD request so we can resume a
+# truncated download (the Q4_K_M file is ~9.94 GB; a single curl over
+# a flaky link is liable to drop mid-stream and ``--fail`` exits 0 on
+# a truncated transfer, leaving a corrupt GGUF on disk).  HF LFS
+# supports Range requests, so ``curl -C -`` picks up where the
+# previous attempt left off.
+expected_size="$(curl -sIL "$URL" | awk -F': ' 'tolower($1)=="content-length" {gsub(/\r/,"",$2); size=$2} END {print size+0}')"
+
+if [[ -f "$DEST" ]]; then
+  actual_size="$(stat -c %s "$DEST")"
+  if [[ "$expected_size" -gt 0 && "$actual_size" -eq "$expected_size" ]]; then
+    echo "Model already present and complete: $DEST ($actual_size bytes)"
+    exit 0
+  elif [[ "$expected_size" -gt 0 && "$actual_size" -lt "$expected_size" ]]; then
+    echo "Found truncated download: $DEST ($actual_size of $expected_size bytes)."
+    echo "Resuming with curl --continue-at -."
+  else
+    echo "Found file of unexpected size: $DEST ($actual_size bytes; expected $expected_size)."
+    echo "Re-fetching with curl --continue-at -; remove the file manually if this looks wrong."
+  fi
+fi
+
 echo "Downloading $URL"
-echo "(Q4_K_M is ~9.94 GB; expect 2-3 minutes on a fast link.)"
-curl -L --fail --output "$DEST" "$URL"
-echo "Wrote $DEST"
+echo "(Q4_K_M is ~9.94 GB; resumes from the existing partial if any.)"
+curl -L --fail --continue-at - --output "$DEST" "$URL"
+
+# Verify final size — curl can complete cleanly on a server-side
+# stream cut, leaving a truncated file with exit 0.
+actual_size="$(stat -c %s "$DEST")"
+if [[ "$expected_size" -gt 0 && "$actual_size" -ne "$expected_size" ]]; then
+  echo "ERROR: post-download size mismatch ($actual_size bytes vs expected $expected_size)." >&2
+  echo "Re-run this script to resume the rest." >&2
+  exit 1
+fi
+echo "Wrote $DEST ($actual_size bytes)"
