@@ -1,0 +1,20 @@
+# Snap build artefacts (not used yet — Phase 105.3 will add snapcraft.yaml).
+parts/
+stage/
+prime/
+partitions/
+squashfs-root
+*.snap
+*.comp
+
+# Model weights cache — fetched by prepare-models.sh from Hugging Face.
+# Not committed because GGUFs are several GB and HF is the source of truth.
+/cache/
+*.gguf
+
+# Prebuilt llama.cpp engine tarballs fetched by scripts/smoke-server.sh.
+# Same reasoning as the GGUF cache: large, fetched, not source.
+/engines/
+
+# snapcraft-pack.log — locally-tee'd build log.
+snapcraft-pack.log
