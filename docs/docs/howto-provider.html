@@ -192,6 +192,34 @@ b9050 CUDA12 llama.cpp build. The default port 8340 (set by the
 preset) is what <code>discover_snap_endpoint</code> falls back to when a
 packaged snap isn't installed yet, so once the snap lands you
 can drop the <code>--base-url</code> override entirely.</p>
+<h3>Preset: <code>mistral-nemo-12b</code> (long-context tier)</h3>
+<p><code>mistral-nemo-12b</code> is the documented long-context alternative &mdash;
+Mistral Nemo 12B Instruct at Q4_K_M, native 128 K trained context,
+default <code>--ctx-size 24576</code> for the smoke server (~3.8 GB KV cache
+at fp16 on top of the 7.5 GB weights, comfortable on 12 GiB).
+Override <code>CTX_SIZE</code> to opt into the full 128 K when KV-cache
+quantisation is acceptable:</p>
+<pre><code><span class="prompt">$</span> bash inference-snaps/mistral-nemo-12b/prepare-models.sh
+<span class="prompt">$</span> CTX_SIZE=131072 CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0 \
+    bash inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh
+<span class="prompt">$</span> sudo bash scripts/setup-vm-inference-proxy.sh 8344
+<span class="prompt">$</span> cantrip --provider inference-snap --snap mistral-nemo-12b \
+    --base-url http://10.42.160.1:8344/v1</code></pre>
+<p>The preset wires three things behind <code>--snap mistral-nemo-12b</code>:
+port 8344 in <code>discover_snap_endpoint</code> for the no-<code>--base-url</code>
+fallback, the Mistral Tekken-format outbound rewriter (folds
+<code>tool</code>-role messages into the previous assistant turn &mdash; see
+<a href="reference-cli.html#env-vars">CANTRIP_MESSAGE_FORMAT</a> for the
+override knob), and the provider-wide
+<code>conversation_temperature=0.2</code> / <code>max_tools=12</code> defaults.</p>
+<p>Prefer <code>mistral-nemo-12b</code> over <code>qwen3-14b</code> when you have a long
+document corpus to read against, an oversized acceptance-test log
+to pull a needle out of, or a chain of <code>@docs</code> provider mentions
+that would overflow <code>qwen3-14b</code>'s 16 K runtime context.  Prefer
+<code>qwen3-14b</code> when the <em>charm-build</em> path is load-bearing &mdash; Mistral
+Nemo's smoke result showed a post-pack planner spiral on the
+autonomous run, mitigated by the in-turn convergence flag but
+still a sharper edge than Qwen3-14B's clean improve run.</p>
 <div class="callout-warn callout">
   <p>
     Local models produce lower-quality output than cloud APIs,

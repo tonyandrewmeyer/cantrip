@@ -118,6 +118,90 @@ class TestQwen3_14bPreset:
         assert provider.conversation_temperature == 0.2
 
 
+class TestMistralNemo12BPreset:
+    """Phase 105.4: ``mistral-nemo-12b`` is the long-context alternative.
+
+    Same shape as :class:`TestQwen3_14bPreset` but with the Mistral
+    message-format detection that Phase 109.4 wired up.  Tekken
+    template requires the rewriter on the outbound path; the unit
+    coverage for that lives in ``test_mistral_format.py`` — this
+    class only pins the *preset* facts (port, allowlist,
+    provider-wide defaults).
+    """
+
+    def test_default_port_is_8344(self):
+        """``_SNAP_DEFAULTS["mistral-nemo-12b"]`` lands at port 8344."""
+        assert _SNAP_DEFAULTS.get("mistral-nemo-12b") == 8344
+
+    def test_discover_falls_back_to_documented_port(self):
+        """No-snap-installed fallback resolves to ``localhost:8344/v1``."""
+        with patch(
+            "cantrip.llm.inference_snap.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            url = discover_snap_endpoint("mistral-nemo-12b")
+        assert url == "http://localhost:8344/v1"
+
+    def test_is_tool_capable(self):
+        """The preset stays in the tool-capable allowlist."""
+        assert "mistral-nemo-12b" in _TOOL_CAPABLE_SNAP_NAMES
+
+    def test_uses_mistral_message_format(self):
+        """``mistral-nemo-12b`` uses Mistral's Tekken folded-tool-calls format."""
+        assert _detect_message_format("mistral-nemo-12b") == "mistral"
+
+    def test_provider_inherits_max_tools_12(self):
+        """The preset reuses the provider-wide max_tools=12 cap."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="mistral-nemo-12b",
+                model="test-model",
+                base_url="http://test:8344/v1",
+            )
+        assert provider.max_tools == 12
+
+    def test_provider_inherits_conversation_temperature_0_2(self):
+        """The preset reuses the provider-wide 0.2 conversation temperature."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="mistral-nemo-12b",
+                model="test-model",
+                base_url="http://test:8344/v1",
+            )
+        assert provider.conversation_temperature == 0.2
+
+
+class TestPhi4MiniNotPromotedToPreset:
+    """Phase 105.4 + 112.5: ``phi-4-mini`` is *not* a documented preset.
+
+    Phase 112.5 §5.10 found that Phi-4-mini doesn't round-trip
+    OpenAI ``tool_calls`` under ``--jinja`` even with
+    ``tool_choice: "required"``.  Adding it to ``_SNAP_DEFAULTS``
+    would imply a working tool-capable preset, which the smoke
+    evidence rules out.  This test pins the deliberate non-promotion
+    so a future tidy doesn't accidentally add it (and so the absence
+    is documented for the next sweep through this code).
+    """
+
+    def test_phi_4_mini_not_in_snap_defaults(self):
+        """``_SNAP_DEFAULTS`` deliberately excludes ``phi-4-mini``."""
+        assert "phi-4-mini" not in _SNAP_DEFAULTS
+
+    def test_phi_4_mini_not_tool_capable(self):
+        """``_TOOL_CAPABLE_SNAP_NAMES`` excludes ``phi-4-mini``."""
+        assert "phi-4-mini" not in _TOOL_CAPABLE_SNAP_NAMES
+
+    def test_discover_falls_back_to_default_port(self):
+        """Operators who pass ``--snap phi-4-mini`` without ``--base-url``
+        land on the catch-all 8328, not a documented preset port."""
+        with patch(
+            "cantrip.llm.inference_snap.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            url = discover_snap_endpoint("phi-4-mini")
+        assert url == "http://localhost:8328/v1"
+
+
 class TestResolveReadTimeout:
     """Phase 102.1: ``_resolve_read_timeout`` precedence (arg > env > default)."""
 

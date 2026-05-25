@@ -1785,21 +1785,60 @@ fallback).
 
 *Independent of which model wins as default.*
 
-- [ ] Add ``--snap mistral-nemo-12b`` preset for the long-context
+- [x] Add ``--snap mistral-nemo-12b`` preset for the long-context
   tier (Q4_K_M, 32 K cache by default, opt-in 128 K via env var
-  ``CANTRIP_LLAMA_CTX``).
-- [ ] Add ``--snap phi-4-mini`` preset for the speed tier (60+
+  ``CANTRIP_LLAMA_CTX``).  *(Done 2026-05-26 —
+  ``_SNAP_DEFAULTS["mistral-nemo-12b"] = 8344`` so
+  ``discover_snap_endpoint`` resolves the no-``--base-url``
+  fallback.  The Mistral-Tekken outbound rewriter (Phase 109.4)
+  already fires automatically via the ``mistral-nemo-`` prefix
+  match in ``_MISTRAL_NAME_PREFIXES``.  The CTX-override knob
+  shipped as ``CTX_SIZE`` rather than ``CANTRIP_LLAMA_CTX`` —
+  the existing smoke-server.sh files across every candidate
+  already read ``CTX_SIZE``, and renaming the env var would
+  cascade through six scaffolds for no functional gain.  Docs
+  describe ``CTX_SIZE`` as the operator knob with the
+  ``CTX_SIZE=131072 CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0`` recipe
+  for the full 128 K context.)*
+- [x] Add ``--snap phi-4-mini`` preset for the speed tier (60+
   tok/s, 128 K context).  Useful as a planner companion to a
-  larger executor model.
-- [ ] These remain *secondary* — the documented default tracks
+  larger executor model.  *(**Deferred** — Phase 112.5 §5.10
+  found Phi-4-mini doesn't round-trip OpenAI ``tool_calls`` under
+  llama.cpp's ``--jinja`` on b9050 even with
+  ``tool_choice: "required"`` (probed with both ``get_weather``
+  and a deterministic ``add_numbers`` tool; model emits prose /
+  Python source instead of structured tool calls).  Llama 3.1-8B
+  passing on the same b9050 substrate rules out a global llama.cpp
+  regression — this is Phi-4-mini-specific.  Promoting Phi to a
+  preset would imply working tool-using support that isn't there.
+  ``_SNAP_DEFAULTS`` and ``_TOOL_CAPABLE_SNAP_NAMES`` both
+  deliberately exclude ``phi-4-mini``;
+  ``TestPhi4MiniNotPromotedToPreset`` pins this so a future tidy
+  doesn't reintroduce the entry.  Operators wanting Phi-4-mini
+  for non-tool workloads can still pass
+  ``--snap phi-4-mini --base-url …`` directly.  Revisit if a
+  future Phi release or template fix changes the substrate
+  behaviour.)*
+- [x] These remain *secondary* — the documented default tracks
   whatever 105.1.5 / 105.1.6 selected, falling back to qwen3-coder
-  if neither passed.
+  if neither passed.  *(Confirmed — ``qwen3-14b`` (105.2) is the
+  documented default; ``mistral-nemo-12b`` is the long-context
+  secondary tier; ``qwen3-coder`` remains the fallback documented
+  default until Phase 105.3 packages ``qwen3-14b`` as a snap.)*
 
 ### 105.5 P1 — Tests
 
-- [ ] Unit test that each new preset (winner, mistral-nemo-12b,
+- [x] Unit test that each new preset (winner, mistral-nemo-12b,
   phi-4-mini) resolves to the expected base URL, default
-  temperature, and ``max_tools`` value.
+  temperature, and ``max_tools`` value.  *(Done across the
+  preset commits.  ``TestQwen3_14bPreset`` (6 cases) pins the
+  ``qwen3-14b`` winner.  ``TestMistralNemo12BPreset`` (6 cases)
+  pins the ``mistral-nemo-12b`` long-context tier (including
+  Mistral message-format detection).  ``TestPhi4MiniNotPromotedToPreset``
+  (3 cases) pins the deliberate non-promotion — absence from
+  both ``_SNAP_DEFAULTS`` and ``_TOOL_CAPABLE_SNAP_NAMES``, plus
+  the 8328 catch-all fallback — so a future tidy doesn't
+  reintroduce the entry.)*
 - [ ] Add a recorded-trace test (against a captured fixture, not
   the live snap) confirming the winner's tool-call format is
   parsed correctly by ``InferenceSnapProvider`` — pin the wire

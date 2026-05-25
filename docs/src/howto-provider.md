@@ -92,6 +92,39 @@ preset) is what `discover_snap_endpoint` falls back to when a
 packaged snap isn't installed yet, so once the snap lands you
 can drop the `--base-url` override entirely.
 
+### Preset: `mistral-nemo-12b` (long-context tier)
+
+`mistral-nemo-12b` is the documented long-context alternative —
+Mistral Nemo 12B Instruct at Q4_K_M, native 128 K trained context,
+default `--ctx-size 24576` for the smoke server (~3.8 GB KV cache
+at fp16 on top of the 7.5 GB weights, comfortable on 12 GiB).
+Override `CTX_SIZE` to opt into the full 128 K when KV-cache
+quantisation is acceptable:
+
+<pre><code><span class="prompt">$</span> bash inference-snaps/mistral-nemo-12b/prepare-models.sh
+<span class="prompt">$</span> CTX_SIZE=131072 CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0 \
+    bash inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh
+<span class="prompt">$</span> sudo bash scripts/setup-vm-inference-proxy.sh 8344
+<span class="prompt">$</span> cantrip --provider inference-snap --snap mistral-nemo-12b \
+    --base-url http://10.42.160.1:8344/v1</code></pre>
+
+The preset wires three things behind `--snap mistral-nemo-12b`:
+port 8344 in `discover_snap_endpoint` for the no-`--base-url`
+fallback, the Mistral Tekken-format outbound rewriter (folds
+`tool`-role messages into the previous assistant turn — see
+[CANTRIP_MESSAGE_FORMAT](reference-cli.html#env-vars) for the
+override knob), and the provider-wide
+`conversation_temperature=0.2` / `max_tools=12` defaults.
+
+Prefer `mistral-nemo-12b` over `qwen3-14b` when you have a long
+document corpus to read against, an oversized acceptance-test log
+to pull a needle out of, or a chain of `@docs` provider mentions
+that would overflow `qwen3-14b`'s 16 K runtime context.  Prefer
+`qwen3-14b` when the *charm-build* path is load-bearing — Mistral
+Nemo's smoke result showed a post-pack planner spiral on the
+autonomous run, mitigated by the in-turn convergence flag but
+still a sharper edge than Qwen3-14B's clean improve run.
+
 <div class="callout-warn callout">
   <p>
     Local models produce lower-quality output than cloud APIs,

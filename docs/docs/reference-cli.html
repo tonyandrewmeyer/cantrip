@@ -182,19 +182,29 @@ cantrip --help
       <code>nemotron-3-nano</code> (8330),
       <code>qwen3-coder</code> (8332),
       <code>gemma4</code> (8336),
-      <code>qwen3-14b</code> (8340).  Any other name is accepted
-      and falls back to port 8328; pass <code>--base-url</code> to
-      point at a non-default host or port.
+      <code>qwen3-14b</code> (8340),
+      <code>mistral-nemo-12b</code> (8344).  Any other name is
+      accepted and falls back to port 8328; pass
+      <code>--base-url</code> to point at a non-default host or
+      port.
     </p>
     <p>
-      Allowlisted as tool-capable (cantrip will surface tool calls
-      via <code>--jinja</code>) regardless of installation state:
-      the above set plus <code>deepseek-coder-v2-lite</code>,
-      <code>mistral-nemo-12b</code>, <code>qwen3-8b</code>,
-      <code>granite-4.1-8b</code>, <code>granite-4.1-3b</code>,
-      <code>llama-3.1-8b</code>, and <code>ling-mini-2.0</code>
-      (Phase 112 smoke-only scaffolds &mdash; operator opt-in, point at
-      a host smoke server via <code>--base-url</code>).
+      Tool-capable but without a documented preset port (operator
+      opt-in via <code>--base-url</code> against a host smoke
+      server): <code>deepseek-coder-v2-lite</code>,
+      <code>qwen3-8b</code>, <code>granite-4.1-8b</code>,
+      <code>granite-4.1-3b</code>, <code>llama-3.1-8b</code>,
+      <code>ling-mini-2.0</code>.
+    </p>
+    <p>
+      Deliberately not promoted to a preset:
+      <code>phi-4-mini</code> doesn't round-trip OpenAI
+      <code>tool_calls</code> under llama.cpp's
+      <code>--jinja</code> on b9050 even with
+      <code>tool_choice: "required"</code>, so adding it as a
+      preset would imply tool-using support that isn't there.
+      Operators can still pass <code>--snap phi-4-mini
+      --base-url &hellip;</code> directly for raw-text inference.
     </p>
   </dd>
   <dt>--base-url URL</dt>

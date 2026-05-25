@@ -27,15 +27,20 @@ log = logging.getLogger(__name__)
 
 # Known inference snaps and their default ports.
 #
-# Packaged snaps (gemma3, qwen3-coder, …) and Phase 105.2's documented
-# next-default candidate (qwen3-14b) both live here so
+# Packaged snaps (gemma3, qwen3-coder, …), Phase 105.2's documented
+# next-default candidate (qwen3-14b), and Phase 105.4's long-context
+# alternative tier (mistral-nemo-12b) all live here so
 # ``discover_snap_endpoint`` returns a sensible fallback URL when the
 # ``<snap-name> status`` lookup misses (smoke-server invocations
 # without a packaged snap, or a snap that's installed but not
 # yet running).  Other smoke-only candidates from Phase 112
-# (granite-4.1-*, mistral-nemo-12b, …) intentionally stay out — they
-# don't claim a packaged-snap port allocation; operators always pass
-# ``--base-url`` for those.
+# (granite-4.1-*, llama-3.1-8b, ling-mini-2.0, qwen3-8b,
+# deepseek-coder-v2-lite, phi-4-mini) intentionally stay out — they
+# don't claim a documented-preset port allocation; operators always
+# pass ``--base-url`` for those.  phi-4-mini specifically is *not*
+# a documented preset because §5.10 found it doesn't round-trip tool
+# calls under ``--jinja``, regardless of ``tool_choice`` — adding it
+# here would imply a working tool-capable preset where there isn't one.
 _SNAP_DEFAULTS: dict[str, int] = {
     "gemma3": 8328,
     "deepseek-r1": 8324,
@@ -44,6 +49,7 @@ _SNAP_DEFAULTS: dict[str, int] = {
     "qwen3-coder": 8332,
     "gemma4": 8336,
     "qwen3-14b": 8340,
+    "mistral-nemo-12b": 8344,
 }
 
 # Small local models have limited context windows.  The training context
