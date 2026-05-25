@@ -10,7 +10,10 @@ import pytest
 from cantrip.llm.base import Image, Message, ProviderError, Role, Tool, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 from cantrip.llm.inference_snap import (
+    _SNAP_DEFAULTS,
+    _TOOL_CAPABLE_SNAP_NAMES,
     InferenceSnapProvider,
+    _detect_message_format,
     _resolve_read_timeout,
     discover_snap_endpoint,
     list_available_snaps,
@@ -59,6 +62,60 @@ class TestDiscoverSnapEndpoint:
         with patch("cantrip.llm.inference_snap.subprocess.run", return_value=mock_result):
             url = discover_snap_endpoint("gemma3")
         assert url == "http://localhost:8328/v3"
+
+
+class TestQwen3_14bPreset:
+    """Phase 105.2: ``qwen3-14b`` is a documented preset.
+
+    The provider-level defaults (``max_tools=12``,
+    ``conversation_temperature=0.2``, openai message format) already
+    apply uniformly to every inference-snap snap, so the load-bearing
+    code change for the preset is just the ``_SNAP_DEFAULTS`` port
+    entry — without it ``discover_snap_endpoint`` would fall back to
+    the unrelated 8328 default port instead of the 8340 the smoke
+    server and the post-Phase-105.3 packaged snap will both listen on.
+    """
+
+    def test_default_port_is_8340(self):
+        """``_SNAP_DEFAULTS["qwen3-14b"]`` lands at port 8340."""
+        assert _SNAP_DEFAULTS.get("qwen3-14b") == 8340
+
+    def test_discover_falls_back_to_documented_port(self):
+        """No-snap-installed fallback resolves to ``localhost:8340/v1``."""
+        with patch(
+            "cantrip.llm.inference_snap.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            url = discover_snap_endpoint("qwen3-14b")
+        assert url == "http://localhost:8340/v1"
+
+    def test_is_tool_capable(self):
+        """The preset stays in the tool-capable allowlist."""
+        assert "qwen3-14b" in _TOOL_CAPABLE_SNAP_NAMES
+
+    def test_uses_openai_message_format(self):
+        """``qwen3-14b`` is OpenAI-shaped (not Mistral folded-tool-calls)."""
+        assert _detect_message_format("qwen3-14b") == "openai"
+
+    def test_provider_inherits_max_tools_12(self):
+        """The preset reuses the provider-wide max_tools=12 cap."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="qwen3-14b",
+                model="test-model",
+                base_url="http://test:8340/v1",
+            )
+        assert provider.max_tools == 12
+
+    def test_provider_inherits_conversation_temperature_0_2(self):
+        """The preset reuses the provider-wide 0.2 conversation temperature."""
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            provider = InferenceSnapProvider(
+                snap_name="qwen3-14b",
+                model="test-model",
+                base_url="http://test:8340/v1",
+            )
+        assert provider.conversation_temperature == 0.2
 
 
 class TestResolveReadTimeout:

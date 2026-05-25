@@ -65,6 +65,33 @@ code-focused work with native tool calling, and `qwen-vl` for
 vision tasks. The quality of output depends on your GPU and the
 model size.
 
+### Preset: `qwen3-14b`
+
+`qwen3-14b` is the documented next-default local pick once it's
+packaged as a snap. It produces a packable, well-structured
+ntfy charm autonomously in ~5 minutes on a 12 GiB GPU and matches
+`qwen3-coder`'s charm-build quality while decoding several times
+faster (no MoE partial-offload penalty). Prefer `qwen3-14b` over
+`qwen3-coder` when responsiveness matters; prefer `qwen3-coder`
+when you need the deeper reasoning of the 30B-MoE on a slower
+single-shot turn.
+
+While the packaged snap is in flight (tracked under Phase 105.3),
+run it from the host directly via the smoke-server scaffold:
+
+<pre><code><span class="prompt">$</span> bash inference-snaps/qwen3-14b/prepare-models.sh
+<span class="prompt">$</span> bash inference-snaps/qwen3-14b/scripts/smoke-server.sh
+<span class="prompt">$</span> sudo bash scripts/setup-vm-inference-proxy.sh 8340
+<span class="prompt">$</span> cantrip --provider inference-snap --snap qwen3-14b \
+    --base-url http://10.42.160.1:8340/v1</code></pre>
+
+The host setup uses Bartowski's Q4_K_M GGUF (~9 GB) with full
+GPU offload, `--ctx-size 16384`, `--jinja`, and the Canonical
+b9050 CUDA12 llama.cpp build. The default port 8340 (set by the
+preset) is what `discover_snap_endpoint` falls back to when a
+packaged snap isn't installed yet, so once the snap lands you
+can drop the `--base-url` override entirely.
+
 <div class="callout-warn callout">
   <p>
     Local models produce lower-quality output than cloud APIs,

@@ -26,6 +26,16 @@ from cantrip.llm.mistral_format import parse_mistral_tool_call_content, rewrite_
 log = logging.getLogger(__name__)
 
 # Known inference snaps and their default ports.
+#
+# Packaged snaps (gemma3, qwen3-coder, …) and Phase 105.2's documented
+# next-default candidate (qwen3-14b) both live here so
+# ``discover_snap_endpoint`` returns a sensible fallback URL when the
+# ``<snap-name> status`` lookup misses (smoke-server invocations
+# without a packaged snap, or a snap that's installed but not
+# yet running).  Other smoke-only candidates from Phase 112
+# (granite-4.1-*, mistral-nemo-12b, …) intentionally stay out — they
+# don't claim a packaged-snap port allocation; operators always pass
+# ``--base-url`` for those.
 _SNAP_DEFAULTS: dict[str, int] = {
     "gemma3": 8328,
     "deepseek-r1": 8324,
@@ -33,6 +43,7 @@ _SNAP_DEFAULTS: dict[str, int] = {
     "nemotron-3-nano": 8330,
     "qwen3-coder": 8332,
     "gemma4": 8336,
+    "qwen3-14b": 8340,
 }
 
 # Small local models have limited context windows.  The training context

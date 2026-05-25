@@ -1735,15 +1735,35 @@ fallback).
 ``<winner>`` for the chosen snap name (``qwen3-14b`` /
 ``deepseek-coder-v2-lite`` / etc.).
 
-- [ ] Extend ``InferenceSnapProvider``'s preset table so
+- [x] Extend ``InferenceSnapProvider``'s preset table so
   ``--snap <winner> --base-url http://10.42.160.1:<port>/v1`` is a
   named shortcut that sets the right defaults
   (``conversation_temperature=0.2``; ``max_tools`` stays at 12).
-- [ ] Update ``docs/src/howto-provider.md`` to list the new preset,
+  *(Done 2026-05-26 — winner is ``qwen3-14b`` per §5.6 + §5.9.1
+  (Granite 4.1-8B's disqualification ruled out the headline
+  challenger).  ``_SNAP_DEFAULTS["qwen3-14b"] = 8340`` lands the
+  port so ``discover_snap_endpoint`` returns ``localhost:8340/v1``
+  by default.  ``conversation_temperature=0.2`` and
+  ``max_tools=12`` already apply provider-wide to every
+  inference-snap snap — no per-snap code branching needed beyond
+  the port entry.)*
+- [x] Update ``docs/src/howto-provider.md`` to list the new preset,
   state the recommended host setup (port, GGUF source, full offload
   flag), and explain when to pick this over qwen3-coder / gemma4.
-- [ ] Add the preset to ``docs/src/reference-cli.md`` under the
-  ``--snap`` enumeration.
+  *(Done 2026-05-26 — new "Preset: ``qwen3-14b``" subsection
+  under the inference-snap section with the host-side smoke
+  scaffold invocation, the Bartowski Q4_K_M source, full GPU
+  offload + 16K context + b9050 + ``--jinja``, and the
+  "prefer over qwen3-coder when responsiveness matters" guidance.)*
+- [x] Add the preset to ``docs/src/reference-cli.md`` under the
+  ``--snap`` enumeration.  *(Done 2026-05-26 — ``--snap`` entry
+  in reference-cli.md now lists the seven snap names with
+  documented default ports (``qwen3-14b`` at 8340 alongside the
+  six packaged snaps), plus a second paragraph enumerating the
+  Phase 112 smoke-only opt-in allowlist
+  (``qwen3-8b``, ``deepseek-coder-v2-lite``, ``mistral-nemo-12b``,
+  ``granite-4.1-8b``, ``granite-4.1-3b``, ``llama-3.1-8b``,
+  ``ling-mini-2.0``).)*
 
 ### 105.3 P1 — Package the winner as a Cantrip-managed inference snap
 

@@ -172,6 +172,30 @@ cantrip --help
   <dd>
     Inference snap name when using <code>--provider inference-snap</code>.
     Default: <code>gemma3</code>.
+    <p>
+      Recognised snap names with documented default ports (used by
+      <code>discover_snap_endpoint</code> when the
+      <code>&lt;snap&gt; status</code> lookup misses):
+      <code>gemma3</code> (8328),
+      <code>deepseek-r1</code> (8324),
+      <code>qwen-vl</code> (8326),
+      <code>nemotron-3-nano</code> (8330),
+      <code>qwen3-coder</code> (8332),
+      <code>gemma4</code> (8336),
+      <code>qwen3-14b</code> (8340).  Any other name is accepted
+      and falls back to port 8328; pass <code>--base-url</code> to
+      point at a non-default host or port.
+    </p>
+    <p>
+      Allowlisted as tool-capable (cantrip will surface tool calls
+      via <code>--jinja</code>) regardless of installation state:
+      the above set plus <code>deepseek-coder-v2-lite</code>,
+      <code>mistral-nemo-12b</code>, <code>qwen3-8b</code>,
+      <code>granite-4.1-8b</code>, <code>granite-4.1-3b</code>,
+      <code>llama-3.1-8b</code>, and <code>ling-mini-2.0</code>
+      (Phase 112 smoke-only scaffolds &mdash; operator opt-in, point at
+      a host smoke server via <code>--base-url</code>).
+    </p>
   </dd>
   <dt>--base-url URL</dt>
   <dd>
