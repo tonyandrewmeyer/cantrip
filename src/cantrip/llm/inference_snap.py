@@ -67,6 +67,7 @@ _TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset(
         "qwen3-14b",
         "deepseek-coder-v2-lite",
         "mistral-nemo-12b",
+        "granite-4.1-8b",
     }
 )
 

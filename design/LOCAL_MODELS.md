@@ -1179,6 +1179,185 @@ which the snap clears.  If a future Phase wants to compare
 recall@k against the b8589 baseline on Cantrip's docs index,
 that's a downstream evaluation, not 111.1 scope.
 
+### 5.9 Granite 4.1-8B *(smoked — pre-flight clean; charm-build disqualified on YAML-grammar failure)*
+
+IBM's Granite 4.1-8B-Instruct (released 2026-04-29) was the
+headline new candidate from
+[`design/LOCAL_MODELS_SURVEY_2026-05.md`](LOCAL_MODELS_SURVEY_2026-05.md).
+Hybrid mamba-2 + transformer, dense 8 B, 128 K native context,
+5.49 GB UD-Q4_K_XL on disk (Unsloth dynamic 4-bit XL).  Headline
+appeal: BFCL v3 = 68.27 as a *post-training* objective — directly
+targets the failure modes that disqualified Mistral Nemo (post-pack
+planner spiral, §5.2.2) and the Qwen2.5-Coder family (template-
+level ``--jinja`` bug, §5.4).
+
+- Smoke server config under
+  ``inference-snaps/granite-4.1-8b/scripts/smoke-server.sh``: port
+  8346, ``--ctx-size 32768``, full GPU offload, llama.cpp ``b9050``
+  CUDA12 prebuild (same as the rest of the Phase 111.1 matrix).
+- Not a thinking model: no ``--reasoning-format`` flag, no
+  ``<think>`` preamble cost on every reply.
+- Tool calls round-trip cleanly through ``--jinja`` — Unsloth's
+  chat-template fixes (shipped in the GGUF) parse Granite's
+  outbound ``<tool_call>…</tool_call>`` XML into OpenAI-shaped
+  ``tool_calls`` arrays.  No Phase 109-style rewriter needed; the
+  ``CANTRIP_MESSAGE_FORMAT`` default of ``openai`` is correct for
+  this family.
+
+#### 5.9.1 Measured (Phase 112.1 smoke, 2026-05-25)
+
+**Pre-flight checks** (``smoke-check.sh`` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, model id ``granite-4.1-8b-UD-Q4_K_XL.gguf``, ``n_ctx_train: 131072``, ``n_params: 8.79 B`` | pass |
+| Plain hello (32-token budget — the same default ``smoke-check.sh`` uses) | pass — content ``"OK"``, finish=stop, **2 completion tokens flat**.  Cleanest plain-hello of any candidate so far: no reasoning preamble (cf. Qwen3-8B's 124, Qwen3-14B's 97 on b8589 / 158 on b9050) and no template leak.  |
+| Synthetic ``get_weather`` tool call | pass — ``tool_calls`` non-null, ``name="get_weather"``, ``arguments={"city": "Edinburgh"}``, ``finish=tool_calls``.  Zero ``<tool_call>`` XML leaked into ``content``; the ``--jinja`` substrate handled the outbound shape correctly without any post-processing. |
+
+All three pre-flight checks **passed cleanly on first attempt** —
+the cleanest first-time smoke of any candidate in this document.
+Granite-4.1-8B was promptly added to
+``_TOOL_CAPABLE_SNAP_NAMES`` per Phase 112.2 so cantrip would
+talk to the snap for the full charm-build run.
+
+**ntfy-improve run (autonomous, ``--yolo --print --json``):**
+
+Same prompt and starting scaffold as Qwen3-14B Run #3 (§5.6.1) /
+the b9050 re-smokes (§5.2.3, §5.6.3, §5.5.1).  Invocation:
+
+```
+cantrip run . --provider inference-snap --snap granite-4.1-8b \
+  --base-url http://10.42.160.1:8346/v1 \
+  --no-tui --yolo --json --print "<§5.6.1 Run #3 prompt>"
+```
+
+- **Wall clock 2m 21s, exit code 0** — the *fastest* improve-run
+  on any local candidate (vs §5.6.3's 2m 46s for Qwen3-14B on
+  b9050).  Decode speed is in the same band as Qwen3-14B; the wall-
+  clock delta comes from the much cheaper plain-text reply path
+  (no ``<think>`` preamble) and Granite's hybrid mamba-2 layers
+  shaving prefill cost.
+- **Charm did not pack.**  Phase 107's tool-call failure cap fired
+  cleanly after 5 consecutive ``charmcraft_pack`` failures, which
+  is what kept the run exit-zero in 2m 21s rather than hanging.
+- Tool sequence (7 tool successes, 6 ``charmcraft_pack`` failures):
+  1. ``read_file`` charmcraft.yaml ✓
+  2. ``read_file`` src/charm.py ✓
+  3. ``read_file`` tests/unit/test_charm.py ✓
+  4. ``write_file`` charmcraft.yaml (2296 B) ✓
+  5. ``write_file`` src/charm.py (3955 B) ✓
+  6. ``write_file`` tests/unit/test_charm.py (6902 B) ✓
+  7. ``charmcraft_pack`` ✗ — YAML grammar error in ``charmcraft.yaml``
+  8. ``write_file`` charmcraft.yaml (2296 B, *byte-identical re-write*) ✓
+  9-13. ``charmcraft_pack`` ✗ × 5 — same YAML grammar error each time
+- Phase 107's pre-cap warning fired after attempt 4; the cap
+  fired on attempt 5.  No model recovery — Granite re-wrote the
+  same broken bytes to ``charmcraft.yaml`` once (between failed
+  packs 1 and 2) and then stopped trying to fix it, just repacking
+  blindly.  The pack error message named the exact corrupted
+  block (``"line 35, column 7"``); Granite did not consume it.
+
+**Root cause of the pack failure:**
+
+The model's ``write_file`` of ``charmcraft.yaml`` correctly added
+the four ``requires:`` entries, the three ``actions:``, and the
+``ntfy-image`` resource — but in the process **corrupted the
+existing ``config.options.log-level`` block** by emitting a stray
+prose line at the key-indent level:
+
+```yaml
+log-level:
+  description: |
+    Configures the log level of ntfy.
+  acceptable values are: "info", "debug", "warning", "error" and "critical"   ← invalid YAML
+  default: "info"
+  type: string
+```
+
+The ``acceptable values are: …`` line should have been *inside*
+the ``description: |`` block (part of the literal string) or
+removed entirely.  The original ``charmcraft.yaml`` had this prose
+as a YAML comment above the ``options:`` block; Granite copied it
+into the value position without quoting and without realising the
+comma-bearing value made it ungrammatical.
+
+This is a *new* failure shape relative to the prior candidates:
+
+- Qwen3-8B (§5.1.1): produced an incomplete charm and stopped.
+- Qwen3-14B Run #1 (§5.6.1): stacked duplicate code via repeated
+  ``edit_file`` calls.
+- Mistral Nemo (§5.2.2): packed cleanly, then spiralled on
+  ``plan_tasks``.
+- Granite 4.1-8B (here): packed-input syntax-broken, and
+  *didn't read its own pack error* — repacked five times
+  without re-examining the YAML.
+
+**Model-output deltas vs the §5.6.1 baseline (substrate-orthogonal):**
+
+- Relation *names* under ``requires:`` regressed from the
+  canonical COS convention (``metrics-endpoint`` / ``logging`` /
+  ``grafana-dashboard``) to the interface names themselves
+  (``prometheus_scrape`` / ``loki_push_api`` /
+  ``grafana_dashboard``).  Same regression §5.6.3 documented
+  for Qwen3-14B on b9050 — suggests this is more about the
+  prompt-honouring behaviour of the b9050 sampling stack than
+  about Granite specifically, although Granite arrived there from
+  a different starting point.
+- ``ops_tracing`` API: ``ops_tracing.setup(self)`` (the modern
+  convenience helper) instead of the prompt-specified
+  ``self._tracing = ops_tracing.Tracing(self, "tracing")``
+  constructor.  Same regression as §5.6.3 / §5.2.3.
+- ``src/charm.py`` line 4: broken module docstring —
+  ``"""Charm for ntfy.""`` (only *two* closing quotes).  The file
+  would not import; the test file would crash on
+  ``from charm import …`` if the pack had succeeded.  Unique to
+  Granite in the candidate matrix.
+- ``tests/unit/test_charm.py``: 202 lines vs the prompt's "under
+  100 lines, 3-5 simple tests" cap.  ops.testing.Context-shaped
+  (not Harness), so the framework constraint held; the line cap
+  did not.
+
+**Take-away:**
+
+Granite 4.1-8B is **disqualified for autonomous charm builds on
+this prompt** despite the cleanest pre-flight smoke of any
+candidate.  The BFCL v3 = 68.27 post-training claim translated
+into clean tool-call *envelopes* but not into accurate
+*payloads* — the model produced syntactically-broken YAML and
+didn't read its own error feedback well enough to repair it.
+Qwen3-14B (§5.6.1, §5.6.3) remains the front-runner.
+
+Phase 107's failure-cap was the load-bearing safety net here:
+without it the run would have spent the full 1200-second snap
+read timeout cycling pack attempts before failing.  Counts as
+a Phase 107 win.
+
+**Recommendation:** Granite 4.1-8B stays in
+``_TOOL_CAPABLE_SNAP_NAMES`` as an operator-opt-in candidate (no
+substrate cost; it works for tool-calling tasks that don't stress
+YAML / multi-line code-payload accuracy), but does *not* earn a
+``--snap`` preset entry (Phase 105.2 stays pointed at Qwen3-14B).
+Re-evaluating Granite is worthwhile if either: (a) a future
+prompt-engineering pass adds explicit "do not touch existing
+``config.options`` blocks" guard text — but that's gaming the
+benchmark; the model should learn to read pack errors; or (b)
+IBM ships a Granite 4.x-coder fine-tune optimised for
+code-payload accuracy at the same size.  Phase 112.4 (Granite
+4.1-3B planner/router) is independently motivated — small-model
+planning doesn't depend on big-model code-payload accuracy — and
+remains worth smoking.
+
+Smoke artefacts retained at:
+
+- ``cantrip-iter-runs/granite-4.1-8b-improve/run.ndjson`` —
+  full session JSON (58 events).
+- ``cantrip-iter-runs/granite-4.1-8b-improve/run.stderr`` —
+  Phase 107 cap-firing trace.
+- ``cantrip-iter-runs/granite-4.1-8b-improve/{charmcraft.yaml,src/,tests/}``
+  — the broken artefacts left behind by the run.
+- ``cantrip-iter-runs/granite-4.1-8b-improve/PROMPT.txt`` —
+  the verbatim §5.6.1 Run #3 prompt as fed to Granite.
+
 ## 6. Recommendation
 
 > **Revised after Phase 105.1.5's Qwen3-14B Run #3 (§5.6.1,

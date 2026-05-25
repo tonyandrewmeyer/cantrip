@@ -2133,41 +2133,70 @@ default provider preset.
 
 ### 112.1 P0 — Granite 4.1-8B smoke
 
-- [ ] Scaffold ``inference-snaps/granite-4.1-8b/`` from the
+- [x] Scaffold ``inference-snaps/granite-4.1-8b/`` from the
   ``qwen3-8b/`` template (smoke-only — no snapcraft.yaml needed
   unless we promote to packaged-snap status in 105.3).  Copy
   ``scripts/smoke-server.sh``, ``scripts/smoke-check.sh``,
   ``prepare-models.sh``, README, default ``LLAMA_BUILD_TAG=b9050``.
-- [ ] ``prepare-models.sh`` pulls ``unsloth/granite-4.1-8b-GGUF``
-  at UD-Q4_K_M (5.35 GB).
-- [ ] ``smoke-server.sh`` config: ``--ctx-size 32768``,
+- [x] ``prepare-models.sh`` pulls ``unsloth/granite-4.1-8b-GGUF``
+  at UD-Q4_K_M (5.35 GB).  *(Shipped as ``UD-Q4_K_XL`` (5.49 GB)
+  — no ``UD-Q4_K_M`` exists in the Unsloth repo; XL is the
+  closest match and Unsloth's recommended quant for tool-calling
+  via ``--jinja``.)*
+- [x] ``smoke-server.sh`` config: ``--ctx-size 32768``,
   ``--n-gpu-layers 99``, ``--jinja``,
   ``--reasoning-format deepseek`` if Granite turns out to be a
-  thinking model (check the model card first).
-- [ ] Run ``smoke-check.sh``: ``/v1/models`` reachable, plain
+  thinking model (check the model card first).  *(Granite 4.1 is
+  *not* a thinking model — no ``--reasoning-format`` flag
+  shipped.)*
+- [x] Run ``smoke-check.sh``: ``/v1/models`` reachable, plain
   hello (≤512 tokens), synthetic ``get_weather`` tool call.
   All three must pass for promotion to the charm-build step.
-- [ ] Run the ntfy-improve scenario (the same one §5.1.1 and
+  *(All three pre-flight checks passed cleanly on first
+  attempt — see ``design/LOCAL_MODELS.md`` §5.9.1.  Plain-hello
+  was 2 completion tokens flat, the cleanest of any candidate;
+  ``--jinja`` round-trips Granite's ``<tool_call>`` XML into
+  OpenAI-shaped ``tool_calls`` arrays correctly.)*
+- [x] Run the ntfy-improve scenario (the same one §5.1.1 and
   §5.6 used) end-to-end with ``cantrip run --provider
   inference-snap --snap granite-4.1-8b --base-url http://10.42.160.1:<port>``.
   Record tok/s, total wall time, charm-build outcome,
   hallucination shape, and any ``--jinja`` round-trip glitches
-  in a new ``design/LOCAL_MODELS.md`` §5.8 entry.
+  in a new ``design/LOCAL_MODELS.md`` §5.8 entry.  *(Done
+  2026-05-25 — written up as §5.9.1, not §5.8 (§5.8 is
+  EmbeddingGemma).  Wall clock 2m 21s, exit code 0 via the
+  Phase 107 cap, charm *did not pack* — Granite corrupted the
+  existing ``config.options.log-level`` block in
+  ``charmcraft.yaml`` and repacked the same broken bytes five
+  times without reading the pack error.  Documented
+  disqualification; Qwen3-14B stays as the front-runner.)*
 
 ### 112.2 P0 — Add Granite-family allowlist + provider notes
 
-- [ ] Add ``granite-4.1-8b`` (and ``granite-4.1-3b``) to
+- [x] Add ``granite-4.1-8b`` (and ``granite-4.1-3b``) to
   ``_TOOL_CAPABLE_SNAP_NAMES`` in
   ``src/cantrip/llm/inference_snap.py``, gated on 112.1's
-  smoke passing.
-- [ ] Check whether Granite's chat template needs a
+  smoke passing.  *(``granite-4.1-8b`` added after the
+  pre-flight smoke passed; ``granite-4.1-3b`` deferred until
+  112.4 smokes it.  Granite-8B stays in the allowlist as an
+  operator-opt-in candidate despite the charm-build
+  disqualification — pre-flight smoke clean, tool-calling
+  substrate works, just not accurate enough at code-payload
+  generation for autonomous charm building.)*
+- [x] Check whether Granite's chat template needs a
   per-provider message rewrite (Phase 109's hook) — Granite
   uses ``<|start_of_role|>`` markers, which are different from
   Qwen's and Mistral's; verify llama.cpp's ``--jinja`` renders
   outbound and parses inbound correctly before relying on
-  vanilla tool calls.
-- [ ] If a rewrite is needed, land it as a Phase 109 follow-up
-  rather than expanding 112's scope.
+  vanilla tool calls.  *(Verified end-to-end: Unsloth's
+  chat-template fixes (shipped in the GGUF) make ``--jinja``
+  round-trip Granite's outbound ``<tool_call>…</tool_call>``
+  XML into OpenAI-shaped ``tool_calls`` arrays without any
+  client-side help.  ``_detect_message_format("granite-4.1-8b")``
+  returns ``"openai"``, which is correct.  No Phase 109
+  rewriter needed.)*
+- [x] If a rewrite is needed, land it as a Phase 109 follow-up
+  rather than expanding 112's scope.  *(Not needed.)*
 
 ### 112.3 P1 — Ling-mini-2.0 template verification
 
