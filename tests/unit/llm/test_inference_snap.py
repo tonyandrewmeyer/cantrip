@@ -1011,6 +1011,169 @@ async def _async_iter(items):
         yield item
 
 
+# Phase 105.5: recorded-trace fixtures for the qwen3-14b winner.
+#
+# The ``id`` value is verbatim from ``cantrip-iter-runs/qwen3-14b-improve-b9050/
+# run.ndjson`` (the §5.6.3 re-smoke capture) — a 32-char alphanumeric string
+# in llama.cpp's ``_random_string()`` format.  The ``read_file`` /
+# ``charmcraft.yaml`` call shape is what qwen3-14b actually emits on the
+# improve-02 prompt's first tool round; the response body matches the
+# OpenAI-compat shape llama.cpp's ``--jinja`` produces for the Qwen3 family.
+#
+# Test pins this so a future llama.cpp template change or a Qwen3 model
+# release that alters the wire format (e.g. ``arguments`` switching from
+# JSON-string to JSON-object, ``finish_reason`` drift, a new wrapping
+# envelope) surfaces as a test failure rather than a silent provider
+# regression.
+_QWEN3_14B_TOOL_CALL_RESPONSE: dict = {
+    "choices": [
+        {
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "OVqcl2UH1W5i9SzIA4CouYUuPqJ4L2Jm",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": '{"path": "charmcraft.yaml"}',
+                        },
+                    },
+                ],
+            },
+        },
+    ],
+    "usage": {"prompt_tokens": 547, "completion_tokens": 18, "total_tokens": 565},
+}
+
+# Streaming counterpart: llama.cpp's ``--jinja`` splits the same tool call
+# across SSE deltas — the first delta opens the call with the id + empty
+# arguments, subsequent deltas append JSON-string fragments to
+# ``function.arguments``, and the final frame carries
+# ``finish_reason=tool_calls`` plus the usage block.  Whitespace inside
+# ``arguments`` is the model's literal pretty-printing; ``_parse_tool_calls``
+# JSON-parses the concatenated string so the spacing doesn't survive the
+# round-trip.
+_QWEN3_14B_TOOL_CALL_SSE: list[str] = [
+    (
+        'data: {"choices":[{"index":0,"delta":{"role":"assistant",'
+        '"tool_calls":[{"index":0,"id":"OVqcl2UH1W5i9SzIA4CouYUuPqJ4L2Jm",'
+        '"type":"function","function":{"name":"read_file","arguments":""}}]}}]}'
+    ),
+    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\""}}]}}]}',
+    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"path"}}]}}]}',
+    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\": \\""}}]}}]}',
+    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"charmcraft"}}]}}]}',
+    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":".yaml"}}]}}]}',
+    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"}"}}]}}]}',
+    (
+        'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],'
+        '"usage":{"prompt_tokens":547,"completion_tokens":18,"total_tokens":565}}'
+    ),
+    "data: [DONE]",
+]
+
+
+class TestQwen3_14bRecordedTrace:
+    """Phase 105.5: pin qwen3-14b's tool-call wire format end to end.
+
+    Two layers covered:
+
+      * ``complete()`` — the non-streaming response body parses into the
+        expected :class:`ToolCall` shape.
+      * ``stream()`` — the SSE deltas accumulate into the same
+        :class:`ToolCall` shape on the final chunk.
+
+    Together these guard against a future llama.cpp template change or
+    Qwen3 model release silently breaking the qwen3-14b path.  The fixtures
+    live at module scope so the source-of-truth (the §5.6.3 ndjson capture)
+    is documented once next to the data, not duplicated per test.
+    """
+
+    def _make_provider(self):
+        with patch.object(InferenceSnapProvider, "_probe_server"):
+            return InferenceSnapProvider(
+                snap_name="qwen3-14b",
+                model="Qwen_Qwen3-14B-Q4_K_M.gguf",
+                base_url="http://test:8340/v1",
+            )
+
+    @pytest.mark.asyncio
+    async def test_complete_parses_recorded_tool_call(self):
+        """``complete()`` round-trips the §5.6.3 response body into a
+        ``ToolCall(name="read_file", arguments={"path": "charmcraft.yaml"})``.
+        """
+        provider = self._make_provider()
+        mock_response = httpx.Response(
+            200,
+            request=httpx.Request("POST", "http://test:8340/v1/chat/completions"),
+            json=_QWEN3_14B_TOOL_CALL_RESPONSE,
+        )
+        provider.client = MagicMock()
+        provider.client.post = AsyncMock(return_value=mock_response)
+
+        response = await provider.complete(
+            [Message(role=Role.USER, content="Read charmcraft.yaml")]
+        )
+
+        assert response.finish_reason == "tool_calls"
+        assert response.content == ""
+        assert len(response.tool_calls) == 1
+        tc = response.tool_calls[0]
+        assert tc.id == "OVqcl2UH1W5i9SzIA4CouYUuPqJ4L2Jm"
+        # 32-char alphanumeric — llama.cpp's _random_string() format.  Pin
+        # the length so a future id-format regression surfaces here.
+        assert len(tc.id) == 32
+        assert tc.name == "read_file"
+        assert tc.arguments == {"path": "charmcraft.yaml"}
+        assert response.usage == {"prompt_tokens": 547, "completion_tokens": 18}
+
+    @pytest.mark.asyncio
+    async def test_stream_accumulates_recorded_tool_call_deltas(self):
+        """SSE deltas concatenate into the same parsed tool call on the
+        final chunk."""
+        provider = self._make_provider()
+
+        mock_resp = MagicMock()
+        mock_resp.is_error = False
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.aiter_lines = MagicMock(return_value=_async_iter(_QWEN3_14B_TOOL_CALL_SSE))
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        provider.client = MagicMock()
+        provider.client.stream = MagicMock(return_value=mock_resp)
+
+        chunks = []
+        async for chunk in provider.stream(
+            [Message(role=Role.USER, content="Read charmcraft.yaml")]
+        ):
+            chunks.append(chunk)
+
+        final = [c for c in chunks if c.is_final]
+        assert len(final) == 1
+        last = final[0]
+        assert len(last.tool_calls) == 1
+        tc = last.tool_calls[0]
+        assert tc.id == "OVqcl2UH1W5i9SzIA4CouYUuPqJ4L2Jm"
+        assert tc.name == "read_file"
+        assert tc.arguments == {"path": "charmcraft.yaml"}
+        assert last.usage == {"prompt_tokens": 547, "completion_tokens": 18}
+
+    def test_recorded_id_format_matches_llama_cpp_random_string(self):
+        """The captured ``id`` is the llama.cpp 32-char alphanumeric shape.
+
+        Doubles as documentation: a future maintainer looking at the wire-
+        format fixtures sees this property pinned and knows not to abbreviate.
+        """
+        captured_id = _QWEN3_14B_TOOL_CALL_RESPONSE["choices"][0]["message"]["tool_calls"][0]["id"]
+        assert len(captured_id) == 32
+        assert captured_id.isalnum()
+
+
 class TestContextWindowTuning:
     """Tests for dynamic context window detection from /models."""
 

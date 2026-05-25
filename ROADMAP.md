@@ -1839,10 +1839,24 @@ fallback).
   both ``_SNAP_DEFAULTS`` and ``_TOOL_CAPABLE_SNAP_NAMES``, plus
   the 8328 catch-all fallback — so a future tidy doesn't
   reintroduce the entry.)*
-- [ ] Add a recorded-trace test (against a captured fixture, not
+- [x] Add a recorded-trace test (against a captured fixture, not
   the live snap) confirming the winner's tool-call format is
   parsed correctly by ``InferenceSnapProvider`` — pin the wire
   format the same way Phase 41 pins frontier-provider streaming.
+  *(Done 2026-05-26 — ``TestQwen3_14bRecordedTrace`` (3 cases)
+  pins both the non-streaming response shape *and* the SSE
+  streaming-delta accumulator end to end.  Module-level fixtures
+  ``_QWEN3_14B_TOOL_CALL_RESPONSE`` / ``_QWEN3_14B_TOOL_CALL_SSE``
+  carry the verbatim id (``OVqcl2UH1W5i9SzIA4CouYUuPqJ4L2Jm``,
+  32-char alphanumeric in llama.cpp's ``_random_string()``
+  format) from the §5.6.3 ``cantrip-iter-runs/
+  qwen3-14b-improve-b9050/run.ndjson`` capture and the
+  ``read_file(charmcraft.yaml)`` call qwen3-14b actually emits on
+  the improve-02 prompt's first tool round.  Future llama.cpp
+  template changes or Qwen3 model releases that drift the wire
+  format (e.g. arguments JSON-object-not-string, id length,
+  finish_reason renaming) surface as test failures rather than
+  silent provider regressions.)*
 
 ### 105.6 P0 — In-flight source changes from the 105.1 smoke
 
