@@ -36,6 +36,35 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   dir root) reported 2/47 until rescored against the nested
   subdir.  Rendered only when ``charm_path`` is set, so smoke
   tests are unaffected.
+
+  *Update (after §5.8–5.10 follow-up):* a stronger six-line
+  "File Layout" subsection nudge was tested and also failed to
+  redirect GLM-4.7 — the model's "create a ``<charm-name>/``
+  subdir and build inside it" prior is sticky to prompt-level
+  fixes.  The stronger version was reverted; the one-line nudge
+  here is left in place since the cost of leaving it committed
+  is below the cost of churning another commit to remove it.
+
+### Documentation
+- **GLM via OpenRouter — full eval session (§5.9–5.12).**
+  Extended ``design/CLOUD_GLM_2026-05.md`` with three follow-up
+  runs.  (1) §5.9: targeted improve pass against the 45/47 ntfy
+  charm closed ``uses-scenario`` and brought the score to
+  **47/47 (100 %)** in 84 s for ≈$0.17.  (2) §5.10:
+  generalisation test against the gitea spec (five data-plane
+  integrations, three COS surfaces, five ops actions) scored
+  **83/89 (93 %)** from-scratch in 12 m 30 s for ≈$0.50.
+  Combined cost across the session — ntfy from nothing to 100 %
+  *plus* gitea from-scratch to 93 % — was ≈$1.09 / 17 min,
+  ≈1/40 of what gemini-3.1-pro-preview spent on the
+  ``LOCAL_MODELS.md`` §5.6.2 single-spec from-scratch baseline.
+  (3) §5.12 surfaces three follow-ups: handle nested charm
+  layouts in the eval scorer; broaden the ``uses-scenario``
+  substring match to accept ``from ops import testing``; surface
+  cantrip stderr from the eval runner on non-zero exits (three
+  of seven runner-driven invocations today hit an empty-
+  bootstrap failure with no diagnostic surfaced).
+
 - **Phase 111 — llama.cpp engine bump b8589 → b9050.**  The
   inference-snap manifests (``inference-snaps/qwen3-coder/`` and
   ``inference-snaps/embeddinggemma/``) and the four host
