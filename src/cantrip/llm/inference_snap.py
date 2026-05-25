@@ -69,6 +69,7 @@ _TOOL_CAPABLE_SNAP_NAMES: frozenset[str] = frozenset(
         "mistral-nemo-12b",
         "granite-4.1-8b",
         "granite-4.1-3b",
+        "llama-3.1-8b",
     }
 )
 

@@ -1433,6 +1433,151 @@ Smoke artefacts retained at:
 - 3-run decode-rate benchmarks above (no ndjson persistence;
   the numbers are simple ``curl`` + ``date +%s.%N`` runs).
 
+### 5.10 Phi-4-mini *(function-calling baseline — substrate clean, tool-call adherence weak)*
+
+Microsoft's Phi-4-mini-instruct (~3.84 B params, Q4_K_M ~2.49 GB
+on disk) smoked on b9050 as a Phase 112.5 function-calling
+baseline.  Not an adoption candidate; the question was "did
+llama.cpp's ``--jinja`` regress something on b9050 that breaks
+tool calling for a reference model?".  Result: a more nuanced
+finding than the binary the phase set up for.
+
+- Smoke server config under
+  ``inference-snaps/phi-4-mini/scripts/smoke-server.sh``: port
+  8350, ``--ctx-size 32768``, full GPU offload, llama.cpp
+  ``b9050`` CUDA12 prebuild, no ``--reasoning-format`` flag.
+- Standard chat template (not Granite's hybrid mamba-2, not
+  Mistral's Tekken).
+- 200 K vocab (much larger than the candidates above; tiktoken-
+  family tokeniser), 131 K trained context.
+
+#### 5.10.1 Measured (Phase 112.5 smoke, 2026-05-26)
+
+**Pre-flight checks** (``smoke-check.sh`` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, id ``Phi-4-mini-instruct-Q4_K_M.gguf``, ``n_ctx_train: 131072``, ``n_params: 3.84 B``, ``n_vocab: 200064`` | pass |
+| Plain hello (32-token budget) | pass — content ``"OK"``, finish=stop, 2 completion tokens, **wall 0.05 s — fastest in the candidate matrix**.  No reasoning preamble, no template leak. |
+| Synthetic ``get_weather`` tool call | **mixed** — substrate is clean (no ``<\|python_tag\|>`` payload, no ``<\|im_start\|>`` template tokens in ``content``, valid JSON envelope), but ``tool_calls: null``.  Model emitted a prose refusal: *"I'm sorry for any confusion, but as of my last update in April 2023, I can't directly access real-time data or tools like a 'get_weather' tool to provide current weather information."* |
+
+The smoke-check.sh pass criteria classify this as failure mode
+(b) — "model decided not to call the tool".  But a probe with
+``tool_choice: "required"`` produced the *same* prose response,
+which is a stronger finding: the OpenAI spec says ``"required"``
+must force the model to emit a function call.  Re-tested with a
+deterministic ``add_numbers(a, b)`` tool ("Add 17 and 25.")
+under ``tool_choice: "required"`` — same outcome, the model
+emitted a Python-source snippet *describing* the addition rather
+than a structured tool call:
+
+```
+"content": "Sure, let's use the `add_numbers` tool to add 17 and 25.\n\n```python\ndef add_numbers(a, b):\n    return a + b\n\nresult = add_numbers(17, 25)\nprint(result)\n```\n\nWhen you run this code, it will output:\n\n```\n42\n```\n\nSo, 17 + 25 equals 42."
+"tool_calls": null
+```
+
+Two consistent interpretations:
+
+- **Template-side gap:** the Unsloth GGUF's embedded Jinja2
+  template doesn't render the tool definitions into the model's
+  visible prompt in a way Phi-4-mini's training expects.  The
+  model never sees that tools exist as a structured option, so
+  it falls back to talking about them in prose.  llama.cpp's
+  ``--jinja`` flag would then dutifully serve this template
+  without surfacing the gap.
+- **Model-side limitation:** Phi-4-mini-instruct at Q4_K_M has
+  weak adherence to tool-calling under llama.cpp's ``--jinja``
+  rendering specifically (vs Microsoft's published tool-calling
+  demos, which use Microsoft's own runtime / template).
+
+Distinguishing these requires reading the actual chat template
+inside the GGUF (``llama-bench`` or ``gguf-dump`` will show it)
+and comparing against Microsoft's reference template — out of
+scope for a baseline smoke.
+
+**Take-away:**
+
+The function-calling-baseline check fired its useful signal:
+**Phi-4-mini on b9050 + Unsloth GGUF + ``--jinja`` does not
+produce OpenAI-shaped ``tool_calls``, even with
+``tool_choice: "required"``.**  Whether to file upstream depends
+on whether the template gap is in llama.cpp's renderer or in
+Unsloth's GGUF; defer the diagnosis until either we want to
+adopt Phi-4-mini (which we don't — Phase 112.5's scope is
+explicitly "baseline, not adoption candidate") or someone else
+hits the same shape.
+
+Phi-4-mini is **not** added to ``_TOOL_CAPABLE_SNAP_NAMES`` —
+the allowlist is for snaps that *demonstrate* working tool calls,
+not for ones that look like they should.  Decode speed is
+attractive (0.05 s for "OK"), so if a future workload wants raw-
+text inference rather than tool calling, the scaffold is here.
+
+Smoke artefacts retained at:
+
+- ``inference-snaps/phi-4-mini/scripts/smoke-check.sh`` — harness
+  with per-call wall-clock printing.
+- No persisted ndjson — the substrate fact is recorded above.
+
+### 5.11 Llama 3.1-8B-Instruct *(function-calling baseline — substrate clean, tool calls round-trip)*
+
+Meta's Llama-3.1-8B-Instruct (~8.03 B params, Q4_K_M ~4.91 GB
+on disk) smoked on b9050 as a Phase 112.5 function-calling
+baseline.  Not an adoption candidate; the question was "does
+llama.cpp's ``--jinja`` cleanly map Llama 3.1's
+``<\|python_tag\|>`` raw tool-call format into the OpenAI
+``tool_calls`` shape on b9050?".  Answer: **yes**.
+
+- Smoke server config under
+  ``inference-snaps/llama-3.1-8b/scripts/smoke-server.sh``: port
+  8352, ``--ctx-size 32768``, full GPU offload, llama.cpp
+  ``b9050`` CUDA12 prebuild, no ``--reasoning-format`` flag.
+- Llama 3 chat template: ``<\|begin_of_text\|>``,
+  ``<\|start_header_id\|>`` / ``<\|end_header_id\|>``,
+  ``<\|eot_id\|>``.  Notably verbose — even a 4-word user
+  message comes out at ~40 prompt tokens after templating.
+- 128 K vocab, 131 K trained context.
+
+#### 5.11.1 Measured (Phase 112.5 smoke, 2026-05-26)
+
+**Pre-flight checks** (``smoke-check.sh`` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, id ``Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf``, ``n_ctx_train: 131072``, ``n_params: 8.03 B``, ``n_vocab: 128256`` | pass |
+| Plain hello (32-token budget) | pass — content ``"OK"``, finish=stop, 2 completion tokens, **wall 0.08 s**, 40 prompt tokens (template-verbose).  No reasoning preamble, no template leak. |
+| Synthetic ``get_weather`` tool call | **pass** — ``tool_calls`` non-null, ``name="get_weather"``, ``arguments={"city": "Edinburgh"}``, ``finish=tool_calls``, 19 completion tokens, wall 0.34 s.  Zero ``<\|python_tag\|>`` leak into content; ``--jinja`` parsed Llama 3.1's raw tool format into the OpenAI ``tool_calls`` shape correctly. |
+
+All three checks pass cleanly on first attempt.  llama.cpp's
+``b9050`` ``--jinja`` substrate honours Llama 3.1's native
+function-calling format — no upstream regression to file.
+Bartowski's ``Meta-Llama-3.1-8B-Instruct-GGUF`` conversion is
+correctly built.
+
+**Take-away:**
+
+Llama 3.1-8B passes every substrate check and is allowlisted in
+``_TOOL_CAPABLE_SNAP_NAMES`` as an operator-opt-in candidate.
+Not promoted to a documented default — Qwen3-14B (§5.6.1) is the
+front-runner for charm-building and Llama 3.1-8B's charm-build
+accuracy is unknown.  The scaffold is here if a future workload
+wants to test Llama 3.1 against the corpus, or if a future
+``llama-3.1-instruct`` family snap gets packaged for Cantrip
+consumption.
+
+This result also acts as a counter-control for the Phi-4-mini
+finding (§5.10): Llama 3.1's ``--jinja`` tool-call round-trip
+works on the *same* b9050 build, so whatever broke Phi-4-mini's
+tool-call surface is *not* a global llama.cpp regression — it's
+specific to Phi-4-mini's template (or that GGUF's bundled
+template), not the substrate.
+
+Smoke artefacts retained at:
+
+- ``inference-snaps/llama-3.1-8b/scripts/smoke-check.sh`` —
+  harness with per-call wall-clock printing.
+- No persisted ndjson — the substrate fact is recorded above.
+
 ## 6. Recommendation
 
 > **Revised after Phase 105.1.5's Qwen3-14B Run #3 (§5.6.1,

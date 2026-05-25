@@ -2243,13 +2243,31 @@ default provider preset.
 
 ### 112.5 P1 — Phi-4-Mini and Llama-3.1-8B baselines
 
-- [ ] Run the synthetic ``get_weather`` ``--jinja`` smoke
+- [x] Run the synthetic ``get_weather`` ``--jinja`` smoke
   against both on b9050.  These are the function-calling-docs
   reference models; if either *fails* on b9050, that's a
   llama.cpp regression worth filing upstream, independent of
-  any cantrip decision.
-- [ ] Charm-build scenario only if there's spare time — these
-  are baselines, not adoption candidates.
+  any cantrip decision.  *(Done 2026-05-26 — split outcome:
+  **Llama 3.1-8B passes cleanly** (substrate green, ``--jinja``
+  parses ``<|python_tag|>`` into OpenAI ``tool_calls``, no
+  upstream filing needed; allowlisted as opt-in;
+  ``design/LOCAL_MODELS.md`` §5.11).  **Phi-4-mini fails
+  unexpectedly** — substrate is clean (no template leak, valid
+  JSON envelope) but ``tool_calls`` is null even with
+  ``tool_choice: "required"``; model emits prose / Python source
+  instead of structured tool calls.  Could be a template gap in
+  Unsloth's GGUF or a Phi-4-mini-side limitation; the Llama
+  result confirms it's *not* a global llama.cpp regression on
+  b9050.  Phi-4-mini is **not** allowlisted; diagnosis deferred
+  unless a future workload wants Phi-4-mini.
+  ``design/LOCAL_MODELS.md`` §5.10.)*
+- [x] Charm-build scenario only if there's spare time — these
+  are baselines, not adoption candidates.  *(Skipped — pre-flight
+  results above are sufficient for the baseline question Phase
+  112.5 asked.  Llama 3.1-8B's charm-build accuracy stays
+  unknown until a future Phase wants to test it against the
+  corpus; Phi-4-mini's tool-call gap rules out a charm-build run
+  before it could start.)*
 
 ### What this phase is *not*
 
