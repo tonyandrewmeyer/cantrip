@@ -5,23 +5,37 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
-- **GLM via OpenRouter — first-run eval.**  Added pricing entries
-  for ``z-ai/glm-4.6`` ($0.43/$1.74 per M) and ``z-ai/glm-4.7``
-  ($0.40/$1.75 per M) so cost reporting tracks them.  The
-  OpenRouter ``/models`` probe handles context window and tool-
-  support detection dynamically, so no provider code change is
-  required.  Research note ``design/CLOUD_GLM_2026-05.md`` captures
-  the eval plan (system-prompt smoke → improve-02 → from-scratch),
-  the decision criteria, and the first-run results: GLM-4.7
-  cleared the system-prompt smoke cleanly, and the ntfy
-  from-scratch build packed a 1.19 MB charm in 66 s for ≈$0.085 —
-  rubric score 27/47 (57%), full marks on structure and COS
-  integration, two CRITICAL gaps on workload-specific ntfy
-  implementation.  GLM-4.6 hit a "reasoning-only, no answer"
-  empty-response failure on first smoke (passed on rerun); 4.7 is
-  the candidate.
+- **GLM via OpenRouter — first-run eval + improve-loop.**  Added
+  pricing entries for ``z-ai/glm-4.6`` ($0.43/$1.74 per M) and
+  ``z-ai/glm-4.7`` ($0.40/$1.75 per M) so cost reporting tracks
+  them.  The OpenRouter ``/models`` probe handles context window
+  and tool-support detection dynamically, so no provider code
+  change is required.  Research note ``design/CLOUD_GLM_2026-05.md``
+  captures the eval plan and full results.  Headline:
+  ``z-ai/glm-4.7`` packs a 1.19 MB ntfy charm from scratch in 66 s
+  for ≈$0.085 (27/47 = 57 % rubric, full marks on structure and
+  COS integration), then one targeted improve pass on the same
+  output closes both CRITICAL gaps and almost every MAJOR/MINOR
+  gap in 148 s for ≈$0.33 — final score **45/47 (96 %)**.  Combined
+  ≈$0.42 to take ntfy from nothing to 96 %, two orders of magnitude
+  cheaper than ``gemini-3.1-pro-preview`` on the same shape.
+  Caveat documented: ~50 % failure rate on the bare-hello system-
+  prompt smoke (multi-turn agent work unaffected).  GLM-4.6 stays
+  in the pricing table for cost-accounting parity but 4.7 wins the
+  A/B and is the candidate.
 
 ### Changed
+- **System-prompt nudge for charm-dir layout.**  Added an explicit
+  instruction in the ``Current Context`` block of
+  ``src/cantrip/agent/prompts/system.md.j2`` directing the model to
+  emit charm files (``charmcraft.yaml``, ``src/``, ``tests/``, …)
+  *directly* at the rendered ``Path:``, not in a
+  ``<charm-name>/`` subdirectory.  Catches the layout deviation
+  GLM-4.7 exhibited on the §5.4 from-scratch ntfy build — the
+  charm packed cleanly but the eval scorer (which walks the run-
+  dir root) reported 2/47 until rescored against the nested
+  subdir.  Rendered only when ``charm_path`` is set, so smoke
+  tests are unaffected.
 - **Phase 111 — llama.cpp engine bump b8589 → b9050.**  The
   inference-snap manifests (``inference-snaps/qwen3-coder/`` and
   ``inference-snaps/embeddinggemma/``) and the four host

@@ -740,6 +740,7 @@ When tool results or conversation content is too large for the context window, i
 {%- endif %}
 {% if charm_path %}
 **Path**: {{ charm_path }}
+All charm files (`charmcraft.yaml`, `src/`, `tests/`, …) live **directly** at this path. Do not create a `<charm-name>/` subdirectory and build inside it — write to `charmcraft.yaml`, `src/charm.py`, etc. at the path above.
 {%- endif %}
 {% if charm_type %}
 **Type**: {{ charm_type }}
