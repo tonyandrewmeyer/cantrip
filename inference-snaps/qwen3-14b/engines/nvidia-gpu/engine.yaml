@@ -1,0 +1,26 @@
+name: nvidia-gpu
+description: |
+  Optimised for NVIDIA GPUs via CUDA 12. Offloads model layers to
+  the GPU for substantially higher tokens/sec than the CPU engine,
+  at the cost of a working CUDA driver and enough VRAM (~9GB at
+  Q4_K_M, plus ~2.5GB for the default 16k KV cache). On a 12 GiB
+  GPU expect 40-60 tokens/sec with full GPU offload.
+vendor: Tony Andrew Meyer
+grade: devel
+devices:
+  allof:
+    - type: gpu
+      vendor-id: 0x10de # NVIDIA Corporation
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+memory: 16G
+disk-space: 12G
+components:
+  - llamacpp-cuda
+  - model-14b-q4-k-m-gguf
+configurations:
+  sleep-idle-seconds: 600
+  ctx-size: 16384

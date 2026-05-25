@@ -1,0 +1,22 @@
+name: cpu
+description: |
+  Use CPU. Qwen3-14B is a dense 14B-parameter transformer, so CPU
+  generation will be considerably slower than a GPU offload. Useful
+  as a fallback when no GPU is present; expect ~1-3 tokens/sec on a
+  modern desktop CPU at Q4_K_M.
+vendor: Tony Andrew Meyer
+grade: stable
+devices:
+  anyof:
+    - type: cpu
+      architecture: amd64
+    - type: cpu
+      architecture: arm64
+memory: 16G
+disk-space: 12G
+components:
+  - llamacpp
+  - model-14b-q4-k-m-gguf
+configurations:
+  sleep-idle-seconds: 600
+  ctx-size: 16384

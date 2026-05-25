@@ -1,20 +1,34 @@
-# Qwen3-14B inference snap (scaffold)
+# Qwen3-14B inference snap
 
-Status: **Phase 105.1.5 smoke-test scaffold.** Not yet a packaged
-snap. The snapcraft.yaml + components layout will land in Phase
-105.3 if the smoke test confirms Qwen3-14B as the replacement for
-qwen3-coder.
+Status: **Phase 105.3 packaged snap recipe.** The
+snapcraft.yaml + components layout is in place and
+buildable.  Pack with `snapcraft pack` from this directory;
+the smoke-test scaffold (`scripts/smoke-server.sh`) stays
+alongside for ad-hoc evaluation against a host
+`llama-server` without snap installation.
 
-This directory exists to:
+This directory carries both surfaces:
 
-1. Cache the Qwen3-14B Q4_K_M GGUF in a place 105.3 can reuse
-   without re-downloading (`cache/`, gitignored).
-2. Hold a host-side runner that drives a stock llama.cpp
-   `llama-server` against the GGUF for the smoke test
-   (`scripts/smoke-server.sh`).
-3. Keep the directory layout aligned with `qwen3-8b/` and
-   `qwen3-coder/` so 105.3 becomes "add `snap/snapcraft.yaml` +
-   `components/`" rather than "rename and rearrange".
+1. **Packaged snap** (Phase 105.3): `snap/snapcraft.yaml`
+   plus `components/{llamacpp,llamacpp-cuda,llamacpp-rocm,
+   model-14b-q4-k-m-gguf}/` define the
+   `qwen3-14b-tonyandrewmeyer` snap.  Build with
+   `snapcraft pack`; install with `snap install --dangerous
+   *.snap` and the `*+*.comp` components produced alongside.
+   The install hook sets port 8340 (matching
+   `_SNAP_DEFAULTS["qwen3-14b"]` in cantrip) so
+   `cantrip --snap qwen3-14b` works without `--base-url`.
+2. **Smoke scaffold** (Phase 105.1.5):
+   `scripts/smoke-server.sh` drives a host `llama-server`
+   directly against the same GGUF, no snap install needed.
+   Useful for quick re-tests when iterating on llama.cpp
+   tags or chat-template work without re-packing.
+3. **GGUF cache** (`cache/`, gitignored): shared between
+   the snap build (`prepare-models.sh` pre-warms it; the
+   `model` part in `snap/snapcraft.yaml` copies from
+   `cache/<file>` before falling back to Hugging Face) and
+   the smoke scaffold.  Saves ~9 GB of redownload on
+   repeat local packs.
 
 ## Why Qwen3-14B?
 
@@ -101,6 +115,50 @@ Pass criterion (per ROADMAP 105.1.5): produce ≥ 80 % of the
 improve-02 feature target in ≤ 30 min, OR exit with a clear
 Phase 102 / 103 / 106 failure mode.
 
+## Packaged snap (Phase 105.3) — pack and install
+
+The recipe ships under the personal namespace
+`qwen3-14b-tonyandrewmeyer`; the unsuffixed `qwen3-14b` name
+is reserved for a future Canonical-published edition.  Same
+build pattern as `qwen3-coder/` — three engines (CPU /
+NVIDIA CUDA / AMD ROCm), a model component for the Q4_K_M
+GGUF, and three llama.cpp engine components pinned to b9050.
+
+```bash
+# 1. (Optional) pre-warm the GGUF cache so the snap build
+#    doesn't refetch ~9 GB from Hugging Face.
+bash inference-snaps/qwen3-14b/prepare-models.sh
+
+# 2. Pack the snap (LXD-isolated build; expect 10-15 minutes
+#    on a fast link).  Produces .snap + three .comp components.
+cd inference-snaps/qwen3-14b
+snapcraft pack
+
+# 3. Install the snap and all four components in dangerous
+#    (locally-signed) mode.
+sudo snap install --dangerous qwen3-14b-tonyandrewmeyer_v0_amd64.snap
+sudo snap install --dangerous \
+  --component llamacpp=qwen3-14b-tonyandrewmeyer+llamacpp_b9050.comp \
+  --component llamacpp-cuda=qwen3-14b-tonyandrewmeyer+llamacpp-cuda_b9050.comp \
+  --component model-14b-q4-k-m-gguf=qwen3-14b-tonyandrewmeyer+model-14b-q4-k-m-gguf_q4-k-m.comp \
+  qwen3-14b-tonyandrewmeyer
+
+# 4. The install hook sets port 8340 + auto-selects an engine
+#    based on hardware.  The server runs as a snap daemon —
+#    no manual start needed.
+snap services qwen3-14b-tonyandrewmeyer
+curl -sS http://localhost:8340/v1/models | jq .
+
+# 5. From cantrip (in the VM), open the proxy and talk to it:
+sudo bash scripts/setup-vm-inference-proxy.sh 8340
+cantrip run . --provider inference-snap --snap qwen3-14b
+```
+
+The ROCm component is amd64-only; on arm64 the snap falls
+back to CPU or CUDA per the engine compatibility matrix
+(`engines/*/engine.yaml`).  The `+llamacpp-rocm_b9050.comp`
+artefact only exists when packing on amd64.
+
 ## Tear-down
 
 ```bash
@@ -109,14 +167,19 @@ Phase 102 / 103 / 106 failure mode.
 sudo systemctl disable --now cantrip-inference-proxy@8340.service
 # Re-start qwen3-coder if you want it back:
 sudo snap start qwen3-coder-tonyandrewmeyer
+# Remove the packaged snap (if installed):
+sudo snap remove --purge qwen3-14b-tonyandrewmeyer
 ```
 
 ## What this is *not*
 
-- **Not a snap.** No snapcraft.yaml, no components, no `snap install`.
-  That's Phase 105.3.
-- **Not a long-running service.** The smoke server runs in the
-  foreground; it dies when you close the terminal. By design — this
-  is throwaway scaffolding for a one-time evaluation.
-- **Not VM-runnable.** llama-server in here uses CUDA. The cantrip
-  multipass VM has no GPU passthrough; run this on the host.
+- **Not in the Snap Store.**  The recipe builds the snap
+  locally; `snap install --dangerous` is the install path.
+  Upstreaming to Canonical's inference-snap catalogue under
+  the unsuffixed `qwen3-14b` name stays on the long-term
+  list, not the immediate ship.  See `design/LOCAL_MODELS.md`
+  §6 for the (a)-vs-(b) decision.
+- **Not VM-runnable.** Both the smoke server and the
+  packaged snap need GPU access. The cantrip multipass VM
+  has no GPU passthrough; run them on the host and reach
+  them from the VM via `scripts/setup-vm-inference-proxy.sh`.

@@ -1,0 +1,226 @@
+name: qwen3-14b-tonyandrewmeyer
+base: core24
+summary: Qwen3-14B chat-completions inference snap
+description: |
+  Runs Alibaba's Qwen3-14B model via the llama.cpp HTTP server. A
+  dense 14B parameter transformer with native tool-calling support
+  via llama.cpp's --jinja flag, suitable for driving Cantrip's
+  InferenceSnapProvider. Designed as the next-generation default
+  local model for cantrip — Phase 105.1.5's smoke (§5.6.1) produced
+  a packable improve-02-quality ntfy charm autonomously in ~5
+  minutes on a 12 GiB GPU, the first local model to do so.
+
+  This snap is published under a personal namespace; the unsuffixed
+  `qwen3-14b` name is reserved for a future Canonical-published
+  edition.
+
+version: 'v0'
+license: Apache-2.0 AND MIT
+
+grade: devel
+confinement: strict
+
+assumes:
+  - snapd2.68 # for components support
+
+compression: lzo
+
+platforms:
+  amd64:
+  arm64:
+
+environment:
+  SNAP_COMPONENTS: /snap/$SNAP_INSTANCE_NAME/components/$SNAP_REVISION
+  ARCH_TRIPLET: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+
+hooks:
+  install:
+    plugs: &install-plugs
+      - hardware-observe
+      - kernel-module-observe
+      - opengl
+  post-refresh:
+    plugs: *install-plugs
+
+parts:
+  scripts:
+    source: scripts
+    plugin: dump
+    stage-packages:
+      - jq
+    organize:
+      "server.sh": bin/
+
+  engines:
+    source: engines
+    plugin: dump
+    organize:
+      "*": engines/
+
+  cli:
+    source:
+      - on amd64: https://github.com/canonical/inference-snaps-cli/releases/download/v1.0.0-beta.42/inference-snaps-cli-linux-amd64.tar.xz
+      - on arm64: https://github.com/canonical/inference-snaps-cli/releases/download/v1.0.0-beta.42/inference-snaps-cli-linux-arm64.tar.xz
+    plugin: dump
+    override-build: |
+      mkdir -p bin
+      mv cli bin/modelctl
+      # Symlink so the CLI is reachable as the snap's command name
+      ln --symbolic ./modelctl bin/qwen3-14b-tonyandrewmeyer
+      craftctl default
+
+  cli-dependencies:
+    plugin: nil
+    stage-packages:
+      - pciutils # for lspci, used by hardware detection
+
+  component-support-files:
+    # Hand-authored per-component metadata (component.yaml + server
+    # script) that modelctl reads at runtime. These live under
+    # `components/` and are committed to git; the GGUF cache lives in
+    # `cache/` so this part doesn't have to copy 9GB to find a few
+    # hundred bytes of yaml.
+    plugin: dump
+    source: components
+    organize:
+      "llamacpp/component.yaml": (component/llamacpp)/component.yaml
+      "llamacpp/server": (component/llamacpp)/server
+      "llamacpp-cuda/component.yaml": (component/llamacpp-cuda)/component.yaml
+      "llamacpp-cuda/server": (component/llamacpp-cuda)/server
+      "llamacpp-rocm/component.yaml": (component/llamacpp-rocm)/component.yaml
+      "llamacpp-rocm/server": (component/llamacpp-rocm)/server
+      "model-14b-q4-k-m-gguf/component.yaml": (component/model-14b-q4-k-m-gguf)/component.yaml
+    prime:
+      # Exclude everything not explicitly organised; the support files
+      # are routed entirely into components.
+      - -*
+
+  model:
+    # The GGUF is fetched at build time so this snap is self-contained
+    # and remote-buildable on Launchpad. Prefers a local cache at
+    # `cache/<file>` if present (so `prepare-models.sh` saves the
+    # redownload on repeat local builds); otherwise pulls from
+    # Hugging Face.
+    plugin: nil
+    build-packages:
+      - curl
+    override-pull: |
+      set -e
+      filename="Qwen_Qwen3-14B-Q4_K_M.gguf"
+      local_path="$CRAFT_PROJECT_DIR/cache/$filename"
+      if [ -f "$local_path" ]; then
+        echo "Using locally-cached GGUF at $local_path"
+        cp "$local_path" "$CRAFT_PART_SRC/$filename"
+      else
+        echo "Fetching GGUF from Hugging Face (~9GB)"
+        curl -L --fail \
+          -o "$CRAFT_PART_SRC/$filename" \
+          "https://huggingface.co/bartowski/Qwen_Qwen3-14B-GGUF/resolve/main/$filename"
+      fi
+    override-build: |
+      mkdir -p "$CRAFT_PART_INSTALL"
+      cp "$CRAFT_PART_SRC/"*.gguf "$CRAFT_PART_INSTALL/"
+    organize:
+      "*": (component/model-14b-q4-k-m-gguf)
+
+  llamacpp:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-amd64.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-arm64.tar.gz
+    stage-packages:
+      - libgomp1
+    organize:
+      "*": (component/llamacpp)
+
+  llamacpp-cuda:
+    plugin: dump
+    source:
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-amd64+cuda12.tar.gz
+      - on arm64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-arm64+cuda12.tar.gz
+    stage-packages:
+      - libgomp1
+    organize:
+      "*": (component/llamacpp-cuda)
+
+  llamacpp-rocm:
+    plugin: dump
+    source:
+      # ROCm is amd64-only upstream; arm64 falls back to CPU/CUDA.
+      - on amd64: https://github.com/canonical/llama.cpp-builds/releases/download/b9050/llamacpp-amd64+rocm.tar.gz
+    stage-packages:
+      - libgomp1
+    organize:
+      "*": (component/llamacpp-rocm)
+
+  llamacpp-license:
+    plugin: dump
+    source: https://github.com/ggerganov/llama.cpp.git
+    source-depth: 1
+    override-build: |
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc/llama.cpp
+      mkdir -p $license_dir
+      cp LICENSE $license_dir/
+      cp -r licenses/* $license_dir/
+
+  notice:
+    plugin: nil
+    source: NOTICE
+    source-type: file
+    override-build: |
+      license_dir=$CRAFT_PART_INSTALL/usr/share/doc
+      mkdir -p $license_dir
+      cp NOTICE $license_dir/
+
+components:
+  llamacpp:
+    type: standard
+    summary: llama.cpp using default CPU instruction sets
+    description: LLM inference in C/C++
+    version: b9050
+
+  llamacpp-cuda:
+    type: standard
+    summary: llama.cpp with CUDA backend
+    description: LLM inference in C/C++ — NVIDIA CUDA 12 build.
+    version: b9050
+
+  llamacpp-rocm:
+    type: standard
+    summary: llama.cpp with ROCm backend
+    description: LLM inference in C/C++ — AMD ROCm build (amd64 only).
+    version: b9050
+
+  model-14b-q4-k-m-gguf:
+    type: standard
+    summary: Qwen3-14B Q4_K_M GGUF
+    description: |
+      Qwen3-14B in GGUF format with Q4_K_M weight encoding. ~9GB on
+      disk. A dense 14B-parameter transformer released by Alibaba's
+      Qwen team under Apache License 2.0; verify the licence on the
+      model card before redistribution. Bartowski's conversion is
+      the bundled source.
+    version: q4-k-m
+
+apps:
+  qwen3-14b-tonyandrewmeyer:
+    command: bin/qwen3-14b-tonyandrewmeyer
+    plugs:
+      - hardware-observe
+      - opengl
+      - network
+    environment:
+      # Enable the inference-snaps-cli `chat` subcommand, mirroring the
+      # Canonical gemma snaps so users can talk to the model directly
+      # from the CLI without an external client.
+      ADDITIONAL_FEATURES: chat
+
+  server:
+    command: bin/server.sh
+    daemon: simple
+    plugs:
+      - opengl
+      - network-bind
+      - network
+      - hardware-observe
+      - process-control

@@ -171,27 +171,53 @@ code-focused work with native tool calling, and <code>qwen-vl</code> for
 vision tasks. The quality of output depends on your GPU and the
 model size.</p>
 <h3>Preset: <code>qwen3-14b</code></h3>
-<p><code>qwen3-14b</code> is the documented next-default local pick once it's
-packaged as a snap. It produces a packable, well-structured
-ntfy charm autonomously in ~5 minutes on a 12 GiB GPU and matches
-<code>qwen3-coder</code>'s charm-build quality while decoding several times
-faster (no MoE partial-offload penalty). Prefer <code>qwen3-14b</code> over
-<code>qwen3-coder</code> when responsiveness matters; prefer <code>qwen3-coder</code>
-when you need the deeper reasoning of the 30B-MoE on a slower
-single-shot turn.</p>
-<p>While the packaged snap is in flight (tracked under Phase 105.3),
-run it from the host directly via the smoke-server scaffold:</p>
+<p><code>qwen3-14b</code> is the documented next-default local pick. It
+produces a packable, well-structured ntfy charm autonomously in
+~5 minutes on a 12 GiB GPU and matches <code>qwen3-coder</code>'s
+charm-build quality while decoding several times faster (no MoE
+partial-offload penalty). Prefer <code>qwen3-14b</code> over <code>qwen3-coder</code>
+when responsiveness matters; prefer <code>qwen3-coder</code> when you need
+the deeper reasoning of the 30B-MoE on a slower single-shot
+turn.</p>
+<p>Two install paths, depending on how persistent you want the
+server to be:</p>
+<p><strong>Packaged snap (recommended for routine use).</strong> A snap recipe
+under <code>inference-snaps/qwen3-14b/snap/</code> builds a daemon snap
+that starts on install and stays running across reboots, with
+the install hook setting port 8340 to match
+<code>discover_snap_endpoint</code>'s default fallback:</p>
+<pre><code><span class="prompt">$</span> cd inference-snaps/qwen3-14b
+<span class="prompt">$</span> bash prepare-models.sh                  # pre-warm GGUF cache (~9 GB)
+<span class="prompt">$</span> snapcraft pack                          # ~10-15 min build
+<span class="prompt">$</span> sudo snap install --dangerous qwen3-14b-tonyandrewmeyer_v0_amd64.snap
+<span class="prompt">$</span> sudo snap install --dangerous \
+    --component llamacpp-cuda=qwen3-14b-tonyandrewmeyer+llamacpp-cuda_b9050.comp \
+    --component model-14b-q4-k-m-gguf=qwen3-14b-tonyandrewmeyer+model-14b-q4-k-m-gguf_q4-k-m.comp \
+    qwen3-14b-tonyandrewmeyer
+<span class="prompt">$</span> cantrip --provider inference-snap --snap qwen3-14b
+</code></pre>
+<p>(Add <code>--component llamacpp=&hellip;</code> or <code>--component llamacpp-rocm=&hellip;</code>
+in step 4 if you want CPU or AMD GPU fallback engines installed
+alongside CUDA.)  The snap is published under the personal
+namespace <code>qwen3-14b-tonyandrewmeyer</code>; the unsuffixed
+<code>qwen3-14b</code> name is reserved for a future Canonical-published
+edition.  See the snap directory's README for the full pack +
+install + tear-down recipe.</p>
+<p><strong>Smoke scaffold (for one-off evaluation).</strong> Skip the snap
+pack and drive a host <code>llama-server</code> directly against the
+same GGUF &mdash; useful when iterating on a new llama.cpp tag or
+chat-template experiment:</p>
 <pre><code><span class="prompt">$</span> bash inference-snaps/qwen3-14b/prepare-models.sh
 <span class="prompt">$</span> bash inference-snaps/qwen3-14b/scripts/smoke-server.sh
 <span class="prompt">$</span> sudo bash scripts/setup-vm-inference-proxy.sh 8340
 <span class="prompt">$</span> cantrip --provider inference-snap --snap qwen3-14b \
     --base-url http://10.42.160.1:8340/v1</code></pre>
-<p>The host setup uses Bartowski's Q4_K_M GGUF (~9 GB) with full
+<p>The smoke setup uses Bartowski's Q4_K_M GGUF (~9 GB) with full
 GPU offload, <code>--ctx-size 16384</code>, <code>--jinja</code>, and the Canonical
-b9050 CUDA12 llama.cpp build. The default port 8340 (set by the
-preset) is what <code>discover_snap_endpoint</code> falls back to when a
-packaged snap isn't installed yet, so once the snap lands you
-can drop the <code>--base-url</code> override entirely.</p>
+b9050 CUDA12 llama.cpp build &mdash; same components the packaged
+snap bundles, just driven directly.  The smoke server dies
+when you close the terminal; the packaged snap runs as a
+proper daemon.</p>
 <h3>Preset: <code>mistral-nemo-12b</code> (long-context tier)</h3>
 <p><code>mistral-nemo-12b</code> is the documented long-context alternative &mdash;
 Mistral Nemo 12B Instruct at Q4_K_M, native 128 K trained context,

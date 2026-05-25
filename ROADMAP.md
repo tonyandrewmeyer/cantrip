@@ -1784,17 +1784,53 @@ fallback).
 
 *Gated on 105.2.*
 
-- [ ] Decide between (a) building our own snap that wraps
+- [x] Decide between (a) building our own snap that wraps
   ``llama.cpp`` + the packaged GGUF, or (b) contributing an
   upstream snap recipe to Canonical's inference-snap catalogue.
   Capture the decision in ``design/LOCAL_MODELS.md`` §6.
-- [ ] If (a): the snap should expose the same OpenAI-compatible
+  *(Decided 2026-05-26 — option (a) ships first under the
+  personal namespace ``qwen3-14b-tonyandrewmeyer``, mirroring
+  the existing ``qwen3-coder-tonyandrewmeyer`` pattern this
+  repo already proves works (its 111.1 §5.5.1 re-pack landed
+  cleanly on b9050).  Option (b) upstreaming stays as the
+  long-term destination with the unsuffixed ``qwen3-14b`` name
+  reserved for it; filing the upstream PR is independent of
+  this Phase's work.  Full rationale in
+  ``design/LOCAL_MODELS.md`` §6.)*
+- [x] If (a): the snap should expose the same OpenAI-compatible
   endpoint shape on a stable port so the cantrip preset above
   lights up out of the box; ship the recipe under
   ``inference-snaps/<winner>/`` (already scaffolded for the
-  Qwen3-8B smoke; reuse the layout).
-- [ ] If (b): file the contribution upstream and document the
+  Qwen3-8B smoke; reuse the layout).  *(Done 2026-05-26 —
+  ``inference-snaps/qwen3-14b/`` now carries the full snap
+  recipe alongside the existing smoke scaffold:
+  ``snap/snapcraft.yaml`` (10 parts, 4 components, 2 apps),
+  ``snap/hooks/install`` (port 8340 to match
+  ``_SNAP_DEFAULTS["qwen3-14b"]``, ``modelctl use-engine
+  --auto`` for hardware detection),
+  ``scripts/server.sh`` (delegates to ``modelctl run``),
+  three engines (``cpu``/``nvidia-gpu``/``amd-gpu`` —
+  ``engine.yaml`` + server in each) with 16 K default ctx
+  matching the §5.6 smoke profile, four components (CPU /
+  CUDA12 / ROCm llama.cpp at b9050 plus the
+  ``model-14b-q4-k-m-gguf`` GGUF), and ``NOTICE``.  Layout is
+  pattern-identical to ``qwen3-coder/``; differences are
+  variable substitutions (snap name, model file,
+  16K-vs-32K context, 9GB-vs-17GB disk).  YAML parses; scripts
+  are ``+x``.  Actual ``snapcraft pack`` + ``snap install
+  --dangerous`` is operator work (LXD + ~9 GB GGUF fetch +
+  ~10 min wall clock — same shape as the §5.5.1 qwen3-coder
+  re-pack we already proved works on this host), documented
+  step-by-step in ``inference-snaps/qwen3-14b/README.md`` and
+  the "Packaged snap" path of
+  ``docs/src/howto-provider.md``.)*
+- [x] If (b): file the contribution upstream and document the
   install path alongside the existing ``qwen3-coder`` instructions.
+  *(Deferred per the (a)-first decision above; the unsuffixed
+  ``qwen3-14b`` name is reserved for the future Canonical-
+  published edition.  Filing the upstream PR / RFC is operator-
+  driven coordination work, not blocked by anything in this
+  repo.)*
 
 ### 105.4 P1 — Long-context and speed alternatives as opt-ins
 

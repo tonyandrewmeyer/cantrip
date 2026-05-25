@@ -1769,11 +1769,16 @@ Smoke artefacts retained at:
 > 2026-05-09):** Qwen3-14B produced a packable improve-02-quality
 > charm autonomously in ~5 minutes.  The recommendation now reads:
 
-**Adopt Qwen3-14B as the next documented local default**, gated on
-Phase 105.3 packaging it as a snap.  Until that ships, qwen3-coder
-stays the documented default — operators who want the new pick can
-follow ``inference-snaps/qwen3-14b/README.md`` to run it from the
-host directly.
+**Adopt Qwen3-14B as the documented local default.**  The snap
+recipe ships under ``inference-snaps/qwen3-14b/`` (Phase 105.3,
+2026-05-26) as ``qwen3-14b-tonyandrewmeyer`` — same shape as the
+existing ``qwen3-coder-tonyandrewmeyer`` snap.  Operators pack it
+with ``snapcraft pack`` and install via
+``snap install --dangerous`` (no Snap Store publication is gated
+on this Phase).  ``qwen3-coder`` stays alongside as an opt-in
+alternative for workflows that need the 30B-MoE's deeper
+reasoning on a slower single-shot turn; the docs and CLI no
+longer name it as the documented default.
 
 **Next evaluations** (Phase 105.1 follow-ups, in priority order):
 
@@ -1782,7 +1787,26 @@ host directly.
    update the howto + reference-CLI docs.
 2. **Phase 105.3 — package as a snap.**  Decide between custom
    snap and upstream contribution; ship recipe under
-   ``inference-snaps/qwen3-14b/``.
+   ``inference-snaps/qwen3-14b/``.  *(Decided 2026-05-26 — option
+   (a) ships first: a Cantrip-managed snap under the personal
+   namespace ``qwen3-14b-tonyandrewmeyer`` that wraps the
+   Canonical b9050 llama.cpp builds + bartowski's
+   ``Qwen_Qwen3-14B-Q4_K_M.gguf``.  Same recipe shape as the
+   existing ``qwen3-coder-tonyandrewmeyer`` snap that already
+   ships from this repo (snap/snapcraft.yaml + hooks/install +
+   scripts/server.sh + per-engine components for cpu / cuda12 /
+   rocm + the model component) — pattern is established, the
+   2026-05-25 §5.5.1 re-pack proved it builds end-to-end on
+   b9050.  Option (b) — upstream contribution to Canonical's
+   inference-snap catalogue, with the unsuffixed ``qwen3-14b``
+   name reserved for that future edition — stays as the
+   long-term destination, not the immediate ship.  Same framing
+   qwen3-coder uses in its own snapcraft.yaml description: "this
+   snap is published under a personal namespace; the unsuffixed
+   name is reserved for a future Canonical-published edition".
+   Filing the upstream PR is contingent on operator interest +
+   Canonical-side review bandwidth; nothing about that path is
+   blocked by the work in this Phase.)*
 3. **Phase 105.1.6 — DeepSeek-Coder-V2-Lite smoke** stays useful
    as a comparison data point but is no longer urgent.  The MoE
    shape might be faster than Qwen3-14B at similar quality;

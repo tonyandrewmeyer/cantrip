@@ -1,0 +1,69 @@
+name: amd-gpu
+description: |
+  Optimised for AMD GPUs via ROCm. Offloads model layers to the GPU
+  for substantially higher tokens/sec than the CPU engine. Requires
+  a ROCm-supported microarchitecture and a working amdgpu driver;
+  ROCm is amd64-only upstream so this engine is amd64-only.
+vendor: Tony Andrew Meyer
+grade: devel
+devices:
+  allof:
+    - type: cpu
+      architecture: amd64
+  anyof:
+    # RDNA 1/2/3/4 desktop and APU microarchitectures supported by
+    # upstream ROCm at the b9050 build cutoff. Mirrors the gemma4
+    # snap's compatibility matrix.
+    - type: gpu
+      vendor-id: 0x1002 # AMD
+      microarchitecture: gfx1010
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1011
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1012
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1030
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1031
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1032
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1100
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1101
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1102
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1150
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1151
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1152
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1153
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1200
+    - type: gpu
+      vendor-id: 0x1002
+      microarchitecture: gfx1201
+memory: 16G
+disk-space: 12G
+components:
+  - llamacpp-rocm
+  - model-14b-q4-k-m-gguf
+configurations:
+  sleep-idle-seconds: 600
+  ctx-size: 16384

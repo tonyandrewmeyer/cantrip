@@ -1,0 +1,14 @@
+#!/bin/bash -eu
+
+# Chat mode (no --embedding flag). --jinja enables the Jinja2 chat
+# template embedded in the GGUF, which is required for Qwen3-14B's
+# native tool-calling rendering — Cantrip drives this snap through
+# the OpenAI-compatible /v1/chat/completions endpoint with tool calls.
+sleep_idle_seconds="$(modelctl get sleep-idle-seconds)"
+ctx_size="$(modelctl get ctx-size)"
+
+exec "$SNAP_COMPONENTS/llamacpp-cuda/server" \
+  --jinja \
+  --ctx-size "$ctx_size" \
+  --sleep-idle-seconds "$sleep_idle_seconds" \
+  "$@"
