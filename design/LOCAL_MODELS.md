@@ -1145,6 +1145,103 @@ artefacts retained at
 ``inference-snaps/deepseek-coder-v2-lite/`` for re-evaluation
 when the llama.cpp version changes.
 
+#### 5.7.1 b9050 re-smoke (Phase 105.1.6 + 111.2, 2026-05-26)
+
+Re-smoked on b9050 — the b8589 blocker turned out to be two
+unrelated infrastructure problems stacked, not the single Gated
+Delta segfault §5.7 originally hypothesised.  Headline: **b9050
+clears one of the two; the second now blocks**, so the candidate
+remains disqualified for tool-using cantrip workflows.
+
+**First barrier (b8589 → b9050 gain):** fused Gated Delta Net init
+crash.  The b9050 startup log shows both ``fused Gated Delta Net
+(autoregressive) enabled`` and ``(chunked) enabled`` — that path
+is no longer the failure site.  The b9000+ fix horizon §5.7
+predicted held.
+
+**Second barrier (b9050 reveals):** ``llama_init_from_model``
+refuses to create a context with the b8589-era quantised KV cache
+defaults — ``quantized V cache was requested, but this requires
+Flash Attention``.  Flash Attention auto-disables for
+DeepSeek-V2-Lite's attention geometry on CUDA (``layer 0 is
+assigned to device CUDA0 but the Flash Attention tensor is
+assigned to device CPU (usually due to missing support)``), and
+without FA the quantised V cache constraint trips.  Workaround
+shipped in ``smoke-server.sh`` (commit on this turn): default
+``CACHE_TYPE_K`` / ``CACHE_TYPE_V`` to empty (fp16 KV), drop
+``CTX_SIZE`` default from 16 K to 8 K so the larger fp16 KV
+footprint (~1.1 GB at 8 K, ~2.3 GB at 16 K) still fits alongside
+the 7.5 GB IQ3_M weights in 12 GiB.  The opt-back-into-quant
+recipe is left in the script comment for when FA support lands.
+
+**Third barrier (model-output side, the real disqualifier):**
+``--jinja`` doesn't parse DeepSeek-V2's outbound tool-call markers
+into OpenAI ``tool_calls``.  The smoke check fired branch (c) —
+the model emits its native template tokens as plain ``content``:
+
+```
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather
+```json
+{"location": "Edinburgh"}
+```<｜tool▁call▁end｜><｜tool▁calls▁end｜>
+```
+
+…and then continues hallucinating a fabricated
+``<｜tool▁outputs▁begin｜>`` block with invented weather data
+("cloudy with a chance of rain, 12°C, 75% humidity"), because the
+substrate fed back the unparsed tool-call markers and the model
+treated them as part of an ongoing conversation.  ``tool_calls``
+on the response is ``null``.  The model itself emits the right
+template — llama.cpp's ``--jinja`` template handling for
+DeepSeek-V2 just doesn't know how to extract structured
+``tool_calls`` from those markers.
+
+This is the DeepSeek-V2 equivalent of the bailingmoe2-template-gap
+the roadmap predicted for Phase 112.3 — except 112.3's
+Ling-mini-2.0 turned out to round-trip cleanly while DeepSeek-V2
+hits the gap.
+
+**Pre-flight summary** (``smoke-check.sh`` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, id ``DeepSeek-Coder-V2-Lite-Instruct-IQ3_M.gguf``, ``n_ctx_train: 163840``, ``n_params: 15.7 B``, ``n_embd: 2048`` | pass — b9050 init substrate works |
+| Plain hello (32-token budget) | pass — content ``" OK."``, finish=stop, 3 completion tokens.  Not a thinking model, no template leak in plain-text replies. |
+| Synthetic ``get_weather`` tool call | **fail (branch c)** — ``tool_calls`` null, ``content`` carries literal DeepSeek-V2 template markers + fabricated tool-output continuation.  ``--jinja`` on b9050 does *not* parse DeepSeek-V2's tool-call shape. |
+
+**Disposition:**
+
+DeepSeek-Coder-V2-Lite-Instruct is **not** added to
+``_TOOL_CAPABLE_SNAP_NAMES`` and not promoted to
+``_SNAP_DEFAULTS``.  The smoke proves the model can drive
+plain-text inference on b9050, but the tool-call gap rules it
+out for cantrip's tool-driven workflows (charm-building, the
+planner / executor split, even the @docs context provider's
+synthesis turn).  The previous §5.7 status of "blocked on
+infrastructure" carries over with the failure surface moved —
+init works now, the substrate's tool-call layer doesn't.
+
+Two follow-up paths if a future operator wants this model:
+
+1. **File upstream** at ``ggerganov/llama.cpp`` /
+   ``canonical/llama.cpp-builds`` documenting the missing
+   DeepSeek-V2 chat-template handling for ``<｜tool▁calls▁begin｜>``
+   markers under ``--jinja``.  Same shape of bug as the
+   Qwen2.5-Coder b8589 issue (§5.4) but for a different model
+   family.
+2. **Land a Phase 109-style inbound rewriter** that parses
+   DeepSeek-V2's tool-call markers in ``content`` after the fact —
+   the existing Mistral rewriter (Phase 109.2) is the template;
+   the marker syntax (``<｜tool▁calls▁begin｜>`` /
+   ``<｜tool▁sep｜>`` / JSON-in-markdown-fence) is regular enough
+   to parse.
+
+Neither is shipped here — DeepSeek-Coder-V2-Lite stays on the
+candidate watchlist, not the active matrix.  Phase 105.1.6 and
+Phase 111.2 both close with this finding as their outcome;
+re-open when the upstream gap moves or someone needs DeepSeek-V2
+badly enough to write the rewriter.
+
 ### 5.8 EmbeddingGemma-300M *(embedding-only sidecar, not a §5 chat candidate)*
 
 Not part of the chat-model selection above — included here only

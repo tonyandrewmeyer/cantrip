@@ -73,19 +73,22 @@ echo
 
 cat <<EOF
 
-Pass criteria (Phase 105.1.6):
+Pass criteria (Phase 105.1.6 / 111.2):
   1. /v1/models returns one model id (something like
-     "Qwen_Qwen3-14B-Q4_K_M.gguf" or "qwen3-14b"). PASS if id is
-     non-empty.
+     "DeepSeek-Coder-V2-Lite-Instruct-IQ3_M.gguf"). PASS if id is
+     non-empty — also confirms b9050's Gated Delta fix landed
+     (the §5.7 b8589 blocker exited before this check ran).
   2. Chat-completions plain hello returns content "OK" (or close)
-     with finish_reason "stop".  Qwen3-14B is also a thinking model,
-     so the visible content may follow ~100 tokens of separated
-     reasoning_content; budget 512+ max_tokens to give it room. FAIL
-     if content is empty or contains stray template tokens like
-     <function=...> or <tool_code>.
+     with finish_reason "stop".  Not a thinking model — the
+     default 32-token budget is fine.  FAIL if content is empty
+     or contains stray template tokens.
   3. Tool-call round-trip returns a non-null tool_calls array with
-     name="get_weather" and JSON arguments containing city. FAIL if
-     tool_calls is null and the content contains the tool name as
-     plain text — that's the gemma4 / qwen2.5-coder failure shape
-     we explicitly want to confirm Qwen3-14B doesn't share.
+     name="get_weather" and JSON arguments containing city.  FAIL
+     if tool_calls is null and the content contains the literal
+     "<｜tool▁calls▁begin｜>" / "<｜tool▁call▁begin｜>function"
+     markers — that means llama.cpp's --jinja didn't parse
+     DeepSeek-V2's outbound tool-call shape, and the model is
+     disqualified from tool-using cantrip workflows until either
+     a llama.cpp template fix lands upstream or a Phase 109-style
+     inbound rewriter is written for the DeepSeek-V2 family.
 EOF

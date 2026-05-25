@@ -25,25 +25,32 @@ cd "$SNAP_DIR"
 # Configuration. All overridable via env var.
 PORT="${PORT:-8342}"
 HOST="${HOST:-127.0.0.1}"
-# Initial 32 K default OOMed with cudaMalloc failing on an 8.6 GB
-# single allocation — the compute / scratch buffer for this model
-# scales aggressively with context and the MLA-cache savings don't
-# extend to those buffers.  16 K + parallel=1 fits comfortably.
-# Bump CTX_SIZE if you confirm headroom in nvidia-smi during a
-# warm run; a 5070 Ti Laptop 12 GB might admit 24 K with quantised
-# KV (CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0).
-CTX_SIZE="${CTX_SIZE:-16384}"
+# Context size: DeepSeek-V2-Lite's per-token KV footprint is unusually
+# large (n_embd_head_k=192, n_embd_head_v=128, 27 layers — ~140 KB/token
+# at fp16).  Without Flash Attention (auto-disabled on b9050 — see
+# CACHE_TYPE_K below), the fp16 KV cache is ~1.1 GB at 8 K and
+# ~2.3 GB at 16 K.  Combined with the 7.5 GB IQ3_M weights plus
+# ~0.6 GB compute / scratch buffers, 8 K leaves ~3 GB of 12 GiB free,
+# while 16 K is on the edge.  Bump if your GPU has more headroom.
+CTX_SIZE="${CTX_SIZE:-8192}"
 N_PARALLEL="${N_PARALLEL:-1}" # llama-server defaults to 4 parallel slots; we only use 1.
-# DeepSeek-V2-Lite needs quantised KV cache to fit in 12 GB on the
-# b9050 llama.cpp build.  Flash Attention auto-disables here
-# (the FA tensor lands on CPU due to missing GPU support for this
-# attention shape), and without FA the fp16 KV cache is ~4.3 GB
-# at 16 K context — too big alongside the 7.5 GB IQ3_M weights.
-# q8_0 halves that to ~2.2 GB and gives ~1.7 GB headroom for the
-# compute buffer.  Override with CACHE_TYPE_K= CACHE_TYPE_V= (empty)
-# if a future llama.cpp build re-enables FA on this model.
-CACHE_TYPE_K="${CACHE_TYPE_K-q8_0}"
-CACHE_TYPE_V="${CACHE_TYPE_V-q8_0}"
+# KV-cache quantisation defaults to *off* on b9050.
+#
+# Background: Flash Attention auto-disables for DeepSeek-V2-Lite's
+# attention geometry on b9050 (the FA tensor lands on CPU due to
+# missing GPU support for this shape), and quantised V cache
+# *requires* Flash Attention — the b9050 ``llama_init_from_model``
+# refuses to create a context with "quantized V cache was requested,
+# but this requires Flash Attention" otherwise.  The b8589 era
+# defaulted to ``q8_0`` to fit Q4_K_M weights at 16 K in 12 GiB, but
+# the b8589 init crashed on the fused Gated Delta path before this
+# constraint mattered; b9050 fixes Gated Delta and surfaces the FA
+# requirement as the new blocker.  fp16 KV at 8 K context fits.
+#
+# Opt back into quant if a future llama.cpp build re-enables FA for
+# DeepSeek-V2-Lite — set CACHE_TYPE_K=q8_0 CACHE_TYPE_V=q8_0.
+CACHE_TYPE_K="${CACHE_TYPE_K:-}"
+CACHE_TYPE_V="${CACHE_TYPE_V:-}"
 N_GPU_LAYERS="${N_GPU_LAYERS:-99}" # 99 == "all"; DeepSeek-Coder-V2-Lite has 27 layers.
 GGUF_FILE="${GGUF_FILE:-DeepSeek-Coder-V2-Lite-Instruct-IQ3_M.gguf}"
 MODEL_PATH="${MODEL_PATH:-cache/$GGUF_FILE}"

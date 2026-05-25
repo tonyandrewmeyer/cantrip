@@ -1719,15 +1719,30 @@ fallback).
 
 ### 105.1.6 P1 — Smoke test DeepSeek-Coder-V2-Lite *(MoE candidate)*
 
-- [ ] Same shape as 105.1.5 but pointing at
+- [x] Same shape as 105.1.5 but pointing at
   ``lmstudio-community/DeepSeek-Coder-V2-Lite-Instruct-GGUF``,
   port 8342, and a *prerequisite* check: the synthetic tool-call
   smoke must round-trip cleanly via ``--jinja`` before any improve
   attempt.  Tool-call reliability isn't as well-documented for this
-  family as it is for Qwen.
-- [ ] If both 105.1.5 and 105.1.6 fail, default-replacement work
+  family as it is for Qwen.  *(Done 2026-05-26 on b9050 (the
+  scaffold uses bartowski's GGUF, not lmstudio-community's —
+  shipped that way from §5.7 era).  Prerequisite tool-call check
+  **failed**: substrate is clean for plain text but ``--jinja``
+  on b9050 doesn't parse DeepSeek-V2's
+  ``<｜tool▁calls▁begin｜>``/``<｜tool▁call▁begin｜>function``
+  markers into OpenAI ``tool_calls`` — model emits them as plain
+  ``content`` and even hallucinates a follow-up ``tool_outputs``
+  block.  No improve attempt run (per the prerequisite gate).
+  ``design/LOCAL_MODELS.md`` §5.7.1 carries the full trace.
+  Not added to ``_TOOL_CAPABLE_SNAP_NAMES`` or
+  ``_SNAP_DEFAULTS``.)*
+- [x] If both 105.1.5 and 105.1.6 fail, default-replacement work
   pauses; the remaining sub-phases below stay deferred and the
-  documented local default stays qwen3-coder.
+  documented local default stays qwen3-coder.  *(N/A — 105.1.5
+  (Qwen3-14B) passed and is the documented winner via Phase 105.2.
+  105.1.6's failure leaves the default-replacement track unaffected;
+  DeepSeek-V2-Lite stays on the candidate watchlist not the active
+  matrix.)*
 
 ### 105.2 P0 — Provider preset for the winning candidate
 
@@ -2119,17 +2134,35 @@ phase.
 
 ### 111.2 P0 — Retry DeepSeek-Coder-V2-Lite-Instruct
 
-- [ ] ``inference-snaps/deepseek-coder-v2-lite/scripts/smoke-server.sh``
+- [x] ``inference-snaps/deepseek-coder-v2-lite/scripts/smoke-server.sh``
   — the §5.7 blocker was a b8589 segfault in the fused
   "Gated Delta" path during init.  b9050 sits well past the
   ``b9000+`` threshold ``design/LOCAL_MODELS.md`` flagged as
   the fix horizon.  If init succeeds, run smoke-check.sh; if
   the synthetic tool call also passes, promote the candidate
-  into the §5 comparison table.
-- [ ] If b9050 still segfaults: update §5.7 with the new
+  into the §5 comparison table.  *(Done 2026-05-26 — init does
+  succeed on b9050; the b8589 Gated Delta fix horizon held.
+  But two further barriers surfaced: (a) the b8589-era ``q8_0``
+  KV-cache defaults now trip llama_init_from_model because
+  Flash Attention auto-disables for DeepSeek-V2's attention
+  geometry and quantised V cache requires FA — fix landed in
+  the script (default ``CACHE_TYPE_K=`` / ``CACHE_TYPE_V=``
+  empty, drop ``CTX_SIZE`` from 16 K to 8 K so the larger fp16
+  KV fits); (b) ``--jinja`` doesn't parse DeepSeek-V2's outbound
+  ``<｜tool▁calls▁begin｜>`` markers into OpenAI ``tool_calls``,
+  so the synthetic tool call fails with the model's template
+  tokens leaking into ``content``.  Candidate stays disqualified
+  for tool-using workflows.  Promoted into §5.7.1 as the new
+  status, not into the §5 active matrix.)*
+- [x] If b9050 still segfaults: update §5.7 with the new
   failure trace and move the unblock target to b9200+ (or
   the next stable Canonical mirror cut), so future-us doesn't
-  re-attempt blind.
+  re-attempt blind.  *(N/A — b9050 didn't segfault, the failure
+  shape shifted to tool-call template handling per above.
+  §5.7.1 documents both the substrate fix (KV-quant defaults)
+  and the remaining tool-call gap as the new unblock target —
+  either an upstream llama.cpp ``--jinja`` template fix for
+  DeepSeek-V2 or a Phase 109-style inbound rewriter.)*
 
 ### 111.3 P1 — Historical-comment cleanup
 
