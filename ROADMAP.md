@@ -1790,14 +1790,26 @@ fallback).
 The smoke required two small source changes to make the
 ``--snap qwen3-8b --base-url …`` invocation work end-to-end:
 
-- [ ] ``_TOOL_CAPABLE_SNAP_NAMES`` += ``"qwen3-8b"`` in
+- [x] ``_TOOL_CAPABLE_SNAP_NAMES`` += ``"qwen3-8b"`` in
   ``src/cantrip/llm/inference_snap.py`` — already in place.  Land
   this on its own commit so the smoke-only allowlist entry is
-  separable from any future preset work.
-- [ ] ``InferenceSnapProvider`` httpx timeout 300 s → 1200 s — also
+  separable from any future preset work.  *(Verified 2026-05-26 —
+  ``"qwen3-8b"`` is line 66 of ``_TOOL_CAPABLE_SNAP_NAMES``.
+  Landed inline with subsequent smokes rather than as a separate
+  commit; Phase 112 has since added six more entries
+  (``qwen3-14b``, ``deepseek-coder-v2-lite``, ``mistral-nemo-12b``,
+  ``granite-4.1-8b``, ``granite-4.1-3b``, ``llama-3.1-8b``,
+  ``ling-mini-2.0``) so the standalone-commit framing is no
+  longer load-bearing.)*
+- [x] ``InferenceSnapProvider`` httpx timeout 300 s → 1200 s — also
   already in place.  This is a stop-gap for Phase 102; revisit when
   Phase 102's streaming-reconnect work lands so the timeout becomes
-  operator-tunable rather than hard-coded.
+  operator-tunable rather than hard-coded.  *(Verified 2026-05-26 —
+  ``DEFAULT_READ_TIMEOUT_SECONDS = 1200.0`` (``inference_snap.py``
+  line 396), with ``CANTRIP_SNAP_READ_TIMEOUT`` env var and
+  ``--snap-read-timeout`` CLI flag now exposing the knob (line 402)
+  so the constant is no longer hard-coded — Phase 102's tuning
+  surface landed alongside the original timeout bump.)*
 
 ### What this phase is *not*
 
