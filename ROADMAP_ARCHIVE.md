@@ -16210,6 +16210,165 @@ Smokes ran 2026-05-25 through 2026-05-26 across five sub-phases.
 
 ---
 
+## Phase 111: llama.cpp Build Refresh — b8589 → b9050 Re-smoke ✓
+
+**Goal:** Every operational llama.cpp pin in the repo (snap
+manifests + host smoke-server scripts) moved from upstream
+``b8589`` (2026-03-30) to Canonical-mirror ``b9050``
+(2026-05-08) — ~461 upstream commits, ~5 weeks of MoE / quant
+kernel work, and the fused-kernel fixes that
+``design/LOCAL_MODELS.md`` §5.7 specifically called out as
+unblocking DeepSeek-Coder-V2-Lite-Instruct.  Bump landed in this
+commit; the validation work to confirm no regressions is the
+phase.
+
+### 111.1 P0 — Re-smoke each candidate on b9050
+
+- [x] ``inference-snaps/qwen3-8b/scripts/smoke-server.sh`` —
+  re-run §5.1.1 smoke; confirm ``/v1/models``, plain-hello, and
+  synthetic ``get_weather`` tool call still pass.  Record any
+  decode-rate / TTFT delta against the b8589 baseline in
+  ``design/LOCAL_MODELS.md``.  *(Done — §5.1.3.  All three checks
+  pass; plain-hello reasoning overhead dropped ~26 % vs §5.1.1.
+  Surfaced ``smoke-check.sh``'s 32-token plain-hello budget being
+  too tight for Qwen3-family ``<think>`` preambles — documented
+  in the addendum.)*
+- [x] ``inference-snaps/qwen3-14b/scripts/smoke-server.sh`` —
+  same protocol; the §5.6 Run #3 charm-build prompt is the
+  load-bearing comparison.  *(Done — §5.6.3.  Replay packed
+  autonomously in 2m 46s vs §5.6.1's 5m 19s baseline (~48 %
+  faster) with the same 7-tool shape, 100 % success, empty
+  stderr.  Three substrate-orthogonal model-output deltas
+  recorded: regression on canonical COS relation names,
+  ``ops_tracing.setup`` substituted for the constructor, test
+  file 137 lines vs the prompt's 100-line cap.)*
+- [x] ``inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh``
+  — re-run the §5.2 / Phase 109.3 smoke; the post-pack spiral
+  (Phase 110) is orthogonal, but a kernel-level change *could*
+  alter decode shape.  *(Done — §5.2.3.  Replay packed in
+  1m 41s with zero ``plan_tasks`` calls and zero CONFIRM tasks
+  vs §5.2.2's ~15 min before bail; Phase 110.1 / 110.2 stayed
+  dormant insurance.  Canonical COS relation names kept;
+  ``ops_tracing.Tracing`` constructor honoured; Harness-not-
+  Context regression on the test file persists.)*
+- [x] ``inference-snaps/qwen3-coder/`` (snap) — re-pack with
+  ``snapcraft`` against the new ``llamacpp_b9050`` components;
+  re-run the qwen3-coder smoke; check the long-generation
+  reconnect failure mode (§1) hasn't worsened.  *(Done — §5.5.1.
+  ``snapcraft pack`` produced all five b9050 components after
+  pre-warming the LXD build instance with ``snap wait system
+  seed.loaded`` (``craft-providers`` warm-up timed out on
+  ``snap unset system proxy.http`` otherwise).  Runtime
+  confirms fused Gated Delta Net + Flash Attention enabled.
+  Improve replay packed in 13m 06s with **zero streaming
+  reconnects** — the §1 failure mode did not recur on this trial.
+  Engine-selection inside the confined snap can't see
+  ``nvidia-smi`` and falls back to CPU; explicit
+  ``use-engine nvidia-gpu`` picks the CUDA engine regardless.)*
+- [x] ``inference-snaps/embeddinggemma/`` (snap) — re-pack;
+  confirm the embedding HTTP surface still answers
+  ``/v1/embeddings`` correctly.  *(Done — §5.8.1.  ``snapcraft
+  pack`` clean (no LXD warm-up issue this time), CPU-only single-
+  engine snap.  Single + batch ``/v1/embeddings`` round-trip
+  return 768-dim vectors with sensible distributions.)*
+
+### 111.2 P0 — Retry DeepSeek-Coder-V2-Lite-Instruct
+
+- [x] ``inference-snaps/deepseek-coder-v2-lite/scripts/smoke-server.sh``
+  — the §5.7 blocker was a b8589 segfault in the fused
+  "Gated Delta" path during init.  b9050 sits well past the
+  ``b9000+`` threshold ``design/LOCAL_MODELS.md`` flagged as
+  the fix horizon.  If init succeeds, run smoke-check.sh; if
+  the synthetic tool call also passes, promote the candidate
+  into the §5 comparison table.  *(Done 2026-05-26 — init does
+  succeed on b9050; the b8589 Gated Delta fix horizon held.
+  But two further barriers surfaced: (a) the b8589-era ``q8_0``
+  KV-cache defaults now trip llama_init_from_model because
+  Flash Attention auto-disables for DeepSeek-V2's attention
+  geometry and quantised V cache requires FA — fix landed in
+  the script (default ``CACHE_TYPE_K=`` / ``CACHE_TYPE_V=``
+  empty, drop ``CTX_SIZE`` from 16 K to 8 K so the larger fp16
+  KV fits); (b) ``--jinja`` doesn't parse DeepSeek-V2's outbound
+  ``<｜tool▁calls▁begin｜>`` markers into OpenAI ``tool_calls``,
+  so the synthetic tool call fails with the model's template
+  tokens leaking into ``content``.  Candidate stays disqualified
+  for tool-using workflows.  Promoted into §5.7.1 as the new
+  status, not into the §5 active matrix.)*
+- [x] If b9050 still segfaults: update §5.7 with the new
+  failure trace and move the unblock target to b9200+ (or
+  the next stable Canonical mirror cut), so future-us doesn't
+  re-attempt blind.  *(N/A — b9050 didn't segfault, the failure
+  shape shifted to tool-call template handling per above.
+  §5.7.1 documents both the substrate fix (KV-quant defaults)
+  and the remaining tool-call gap as the new unblock target —
+  either an upstream llama.cpp ``--jinja`` template fix for
+  DeepSeek-V2 or a Phase 109-style inbound rewriter.)*
+
+### 111.3 P1 — Historical-comment cleanup
+
+- [x] ``inference-snaps/mistral-nemo-12b/prepare-models.sh``,
+  ``inference-snaps/deepseek-coder-v2-lite/prepare-models.sh``,
+  ``inference-snaps/qwen3-coder/engines/amd-gpu/engine.yaml``
+  still reference ``b8589`` in *comment* prose (e.g. "the b8589
+  build cutoff").  These are descriptive, not operational —
+  update them only if 111.1 / 111.2 produces a behaviour change
+  that contradicts the comment.  Otherwise leave as historical
+  record and let ``design/LOCAL_MODELS.md`` carry the
+  authoritative timeline.  *(Done 2026-05-25 — 111.1 §5.1.3 /
+  §5.2.3 / §5.5.1 / §5.6.3 / §5.8.1 re-smokes did not contradict
+  the comment prose; left as historical record.)*
+- [x] READMEs under ``inference-snaps/*/README.md`` likewise
+  mention ``b8589`` as the build they were validated against.
+  Update each as the corresponding 111.1 re-smoke completes,
+  with the new tag and the date.  *(Done 2026-05-25 —
+  ``qwen3-coder/README.md`` (ROCm arm64 cutoff),
+  ``qwen3-14b/README.md`` (shared engine tarball), and
+  ``mistral-nemo-12b/README.md`` (attention-shape support +
+  shared engine tarball) bumped to ``b9050`` per their
+  ``design/LOCAL_MODELS.md`` §5.5.1 / §5.6.3 / §5.2.3
+  re-smokes.  ``qwen3-8b/README.md`` and
+  ``embeddinggemma/README.md`` carry no tag references —
+  nothing to bump.  ``deepseek-coder-v2-lite/README.md``
+  stays on ``b8589`` until 111.2 lands.)*
+
+### What this phase was *not*
+
+- **Not a llama.cpp upgrade to upstream-latest.**  b9050 was
+  the most recent tag on the Canonical mirror as of 2026-05-25.
+  Upstream ``b9305`` existed but wasn't packaged for the
+  release pipeline yet; a separate phase covers picking up
+  further mirror cuts when they land.
+- **Not a model-selection re-evaluation.**  If a re-smoke
+  showed materially different decode-rate or quality, that's a
+  data point for a *future* selection phase — Phase 111 just
+  re-established the baseline on the new engine.
+
+**Exit criteria (met):** every operational ``b8589`` reference
+moved to ``b9050``; each of the five 111.1 smoke targets
+re-passed; ``design/LOCAL_MODELS.md`` gained dated "re-smoke on
+b9050" addenda per candidate (§5.1.3, §5.2.3, §5.5.1, §5.6.3,
+§5.8.1); DeepSeek-Coder-V2-Lite was re-blocked with a fresh
+failure trace (§5.7.1 — Gated Delta fixed, KV-quant blocker
+worked around, tool-call template gap as the new disqualifier)
+rather than promoted, with the unblock target moved from
+"b9000+ build" to either an upstream ``--jinja`` template fix
+for DeepSeek-V2 or a Phase 109-style inbound rewriter.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 111.1 / 111.2 re-smokes | Phase 105.1 smoke infrastructure | Host ``llama-server`` + socat forwarder pattern unchanged |
+| 111.3 doc cleanup | 111.1 / 111.2 results | Wait for re-smoke to know whether comments are still accurate |
+
+**Discovered:** 2026-05-25 audit of llama.cpp pin staleness.
+b8589 was ~716 upstream builds (~8 weeks) behind ``b9305``;
+b9050 (mirror) was ~3 weeks newer than the pin and crossed the
+``b9000+`` fix horizon ``design/LOCAL_MODELS.md`` §5.7 had
+already identified as the DeepSeek-V2-Lite unblock target.
+Smokes ran 2026-05-25 through 2026-05-26 across three sub-phases.
+
+---
+
 ## Completed Milestones
 
 Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROADMAP.md).
