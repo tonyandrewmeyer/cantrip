@@ -62,7 +62,7 @@ bash inference-snaps/qwen3-14b/prepare-models.sh
 # 3. Run llama-server in the foreground on 127.0.0.1:8340 with full
 # GPU offload, 16 K context, and --jinja for tool calling. The
 # llama.cpp engine tarball is reused from inference-snaps/qwen3-8b/
-# if it's already on disk — same b8589 build.
+# if it's already on disk — same b9050 build.
 bash inference-snaps/qwen3-14b/scripts/smoke-server.sh
 ```
 

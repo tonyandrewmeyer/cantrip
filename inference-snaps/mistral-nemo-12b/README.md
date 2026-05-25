@@ -17,7 +17,7 @@ for the full reasoning. Short version:
   the candidate set (vs Qwen3-14B's 32 K native / 16 K runtime in
   our smoke).
 - **Standard Mistral architecture** — no MLA, no Gated Delta Net,
-  no special attention shapes. The b8589 llama.cpp build supports
+  no special attention shapes. The b9050 llama.cpp build supports
   it cleanly without the Flash-Attention fallback path that bit
   DeepSeek-V2-Lite (see §5.7).
 - **Comfortable VRAM fit** — Q4_K_M is ~7.5 GB, leaving ~4.5 GB
@@ -58,7 +58,7 @@ bash inference-snaps/mistral-nemo-12b/prepare-models.sh
 # 3. Run llama-server in the foreground on 127.0.0.1:8344 with
 # full GPU offload, 24 K context, and --jinja for tool calling.
 # The llama.cpp engine tarball is reused from any prior smoke
-# (same b8589 build); only first run downloads it.
+# (same b9050 build); only first run downloads it.
 bash inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh
 ```
 

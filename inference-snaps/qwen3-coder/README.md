@@ -33,7 +33,7 @@ is what Cantrip drives over the OpenAI-compatible endpoint.
   RAM cost.
 - **Three engines:** `cpu` (any modern amd64/arm64 CPU),
   `nvidia-gpu` (CUDA 12, amd64/arm64), and `amd-gpu` (ROCm,
-  amd64-only — ROCm has no upstream arm64 build at the b8589
+  amd64-only — ROCm has no upstream arm64 build at the b9050
   cutoff). `use-engine --auto` picks the best fit for the host;
   hosts without a discrete GPU get `cpu`.
 - **One runtime:** `llama.cpp` from

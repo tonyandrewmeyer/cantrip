@@ -1995,24 +1995,24 @@ model that doesn't naturally STOP after a successful pack:
 
 ### 110.1 P0 — Convergence heuristic after a successful pack
 
-- [ ] Add an ``AgentState.pack_succeeded: bool`` flag (default
+- [x] Add an ``AgentState.pack_succeeded: bool`` flag (default
   ``False``, not persisted across restarts).  Resets to ``False``
   at the top of every ``CantripAgent.process_message`` /
   ``process_message_streaming`` call so a *new* user turn always
   gets a fresh chance to (re-)plan, matching §5.2.2's failure-
   mode scope (the spiral was within a single user turn).
-- [ ] ``CharmcraftPackTool.execute`` flips
+- [x] ``CharmcraftPackTool.execute`` flips
   ``state.pack_succeeded = True`` on the success path (after
   ``charmcraft pack`` exited zero, before the success
   ``ToolResult`` is returned).  ``QuickPackTool`` mirrors the
   flip on its success path so the gate fires for both packers.
-- [ ] ``PlanTasksTool.execute`` refuses with a non-error
+- [x] ``PlanTasksTool.execute`` refuses with a non-error
   ``ToolResult`` ("Charm already packed in this turn — no
   further planning needed.  STOP, or ask the user for a new
   goal.") when ``state.pack_succeeded`` is true.  No tasks are
   enqueued; the planner LLM call is skipped entirely so the
   10-second-per-spiral-iteration cost is gone.
-- [ ] Unit tests in ``tests/unit/agent/`` cover: the flag
+- [x] Unit tests in ``tests/unit/agent/`` cover: the flag
   defaults to ``False``; ``CharmcraftPackTool`` flips it on
   success and leaves it alone on failure; ``QuickPackTool``
   flips it on success; ``PlanTasksTool`` refuses with the
@@ -2023,24 +2023,24 @@ model that doesn't naturally STOP after a successful pack:
 
 ### 110.2 P1 — Widen --yolo to cover work-queue CONFIRMs
 
-- [ ] In ``print_mode._run_async`` (and the Ralph variant),
+- [x] In ``print_mode._run_async`` (and the Ralph variant),
   when ``state.yolo_mode`` is ``True`` and ``pending`` CONFIRM
   tasks remain after the drain, walk the list and call
   ``work_queue.set_done(task.id, "Auto-approved by --yolo")``
   for each rather than printing the refusal and returning 1.
   Re-drain after the auto-approval pass so any unblocked
   follow-up tasks settle before the exit check.
-- [ ] The refusal-message wording (still used when
+- [x] The refusal-message wording (still used when
   ``yolo_mode`` is ``False``) gets a clarifying line so
   operators know ``--yolo`` *does* now cover CONFIRMs ("Re-run
   with ``--yolo`` to auto-approve both permission ``ask``
   events and work-queue CONFIRM tasks, or resolve them
   interactively in the TUI/CLI mode first.").
-- [ ] CLI help text for ``--yolo`` updated to reflect the
+- [x] CLI help text for ``--yolo`` updated to reflect the
   widened scope.  The ``/yolo`` slash command (Phase 69.2)
   toggles the same flag, so its help string gets the same
   update.
-- [ ] Unit tests in ``tests/unit/agent/test_cli_print_mode.py``
+- [x] Unit tests in ``tests/unit/agent/test_cli_print_mode.py``
   + ``tests/unit/agent/test_yolo.py``: print-mode without
   ``--yolo`` still prints the refusal and exits 1; print-mode
   with ``--yolo`` and a pending design-CONFIRM auto-approves
@@ -2161,7 +2161,7 @@ phase.
 
 ### 111.3 P1 — Historical-comment cleanup
 
-- [ ] ``inference-snaps/mistral-nemo-12b/prepare-models.sh``,
+- [x] ``inference-snaps/mistral-nemo-12b/prepare-models.sh``,
   ``inference-snaps/deepseek-coder-v2-lite/prepare-models.sh``,
   ``inference-snaps/qwen3-coder/engines/amd-gpu/engine.yaml``
   still reference ``b8589`` in *comment* prose (e.g. "the b8589
@@ -2169,11 +2169,22 @@ phase.
   update them only if 111.1 / 111.2 produces a behaviour change
   that contradicts the comment.  Otherwise leave as historical
   record and let ``design/LOCAL_MODELS.md`` carry the
-  authoritative timeline.
-- [ ] READMEs under ``inference-snaps/*/README.md`` likewise
+  authoritative timeline.  *(Done 2026-05-25 — 111.1 §5.1.3 /
+  §5.2.3 / §5.5.1 / §5.6.3 / §5.8.1 re-smokes did not contradict
+  the comment prose; left as historical record.)*
+- [x] READMEs under ``inference-snaps/*/README.md`` likewise
   mention ``b8589`` as the build they were validated against.
   Update each as the corresponding 111.1 re-smoke completes,
-  with the new tag and the date.
+  with the new tag and the date.  *(Done 2026-05-25 —
+  ``qwen3-coder/README.md`` (ROCm arm64 cutoff),
+  ``qwen3-14b/README.md`` (shared engine tarball), and
+  ``mistral-nemo-12b/README.md`` (attention-shape support +
+  shared engine tarball) bumped to ``b9050`` per their
+  ``design/LOCAL_MODELS.md`` §5.5.1 / §5.6.3 / §5.2.3
+  re-smokes.  ``qwen3-8b/README.md`` and
+  ``embeddinggemma/README.md`` carry no tag references —
+  nothing to bump.  ``deepseek-coder-v2-lite/README.md``
+  stays on ``b8589`` until 111.2 lands.)*
 
 ### What this phase is *not*
 
