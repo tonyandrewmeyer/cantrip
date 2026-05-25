@@ -2214,16 +2214,32 @@ default provider preset.
 
 ### 112.4 P1 — Granite 4.1-3B as a planner/router
 
-- [ ] Scaffold ``inference-snaps/granite-4.1-3b/`` from the
-  8 B sibling once 112.1 is green.
-- [ ] Smoke-test purely as a candidate for the *planner* role
+- [x] Scaffold ``inference-snaps/granite-4.1-3b/`` from the
+  8 B sibling once 112.1 is green.  *(Landed in commit
+  ``6043675``; same shape as 112.1's scaffold with the obvious
+  size / file / port (8348) swaps and smoke-check.sh extended
+  with per-call wall-clock printing so §5.9.2 can quote a direct
+  decode-rate ratio.)*
+- [x] Smoke-test purely as a candidate for the *planner* role
   in a future split-provider setup (``--planner-provider`` +
   ``--executor-provider``).  Not a charm-build candidate on its
   own — coding strength at 3 B is unknown and the survey
-  doesn't claim it.
-- [ ] If decode rate beats Granite 4.1-8B's by ≥3× and the
+  doesn't claim it.  *(Done 2026-05-25 — pre-flight clean on
+  first attempt (``/v1/models``, plain hello, synthetic
+  ``get_weather`` all pass cleanly); allowlisted in
+  ``_TOOL_CAPABLE_SNAP_NAMES`` alongside the 8 B sibling.
+  Documented in ``design/LOCAL_MODELS.md`` §5.9.2.)*
+- [x] If decode rate beats Granite 4.1-8B's by ≥3× and the
   synthetic tool call passes, note it as a candidate for the
-  short-session-mode planner path (Phase 104).
+  short-session-mode planner path (Phase 104).  *(Gate **not
+  met** — measured decode ratio is 1.95× (3-run mean: 4.1-3B
+  ~123 tok/s vs 4.1-8B ~63 tok/s on the same hardware, same
+  prompt).  Cause: Granite's hybrid mamba-2 architecture makes
+  the 8 B unusually fast for its size class — narrower size-
+  vs-speed tradeoff than typical transformer families — so the
+  3 B's speedup is ~2× rather than the ≥3× threshold.  Granite
+  4.1-3B is allowlisted but not flagged as a Phase 104 planner
+  candidate.  Recorded non-promotion.)*
 
 ### 112.5 P1 — Phi-4-Mini and Llama-3.1-8B baselines
 

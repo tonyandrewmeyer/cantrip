@@ -1358,6 +1358,81 @@ Smoke artefacts retained at:
 - ``cantrip-iter-runs/granite-4.1-8b-improve/PROMPT.txt`` —
   the verbatim §5.6.1 Run #3 prompt as fed to Granite.
 
+#### 5.9.2 Granite 4.1-3B as a planner/router (Phase 112.4 smoke, 2026-05-25)
+
+Granite 4.1-3B-Instruct (~3.4 B params, UD-Q4_K_XL ~2.15 GB on
+disk) smoked on the same b9050 substrate as the 8 B sibling.
+The 8 B's §5.9.1 result rules the Granite family out for
+autonomous charm-building on this prompt shape; the 3 B variant
+is here to answer a different question — does it decode fast
+enough to make sense as the "planner" half of a future split-
+provider setup (Phase 104 short-session mode +
+``--planner-provider`` / ``--executor-provider``)?  Phase 112.4
+sets the bar at "≥3× faster than 4.1-8B on the same hardware,
+with the synthetic tool call passing".
+
+Smoke server config under
+``inference-snaps/granite-4.1-3b/scripts/smoke-server.sh``: port
+8348, ``--ctx-size 32768``, full GPU offload, llama.cpp ``b9050``
+CUDA12 prebuild — identical to the 8 B sibling.
+
+**Pre-flight checks** (``smoke-check.sh`` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, model id ``granite-4.1-3b-UD-Q4_K_XL.gguf``, ``n_ctx_train: 131072``, ``n_params: 3.40 B``, ``n_embd: 2560`` | pass |
+| Plain hello (32-token budget) | pass — content ``"OK"``, finish=stop, 2 completion tokens flat, **wall 0.07 s**.  Same envelope shape as the 8 B (§5.9.1); the 3 B variant inherits the family substrate cleanly. |
+| Synthetic ``get_weather`` tool call | pass — ``tool_calls`` non-null, ``name="get_weather"``, ``arguments={"city": "Edinburgh"}``, ``finish=tool_calls``, 21 completion tokens, **wall 0.19 s**.  Zero ``<tool_call>`` XML leak.  ``--jinja`` round-trips Granite-3B's outbound shape via the same Unsloth chat-template fixes that worked for the 8 B; no per-family rewriter needed. |
+
+All three pre-flight checks **passed cleanly on first attempt**,
+matching the 8 B's §5.9.1 outcome.  Sub-200 ms wall-clocks are
+dominated by network round-trip + prefill, not decode — the
+load-bearing measurement is below.
+
+**Decode-rate benchmark** (3 runs, same prompt to both models, same
+hardware, no other GPU load, ``temperature=0.2``, ``max_tokens=200``):
+
+| Model | Run 1 | Run 2 | Run 3 | Mean | Wall (mean) |
+|---|---|---|---|---|---|
+| Granite 4.1-3B | 118.52 tok/s (143 toks / 1.21 s) | 128.43 tok/s (150 toks / 1.17 s) | 122.01 tok/s (129 toks / 1.06 s) | **~123 tok/s** | 1.15 s |
+| Granite 4.1-8B | 59.87 tok/s (143 toks / 2.39 s) | 65.09 tok/s (176 toks / 2.70 s) | 64.99 tok/s (170 toks / 2.62 s) | **~63 tok/s** | 2.57 s |
+
+**Ratio: 1.95× — the planner-role gate (≥3×) is *not* met.**
+
+Headline observation: the 4.1-8B is unusually fast for its size
+class because of the hybrid mamba-2 architecture (Qwen3-8B was
+40–50 tok/s at Q4 on the same class of hardware, qwen3-coder MoE
+was 5–10 tok/s; cf. §5.1 / §5.5).  Granite's 8 B sits at ~63
+tok/s — about as fast as many 4 B-class transformers — so the
+size-vs-speed tradeoff *inside* the Granite-4.1 family is much
+narrower than the typical transformer family.  The 3 B doesn't
+earn its planner-role keep here; the wiring cost of a split-
+provider setup wouldn't be repaid by a 1.95× decode-rate win.
+
+**Take-away:**
+
+Granite 4.1-3B passes every substrate check.  It's allowlisted
+in ``_TOOL_CAPABLE_SNAP_NAMES`` as an opt-in for operators who
+want a fast local model and don't need the long-form code-payload
+accuracy that disqualified the 8 B (§5.9.1).  But it does *not*
+get flagged as a Phase 104 short-session planner candidate —
+the ≥3× gate exists because split-provider setups carry real
+prompt-engineering and routing complexity, and ~2× isn't enough
+to justify it.
+
+If a future Phase 104 follow-up lowers the planner-role gate
+(say, to ≥2×, motivated by a specific workload where the 3 B's
+extra responsiveness materially helps), Granite-3B's pre-flight
+result is already on file and the snap is allowlisted.  Until
+then, this is a recorded non-promotion.
+
+Smoke artefacts retained at:
+
+- ``inference-snaps/granite-4.1-3b/scripts/smoke-check.sh`` —
+  the smoke harness, includes per-call wall-clock printing.
+- 3-run decode-rate benchmarks above (no ndjson persistence;
+  the numbers are simple ``curl`` + ``date +%s.%N`` runs).
+
 ## 6. Recommendation
 
 > **Revised after Phase 105.1.5's Qwen3-14B Run #3 (§5.6.1,
