@@ -331,6 +331,36 @@ Smoke artefacts retained at:
 - ``cantrip-iter-runs/qwen3-8b-improve/ntfy/`` — partial charm
   output (Run #2 final state)
 
+#### 5.1.3 Re-smoke on b9050 (Phase 111.1, 2026-05-25)
+
+Re-ran the §5.1.1 pre-flight checks against the same
+``inference-snaps/qwen3-8b/scripts/smoke-server.sh`` after the
+host-side llama.cpp pin moved from ``b8589`` to the Canonical-mirror
+``b9050`` CUDA12 prebuild.  Same hardware, same GGUF
+(``Qwen3-8B-Q4_K_M.gguf``), same flags
+(``--ctx-size 32768``, ``--n-gpu-layers 99``, ``--jinja``).
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, model id ``Qwen3-8B-Q4_K_M.gguf``, ``n_ctx_train: 40960`` | pass |
+| Plain hello (512-token budget) | pass — content "OK", finish=stop, **92 completion tokens including reasoning** (vs §5.1.1's 124 — ~26 % less reasoning overhead on the same prompt) |
+| Synthetic ``get_weather`` tool call | pass — clean ``tool_calls`` array, ``finish=tool_calls``, args ``{"city": "Edinburgh"}`` |
+
+The shipped ``smoke-check.sh`` uses a 32-token ``max_tokens`` budget
+for the plain-hello probe, which truncates Qwen3-8B's ``<think>``
+preamble mid-stream and reports an empty ``content`` /
+``finish=length``.  §5.1.1's pass note explicitly used a 512-token
+budget; re-running the probe at 512 tokens reproduces the original
+"content=OK, finish=stop" result.  Worth bumping the script's
+budget for any future Qwen3-family smoke so the check semantics
+match the doc, but the b9050 *substrate* behaviour is unchanged.
+
+No tool-call regression, no template-token leakage, no decode
+crash.  The §5.1.2 model-side accuracy story (50 % ``edit_file``
+failure rate on real charm files) is orthogonal to the engine and
+not re-measured here — 111.1's scope is "still passes smoke", not
+"re-evaluate as a default candidate".
+
 ### 5.2 Mistral Nemo 12B *(smoked twice — Phase 109 rewriter unblocked the chat-template wall; charm packs at improve-02 quality but the agent loop spirals after success)*
 
 - 128 K native context, native function-calling, very solid Python
@@ -551,6 +581,87 @@ Smoke artefacts retained at:
   ``charmcraft.yaml`` / ``src/charm.py`` /
   ``tests/unit/test_charm.py`` outputs
 
+#### 5.2.3 Re-smoke on b9050 (Phase 111.1, 2026-05-25)
+
+Replayed the §5.2.2 ntfy-improve prompt (byte-identical to the
+§5.6.1 Run #3 prompt) against the same starting scaffold after
+the host-side llama.cpp pin moved from ``b8589`` to the
+Canonical-mirror ``b9050`` CUDA12 prebuild.  Same hardware, same
+GGUF (``Mistral-Nemo-Instruct-2407-Q4_K_M.gguf``), same flags
+(``--ctx-size 24576``, ``--n-gpu-layers 99``, ``--jinja``).
+``--yolo`` now covers both ``ask`` permissions *and* work-queue
+CONFIRM tasks per Phase 110.2.
+
+**Pre-flight checks** (``smoke-check.sh`` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, model id ``Mistral-Nemo-Instruct-2407-Q4_K_M.gguf``, ``n_ctx_train: 1024000`` | pass |
+| Plain hello (32-token budget) | pass — content "OK", finish=stop, **2 completion tokens** (Mistral has no thinking-mode overhead, so the script's tight budget is fine here — contrast Qwen3 §5.1.3 / §5.6.3) |
+| Synthetic ``get_weather`` tool call | pass — clean ``tool_calls`` array, args ``{"city": "Edinburgh"}``, finish=tool_calls.  Phase 109's Mistral rewriter + parser still round-trip correctly through the Tekken template on b9050. |
+
+**Improve replay:**
+
+- **Wall clock 1m 41s, exit code 0, autonomous ``charmcraft_pack``,
+  charm packed at 1.13 MB.**  Versus the §5.2.2 baseline which
+  reached an improve-02-quality charm at minute 11 then burned
+  ~4 more minutes in a post-pack ``plan_tasks`` spiral, this run
+  packed and stopped in 1m 41s flat with zero spiral.
+- Tool sequence: 6 invocations, 100 % success:
+  1. ``read_file`` charmcraft.yaml (1 read; model skipped reading
+     src/charm.py and tests/unit/test_charm.py before writing)
+  2. ``write_file`` charmcraft.yaml (2739 B)
+  3. ``write_file`` src/charm.py (1494 B)
+  4. ``write_file`` tests/unit/test_charm.py (1024 B)
+  5. ``charmcraft_pack`` ✓ (10.3 s)
+  6. ``charmcraft_pack`` ✓ (7.6 s)
+- The second pack came from a single 508-char assistant
+  continuation that role-played ``**User:** Great! Now let's
+  test the charm. Please run the charmcraft pack command…
+  **Cantrip:** Understood. I will run …`` — the Mistral
+  chat-template's still-occasional fake-dialogue tail, but here
+  it converged after one extra real pack rather than spiralling
+  through ``plan_tasks``.  Phase 110.1's planner gate stayed
+  dormant (zero ``plan_tasks`` invocations); Phase 110.2's
+  ``--yolo`` CONFIRM-auto-approval stayed dormant too (zero
+  CONFIRM tasks emitted).  The §5.2.2 failure modes simply
+  didn't materialise on this run — whether that's b9050 substrate
+  or Mistral's inherent stochasticity, N=1 can't say, but Phase
+  110 remains correct insurance.
+
+**Model-output deltas vs baseline:**
+
+- ``charmcraft.yaml`` actually **regained** the canonical COS
+  relation names (``metrics-endpoint`` / ``logging`` /
+  ``grafana-dashboard``) that qwen3-14b's b9050 run lost
+  (§5.6.3) — Mistral on b9050 hits the prompt spec on this axis
+  better than Qwen3-14B does on the same prompt and substrate.
+- ``src/charm.py`` honoured the prompt-specified
+  ``self._tracing = ops_tracing.Tracing(self, "tracing")``
+  constructor exactly (vs qwen3-14b's substitution to
+  ``ops_tracing.setup(self)``), 1× ``super().__init__``, 4×
+  ``framework.observe`` — clean shape.
+- ``tests/unit/test_charm.py``: 28 lines (within the prompt's
+  "under 100 lines" cap), but **uses Harness, not Scenario**
+  (``from ops.testing import Harness`` + ``Harness(NtfyCharm)``).
+  The prompt explicitly said "using ``ops.testing.Context`` (NOT
+  Harness)"; Mistral didn't honour the negative instruction, same
+  Mistral-side negative-adherence shape §5.2.2 already flagged
+  (where the model wrote ``Harness`` boilerplate despite the
+  prompt's ``Context`` directive).  Phase 110 is orthogonal to
+  this; the cure is prompt re-engineering or model swap, not an
+  agent-loop fix.
+
+The substrate is healthy and meaningfully faster on b9050 (1m 41s
+vs ~15 min before the bail); the post-pack spiral didn't recur on
+this single trial; the Harness-not-Context model-side regression
+persists.  No b9050 *substrate* regression for this candidate.
+
+Smoke artefacts retained at
+``cantrip-iter-runs/mistral-nemo-12b-improve-b9050/``
+(``run.ndjson`` + empty ``run.stderr`` + ``start.txt`` /
+``end.txt`` + ``ntfy_amd64.charm`` + working tree).
+
 ### 5.3 Phi-4-Mini *(speed alternative)*
 
 - 3.8 B parameters, 128 K context, native tool calling.
@@ -594,6 +705,113 @@ Smoke artefacts retained at:
   Qwen3-8B produced ~30 %.  Until a different model demonstrates
   similar end-to-end completeness, qwen3-coder stays the documented
   default.
+
+#### 5.5.1 Re-pack + re-smoke on b9050 (Phase 111.1, 2026-05-25)
+
+Re-packed ``inference-snaps/qwen3-coder/`` with ``snapcraft pack``
+against the freshly-pinned ``llamacpp_b9050.comp`` /
+``llamacpp-cuda_b9050.comp`` / ``llamacpp-rocm_b9050.comp`` /
+``model-30b-a3b-q4-k-m-gguf_q4-k-m.comp`` components.  First
+attempt hung on the ``craft-providers`` LXD warm-up
+(``snap unset system proxy.http`` timed out after 60 s while
+snapd inside the build instance was still doing first-boot
+reconciliation); pre-warming the instance with ``lxc --project
+snapcraft exec … snap wait system seed.loaded`` then re-running
+``snapcraft pack`` produced all five artefacts cleanly.  Local
+install via ``snap install --dangerous`` for the snap +
+``llamacpp_b9050`` (CPU base, required even when the GPU engine
+is selected) + ``llamacpp-cuda_b9050`` + the model component.
+
+**Engine selection:** ``use-engine --auto`` falls back to ``cpu``
+because the snap's confined sandbox can't probe ``nvidia-smi``
+(it's at ``/usr/bin/nvidia-smi`` on the host but invisible
+inside the snap), and ``nvidia-gpu`` is gated behind ``devel``
+in the engine evaluator.  Explicit ``use-engine nvidia-gpu``
+picks it up regardless.  Auto-detection is the gap, not the
+substrate.
+
+**Snap runtime confirmation** (``journalctl`` after
+``snap start``):
+
+- llama.cpp build ``b9050`` (cuda12), Q4_K_M GGUF loaded
+- ``CUDA0 compute buffer = 544 MiB``; KV cache on CPU
+  (``CPU KV buffer = 3072 MiB``) — same partial-offload shape
+  as the §5.5 baseline
+- **Fused Gated Delta Net enabled** (autoregressive + chunked) —
+  the b9000+ kernel work §5.7 flagged as the DeepSeek-V2-Lite
+  unblock target is also live for qwen3-coder
+- Flash Attention auto-enabled
+- ``thinking = 0`` in the chat-template init (qwen3-coder is not
+  a thinking model, so smoke-check's 32-token plain-hello budget
+  is fine here — contrast Qwen3-8B / 14B §5.1.3 / §5.6.3)
+- ``n_ctx_seq 32768`` per slot, 4 slots, ``n_ctx_train 262144``
+  (model can natively do 256 K; snap pins it at 32 K to fit
+  memory)
+- prompt-cache enabled (8192 MiB) — new recent llama.cpp feature
+
+**Pre-flight checks** (curled against
+``http://10.42.160.1:8332`` from the VM, via the existing
+forwarder):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, id ``Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf``, ``n_ctx_train: 262144`` | pass |
+| Plain hello (32-token budget) | pass — content "OK", finish=stop, **2 completion tokens** |
+| Synthetic ``get_weather`` tool call | pass — clean ``tool_calls`` array, args ``{"city":"Edinburgh"}``, finish=tool_calls, 23 completion tokens |
+
+**Long-generation reconnect re-check (the §1 failure mode):**
+replayed the same improve-02 prompt the other three b9050
+candidates used (byte-identical to §5.6.1 Run #3 and §5.2.2).
+
+- **Wall clock 13m 06s, exit code 0, autonomous ``charmcraft_pack``,
+  charm packed at 1.13 MB.  Empty stderr — zero streaming-
+  reconnect events fired.**  Phase 102's reconnect machinery
+  didn't have to do any work; the partial-offload generations
+  (incl. the 5054-byte ``write_file`` to ``src/charm.py``)
+  completed without dropping.  Compare the §1 baseline shape:
+  "the snap dropped connections mid-stream on long generations
+  (Phase 102's reconnect work covers this)" — that failure mode
+  did not recur on b9050 for this run.
+- Tool sequence (clean throughout, mirroring qwen3-14b's b9050
+  shape but slower per call as expected from partial offload):
+  1. ``read_file`` charmcraft.yaml ✓
+  2. ``read_file`` src/charm.py ✓
+  3. ``read_file`` tests/unit/test_charm.py ✓
+  4. ``write_file`` charmcraft.yaml (2744 B) ✓
+  5. ``write_file`` src/charm.py (5054 B) ✓
+  6. ``write_file`` tests/unit/test_charm.py (3969 B) ✓
+  7. ``charmcraft_pack`` ✓ (42 s — vs ~8 s for GPU-resident
+     candidates; consistent with partial-offload decode rate)
+
+**Model-output deltas vs the other b9050 candidates:**
+
+- ``charmcraft.yaml`` relation *names* regressed to the
+  interface names (``prometheus_scrape`` / ``loki_push_api`` /
+  ``grafana_dashboard``) — same Qwen3-family pattern qwen3-14b
+  showed (§5.6.3) and that Mistral did *not* show.  Tracks the
+  model family, not the engine.
+- ``src/charm.py`` honoured ``self._tracing = ops_tracing.Tracing
+  (self, "tracing")`` exactly (better than qwen3-14b's
+  ``setup()`` substitution), 1× ``super().__init__``, 4×
+  ``framework.observe`` — clean shape.
+- ``tests/unit/test_charm.py``: 134 lines (over the prompt's
+  "under 100 lines" cap, like qwen3-14b's 137), but **correctly
+  used ``ops.testing.Context``** (Scenario, not Harness) —
+  qwen3-coder honoured the negative ``NOT Harness`` instruction
+  Mistral §5.2.3 missed.
+
+**Phase 111.1 verdict for qwen3-coder:** ``b9050``-built snap
+launches cleanly, exposes the OpenAI endpoint on 8332,
+round-trips tool calls through ``--jinja``, completes a full
+ntfy-improve run in 13 minutes with zero streaming drops.  No
+substrate regression; the long-generation reconnect failure mode
+did not recur in this trial.  qwen3-coder stays the documented
+local default; engine-selection confined-snap gap is a separate
+quality-of-life item, not 111.1 scope.
+
+Smoke artefacts retained at
+``cantrip-iter-runs/qwen3-coder-improve-b9050/`` (run.ndjson +
+empty run.stderr + start/end + ntfy_amd64.charm + working tree).
 
 ### 5.6 Qwen3-14B *(smoked — first local model to match improve-02 autonomously)*
 
@@ -805,6 +1023,82 @@ limit (which `gemini-2.5-pro` hit too).  Cost ≈ $40–50
 prompts).  Run artefacts — both models, all attempts, asciinema casts
 + `.cantrip` session DBs — under `~/cantrip-runs/` on the eval host.
 
+#### 5.6.3 Re-smoke on b9050 (Phase 111.1, 2026-05-25)
+
+Replayed §5.6.1 Run #3 against the same prompt and starting
+scaffold (`cantrip-iter-runs/improve-01/ntfy/`) after the
+host-side llama.cpp pin moved from ``b8589`` to the Canonical-
+mirror ``b9050`` CUDA12 prebuild.  Same hardware, same GGUF
+(``Qwen_Qwen3-14B-Q4_K_M.gguf``), same flags (``--ctx-size
+16384``, ``--n-gpu-layers 99``, ``--jinja``).  Invocation
+preserved verbatim except for the new engine:
+
+```
+cantrip run . --provider inference-snap --snap qwen3-14b \
+  --base-url http://10.42.160.1:8340/v1 \
+  --no-tui --yolo --json --print "<Run #3 prompt>"
+```
+
+**Pre-flight checks** (`smoke-check.sh` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, model id ``Qwen_Qwen3-14B-Q4_K_M.gguf``, ``n_ctx_train: 32768`` | pass |
+| Plain hello (512-token budget) | pass — content "OK", finish=stop, **158 completion tokens** (vs §5.6.1's 97 — ~63 % *more* reasoning overhead on the same prompt, opposite direction from Qwen3-8B on the same b9050 bump) |
+| Synthetic ``get_weather`` tool call | pass — clean ``tool_calls`` array, args ``{"city": "edinburgh"}``, finish=tool_calls.  The shipped ``smoke-check.sh`` budget (``max_tokens: 128``) is too tight for the reasoning preamble and truncates the args mid-stream; re-ran at 1024 tokens to confirm the substrate. |
+
+**Run #3 replay:**
+
+- **Wall clock 2m 46s, exit code 0, autonomous ``charmcraft_pack``,
+  charm packed at 1.13 MB.**  ~48 % faster than the §5.6.1 Run #3
+  baseline (5m 19s, 1.19 MB) on the same hardware — most of the
+  delta is consistent with the fused-kernel work b9050 picked up
+  over the b8589 → b9050 window.
+- Tool sequence identical to baseline (7 invocations, 100 %
+  success, zero retries, empty stderr, no compaction):
+  1. ``read_file`` charmcraft.yaml ✓
+  2. ``read_file`` src/charm.py ✓
+  3. ``read_file`` tests/unit/test_charm.py ✓
+  4. ``write_file`` charmcraft.yaml (2614 B) ✓
+  5. ``write_file`` src/charm.py (4986 B) ✓
+  6. ``write_file`` tests/unit/test_charm.py (4640 B) ✓
+  7. ``charmcraft_pack`` ✓ (7.7 s) → ``ntfy_amd64.charm`` (1.13 MB)
+- Phase 110.1's convergence flag is consequently dormant insurance
+  here — the model emitted no post-pack ``plan_tasks`` call.  Same
+  outcome shape as §5.6.1 Run #3 on b8589.
+
+**Model-output deltas vs baseline (substrate-orthogonal):**
+
+- Relation *names* under ``requires:`` regressed from the
+  canonical COS convention (``metrics-endpoint`` / ``logging`` /
+  ``grafana-dashboard``) to the interface names themselves
+  (``prometheus_scrape`` / ``loki_push_api`` /
+  ``grafana_dashboard``).  Functionally equivalent — Juju matches
+  on interface — but breaks the standard COS-lite chain operators
+  expect to wire by name.  Prompt asks for the canonical names
+  verbatim; b8589 honoured them, b9050 didn't.
+- ``ops_tracing`` API: ``ops_tracing.setup(self)`` (the modern
+  convenience helper) instead of the prompt-specified
+  ``self._tracing = ops_tracing.Tracing(self, "tracing")``
+  constructor.  Both work; the prompt was explicit about the
+  constructor shape, baseline honoured it.
+- ``tests/unit/test_charm.py``: 137 lines (vs baseline's 21 and
+  the prompt's "under 100 lines, 3-5 simple tests").  Scenario-
+  framed (``ops.testing.Context``), not Harness, so the
+  framework constraint held; the line cap did not.
+
+None of those three deltas are a *substrate* regression — they
+are decoding-quality / prompt-adherence shifts on the same charm-
+build prompt.  111.1's scope is "still passes smoke and still
+packs autonomously", which b9050 clears comfortably.  Whether
+the quality deltas matter enough to revisit the §5.6 selection
+verdict is a §5 / future-phase question, not a Phase 111 one.
+
+Smoke artefacts retained at
+``cantrip-iter-runs/qwen3-14b-improve-b9050/`` (``run.ndjson`` +
+empty ``run.stderr`` + ``start.txt`` / ``end.txt`` +
+``ntfy_amd64.charm`` + working tree).
+
 ### 5.7 DeepSeek-Coder-V2-Lite-Instruct *(blocked on infrastructure — b8589 build doesn't run this model end-to-end)*
 
 - 16 B total parameters, **2.4 B active** per inference (MoE).
@@ -850,6 +1144,40 @@ Until either lands, DeepSeek-Coder-V2-Lite stays blocked.  Smoke
 artefacts retained at
 ``inference-snaps/deepseek-coder-v2-lite/`` for re-evaluation
 when the llama.cpp version changes.
+
+### 5.8 EmbeddingGemma-300M *(embedding-only sidecar, not a §5 chat candidate)*
+
+Not part of the chat-model selection above — included here only
+because Phase 111.1 also covers re-validating its snap on b9050.
+EmbeddingGemma serves Cantrip's ``--embed-provider openai``
+(or ``--embed-provider inference-snap`` once the snap is added to
+``_SNAP_DEFAULTS``) for docs-index retrieval and reranking.
+
+#### 5.8.1 Re-pack + re-smoke on b9050 (Phase 111.1, 2026-05-25)
+
+Re-packed ``inference-snaps/embeddinggemma/`` against the
+freshly-pinned ``llamacpp_b9050.comp`` (single-engine, CPU-only —
+the 300 M Q8_0 weights run in well under a watt of GPU time saved).
+Same ``snapcraft pack`` → ``snap install --dangerous`` flow as
+qwen3-coder; the LXD warm-up pre-warm trick wasn't needed for this
+build.  Installed components: snap + ``llamacpp_b9050`` (CPU base)
++ ``model-300m-q8-0-gguf`` (model component, unchanged from b8589
+since the GGUF didn't move).
+
+**Pre-flight checks** (from the VM via ``cantrip-inference-proxy
+@8331.service``):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, id ``embeddinggemma-300m.Q8_0.gguf``, ``n_ctx_train: 2048``, ``n_embd: 768``, ``n_params: ~303 M`` | pass |
+| ``/v1/embeddings`` single input (``"Juju is an application modelling tool"``) | pass — 768-dim vector returned, 9 prompt tokens, sensible value distribution (mixed signs, no NaN/Inf, no obvious axis bias) |
+| ``/v1/embeddings`` batch input (``["charm","relation","action","pebble"]``) | pass — 4 × 768-dim vectors, 13 total prompt tokens |
+
+Substrate green on b9050.  No retrieval-quality re-eval here —
+the goal was "embedding HTTP surface still answers correctly",
+which the snap clears.  If a future Phase wants to compare
+recall@k against the b8589 baseline on Cantrip's docs index,
+that's a downstream evaluation, not 111.1 scope.
 
 ## 6. Recommendation
 

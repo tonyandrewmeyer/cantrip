@@ -19,6 +19,29 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   DeepSeek-V2-Lite) is the rest of Phase 111.
 
 ### Documentation
+- **Phase 111.1 — re-smoke wave on llama.cpp b9050.**  Validated
+  the engine bump end-to-end across all five candidates: qwen3-8b
+  and qwen3-14b host smoke-servers, mistral-nemo-12b host smoke-
+  server, the qwen3-coder snap (re-packed with the new
+  ``llamacpp-cuda_b9050`` component), and the embeddinggemma snap
+  (re-packed with the new ``llamacpp_b9050`` component).  Five
+  new dated addenda in ``design/LOCAL_MODELS.md`` (§5.1.3, §5.2.3,
+  §5.5.1, §5.6.3, §5.8) record substrate-check outcomes, full
+  improve-replay timings (qwen3-14b 2m 46s, mistral-nemo-12b
+  1m 41s, qwen3-coder 13m 06s — all exit 0, autonomous pack),
+  and per-candidate model-output deltas vs the b8589 baselines.
+  qwen3-coder's §1 long-generation reconnect failure mode did not
+  recur (zero streaming reconnects fired over the 13 min run);
+  Phase 110.1's post-pack convergence flag and 110.2's --yolo
+  CONFIRM coverage stayed dormant insurance.  Two infrastructure
+  gotchas surfaced and were documented: ``smoke-check.sh``
+  ships a 32-token plain-hello budget that truncates Qwen3-family
+  reasoning preambles (script-side, not substrate), and snapcraft's
+  LXD warm-up can time out on ``snap unset system proxy.http``
+  inside a fresh build instance — pre-warming via
+  ``lxc exec ... snap wait system seed.loaded`` clears it.  Phase
+  111.2 (DeepSeek-Coder-V2-Lite retry on b9050) and 111.3
+  (historical-comment cleanup) remain open.
 - **Late-May 2026 local-model candidate survey.**  New design
   note ``design/LOCAL_MODELS_SURVEY_2026-05.md`` captures a
   fresh sweep of open-weight LLMs released since the original

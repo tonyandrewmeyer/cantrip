@@ -2097,25 +2097,53 @@ phase.
 
 ### 111.1 P0 — Re-smoke each candidate on b9050
 
-- [ ] ``inference-snaps/qwen3-8b/scripts/smoke-server.sh`` —
+- [x] ``inference-snaps/qwen3-8b/scripts/smoke-server.sh`` —
   re-run §5.1.1 smoke; confirm ``/v1/models``, plain-hello, and
   synthetic ``get_weather`` tool call still pass.  Record any
   decode-rate / TTFT delta against the b8589 baseline in
-  ``design/LOCAL_MODELS.md``.
-- [ ] ``inference-snaps/qwen3-14b/scripts/smoke-server.sh`` —
+  ``design/LOCAL_MODELS.md``.  *(Done — §5.1.3.  All three checks
+  pass; plain-hello reasoning overhead dropped ~26 % vs §5.1.1.
+  Surfaced ``smoke-check.sh``'s 32-token plain-hello budget being
+  too tight for Qwen3-family ``<think>`` preambles — documented
+  in the addendum.)*
+- [x] ``inference-snaps/qwen3-14b/scripts/smoke-server.sh`` —
   same protocol; the §5.6 Run #3 charm-build prompt is the
-  load-bearing comparison.
-- [ ] ``inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh``
+  load-bearing comparison.  *(Done — §5.6.3.  Replay packed
+  autonomously in 2m 46s vs §5.6.1's 5m 19s baseline (~48 %
+  faster) with the same 7-tool shape, 100 % success, empty
+  stderr.  Three substrate-orthogonal model-output deltas
+  recorded: regression on canonical COS relation names,
+  ``ops_tracing.setup`` substituted for the constructor, test
+  file 137 lines vs the prompt's 100-line cap.)*
+- [x] ``inference-snaps/mistral-nemo-12b/scripts/smoke-server.sh``
   — re-run the §5.2 / Phase 109.3 smoke; the post-pack spiral
   (Phase 110) is orthogonal, but a kernel-level change *could*
-  alter decode shape.
-- [ ] ``inference-snaps/qwen3-coder/`` (snap) — re-pack with
+  alter decode shape.  *(Done — §5.2.3.  Replay packed in
+  1m 41s with zero ``plan_tasks`` calls and zero CONFIRM tasks
+  vs §5.2.2's ~15 min before bail; Phase 110.1 / 110.2 stayed
+  dormant insurance.  Canonical COS relation names kept;
+  ``ops_tracing.Tracing`` constructor honoured; Harness-not-
+  Context regression on the test file persists.)*
+- [x] ``inference-snaps/qwen3-coder/`` (snap) — re-pack with
   ``snapcraft`` against the new ``llamacpp_b9050`` components;
   re-run the qwen3-coder smoke; check the long-generation
-  reconnect failure mode (§1) hasn't worsened.
-- [ ] ``inference-snaps/embeddinggemma/`` (snap) — re-pack;
+  reconnect failure mode (§1) hasn't worsened.  *(Done — §5.5.1.
+  ``snapcraft pack`` produced all five b9050 components after
+  pre-warming the LXD build instance with ``snap wait system
+  seed.loaded`` (``craft-providers`` warm-up timed out on
+  ``snap unset system proxy.http`` otherwise).  Runtime
+  confirms fused Gated Delta Net + Flash Attention enabled.
+  Improve replay packed in 13m 06s with **zero streaming
+  reconnects** — the §1 failure mode did not recur on this trial.
+  Engine-selection inside the confined snap can't see
+  ``nvidia-smi`` and falls back to CPU; explicit
+  ``use-engine nvidia-gpu`` picks the CUDA engine regardless.)*
+- [x] ``inference-snaps/embeddinggemma/`` (snap) — re-pack;
   confirm the embedding HTTP surface still answers
-  ``/v1/embeddings`` correctly.
+  ``/v1/embeddings`` correctly.  *(Done — §5.8.1.  ``snapcraft
+  pack`` clean (no LXD warm-up issue this time), CPU-only single-
+  engine snap.  Single + batch ``/v1/embeddings`` round-trip
+  return 768-dim vectors with sensible distributions.)*
 
 ### 111.2 P0 — Retry DeepSeek-Coder-V2-Lite-Instruct
 
