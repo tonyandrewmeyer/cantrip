@@ -1578,6 +1578,94 @@ Smoke artefacts retained at:
   harness with per-call wall-clock printing.
 - No persisted ndjson — the substrate fact is recorded above.
 
+### 5.12 Ling-mini-2.0 *(bailing_moe MoE — substrate green, tool calls round-trip cleanly)*
+
+inclusionAI's Ling-mini-2.0 (16.26 B total / 1.43 B active per
+token, 1/32 sparsity bailing_moe MoE; Q4_K_M ~9.94 GB on disk)
+smoked on b9050 as the Phase 112.3 architecture-support check.
+Two questions resolved cleanly, one with an unexpected upside:
+
+- **bailing_moe is supported on llama.cpp b9050.**  The roadmap's
+  predicted upstream-filing condition (arch-load failure or
+  bailing_moe template gap) didn't fire — the model loaded and
+  served via the Canonical b9050 CUDA12 prebuild without a
+  ``--chat-template`` override.
+- **Ling-mini-2.0 emits OpenAI-shaped ``tool_calls`` via
+  ``--jinja``.**  The model card doesn't claim function-calling
+  training, so a substrate-clean-but-tool_calls-null outcome was
+  the most likely branch.  The model produced a clean tool call
+  anyway: ``name="get_weather"``, ``arguments={"city":
+  "Edinburgh"}``, ``finish=tool_calls``, no leaks.  Either the
+  base bailing_moe checkpoint quietly inherited tool-calling
+  behaviour from upstream training, or llama.cpp's ``--jinja``
+  template-rendering pipeline is robust enough that a well-shaped
+  request elicits the right output even without explicit
+  fine-tuning — both readings are interesting.
+
+Smoke server config under
+``inference-snaps/ling-mini-2.0/scripts/smoke-server.sh``: port
+8354, ``--ctx-size 32768``, full GPU offload, llama.cpp ``b9050``
+CUDA12 prebuild, no ``--reasoning-format`` and no
+``--chat-template`` override (the embedded bailing_moe template
+worked unmodified).  Note one survey-vs-reality delta worth
+flagging: the GGUF reports ``n_ctx_train: 32768``, **not** the
+128 K the
+``design/LOCAL_MODELS_SURVEY_2026-05.md`` shortlist implied.  The
+model is *not* a long-context option in the candidate matrix.
+
+#### 5.12.1 Measured (Phase 112.3 smoke, 2026-05-26)
+
+The first overnight attempt downloaded only 2.49 GB of the 9.94 GB
+GGUF before ``curl --fail`` exited zero on a truncated transfer
+(see ``prepare-models.sh`` history at commit ``91893df`` — the
+script now uses ``curl -C -`` to resume + a post-download size
+check to fail fast on truncation).  The smoke below ran on the
+re-fetched complete file.
+
+**Pre-flight checks** (``smoke-check.sh`` from the VM):
+
+| Check | Outcome |
+|---|---|
+| ``/v1/models`` reachable, id ``inclusionAI_Ling-mini-2.0-Q4_K_M.gguf``, ``n_ctx_train: 32768``, ``n_params: 16.26 B``, ``n_vocab: 157184`` | pass — bailing_moe arch supported on b9050 (no ``unknown architecture`` error, no ``--chat-template`` override needed) |
+| Plain hello (32-token budget) | pass — content ``"OK"``, finish=stop, 2 completion tokens, **wall 0.14 s**.  No template leak (no stray ``<\|...\|>`` markers), no reasoning preamble. |
+| Synthetic ``get_weather`` tool call | **pass (branch a)** — ``tool_calls`` non-null, ``name="get_weather"``, ``arguments={"city": "Edinburgh"}``, ``finish=tool_calls``, 25 completion tokens, wall 0.16 s.  Zero ``<\|python_tag\|>`` / raw-JSON leak into content; substrate parsed the model's tool-call shape into the OpenAI envelope cleanly. |
+
+All three checks pass cleanly on first attempt (post-truncation
+recovery).  Branch (a) of the smoke-check pass criteria — "tool
+calls work AND model is trained for them" — is the surprising-
+but-welcome outcome the roadmap listed.  No upstream filing, no
+template-override workaround.
+
+**Take-away:**
+
+Ling-mini-2.0 passes every substrate check the bailing_moe
+architecture posed and exposes a working tool-call surface.
+Allowlisted in ``_TOOL_CAPABLE_SNAP_NAMES`` as an
+operator-opt-in candidate.
+
+Not promoted to a documented default — coding accuracy at the
+1.43 B-active scale is unknown for charm-building (no charm-
+build run executed; Phase 112.3 scope was the substrate check,
+and Qwen3-14B remains the front-runner from §5.6).  The
+1/32 sparsity geometry makes this an interesting candidate for
+future workloads where decode rate at moderate quality matters,
+since active-parameter cost is well below the 8 B dense models
+in the matrix.
+
+Counter-control for §5.10 (Phi-4-mini): Ling-mini-2.0's clean
+``--jinja`` tool-call round-trip on the same b9050 substrate
+reinforces the §5.11 (Llama 3.1-8B) conclusion that Phi-4-mini's
+gap is template- or model-specific, not a global b9050 issue.
+
+Smoke artefacts retained at:
+
+- ``inference-snaps/ling-mini-2.0/scripts/smoke-check.sh`` —
+  harness with per-call wall-clock printing.
+- ``inference-snaps/ling-mini-2.0/scripts/smoke-server.sh`` —
+  exposes ``CHAT_TEMPLATE`` env var (unused; embedded template
+  worked).
+- No persisted ndjson — the substrate fact is recorded above.
+
 ## 6. Recommendation
 
 > **Revised after Phase 105.1.5's Qwen3-14B Run #3 (§5.6.1,
