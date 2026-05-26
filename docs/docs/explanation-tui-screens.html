@@ -58,6 +58,7 @@
       <li><a href="#graph">Integration graph</a></li>
       <li><a href="#traces">Traces and COS endpoints</a></li>
       <li><a href="#status-panes">Dev and COS status panes</a></li>
+      <li><a href="#design-questions">Design questions</a></li>
       <li><a href="#confirmations">Confirmation prompts</a></li>
       <li><a href="#shell-mode">Shell mode</a></li>
     </ul>
@@ -236,6 +237,21 @@ zeroing in on apps that need attention); <kbd>R</kbd> refreshes
 against the live status. When a COS model is connected, both
 models appear in the one list: a <code>── Dev model ──</code> section
 followed by a <code>── COS model ──</code> section.</p>
+<h3>Relation detail</h3>
+<p>Clicking (or pressing <kbd>Enter</kbd> on) a relation row opens
+the <strong>Relation detail</strong> modal, which shells out to <code>juju show-unit</code> and renders both sides of the relation as labelled
+databag blocks: the local-application databag, every related
+unit's databag, and an <strong>Asymmetries</strong> footer listing keys that
+appear on only one side. The asymmetries block is the point of
+the screen &mdash; a missing key on one side is usually the bug
+behind a <code>waiting</code> or <code>blocked</code> status, and the modal lets you
+confirm it without dropping out of Cantrip to type the
+<code>juju show-unit</code> invocation by hand. <kbd>R</kbd> refreshes
+against the live model so you can re-open after the agent
+nudges a relation; <kbd>Esc</kbd> closes. The modal degrades
+gracefully when <code>juju</code> is missing or the unit name no longer
+exists, printing the underlying error rather than a blank
+panel.</p>
 <h2 id="traces">Traces and COS endpoints</h2>
 <p>The <kbd>F4</kbd> <strong>Debug</strong> screen lists the URLs the
 agent uses to inspect the COS stack &mdash; Prometheus, Loki, Tempo,
@@ -265,6 +281,33 @@ consume.</li>
 <p>Both panes refresh from the event watcher, so they stay current
 without polling, and scroll rather than clip when the content
 grows past the pane height.</p>
+<h2 id="design-questions">Design questions</h2>
+<p>Before a from-scratch build the agent often has a handful of
+design questions it would rather ask up front than discover the
+wrong answer to mid-build &mdash; which OCI image to start from, which
+relation to model first, whether the workload needs an actions
+hook. These open a <strong>Design questions</strong> modal that walks the
+list one at a time.</p>
+<p>Each question shows its title, a one-of-N progress indicator
+(<code>Question 2 of 5</code>), the question body, a column of
+<strong>suggestion buttons</strong> seeded by the agent (click one to answer),
+and a free-form <code>Type a custom answer and press Enter&hellip;</code> input
+for replies that don't match a suggestion. Two more buttons sit
+underneath:</p>
+<ul>
+<li><strong>Skip this question</strong> &mdash; record no answer and move on. The
+agent re-asks later if the gap blocks progress.</li>
+<li><strong>← Previous question</strong> &mdash; jump back to revise an earlier
+answer. <kbd>←</kbd> and <kbd>P</kbd> are bound to the same
+action; <kbd>Esc</kbd> cancels the whole modal and returns the
+agent to free-form chat.</li>
+</ul>
+<p>When the last question is answered the modal dismisses itself and
+the answers land in the session store as design decisions, so a
+<code>cantrip resume</code> later in the day picks up the same context
+without re-asking. The Web UI presents the same questions inline
+in the chat panel instead of a modal &mdash; the answers travel through
+the same store either way.</p>
 <h2 id="confirmations">Confirmation prompts</h2>
 <p>Work that affects the outside world &mdash; pushing a branch,
 creating a GitHub repo, working on a triaged issue, spending a

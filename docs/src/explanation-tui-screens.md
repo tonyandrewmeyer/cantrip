@@ -14,6 +14,7 @@ on_this_page:
   - { anchor: "graph", label: "Integration graph" }
   - { anchor: "traces", label: "Traces and COS endpoints" }
   - { anchor: "status-panes", label: "Dev and COS status panes" }
+  - { anchor: "design-questions", label: "Design questions" }
   - { anchor: "confirmations", label: "Confirmation prompts" }
   - { anchor: "shell-mode", label: "Shell mode" }
 ---
@@ -154,6 +155,24 @@ against the live status. When a COS model is connected, both
 models appear in the one list: a `── Dev model ──` section
 followed by a `── COS model ──` section.
 
+### Relation detail
+
+Clicking (or pressing <kbd>Enter</kbd> on) a relation row opens
+the **Relation detail** modal, which shells out to `juju
+show-unit` and renders both sides of the relation as labelled
+databag blocks: the local-application databag, every related
+unit's databag, and an **Asymmetries** footer listing keys that
+appear on only one side. The asymmetries block is the point of
+the screen — a missing key on one side is usually the bug
+behind a `waiting` or `blocked` status, and the modal lets you
+confirm it without dropping out of Cantrip to type the
+`juju show-unit` invocation by hand. <kbd>R</kbd> refreshes
+against the live model so you can re-open after the agent
+nudges a relation; <kbd>Esc</kbd> closes. The modal degrades
+gracefully when `juju` is missing or the unit name no longer
+exists, printing the underlying error rather than a blank
+panel.
+
 {#traces}
 ## Traces and COS endpoints
 
@@ -188,6 +207,37 @@ together with <kbd>F2</kbd>:
 Both panes refresh from the event watcher, so they stay current
 without polling, and scroll rather than clip when the content
 grows past the pane height.
+
+{#design-questions}
+## Design questions
+
+Before a from-scratch build the agent often has a handful of
+design questions it would rather ask up front than discover the
+wrong answer to mid-build — which OCI image to start from, which
+relation to model first, whether the workload needs an actions
+hook. These open a **Design questions** modal that walks the
+list one at a time.
+
+Each question shows its title, a one-of-N progress indicator
+(`Question 2 of 5`), the question body, a column of
+**suggestion buttons** seeded by the agent (click one to answer),
+and a free-form `Type a custom answer and press Enter…` input
+for replies that don't match a suggestion. Two more buttons sit
+underneath:
+
+- **Skip this question** — record no answer and move on. The
+  agent re-asks later if the gap blocks progress.
+- **← Previous question** — jump back to revise an earlier
+  answer. <kbd>←</kbd> and <kbd>P</kbd> are bound to the same
+  action; <kbd>Esc</kbd> cancels the whole modal and returns the
+  agent to free-form chat.
+
+When the last question is answered the modal dismisses itself and
+the answers land in the session store as design decisions, so a
+`cantrip resume` later in the day picks up the same context
+without re-asking. The Web UI presents the same questions inline
+in the chat panel instead of a modal — the answers travel through
+the same store either way.
 
 {#confirmations}
 ## Confirmation prompts

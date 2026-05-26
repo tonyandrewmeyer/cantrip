@@ -1364,6 +1364,57 @@ resume</code> picks up the same value without the
 <code>/goal</code> issued mid-Ralph takes effect on the very
 next iteration without restarting the loop.
 
+### Goal budget
+
+A goal budget caps how much autonomous work a single goal may
+consume before the executor stops picking up new tasks and marks
+the queue <code>BUDGET LIMITED</code>.  Useful when you want to
+let Cantrip iterate unattended but don't want it to spend
+unbounded tokens or time on a stubborn task.
+
+<dl>
+  <dt><code>/budget</code></dt>
+  <dd>
+    Show current usage against the configured caps — iterations
+    consumed, prompt and completion tokens spent, and the
+    remaining headroom on each axis.  Without a budget set,
+    prints a one-line hint pointing at the flags below.
+  </dd>
+
+  <dt><code>/budget --max-iterations N</code></dt>
+  <dd>
+    Set or raise the iteration cap (one iteration ≈ one
+    subagent task).  When a cap is raised, tasks previously
+    blocked by the old limit are moved back to pending so the
+    executor picks them up on the next poll.
+  </dd>
+
+  <dt><code>/budget --max-prompt-tokens N</code></dt>
+  <dd>
+    Set or raise the prompt-token cap aggregated across every
+    subagent run for the current goal.
+  </dd>
+
+  <dt><code>/budget --max-completion-tokens N</code></dt>
+  <dd>
+    Set or raise the completion-token cap aggregated across
+    every subagent run for the current goal.
+  </dd>
+
+  <dt><code>/budget --clear</code></dt>
+  <dd>
+    Drop the budget entirely so the autonomous loop runs
+    uncapped again.  Blocked tasks return to pending.
+  </dd>
+</dl>
+
+Caps must be non-negative integers; setting a cap to <code>0</code>
+disables that particular axis.  The lifecycle badge (see
+<a href="#pause-resume">Pause and resume</a> below) flips to
+<code>BUDGET LIMITED</code> when any axis is exceeded, and
+<code>/cost</code> surfaces the same numbers alongside provider
+spend so you can spot a runaway loop before it eats the cap.
+
 ### Pause and resume the autonomous loop
 
 <dl>
@@ -1425,6 +1476,37 @@ already knowing what's broken.  Tools that aren't installed are
 listed as <code>[skipped]</code> notes rather than silently
 masking issues — a missing <code>ty</code> doesn't look the same
 as "all clear."
+
+### Subprocess sandbox
+
+The agent's <code>run_command</code> tool, charm packing, and
+the in-process test runner all run subprocesses inside a sandbox
+when one is available, so a misbehaving build script can't reach
+arbitrary paths on the host.  <code>/sandbox</code> reports which
+mechanism the host is actually using and the default policy
+<code>run_command</code> enforces.
+
+<dl>
+  <dt><code>/sandbox</code></dt>
+  <dd>
+    Print one of four mechanism states — <strong>bwrap</strong>
+    (full filesystem + PID + network + namespace isolation),
+    <strong>unshare</strong> (PID + optional network only — no
+    filesystem bind mounts; install <code>bubblewrap</code> for
+    the full picture), <strong>sandbox-exec</strong> (macOS SBPL
+    profile with a read-only root and a read-write working tree),
+    or <strong>none</strong> (no sandbox available, commands run
+    unsandboxed).  The block then lists the per-tool overrides
+    (<code>run_command</code> binds the working tree read-write
+    and system paths read-only, and disables network) and a
+    one-line note on whether <code>sandbox_policy</code>
+    transcript events are being recorded.
+  </dd>
+</dl>
+
+The command is read-only and safe to run mid-task; it does not
+spawn a probe subprocess, so reading the status never disturbs an
+in-flight build.
 
 {#mentions}
 ## @-mention context providers
@@ -1567,6 +1649,7 @@ and not duplicated elsewhere.
 | `CANTRIP_KEEP_CHECKPOINTS` | optional | Preserve step checkpoints after a task reaches `DONE`. Accepts `1`, `true`, `yes`, or `on` (case-insensitive). By default, checkpoints are purged on successful task completion; setting this flips the purge into a no-op so rows can be inspected via `SELECT * FROM step_checkpoints` in the `.cantrip` SQLite file. Intended for debugging; leave unset in normal use. |
 | `CANTRIP_SNAPSHOTS` | optional | Set to `0`, `false`, `no`, or `off` (case-insensitive) to disable per-turn working-tree snapshots backing `/undo` and `/redo`. Equivalent to passing `--no-snapshots`. Defaults to on; the snapshot repo lives at `$XDG_STATE_HOME/cantrip/snapshots/<hash>/`. |
 | `CANTRIP_SHORT_SESSION` | optional | Force short-session mode `on` or `off`, or `auto` (the default) to enable it only for providers below ~16 K usable context. Equivalent to `--short-session`; see that flag for what the mode changes. |
+| `CANTRIP_SNAP_READ_TIMEOUT` | optional | HTTP read timeout (seconds) for the `inference-snap` provider's chat-completion responses. Equivalent to passing `--snap-read-timeout`. Default `1200` (20 min) — long enough for a worst-case big-file rewrite on the slowest local snap. Non-positive or non-numeric values log a warning and fall back to the default. Drop it on faster GPUs to fail-fast on stuck generations. |
 | `CANTRIP_TOOL_FAILURE_CAP` | optional | How many times the same tool call (same name **and** same arguments) may fail in a row before the active task is marked `BLOCKED` and the run stops. Default `5`; clamped to `[1, 50]`; non-integer or out-of-range values log a warning and fall back to the default. One round before the cap the agent injects a message telling the model to change approach. A different tool call (or different arguments) resets the streak. Raise it for flaky environments, lower it to fail fast on small local models that loop on oversized `write_file` payloads. |
 | `CANTRIP_TOOL_PHASE` | optional | Pin the curated tool slice to one of `research`, `build`, `debug`, `deploy`, or `demo`, regardless of what the work queue is doing. Tight-context providers (inference-snap's 12-tool cap, short-session mode) only ever see the tools the active workflow phase needs; normally that phase is derived from the running task's category, but this var forces it — useful for driving Cantrip through an unusual flow (e.g. a documentation pass that wants research-tier tools throughout). Unrecognised values log a warning and are ignored. Roomy providers (Claude, Gemini) are unaffected — they get the full toolset either way. |
 | `CANTRIP_MESSAGE_FORMAT` | optional | Override the outbound message-format for the `inference-snap` provider. Accepted values: `openai` (default) and `mistral`. Auto-detection from the snap name handles the common cases — `mistral-nemo-*` and `magistral-*` snaps default to `mistral`; all others default to `openai` — so this variable is only needed when the snap name does not follow the naming convention (e.g. a custom Mistral fine-tune with a non-standard name). Unrecognised values log a warning and fall back to auto-detection. |

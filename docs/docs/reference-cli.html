@@ -1238,6 +1238,49 @@ resume</code> picks up the same value without the
 <code>--objective</code> flag being re-supplied.  A
 <code>/goal</code> issued mid-Ralph takes effect on the very
 next iteration without restarting the loop.</p>
+<h3>Goal budget</h3>
+<p>A goal budget caps how much autonomous work a single goal may
+consume before the executor stops picking up new tasks and marks
+the queue <code>BUDGET LIMITED</code>.  Useful when you want to
+let Cantrip iterate unattended but don't want it to spend
+unbounded tokens or time on a stubborn task.</p>
+<dl>
+  <dt><code>/budget</code></dt>
+  <dd>
+    Show current usage against the configured caps &mdash; iterations
+    consumed, prompt and completion tokens spent, and the
+    remaining headroom on each axis.  Without a budget set,
+    prints a one-line hint pointing at the flags below.
+  </dd>
+  <dt><code>/budget --max-iterations N</code></dt>
+  <dd>
+    Set or raise the iteration cap (one iteration ≈ one
+    subagent task).  When a cap is raised, tasks previously
+    blocked by the old limit are moved back to pending so the
+    executor picks them up on the next poll.
+  </dd>
+  <dt><code>/budget --max-prompt-tokens N</code></dt>
+  <dd>
+    Set or raise the prompt-token cap aggregated across every
+    subagent run for the current goal.
+  </dd>
+  <dt><code>/budget --max-completion-tokens N</code></dt>
+  <dd>
+    Set or raise the completion-token cap aggregated across
+    every subagent run for the current goal.
+  </dd>
+  <dt><code>/budget --clear</code></dt>
+  <dd>
+    Drop the budget entirely so the autonomous loop runs
+    uncapped again.  Blocked tasks return to pending.
+  </dd>
+</dl>
+<p>Caps must be non-negative integers; setting a cap to <code>0</code>
+disables that particular axis.  The lifecycle badge (see
+<a href="#pause-resume">Pause and resume</a> below) flips to
+<code>BUDGET LIMITED</code> when any axis is exceeded, and
+<code>/cost</code> surfaces the same numbers alongside provider
+spend so you can spot a runaway loop before it eats the cap.</p>
 <h3>Pause and resume the autonomous loop</h3>
 <dl>
   <dt><code>/pause</code></dt>
@@ -1292,6 +1335,33 @@ already knowing what's broken.  Tools that aren't installed are
 listed as <code>[skipped]</code> notes rather than silently
 masking issues &mdash; a missing <code>ty</code> doesn't look the same
 as &quot;all clear.&quot;</p>
+<h3>Subprocess sandbox</h3>
+<p>The agent's <code>run_command</code> tool, charm packing, and
+the in-process test runner all run subprocesses inside a sandbox
+when one is available, so a misbehaving build script can't reach
+arbitrary paths on the host.  <code>/sandbox</code> reports which
+mechanism the host is actually using and the default policy
+<code>run_command</code> enforces.</p>
+<dl>
+  <dt><code>/sandbox</code></dt>
+  <dd>
+    Print one of four mechanism states &mdash; <strong>bwrap</strong>
+    (full filesystem + PID + network + namespace isolation),
+    <strong>unshare</strong> (PID + optional network only &mdash; no
+    filesystem bind mounts; install <code>bubblewrap</code> for
+    the full picture), <strong>sandbox-exec</strong> (macOS SBPL
+    profile with a read-only root and a read-write working tree),
+    or <strong>none</strong> (no sandbox available, commands run
+    unsandboxed).  The block then lists the per-tool overrides
+    (<code>run_command</code> binds the working tree read-write
+    and system paths read-only, and disables network) and a
+    one-line note on whether <code>sandbox_policy</code>
+    transcript events are being recorded.
+  </dd>
+</dl>
+<p>The command is read-only and safe to run mid-task; it does not
+spawn a probe subprocess, so reading the status never disturbs an
+in-flight build.</p>
 <h2 id="mentions">@-mention context providers</h2>
 <p>Type <code>@&lt;name&gt; [args]</code> in the chat input and the mention is replaced
 with structured context <em>before</em> the message reaches the LLM &mdash;
@@ -1541,6 +1611,11 @@ and not duplicated elsewhere.</p>
 <td><code>CANTRIP_SHORT_SESSION</code></td>
 <td>optional</td>
 <td>Force short-session mode <code>on</code> or <code>off</code>, or <code>auto</code> (the default) to enable it only for providers below ~16 K usable context. Equivalent to <code>--short-session</code>; see that flag for what the mode changes.</td>
+</tr>
+<tr>
+<td><code>CANTRIP_SNAP_READ_TIMEOUT</code></td>
+<td>optional</td>
+<td>HTTP read timeout (seconds) for the <code>inference-snap</code> provider's chat-completion responses. Equivalent to passing <code>--snap-read-timeout</code>. Default <code>1200</code> (20 min) &mdash; long enough for a worst-case big-file rewrite on the slowest local snap. Non-positive or non-numeric values log a warning and fall back to the default. Drop it on faster GPUs to fail-fast on stuck generations.</td>
 </tr>
 <tr>
 <td><code>CANTRIP_TOOL_FAILURE_CAP</code></td>
