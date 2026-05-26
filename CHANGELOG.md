@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **`@terminal` context provider (Phase 72.2 follow-up).** Resolves
+  the deferred ``@terminal`` row from ``design/DEFERRED.md`` now
+  that Phase 69.3's shell-mode buffer has bedded in.  A new
+  ``TerminalProvider`` in ``context_providers_builtin.py`` exposes
+  the most-recent visible shell-mode block (argv + captured output +
+  exit code) as ``@terminal``, backed by a new
+  ``SessionStore.latest_visible_shell_row()`` helper that skips
+  ``$$``-incognito rows so the contract stays one-way.  Wired
+  through ``build_default_registry(store_getter=…)`` from
+  ``CantripAgent``; sessions without a backing store skip
+  registration so a typed ``@terminal`` falls through to the
+  unknown-provider pass-through rather than crashing.
+  ``metadata_for_persisted_row`` extended to capture the command
+  output so the provider doesn't have to re-run.  Documented in
+  ``design/CONTEXT_PROVIDERS.md`` and ``docs/src/howto-mentions.md``.
+  14 new unit cases.
 - **Phase 97.4 — substrate-targets how-to and boundary matrix.**
   New ``docs/src/howto-substrates.md`` (rendered to
   ``docs/docs/howto-substrates.html``) walks through all three

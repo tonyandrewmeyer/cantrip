@@ -62,6 +62,11 @@ _URL_MAX_CHARS = chars_for_tokens(3000)
 _CHARM_MAX_CHARS = chars_for_tokens(2000)
 _JUJU_MAX_CHARS = chars_for_tokens(2000)
 _DOCS_MAX_CHARS = chars_for_tokens(3000)
+# Phase 72.2 follow-up: ``@terminal`` echoes one shell-mode block plus
+# its output.  A typical interactive command's output is small (``ls``,
+# ``git status``, ``charmcraft pack`` summary tails); cap at the same
+# size as ``@diff`` so a single bad command can't dominate the prompt.
+_TERMINAL_MAX_CHARS = chars_for_tokens(4000)
 # The catalogue entries are hand-sized; the largest preset renders well
 # under 2k tokens, and the bare index is a few hundred.
 _PRESET_MAX_CHARS = chars_for_tokens(2000)
@@ -259,6 +264,103 @@ class DiffProvider:
         if not body.strip():
             return ContextBlock(raw=raw, rendered="[@diff: working tree clean]")
         return truncate(raw=raw, rendered=body, max_chars=_DIFF_MAX_CHARS)
+
+
+# ---------------------------------------------------------------------------
+# @terminal
+# ---------------------------------------------------------------------------
+
+
+# Type alias mirroring :data:`CodeIntelGetter` so the provider doesn't
+# pull :class:`SessionStore` import-time (the store module is heavy and
+# the provider is built every session, even ones without shell mode).
+StoreGetter = Callable[[], object | None]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TerminalProvider:
+    """``@terminal`` — last visible shell-mode block from this session.
+
+    Phase 69.3 ``Ctrl-X`` shell mode persists every command's argv +
+    output + exit code to the session store under role ``"shell"``;
+    the LLM never sees those rows on its own because ``"shell"`` is
+    outside :class:`cantrip.llm.base.Role`'s enum.  This provider
+    exposes the *latest visible* row inline so the operator can quote
+    a recent ``charmcraft pack`` summary or ``juju status`` snapshot
+    into the next prompt without re-running the command or scrolling
+    for copy-paste.
+
+    Rows flagged ``hidden_from_agent=True`` (the ``$$ <cmd>``
+    incognito prefix) are skipped so the contract stays one-way —
+    content the operator explicitly hid never re-enters the prompt
+    through this surface.
+    """
+
+    getter: StoreGetter
+
+    info: ProviderInfo = ProviderInfo(
+        name="terminal",
+        summary="Last visible shell-mode block from this session",
+        arg_style=ArgStyle.NONE,
+    )
+
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+        """Pull the most recent visible shell row and render it inline."""
+        # ``args`` is always empty for an ``ArgStyle.NONE`` provider — the
+        # parser doesn't consume any tokens after the mention name, so
+        # trailing words stay in the prose verbatim.
+        del args
+        raw = "@terminal"
+        store = self.getter()
+        if store is None:
+            return ContextBlock(
+                raw=raw,
+                rendered="[@terminal: no session store on this session]",
+                error="no store",
+            )
+        try:
+            row = store.latest_visible_shell_row()
+        except AttributeError:
+            # Older store shape, or a test double that doesn't ship the
+            # 72.2 helper — surface a clean inline error rather than
+            # crashing the surrounding message.
+            return ContextBlock(
+                raw=raw,
+                rendered="[@terminal: session store missing latest_visible_shell_row]",
+                error="unsupported store",
+            )
+        except Exception as exc:  # noqa: BLE001 - SQLite can raise broadly
+            log.debug("latest_visible_shell_row raised", exc_info=True)
+            return ContextBlock(
+                raw=raw,
+                rendered=f"[@terminal: store error — {exc}]",
+                error=str(exc),
+            )
+        if row is None:
+            return ContextBlock(
+                raw=raw,
+                rendered="[@terminal: no shell-mode output recorded yet — toggle ``Ctrl-X`` and run a command first]",
+            )
+        metadata = row.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        argv = metadata.get("argv")
+        if isinstance(argv, list):
+            command = " ".join(str(part) for part in argv)
+        else:
+            content = row.get("content")
+            command = content if isinstance(content, str) else "?"
+        output = metadata.get("output")
+        if not isinstance(output, str):
+            output = ""
+        exit_code = metadata.get("exit_code")
+        lines = [f"$ {command}"]
+        if output:
+            lines.append(output.rstrip("\n"))
+        if isinstance(exit_code, int):
+            lines.append(f"[exit {exit_code}]")
+        rendered = "\n".join(lines)
+        return truncate(raw=raw, rendered=rendered, max_chars=_TERMINAL_MAX_CHARS)
 
 
 # ---------------------------------------------------------------------------
@@ -835,6 +937,7 @@ def build_default_registry(
     *,
     role_router: llm_roles.RoleRouter | None = None,
     code_intel_getter: CodeIntelGetter | None = None,
+    store_getter: StoreGetter | None = None,
 ) -> ProviderRegistry:
     """Return a :class:`ProviderRegistry` with the baseline ``@`` providers.
 
@@ -849,6 +952,12 @@ def build_default_registry(
     embed-capable router skip ``@docs`` registration entirely so a
     user typing ``@docs ...`` gets the regular "unknown provider"
     pass-through rather than a runtime error.
+
+    *store_getter*, when supplied, enables the Phase 72.2 follow-up
+    ``@terminal`` provider that surfaces the most-recent visible
+    shell-mode block.  Sessions without a session store (e.g. unit
+    tests with an in-memory agent) skip ``@terminal`` registration
+    the same way ``@docs`` is gated on the role router.
     """
     registry = ProviderRegistry()
     providers: list[object] = [
@@ -867,6 +976,8 @@ def build_default_registry(
         providers.append(SymbolProvider(getter=code_intel_getter))
         providers.append(DefinitionProvider(getter=code_intel_getter))
         providers.append(ReferencesProvider(getter=code_intel_getter))
+    if store_getter is not None:
+        providers.append(TerminalProvider(getter=store_getter))
     for provider in providers:
         registry.register(_as_protocol(provider))
     return registry

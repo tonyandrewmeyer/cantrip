@@ -173,13 +173,16 @@ def metadata_for_persisted_row(
 
     The flag is recorded explicitly even when the row is already
     naturally invisible to the agent (its ``"shell"`` role is not in
-    the ``cantrip.llm.Role`` enum, so the rebuild path skips it).  A
-    future context provider that *does* want to surface shell history
-    can lean on the flag rather than re-deriving it.
+    the ``cantrip.llm.Role`` enum, so the rebuild path skips it).  The
+    captured output sits under ``output`` so the
+    :class:`~cantrip.agent.context_providers_builtin.TerminalProvider`
+    can render the last visible shell-mode block inline as
+    ``@terminal`` without re-running the command.
     """
     return {
         "hidden_from_agent": hidden_from_agent,
         "argv": list(result.argv),
         "exit_code": result.exit_code,
         "timed_out": result.timed_out,
+        "output": result.output,
     }

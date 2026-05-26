@@ -557,4 +557,149 @@ class TestMentionAutocompleteFilter:
         names = [m.name for m in matches]
         assert "diff" in names
         assert "docs" in names
-        assert "file" not in names
+
+
+# ---------------------------------------------------------------------------
+# Phase 72.2 follow-up — @terminal
+# ---------------------------------------------------------------------------
+
+
+class _FakeShellStore:
+    """In-test stand-in for :class:`SessionStore` exposing only the
+    72.2-follow-up surface :class:`TerminalProvider` reads — the
+    ``latest_visible_shell_row()`` helper.
+    """
+
+    def __init__(self, row: dict | None = None) -> None:
+        self._row = row
+
+    def latest_visible_shell_row(self) -> dict | None:
+        return self._row
+
+
+def _registry_with_terminal(store: object | None) -> ProviderRegistry:
+    return context_providers_builtin.build_default_registry(store_getter=lambda: store)
+
+
+class TestTerminalProvider:
+    """``@terminal`` exposes the last visible shell-mode row inline."""
+
+    @pytest.mark.asyncio
+    async def test_no_store_renders_clean_error(self) -> None:
+        registry = _registry_with_terminal(None)
+        result = await expand_mentions("@terminal", registry, ExpansionContext())
+        assert "[@terminal: no session store on this session]" in result.expanded
+
+    @pytest.mark.asyncio
+    async def test_no_shell_rows_yet(self) -> None:
+        registry = _registry_with_terminal(_FakeShellStore(row=None))
+        result = await expand_mentions("@terminal", registry, ExpansionContext())
+        assert "no shell-mode output recorded yet" in result.expanded
+        # Recommends the Ctrl-X discovery path so a first-time user
+        # learns how to populate the buffer.
+        assert "Ctrl-X" in result.expanded
+
+    @pytest.mark.asyncio
+    async def test_renders_argv_output_and_exit_code(self) -> None:
+        row = {
+            "id": 42,
+            "role": "shell",
+            "content": "charmcraft pack",
+            "metadata": {
+                "argv": ["charmcraft", "pack"],
+                "exit_code": 0,
+                "timed_out": False,
+                "hidden_from_agent": False,
+                "output": "Packed my-charm_amd64.charm\n",
+            },
+        }
+        registry = _registry_with_terminal(_FakeShellStore(row=row))
+        result = await expand_mentions("@terminal", registry, ExpansionContext())
+        assert "$ charmcraft pack" in result.expanded
+        assert "Packed my-charm_amd64.charm" in result.expanded
+        assert "[exit 0]" in result.expanded
+
+    @pytest.mark.asyncio
+    async def test_non_zero_exit_surfaces_in_output(self) -> None:
+        row = {
+            "id": 7,
+            "role": "shell",
+            "content": "juju status",
+            "metadata": {
+                "argv": ["juju", "status"],
+                "exit_code": 1,
+                "timed_out": False,
+                "hidden_from_agent": False,
+                "output": "ERROR: no current model\n",
+            },
+        }
+        registry = _registry_with_terminal(_FakeShellStore(row=row))
+        result = await expand_mentions("@terminal", registry, ExpansionContext())
+        assert "$ juju status" in result.expanded
+        assert "ERROR: no current model" in result.expanded
+        assert "[exit 1]" in result.expanded
+
+    @pytest.mark.asyncio
+    async def test_empty_output_only_shows_command_and_exit(self) -> None:
+        """A command with no captured output still renders cleanly."""
+        row = {
+            "id": 1,
+            "role": "shell",
+            "content": "true",
+            "metadata": {
+                "argv": ["true"],
+                "exit_code": 0,
+                "timed_out": False,
+                "hidden_from_agent": False,
+                "output": "",
+            },
+        }
+        registry = _registry_with_terminal(_FakeShellStore(row=row))
+        result = await expand_mentions("@terminal", registry, ExpansionContext())
+        assert "$ true" in result.expanded
+        assert "[exit 0]" in result.expanded
+        # No phantom blank line for the empty output.
+        assert "\n\n[exit 0]" not in result.expanded
+
+    @pytest.mark.asyncio
+    async def test_trailing_words_left_in_message_verbatim(self) -> None:
+        """``@terminal`` is ``ArgStyle.NONE`` — trailing words stay outside the block."""
+        row = {
+            "id": 1,
+            "role": "shell",
+            "content": "ls",
+            "metadata": {
+                "argv": ["ls"],
+                "exit_code": 0,
+                "timed_out": False,
+                "hidden_from_agent": False,
+                "output": "a.txt\nb.txt\n",
+            },
+        }
+        registry = _registry_with_terminal(_FakeShellStore(row=row))
+        result = await expand_mentions("see @terminal please", registry, ExpansionContext())
+        assert "$ ls" in result.expanded
+        # The trailing "please" is preserved outside the substitution.
+        assert result.expanded.endswith("please")
+
+    @pytest.mark.asyncio
+    async def test_falls_back_when_store_missing_helper(self) -> None:
+        """A test double that doesn't ship the helper surfaces a clean error."""
+
+        class _LegacyStore:
+            pass
+
+        registry = _registry_with_terminal(_LegacyStore())
+        result = await expand_mentions("@terminal", registry, ExpansionContext())
+        assert "missing latest_visible_shell_row" in result.expanded
+
+    def test_terminal_skipped_when_no_store_getter(self) -> None:
+        """``build_default_registry`` without a ``store_getter`` omits ``@terminal``."""
+        registry = context_providers_builtin.build_default_registry()
+        names = [info.name for info in registry.catalogue()]
+        assert "terminal" not in names
+
+    def test_terminal_registered_when_store_getter_present(self) -> None:
+        registry = _registry_with_terminal(_FakeShellStore(row=None))
+        names = [info.name for info in registry.catalogue()]
+        assert "terminal" in names

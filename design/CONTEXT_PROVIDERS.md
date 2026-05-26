@@ -109,6 +109,7 @@ Defaults (in chars; ~4 chars per token):
 | `@charm`     |  8000 | Charmhub metadata                       |
 | `@preset`    |  8000 | known-good bundle shape from `cantrip.agent.presets` |
 | `@juju`      |  8000 | read-only `juju` output                 |
+| `@terminal`  | 16000 | last visible ``Ctrl-X`` shell-mode block |
 
 ## Tab-complete
 
@@ -139,7 +140,6 @@ not yet have a parallel popup.
 
 * **`@docs`** ships in Phase 72.1 (indexed charm-ecosystem docs)
   once the provider-roles work in 72.3 lands.
-* **`@terminal`** waits on the Phase 69.3 shell-mode output buffer.
 * **`@relation <a>:<b>`** — deferred candidate (Phase 90 side-finding).
   Would expand a relation reference (e.g. `@relation
   prometheus:alertmanager`) into the interface name, provider/requirer

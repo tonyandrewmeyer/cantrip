@@ -50,6 +50,76 @@ class TestMessageRecording:
         assert "[truncated" in messages[0]["content"]
 
 
+class TestLatestVisibleShellRow:
+    """Phase 72.2 follow-up: ``latest_visible_shell_row`` for ``@terminal``."""
+
+    @pytest.fixture()
+    def store(self, tmp_path: pathlib.Path):
+        s = SessionStore(tmp_path / ".cantrip")
+        s.open()
+        yield s
+        s.close()
+
+    def test_returns_none_when_no_shell_rows(self, store):
+        store.record_message(role="user", content="hi")
+        store.record_message(role="assistant", content="hello")
+        assert store.latest_visible_shell_row() is None
+
+    def test_returns_latest_visible_row(self, store):
+        store.record_message(
+            role="shell",
+            content="ls",
+            metadata={"argv": ["ls"], "exit_code": 0, "output": "a.txt\n"},
+        )
+        store.record_message(
+            role="shell",
+            content="pwd",
+            metadata={"argv": ["pwd"], "exit_code": 0, "output": "/tmp\n"},
+        )
+        row = store.latest_visible_shell_row()
+        assert row is not None
+        assert row["metadata"]["argv"] == ["pwd"]
+        assert row["metadata"]["output"] == "/tmp\n"
+
+    def test_skips_hidden_rows(self, store):
+        """A hidden ``$$``-prefixed row must not satisfy the lookup."""
+        store.record_message(
+            role="shell",
+            content="ls",
+            metadata={"argv": ["ls"], "exit_code": 0, "output": "a.txt\n"},
+        )
+        store.record_message(
+            role="shell",
+            content="cat .env",
+            metadata={
+                "argv": ["cat", ".env"],
+                "exit_code": 0,
+                "output": "SECRET=xyz\n",
+                "hidden_from_agent": True,
+            },
+        )
+        row = store.latest_visible_shell_row()
+        assert row is not None
+        assert row["metadata"]["argv"] == ["ls"]
+
+    def test_all_rows_hidden_returns_none(self, store):
+        store.record_message(
+            role="shell",
+            content="cat .env",
+            metadata={"argv": ["cat", ".env"], "hidden_from_agent": True},
+        )
+        assert store.latest_visible_shell_row() is None
+
+    def test_ignores_non_shell_roles(self, store):
+        """A ``role='user'`` row must not be picked up by the shell query."""
+        store.record_message(
+            role="user",
+            content="this is a regular message",
+            metadata={"argv": ["irrelevant"]},
+        )
+        assert store.latest_visible_shell_row() is None
+
+
 class TestSubagentMessageRecording:
     @pytest.fixture()
     def store(self, tmp_path: pathlib.Path):

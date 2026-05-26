@@ -100,6 +100,10 @@ see_also:
       <td><code>@references &lt;symbol&gt;</code></td>
       <td>Every recorded callsite for a symbol with <code>file:line</code> locations.  Pairs naturally with <code>@definition</code>.</td>
     </tr>
+    <tr>
+      <td><code>@terminal</code></td>
+      <td>The most recent visible <code>Ctrl-X</code> shell-mode block from this session &mdash; argv, captured output, and exit code.  Rows hidden with the <code>$$</code> incognito prefix never surface.</td>
+    </tr>
   </tbody>
 </table>
 

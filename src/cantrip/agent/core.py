@@ -648,6 +648,11 @@ class CantripAgent:
             context_providers_builtin.build_default_registry(
                 role_router=self.role_router if self.role_router.has_embed() else None,
                 code_intel_getter=self._code_intel_or_none,
+                # Phase 72.2 follow-up: lazy getter so ``@terminal`` reads
+                # ``self._store`` at expansion time — sessions that swap
+                # stores mid-run (resume + branch) still get the right
+                # backing store.
+                store_getter=lambda: getattr(self, "_store", None),
             )
         )
 

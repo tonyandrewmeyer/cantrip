@@ -1015,6 +1015,34 @@ class SessionStore:
                 log.warning("Skipping corrupt message row %s: %s", r["id"], exc)
         return result
 
+    def latest_visible_shell_row(self) -> dict[str, object] | None:
+        """Return the most recent ``role='shell'`` row not flagged hidden.
+
+        Phase 72.2 follow-up: backs the ``@terminal`` context provider.
+        Walks backwards from the newest shell row until one is found
+        whose ``metadata.hidden_from_agent`` is missing or false; rows
+        with ``hidden_from_agent=True`` (the ``$$`` incognito prefix)
+        are skipped so the provider's contract stays one-way — content
+        the operator marked hidden never re-enters the prompt through
+        this surface.  Returns ``None`` when no eligible row exists.
+        """
+        rows = self._db.execute(
+            "SELECT * FROM messages WHERE role = 'shell' ORDER BY id DESC"
+        ).fetchall()
+        for r in rows:
+            try:
+                decoded = _message_row_to_dict(r)
+            except (json.JSONDecodeError, KeyError) as exc:
+                log.warning("Skipping corrupt shell row %s: %s", r["id"], exc)
+                continue
+            metadata = decoded.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                continue
+            if metadata.get("hidden_from_agent"):
+                continue
+            return decoded
+        return None
+
     def is_message_on_active_branch(self, message_id: int) -> bool:
         """Return True if *message_id* is on the currently active branch.
 

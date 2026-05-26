@@ -130,6 +130,10 @@ class TestMetadata:
         assert meta["exit_code"] == 0
         assert meta["hidden_from_agent"] is True
         assert meta["timed_out"] is False
+        # Phase 72.2 follow-up: ``output`` is now persisted so the
+        # ``@terminal`` context provider can render the last visible
+        # shell-mode block without re-running the command.
+        assert meta["output"] == "SECRET=xyz\n"
 
 
 # ---------------------------------------------------------------------------
