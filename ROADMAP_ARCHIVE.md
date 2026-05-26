@@ -16715,6 +16715,936 @@ matrix that LOCAL_MODELS.md captures, with smokes running
 2026-05-08 through 2026-05-26 across the 105.1 / 105.1.5 /
 105.1.6 / 105.2 / 105.3 / 105.4 / 105.5 / 105.6 sub-phases.
 
+## Phase 93: Testing Depth Sweep — Failure Paths, Durability, and System-Level Confidence ✓
+
+**Goal:** Cantrip's **unit** suite is already broad and healthy
+(``make coverage`` currently reports ~89% total Python coverage), but the
+review on 2026-04-30 found that the **non-unit** story is much thinner than
+the unit numbers suggest.  Integration / e2e / live / eval coverage is good
+for the happy-path planner→build→deploy flow, transcript export, and a handful
+of real charm-build scenarios, but the suite is still light on failure-mode
+behaviour, restart/durability, sandbox/worktree isolation, git automation, and
+newer controller surfaces.  This phase closes that gap by treating testing as
+a product feature: the goal is not "more tests" in the abstract, but
+confidence that Cantrip keeps working when reality is messy.
+
+### 93.1 High — Backfill the highest-value unit-coverage holes
+
+- [x] Turn the current zero-coverage deterministic repo scan helper
+  (``src/cantrip/agent/tools/_scan.py``) into a fully-tested module once
+  Phase 92.1 lands.  The helper should not remain both architecturally
+  important *and* entirely uncovered.  *(Done — ``_scan.py`` at 100%
+  via ``tests/unit/test_scan.py``.)*
+- [x] Add focused unit coverage for the current "important but thinly covered"
+  modules surfaced by the review: ``executor_controller.py``,
+  ``preflight.py``, ``context_providers_builtin.py``,
+  ``github_issues.py``, ``watcher.py``, ``auto_commit.py``,
+  ``git_branch.py``, and the higher-branching paths in
+  ``agent/tools/acceptance.py`` and ``agent/tools/charm.py``.
+  *(Done — all now 97–100%.)*
+- [x] Reduce the TUI blind spots in ``src/cantrip/tui/app.py`` and adjacent
+  screens/widgets by promoting the highest-value flows to behaviour tests:
+  screen switching, resume/restart affordances, task/status updates, modal
+  transitions, and failure states that currently live only in manual use.
+  *(Done — ``screens/tree.py`` 65→100%, ``screens/transcript.py`` 71→95%,
+  ``screens/logs.py`` 71→99%, ``screens/resume.py`` 83→88%,
+  ``widgets/status.py`` 72→93%, ``widgets/chat.py`` 83→92%,
+  ``actions/watcher.py`` 81→100%, ``tui/app.py`` 92→95%; surfaced + fixed
+  two real bugs along the way — the ``/tree`` crash (``_nodes`` shadowing)
+  and the invisible/inert modal footer "buttons" (Rich markup ate the
+  ``[…]`` key hints).  The remaining ``app.py`` gap is the ``_fatal_error``
+  crash handler, the streaming reasoning-attach block, and a cluster of
+  ``NoMatches`` shutdown guards — all deliberately exercised only in
+  manual / crash paths.)*
+- [x] When a module remains below the surrounding package average after this
+  sweep, record *why* in the test or roadmap text instead of letting the gap
+  look accidental.  *(Done — see the ``app.py`` note above and the
+  module-level docstrings on the new ``tests/unit/tui/test_*.py`` files.)*
+
+### 93.2 High — Add failure-injection integration tests
+
+- [x] Add a first-class integration harness for **LLM/provider failures**:
+  timeout, rate-limit, malformed response, provider 5xx, and tool-call shape
+  violations.  Assert user-visible failure handling, retry behaviour, and
+  queue/task state transitions rather than only that an exception bubbles.
+  *(Done — ``tests/integration/test_failure_injection.py`` plus the reusable
+  ``FailingProvider`` / ``FlakyProvider`` doubles (``tests/support/providers.py``)
+  and the ``fast_retry`` fixture.  Provider 5xx / overload / mid-stream
+  disconnect → transient-retry budget burned, then the task goes FAILED with a
+  one-line cause; non-transient ``ProviderError`` → no retry, task FAILED; one
+  failing task doesn't block an independent one; the planner recovers from a
+  malformed-then-valid reply via the structured retry and raises
+  ``StructuredOutputError`` when every reply is malformed.  Surfaced + fixed a
+  real bug along the way: a retry-exhausted ``ProviderOverloadedError`` /
+  ``ProviderConnectionError`` used to stall the work loop because the
+  executor's task-failure handler caught only ``ProviderError`` /
+  ``ProviderRateLimitError`` — now widened, with matching
+  ``ProviderConnectionError`` handling added to ``print_mode`` and the REPL.
+  Also refreshed the canned planner-output fixtures to the ``{"tasks": [...]}``
+  shape the structured-output planner actually expects.  Tool-call *shape*
+  violations — calling a tool that raises or returns failure — are covered
+  under tool execution failure below.)*
+- [x] Add **tool execution failure** integration coverage: subprocess exits
+  non-zero, partial output + timeout, missing binaries, Juju command failures,
+  export/write failures, and cleanup hooks that should still run on final
+  failure.
+  *(Mostly done — ``run_command`` real-subprocess tests cover non-zero exit,
+  timeout, a missing binary, and an off-allowlist refusal (forced to the no-op
+  sandbox so they're deterministic in CI); a crashing subagent tool
+  (``make_raising_tool``) and a tool returning ``success=False`` both become
+  ``is_error`` results the subagent reports and steps past without the task
+  failing; the ``/export`` path is exercised against an unwritable
+  destination.  Deferred: Juju-command failures (the live-juju
+  ``test_e2e_tools.py`` cases already cover ``juju status`` against a bad
+  model — no deterministic stand-in was added) and an explicit "cleanup hook
+  runs on final failure" assertion, which belongs with 93.5's git-automation
+  work where the hook surfaces are.)*
+- [x] Exercise the existing retry / recovery surfaces under pressure:
+  transient failure that later succeeds, retry budget exhausted, and "final
+  failure produces a crisp summary instead of hanging the loop".
+  *(Done — ``FlakyProvider`` (two rate-limit blips then success) recovers the
+  task end to end; a persistently-failing provider drives three independent
+  tasks to FAILED and the work loop *terminates* within the wait budget rather
+  than spinning; ``set_failed`` puts the error string on the task so the queue
+  carries a one-line cause rather than an empty terminal state.)*
+- [x] Cover degraded-environment paths that are realistic in operator use:
+  controller unreachable, model missing, missing API key, network blip during
+  export or provider call, and partial state already written when the failure
+  hits.
+  *(Mostly done — missing API key → ``create_provider`` raises a
+  caller-handled error; no ``juju`` (and no concierge) on PATH → preflight
+  reports ``juju_available=False`` instead of throwing; the store-backed
+  persistent-failure test shows FAILED status + cause landing in the
+  ``.cantrip`` file, i.e. partial state already persisted when the failure
+  hits; a mid-stream provider disconnect is the "network blip during provider
+  call" case above.  "Model missing" is left to 93.3's resume/durability work
+  where the model-detection paths live; "network blip during export" is
+  approximated by the unwritable-destination test rather than a true mid-write
+  failure.)*
+
+### 93.3 High — Test durability, resume, and long-running-session recovery
+
+All four bullets land in ``tests/integration/test_durability_resume.py``
+(7 tests, three classes — ``TestCheckpointStopRestartResume``,
+``TestSessionResumeWithActiveWork``, ``TestContextBudgetLifecycle``).
+
+- [x] Add integration tests for **checkpoint → stop → restart → resume** on
+  active sessions, including queued work, decisions, transcript state, and any
+  pending follow-up tasks.  *(Done — ``test_partial_task_resumes_without_replaying_cached_steps``
+  force-stops a subagent mid-LLM-call (``_HangAfterProvider``), then a fresh
+  executor + store handle at the same ``.cantrip`` replays the persisted
+  ``llm_turn#1`` + ``tool:read_file#1`` checkpoints and finishes the task with a
+  single fresh provider call and zero re-runs of the counting tool;
+  ``test_active_task_and_pending_followup_survive_resume`` round-trips charm
+  metadata, a decision, the conversation history, a DONE task's result, an
+  ACTIVE→PENDING reset, and a pending follow-up's ``dependencies`` through
+  ``CantripAgent.save_state()`` / ``load_state()``.)*
+- [x] Add crash-recovery tests for the executor / store boundary: interrupted
+  task execution, partially-persisted task results, and replay after restart
+  without duplicate work or corrupted queue state.  *(Done — the partial-resume
+  test above covers the interrupted-task + partial-checkpoint + no-duplicate-work
+  path through ``force_stop()`` and verifies checkpoints are purged once the task
+  reaches DONE via the real ``on_task_done`` wiring; ``test_completed_task_is_not_re_run_after_restart``
+  proves a DONE task isn't re-dispatched after a restart (an exploding provider
+  asserts no subagent runs); ``test_interrupted_task_finishes_after_resume_via_executor``
+  drives an ACTIVE-when-saved task through ``load_state()`` and ``start_executor()``
+  to completion.)*
+- [x] Cover the context-budget lifecycle end to end: budget exhaustion,
+  compaction trigger, compaction failure, and recovery once the session
+  continues.  *(Done — ``test_compaction_fires_and_counter_survives_resume``
+  drives two ``read_file`` rounds against a fat file under a 400-token window so
+  compaction fires in the conversation loop, then confirms ``compactions_attempted``
+  is persisted and restored on a fresh agent; ``test_summariser_failure_falls_back_to_emergency_truncate``
+  makes the ``temperature=0.3`` summary call raise (``_SummaryFailingProvider``)
+  and asserts the emergency-truncation fallback ran and the turn still returned;
+  ``test_exhausted_compaction_budget_survives_resume_and_session_continues`` seeds
+  ``budget_exhausted=True`` + the counters, reloads them, and shows the resumed
+  session keeps answering without retrying compaction.)*
+- [x] Add explicit persistence/resume coverage for long-running flows that are
+  currently unit-tested in pieces but not exercised as a whole.  *(Done —
+  ``TestSessionResumeWithActiveWork`` exercises decisions + transcript + the
+  three task states (done-with-result / active→pending / pending-with-deps)
+  together as one save→reload flow rather than as the per-table unit round-trips
+  in ``test_store.py`` / ``test_agent_persistence.py``.)*
+
+### 93.4 High — Add isolation and security-oriented system tests
+
+- [x] Add tests proving the sandbox/workspace/worktree boundaries hold under
+  pressure: path traversal attempts, symlink escapes, out-of-tree writes,
+  temporary-file leakage, and cleanup after cancellation/failure.
+  (``tests/integration/test_isolation_security.py`` —
+  ``TestWorkspaceBoundaryUnderPressure`` covers traversal / symlink-escape /
+  out-of-tree paths through the real file tools;
+  ``TestRunCommandSandboxAndDestructiveGate`` pins the no-network, cwd-only
+  sandbox policy and the out-of-tree-cwd refusal; and the failed-subagent
+  worktree case proves no temporary-tree leakage after a crash.  Cancellation
+  shares the same ``_execute_task`` ``finally`` cleanup path as the failure
+  case exercised here.)
+- [x] Add integration coverage for worktree lifecycle and git isolation:
+  branch creation, temporary worktree setup/teardown, dirty-tree handling,
+  merge/reconcile paths, and failure cleanup.
+  (``TestWorktreeIsolationAndLifecycle`` against a real git repo: concurrent
+  allocation isolation + serialised merge-back, dirty-main-tree merge refusal
+  with branch preservation, and full worktree+branch cleanup after a crashing
+  subagent.)
+- [x] Add system tests around the policy/permission boundary so "plan mode",
+  destructive-command gates, and category-scoped tool access are verified in
+  real flows rather than only at unit granularity.
+  (``TestPermissionAndPolicyBoundaryInRealFlows`` drives real ``Subagent.run``
+  loops: plan-mode denies an edit, RESEARCH cannot run a deploy-only tool, the
+  destructive shell is gated behind approval, and an ``ask`` with no approval
+  surface degrades to deny.)
+- [x] Treat these as regression guards for Phase 49's sandbox promise, not as
+  optional hardening.
+
+### 93.5 Medium — Cover advanced controllers and automation workflows
+
+All four bullets land in ``tests/integration/test_controllers_automation.py``
+(78 tests, eleven classes — landed in commit ``33b8bb0``).
+
+- [x] Add integration coverage for the controller surfaces that currently have
+  little or no non-unit protection: ``MCPController``,
+  ``ArenaController``, ``TriageController``, and the extracted
+  ``ExecutorController`` / ``WatcherController`` seams where real message flow
+  matters.  *(Done — ``TestMCPController`` covers lazy registry, idempotent
+  ``start()``, the ``MCP_ELICITATION_REQUEST`` event bridge, and
+  ``complete_elicitation`` before-load handling; ``TestArenaController``
+  drives ``begin()`` async + ``handle_pick`` A/B/skip + the no-light-provider
+  error path; ``TestTriageController`` exercises ``start()``/``stop()``
+  lifecycle, retriage, and CONFIRM-task enqueue on issues found;
+  ``TestExecutorController`` pins the pause/resume seam plus user-pause vs
+  transient-pause and state-change events; ``TestWatcherControllerRouting``
+  asserts ``route_event`` enqueues tasks, ``start()`` returns ``False`` with
+  no model, and stop-before-start is a no-op.)*
+- [x] Add non-unit tests for git automation workflows: ``git_branch`` branch
+  tracking, PR/open-feedback loops, and ``auto_commit`` message/trailer logic
+  in realistic repositories rather than fake objects only.
+  *(Done — ``TestAutoCommitInRealRepo`` drives ``pre_turn_commit_dirty`` /
+  ``post_turn_commit_agent_edits`` against an on-disk git repo, including the
+  cantrip trailer, long-subject truncation, fallback subject derivation,
+  summary override, touched-file listing, and confirmation that pre-turn and
+  post-turn produce *separate* commits; ``TestCollectTouchedFiles`` parses
+  ``write_file`` / ``edit_file`` / ``multi_edit`` tool calls out of assistant
+  messages and confirms non-mutating tools and user messages are ignored;
+  ``TestGitBranchOperations`` exercises ``current_branch``, ``create_branch``,
+  ``slugify`` (lowercase + hyphenate + truncate + leading/trailing strip), and
+  ``suggest_repo_name`` (appends ``-operator``, no double-append);
+  ``TestBuildPrBody`` pins the summary header, task-title list,
+  issue-reference, ✓/✗ status rows, and result truncation.)*
+- [x] Add end-to-end coverage for at least one **triage → confirm → build
+  improvement** path so the improvement workflow is tested across handoff
+  boundaries, not only as isolated controller pieces.
+  *(Done — ``TestTriageToConfirmToBuildPath`` proves the triage controller
+  enqueues a CONFIRM task when issues are found, and a CONFIRM ``set_done()``
+  drives the executor to dispatch the follow-up BUILD task and run it to
+  DONE.)*
+- [x] Add provider-routing / failover tests so a primary-provider problem does
+  not silently strand the work loop when a fallback is configured.
+  *(Done — ``TestProviderFailover`` runs ``FlakyProvider`` through ≥ 3 calls
+  to recover after blips, drives two independent tasks under a partially-
+  failing provider to confirm one failure doesn't strand the other, and
+  drains all tasks to FAILED under a permanently-failing primary.)*
+
+### 93.6 Medium — Broaden the higher-level test portfolio
+
+- [x] Expand the **eval corpus** beyond the current happy-path examples with
+  at least one more machine-oriented charm, one more custom/non-framework app,
+  and one case that stresses relations / observability / operational actions
+  more heavily than the current set.
+  *(Done — three new specs under ``tests/eval/charms/`` cover all three asks
+  with shapes distinct from the existing five.  ``haproxy-machine`` is a
+  Path C / machine reverse proxy: apt-installed haproxy with TLS via a
+  ``tls-certificates`` requires relation, a ``reverseproxy`` provides
+  relation that multiplexes multiple backends, a ``haproxy-peers``
+  peer relation for HA pair coordination, ``cos-agent`` for the
+  canonical machine observability pattern, and the operationally
+  critical ``reload-config`` / ``show-stats`` actions that exercise
+  ``haproxy -c`` validation before ``systemctl reload`` (no traffic
+  drop).  ``vaultwarden`` is a Path B / k8s custom charm with the
+  *secret-and-storage-heavy* shape the existing custom specs avoid:
+  a single Rust binary driven entirely by env vars (no config-file
+  templating), persistent storage for the embedded SQLite DB +
+  attachments + sends + icon cache, a Juju-secret-backed admin token
+  with a ``get-admin-token`` action and an explicit
+  ``file_not_contains`` anti-pattern check that the token is never
+  logged, ``smtp`` and ``ingress`` relations, and ``backup-data`` /
+  ``restore-data`` actions that SHA-256-fingerprint and verify the
+  archive.  ``gitea`` is the relations-and-ops-heavy corner case —
+  five data-plane relations (``database`` postgres, ``cache`` redis,
+  ``ingress``, ``smtp``, ``object-storage`` s3), three distinct COS
+  surfaces (``metrics-endpoint`` prometheus_scrape, ``grafana-dashboard``,
+  ``logging`` loki_push_api), and five ops actions
+  (``create-admin``, ``change-admin-password``, ``run-housekeeping``,
+  ``backup-data``, ``restore-data``) that all shell out to ``gitea``
+  CLI subcommands.  Each spec defines ≥ 25 rubric criteria across
+  structure / metadata / code / cos / testing categories with at
+  least four critical entries; gold-standard charm directories are
+  intentionally deferred to Phase 79.4's "generate, hand-tune, rename
+  to ``gold-<provider>``" loop.  ``tests/eval/test_gold_standards.py``
+  picks up the new specs automatically — rubric-shape checks pass,
+  gold-standard tests skip cleanly until a gold dir lands.)*
+- [x] Add more **stateful e2e** scenarios: interrupted deploy, failed verify
+  followed by debug task creation, improvement flows on an existing charm, and
+  "user says no" / override branches that materially change the plan.
+  *(Done — four scenarios in ``tests/e2e/test_scenarios.py::TestStatefulFlows``,
+  each driven through the top-level ``CantripAgent`` API (``process_message`` +
+  ``start_executor`` + ``handle_*_confirmation`` + ``save_state`` /
+  ``load_state``) rather than via a raw ``BackgroundExecutor``, so the wiring
+  the TUI / CLI actually use is exercised end to end.
+  ``test_interrupted_session_resumes_and_finishes_pending_deploy`` saves a
+  session mid-flow (DONE BUILD + PENDING DEPLOY), spins up a fresh agent at
+  the same ``.cantrip``, round-trips charm identity / decisions / conversation
+  history / queue contents, then drives the resumed executor through the
+  auto-follow-up chain (the previously-DONE BUILD is *not* re-run, the pending
+  DEPLOY converges, and the Verify follow-up lands as DONE);
+  ``test_failed_verify_creates_debug_task_through_agent`` uses a
+  ``CallbackProvider`` keyed on the ``Verify deployment:`` system-prompt
+  fragment to drive BUILD → DEPLOY → Verify(FAIL) → DEBUG end to end on the
+  agent's own work queue, asserting the DEBUG follow-up exists and depends on
+  the failed verify task;
+  ``test_improvement_flow_audits_existing_charm_and_runs_fixes`` seeds an
+  existing charm directory, drives ``handle_improvement_confirmation`` from a
+  DONE audit task carrying a real audit-report string (tracing + tests gaps),
+  approves the CONFIRM the way the TUI does
+  (``work_queue.set_done(confirm_id, "Approved by user")``), and lets the
+  executor converge every BUILD-category fix task — verifying that
+  ``state.audit_report`` is persisted and that ``fill-observability-*`` /
+  ``fill-tests-*`` materialise as DONE;
+  ``test_user_override_steers_design_to_machine_path`` wraps
+  :class:`MultiRoleProvider` with a USER-message-capturing subclass so it can
+  prove the override string reached the planner verbatim, then feeds the
+  planner a machine-substrate JSON plan that *replaces* the synthesised
+  k8s direction, and confirms the executor runs the override plan (not the
+  deterministic one-shot path).  Added a ``fast_executor`` fixture to
+  ``tests/e2e/conftest.py`` mirroring the integration-suite one so the new
+  executor-driven scenarios don't pay the 1-second poll interval.)*
+- [x] Build **differential / metamorphic** checks where Cantrip should preserve
+  invariants across providers or surfaces: stable task-graph validity, export
+  shape, permission enforcement, and transcript/event consistency.
+  *(Done — all four dimensions covered.  Export shape + transcript/event
+  consistency via ``tests/unit/transcript/test_transcript_properties.py``
+  (21 properties): ``_fence_for`` always returns a backtick string strictly
+  longer than the worst inner run, ``render_message`` is deterministic and
+  respects ``include_header``, backtick-heavy tool results are fenced
+  safely, ``render_markdown`` is deterministic + non-mutating and always
+  carries the ``# Cantrip Transcript`` heading, ``## Conversation``
+  section, single trailing newline, and a ``### ROLE`` line per input
+  message, ``render_jsonl`` is deterministic with a line count equal to
+  ``messages + events + tasks + Σ subagent_messages`` and every line is
+  valid JSON tagged with a ``type`` field in source-bucket order
+  (message → event → task → subagent_message); empty data renders to
+  empty string.  Permission enforcement via
+  ``tests/unit/agent/test_permissions_properties.py`` (17 properties):
+  ``evaluate`` is deterministic and non-mutating on ruleset + arguments,
+  empty ruleset returns default ALLOW, a catch-all ``("*", deny)`` rule
+  in ``tools`` (or layered via ``compose_rulesets``) is absorbing — any
+  tool/args produces DENY, an unmatchable-pattern rule appended to any
+  section is inert, two matching rules pick the stricter outcome (within
+  a section and across ``tools`` / ``bash``), the ``bash`` section is
+  consulted only for tools in ``bash_tools`` (default ``run_command``),
+  argument-free ``evaluate`` skips ``bash`` / ``paths`` and agrees with
+  a tools-only ruleset, and ``compose_rulesets`` is structurally
+  associative + concatenates sections in order + leaves a single-input
+  call as identity.  Hypothesis caught one false claim along the way:
+  appending a rule to a section can *lower* restrictiveness — last-match-
+  wins inside a section means an agent overlay's later ALLOW pattern
+  intentionally loosens a global rule.  The expanded module docstring
+  records that fact so future readers don't reintroduce a bogus
+  monotonicity invariant.  Task-graph validity is incidentally covered
+  by the existing ``test_planner_properties.py`` (Kahn-based acyclicity
+  check on ``_validate_dependencies``).)*
+- [x] Extend accessibility regression coverage beyond the current Web-only
+  smoke test where feasible, and at minimum document the deliberate boundary
+  if TUI accessibility remains manual.
+  *(Done — both halves shipped.  ``design/TUI_ACCESSIBILITY.md`` is a
+  new design note explaining why TUI accessibility doesn't reach for
+  WCAG conformance (it's bridge-dependent on the terminal + screen
+  reader), cataloguing what Cantrip already does right (every action
+  has a keyboard binding, the Footer renders descriptions, every F-key
+  screen has an equivalent slash command, status carries text not just
+  colour), and laying out the manual VoiceOver / NVDA recipe maintainers
+  run before a release.  Automated coverage is the keyboard-binding
+  surface — the most important TUI accessibility lever — in
+  ``tests/unit/tui/test_accessibility_smoke.py`` (4 tests): walks every
+  ``BINDINGS`` declaration in the App and every Screen subclass under
+  ``src/cantrip/tui/screens/`` and asserts every shown binding has a
+  non-empty description, every binding's action name resolves to an
+  ``action_<name>`` method on the class (covers Cantrip methods and
+  the Textual built-ins inherited from ``App`` / ``Screen``), no two
+  shown bindings collide on a key inside one ``BINDINGS`` block, and
+  the discovery walk still finds the well-known screens
+  (``TranscriptScreen``, ``LogScreen``, ``ResumePromptScreen``,
+  ``HelpScreen``, ``GraphScreen``).  The deeper checks — screen-reader
+  narration fidelity, braille bridge accuracy, cognitive accessibility
+  — remain on the manual recipe and the rationale for keeping them
+  manual is recorded in the design note.)*
+- [x] Where a "fuzz" or property style makes more sense than examples
+  (workspace paths, provider payload normalisation, queue/task invariants),
+  prefer that style over adding another list of hand-authored cases.
+  *(Done — three new ``test_*_properties.py`` files cover the called-out
+  slices: ``tests/unit/agent/test_queue_properties.py`` (29 properties)
+  pins the ``WorkQueue`` / ``AgentTask`` invariants (auto-ID,
+  add/duplicate-rejection atomicity, deep-copy snapshots, counter
+  consistency, status-transition payloads, dependency-gating with
+  insertion-order, cancel-as-resolved, clear/move_to_front shape, and the
+  ``WorkflowPhase.from_category`` mapping);
+  ``tests/unit/agent/tools/test_path_aware_properties.py`` (10 properties)
+  pins ``PathAwareTool._resolve_path`` — always-absolute return,
+  base-path containment, safe-relative-to-``base_path / path``,
+  idempotence, ``..``-traversal rejection across relative / absolute /
+  deeply-nested forms, and the permissive ``base_path=None`` branch;
+  ``tests/unit/llm/test_mistral_format_properties.py`` (10 properties)
+  pins ``rewrite_for_mistral`` / ``parse_mistral_tool_call_content`` —
+  no input mutation, length-never-grows, folded assistants carry the
+  marker with empty ``tool_calls``, non-assistant passthrough, the full
+  rewrite→parse round-trip recovers the original ``name`` /
+  ``arguments``, parser identity on marker-free and unclosed-marker
+  content, parser fails safe on garbage payloads, and parser idempotence
+  on the remainder.)*
+- [x] Add **targeted traditional fuzzing** alongside the Hypothesis suite
+  where coverage-guided or byte-oriented exploration is higher leverage than
+  property tests alone: start with ``cargo-fuzz`` harnesses for
+  ``charmlint-rs`` / ``quickpack-rs``, then add a small set of Python parser /
+  export entrypoints such as transcript fence/export rendering and raw
+  HTML/search-result parsers.  Keep this as an advisory or nightly lane rather
+  than a default per-PR requirement unless it proves cheap enough.
+  *(Done — both lanes shipped.  Python parser side: transcript
+  fence/export rendering pinned by
+  ``tests/unit/transcript/test_transcript_properties.py`` (21 properties);
+  HTML / search-result parsers pinned by
+  ``tests/unit/agent/tools/test_web_parser_properties.py`` (17 properties)
+  and ``tests/unit/docs_index/test_crawl_parser_properties.py`` (9
+  properties) using Hypothesis with byte-oriented + adversarial-text
+  strategies — the headline invariant is *the parser never raises* on
+  any byte input, with ``parse_sitemap`` further restricted to raising
+  *only* ``xml.etree.ElementTree.ParseError``.  Rust ``cargo-fuzz`` lane:
+  each crate gained a ``fuzz/`` subdirectory (per ``cargo +nightly fuzz
+  init``) plus a thin ``src/lib.rs`` that re-exports the modules so the
+  fuzz targets can reach them — the binary's ``main.rs`` is unchanged.
+  ``charmlint-rs/fuzz/`` carries ``fuzz_lint_config_yaml`` (random YAML
+  → ``LintConfig::from_yaml``) and ``fuzz_severity_from_str``
+  (``Severity::from_str_loose``).  ``quickpack-rs/fuzz/`` carries
+  ``fuzz_jujuignore_match`` (random patterns + path →
+  ``JujuIgnore::new`` + ``is_ignored``) and ``fuzz_metadata_resolvers``
+  (random YAML → ``resolve_base`` + ``resolve_entrypoint`` +
+  ``generate_metadata``).  ``design/FUZZING.md`` documents the
+  prerequisites, the per-target table, and the workflow.  ``fuzz/target``,
+  ``fuzz/corpus``, and ``fuzz/artifacts`` are git-ignored per crate.
+  The fuzz lane is advisory / nightly — not gated on every PR.  First
+  smoke run found and the team fixed one real panic:
+  ``JujuIgnore::new`` used to ``Regex::new(...).unwrap()`` on the
+  rule-derived regex, so a glob pattern whose expansion produced an
+  invalid character class (``[0-]`` → regex ``[0-]\z`` with backwards
+  range) panicked.  ``Matcher::new`` now returns ``Option<Self>`` and
+  ``extend`` silently drops patterns that fail to compile; the regression
+  is pinned by ``pattern_producing_invalid_regex_is_skipped_silently``
+  in ``src/quickpack-rs/src/jujuignore.rs``.)*
+
+### What this phase is *not*
+
+- Not a vanity push for a single coverage percentage.  The problem is not that
+  89% is too low; it is that the remaining uncovered and non-unit gaps cluster
+  around failure, isolation, and recovery.
+- Not a wholesale rewrite of the existing unit suite.  Keep the broad base;
+  add the missing higher-confidence layers around it.
+- Not a promise that every live/provider matrix case runs in default CI.  The
+  aim is a balanced portfolio: cheap deterministic coverage in the main loop,
+  with richer live/e2e paths still available where they earn their cost.
+
+**Exit criteria:** the highest-value unit blind spots above are closed or
+explicitly explained; failure-injection integration tests cover provider, tool,
+and recovery paths that previously had no protection; restart/resume and
+isolation behaviour are exercised end to end; advanced controller/git
+automation flows have non-unit coverage; and the eval/e2e portfolio covers more
+than the happy-path build/deploy story so a regression in failure handling or
+durability is likely to be caught before release.
+
+**Dependencies:**
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| Unit hotspot backfill (93.1) | Phase 92.1 for the deterministic scan; existing TUI/unit harnesses | Mostly additive tests, with small seam tweaks where the code is hard to drive |
+| Failure injection (93.2) | Existing integration/e2e harnesses; retry and structured-output surfaces from prior phases | Prefer reusable fake-provider / fake-tool helpers over one-off per-file harness code |
+| Durability/resume (93.3) | Existing session store, persistence, queue, and compaction machinery | May surface small product fixes rather than test-only changes |
+| Isolation/security (93.4) | Phase 49 sandboxing, Phase 44 worktrees, Phase 68 permissions | These are promise-keeping regression guards, not new product lines |
+| Controllers/automation (93.5) | Phase 85 controller extraction, existing git/GitHub flows | Good candidate to share builders between unit and integration layers |
+| Higher-level portfolio (93.6) | Existing eval/e2e/live suites; Phase 79 for future provider-matrix ambitions | Grow breadth without turning every scenario into an expensive live test |
+
+**Discovered:** Test-suite review on 2026-04-30.  Findings: unit coverage is
+strong overall (~89%), with the biggest blind spots concentrated in
+``_scan.py``, TUI-heavy modules, and a handful of controller/git/acceptance
+paths; non-unit coverage is much stronger for happy-path build/deploy flows
+than for failure handling, durability, isolation, and advanced controller
+workflows.
+
+---
+
+## Phase 95: Canonical Developer Surfaces — Launchpad, Snapcraft, and Charmcraft ✓
+
+**Goal:** Cantrip already showcases the core charm stack well, but
+several high-leverage Canonical developer surfaces still sit outside the
+agent's reach.  This phase turns the strongest first-party catalogue and
+packaging surfaces into things the agent can actually use during charm
+research, provider selection, and packaging flows — rather than just
+mentioning them in docs.
+
+### 95.1 Research and scope ✓
+
+- [x] Broad product / technology survey written up in
+  [`design/CANONICAL_SHOWCASE.md`](design/CANONICAL_SHOWCASE.md).
+  Findings: Launchpad, Snapcraft, and Charmcraft are the
+  highest-leverage first-party developer surfaces beyond the already-
+  shipped charm stack; MAAS belongs to a substrate phase, Chisel to a
+  packaging phase, and Ubuntu Pro / Landscape to an operational-
+  readiness phase.
+
+### 95.2 Marketplace descriptors and discoverability
+
+- [x] Shipped ``examples/mcp/canonical/marketplace.json`` with
+  descriptors for **Launchpad**, **Snapcraft**, and **Charmcraft**
+  servers (and an adjacent ``README.md`` that documents the
+  ``directory:`` marketplace workflow plus the read-only / write
+  copy-paste recipes).  ``tests/unit/mcp/test_mcp_marketplace.py``
+  ``TestCanonicalExampleCatalogue`` pins both that the catalogue
+  parses cleanly through ``MarketplaceLoader`` and that every server
+  description mentions ``allowed_tools`` so the safety policy
+  surfaces in ``/mcp marketplace`` listings.
+- [x] Per-server safety story documented in
+  ``design/MCP_SERVERS.md`` (new "Safety defaults for the Canonical
+  bundle" section) and in the shipped catalogue's README.  Read
+  verbs (``bug_search`` / ``snap_search`` / ``snap_info`` /
+  ``snap_releases`` / ``lint`` / ``analyse`` / ``bug_view`` /
+  ``merge_proposal_view`` / ``project_view``) are safe by default;
+  write verbs (``bug_comment``, ``bug_status_set``,
+  ``snap_register``, ``snap_upload``, ``snap_release``,
+  ``register``, ``upload``, ``release``) are opt-in via explicit
+  ``allowed_tools`` entries and their named credential environment
+  variable.  The descriptor ``description`` text repeats the split
+  so the policy is visible in the listing too.
+- [x] ``docs/src/howto-mcp.md`` (rendered to
+  ``docs/docs/howto-mcp.html``) gained a "Canonical-native catalogue"
+  subsection between the generic marketplaces section and the
+  security notes, with the read-only-default and read+opt-in-write
+  copy-paste snippets.
+
+### 95.3 Agent-side adoption
+
+- [x] When a Launchpad server is configured, its ``project_lookup``
+  and ``bug_search`` outputs are appended as a third
+  ``## Launchpad (mcp__launchpad)`` section in ``/search-charms``
+  alongside the built-in Charmhub + Launchpad-REST results.  Tools
+  not advertised by the server are skipped; per-call errors render
+  inline so one failing tool never starves the others.  Pinned by
+  ``TestLaunchpadMCPInSearchCharms`` (6 cases) in
+  ``tests/unit/agent/tools/test_librarian.py``.
+- [x] When a Snapcraft server is configured, ``ListInferenceSnapsTool``
+  enriches each enumerated snap with Snap Store metadata via
+  ``snap_info`` and renders the per-snap reply under a dedicated
+  ``Snap Store metadata (mcp__snapcraft)`` section.  Servers that
+  don't advertise ``snap_info`` are skipped; per-snap failures
+  surface inline alongside the working entries.  Pinned by five
+  new cases in ``tests/unit/llm/test_inference_snap.py``.
+- [x] When a Charmcraft server is configured, ``CharmlintTool``
+  appends a ``Second opinion (mcp__charmcraft)`` section with the
+  server's ``lint`` and ``analyse`` outputs after the local lint
+  result.  Local lint stays authoritative — a local failure
+  short-circuits before the MCP call, and any MCP error is
+  isolated to its section.  Pinned by ``TestCharmcraftMCPSecondOpinion``
+  (6 cases) in
+  ``tests/unit/agent/tools/test_charmlint_tool.py``.
+
+### What this phase is *not*
+
+- Not a generic "marketplace everything Canonical ships" sweep.
+- Not a Charmhub rewrite — Charmhub remains the primary charm-registry
+  surface; Launchpad complements it.
+- Not a publishing-by-default phase.  Read-path discovery comes first.
+
+**Exit criteria:** a user who configures Canonical Launchpad,
+Snapcraft, and/or Charmcraft MCP servers sees them in the docs, can
+discover them via `/mcp marketplace`, and the agent uses them in charm
+research, local-model discovery, and packaging flows without bespoke
+prompting.
+
+---
+
+## Phase 97: Canonical Cloud Targets — MAAS, OpenStack, and MicroCloud ✓
+
+**Goal:** Cantrip's current environment story is strongest on local LXD
+and Canonical K8s.  Canonical also ships substrate products that are a
+natural fit for machine and infrastructure charm stories: MAAS for
+bare-metal labs, OpenStack / Sunbeam for private-cloud targets, and
+MicroCloud for compact local/private-cloud deployments.  This phase
+decides what first-class support means for each and ships the
+lowest-friction high-value pieces first.
+
+### 97.1 Substrate-role design
+
+- [x] Wrote the design note that decides the role of each surface in
+  [`design/SUBSTRATES.md`](design/SUBSTRATES.md): **MAAS** as machine
+  inventory / provisioning surfaced through Juju + an MCP-shaped
+  read/write split that mirrors the Phase 95.2 Canonical bundle;
+  **OpenStack / Sunbeam** as a target cloud for IaaS-shaped charms
+  with substrate-aware design + acceptance hints (no tooling);
+  **MicroCloud** as a compact private-cloud / edge lab consumed via
+  detection-plus-routing of an existing controller (no installer).
+- [x] Decided how these surfaces relate to **Concierge** rather than
+  bypassing it ad hoc.  Outcome: Concierge stays the only environment
+  provisioner Cantrip launches; new substrates show up as Concierge
+  presets *if and when* Concierge upstream adopts them, otherwise as
+  profile data + MCP surfaces.  The user-visible substrate vocabulary
+  stays binary (`k8s` vs `machine`); MAAS / OpenStack / MicroCloud
+  ride on `machine` as cloud-type refinements surfaced in DESIGN.md,
+  acceptance plans, and runbooks rather than as peer enum members.
+  Full design rationale, the per-substrate "what Cantrip does and
+  doesn't do" matrix, and the implementation hooks for 97.2 / 97.3 /
+  97.4 live in [`design/SUBSTRATES.md`](design/SUBSTRATES.md).
+
+### 97.2 MAAS path
+
+- [x] Decided MCP-first, mirroring the Phase 95.2 / 95.3 Canonical-bundle
+  pattern verbatim.  Shipped a `maas` descriptor in
+  `examples/mcp/canonical/marketplace.json` alongside the existing
+  Launchpad / Snapcraft / Charmcraft trio.  Read verbs (`machine_list`,
+  `machine_view`, `tag_search`, `subnet_list`, `pool_list`, `version`)
+  are safe by default; capacity-changing verbs (`machine_acquire`,
+  `machine_release`, `machine_deploy`) are allowlist-gated and require
+  a `MAAS_API_KEY` credential.  The descriptor `description`, the
+  catalogue `README.md`, the "Canonical-native catalogue" section of
+  `docs/docs/howto-mcp.html`, and the "Safety defaults for the Canonical
+  bundle" section of `design/MCP_SERVERS.md` all spell out the two ways
+  MAAS differs from the publish-shaped Canonical servers — every MAAS
+  call needs the API key (read-vs-write, not unauthenticated-vs-authenticated)
+  and MAAS writes change *shared pool capacity*, so the allowlist posture
+  is closer to a production-cloud capacity verb than a publish verb.  A
+  new `test_maas_descriptor_names_capacity_split_and_credential` test
+  in `tests/unit/mcp/test_mcp_marketplace.py` pins the read verbs,
+  capacity verbs, and credential name in the descriptor text so the
+  `/mcp marketplace` listing keeps carrying the policy without the
+  user opening the README.  `maas-mcp` itself is not yet published on
+  PyPI; the descriptor ships as a template that names the intended
+  invocation, the same way the Snapcraft and Charmcraft descriptors
+  did before their servers shipped.  No built-in tool family — the
+  API surface belongs in an out-of-tree MCP server with its own
+  release cadence, exactly per the design-note decision.
+- [x] System-prompt substrate decision rule
+  (`src/cantrip/agent/prompts/system.md.j2`) grew one phrase pointing
+  at MAAS as the production substrate for bare-metal / GPU /
+  kernel-module workloads when a MAAS controller or MAAS MCP server is
+  available.  The rest of the "teach the agent when MAAS beats local
+  LXD" surface — DESIGN.md MAAS callouts when the controller cloud is
+  `maas`, MAAS-grounded planner enrichment ("4 machines with `gpu` tag
+  available"), and acceptance-test guidance for MAAS-backed deployments
+  — is **deferred to a follow-up** because all three depend on an actual
+  `maas-mcp` server being installable and an MAAS-cloud Juju controller
+  being reachable from the test environment.  Until either lands, the
+  agent has the substrate hint but no grounded inventory facts to feed
+  on; revisit when `uvx maas-mcp` works end-to-end against a real MAAS
+  region.
+
+### 97.3 OpenStack and MicroCloud profiles
+
+- [x] Substrate-aware guidance lands as a ``Substrate`` sub-section
+  of the system prompt's ``Current Context``, populated from a new
+  :class:`preflight.SubstrateSummary` (active controller's cloud,
+  full controller list, MicroCloud-snap detection).  An
+  ``openstack`` / ``sunbeam`` active cloud emits a callout pointing
+  the agent at cinder-csi storage + neutron-api ingress and asks
+  for an ``## OpenStack target`` sub-section in DESIGN.md covering
+  AZ-loss / volume-detach behaviour; a MicroCloud-snap hit emits a
+  MicroCeph + sibling-MicroK8s callout.  The autodeploy hook
+  (``openstack_acceptance_task`` in ``src/cantrip/agent/autodeploy.py``)
+  layers an "[Acceptance] verify against AZ loss and volume detach"
+  task on top of the base acceptance task whenever
+  ``state.active_cloud`` is openstack-shaped.
+- [x] Topology / bundle-style outputs already pick up the new
+  guidance through the ``preset-bundles`` skill — a new
+  "Substrate refinements (Canonical clouds)" subsection in
+  ``src/cantrip/skills/preset-bundles/SKILL.md`` mirrors the
+  system-prompt callouts so the agent's relation-composition step
+  treats OpenStack and MicroCloud as first-class deployment
+  contexts when the substrate block flags them, rather than
+  re-deriving the guidance per turn.
+
+### 97.4 Examples and docs
+
+- [x] Shipped ``docs/src/howto-substrates.md`` (rendered to
+  ``docs/docs/howto-substrates.html``, linked from the sidebar
+  nav under How-to guides between ``howto-mcp`` and
+  ``howto-charm-library``) covering all three substrate refinements
+  in a single page: the MAAS read-only baseline + capacity-allowlist
+  opt-in + a worked machine-charm flow that grounds DESIGN.md in
+  real ``machine_list`` / ``tag_search`` inventory; the
+  OpenStack / Sunbeam guidance set (DESIGN.md ``## OpenStack target``
+  callout, ``preset-bundles`` cinder-csi / neutron-api hints,
+  AZ-loss + volume-detach acceptance task); and the MicroCloud
+  detection-and-routing path (MicroCeph storage recommendation,
+  sibling MicroK8s cluster picked up by the existing
+  ``_find_k8s_controller``).  A cross-link from
+  ``howto-mcp.md``'s "Canonical-native catalogue" section points
+  readers at the new page when they want the MAAS-specific worked
+  flow rather than just the catalogue descriptor.
+- [x] The "What Cantrip does and doesn't do" matrix from
+  ``design/SUBSTRATES.md`` §4 lifts into the new how-to verbatim so
+  the boundary between Concierge-owned and Cantrip-owned territory
+  is visible to readers without opening the design note.  The page
+  closes with the contract sentence: *the agent recommends and
+  consumes; the operator installs and maintains.*
+
+### What this phase is *not*
+
+- Not a promise that Cantrip itself bootstraps a private cloud from
+  nothing.
+- Not a replacement for the existing local LXD / k8s dev loop.
+- Not an excuse to scatter substrate-specific one-offs through the
+  prompt without a design note.
+
+**Exit criteria:** a user asking for MAAS-, OpenStack-, or
+MicroCloud-aware work gets substrate-specific guidance or automation
+that fits Cantrip's existing environment story rather than a generic
+"bring your own cloud" answer.
+
+---
+
+## Phase 98: Canonical Estate Operations — Ubuntu Pro and Landscape ✓
+
+**Goal:** Some Canonical products are best used not in the build loop,
+but in Cantrip's **day-2** and **production-readiness** stories.
+Ubuntu Pro and Landscape are the strongest examples: they matter when
+Cantrip is auditing, improving, or operationalising charms for real
+Ubuntu estates, not when it is merely scaffolding a demo.
+
+### 98.1 Operational-readiness rubric
+
+- [x] Expanded the operational-readiness rubric so a new
+  ``assess_estate_opportunities`` helper
+  (``src/cantrip/agent/tools/estate_ops.py``) drives evidence-based
+  Ubuntu Pro and Landscape advice off the charmcraft metadata
+  already loaded by ``operational_readiness``: substrate
+  (``containers:`` vs ``bases:`` / ``platforms:``), stateful
+  signals (``storage:`` declared), clustered signals (``peers:``
+  declared), and security-sensitive relations (``tls-certificates``,
+  ``oauth``, ``oauth-cli``, ``hydra-token-introspect``,
+  ``oidc-info``, ``vault-kv``).  Each opportunity carries the
+  observed evidence so the operator can audit the recommendation
+  rather than treat it as a black box.
+- [x] Detector is conservative — a pure-K8s charm with no
+  Pro/Landscape mentions returns an empty list and the ``Estate
+  Operations`` section disappears entirely from
+  ``OPERATIONAL_READINESS.md``, rather than nagging with generic
+  upsell text.  The level taxonomy (``recommended``, ``consider``,
+  ``already-mentioned``) is a closed set pinned by a parametrised
+  unit test so future consumers don't silently introduce a fourth.
+
+### 98.2 Improvement-mode outputs
+
+- [x] ``OperationalReadinessTool`` now wires ``estate_opportunities``
+  through ``_format_readiness_report`` into both a dedicated
+  ``## Estate Operations`` markdown section (rendered by
+  ``render_estate_section``) and ``findings.estate_opportunities``
+  in the tool's structured ``data`` dict.  Both the
+  standalone operability-assessment prompt
+  (``operability_assess.md.j2``) and the improvement-mode
+  readiness summary (``improvement_assess_readiness.md.j2``) ask
+  the agent to load the bundled ``estate-operations`` skill and
+  surface Pro / Landscape opportunities as a *separate* paragraph
+  after the code-level must-fix / should-fix list so the two
+  stories stay visually distinct.
+- [x] Consistent wording shipped in
+  ``src/cantrip/skills/estate-operations/SKILL.md``: the rule
+  ``recommended for a supported production estate`` (never
+  ``required for the charm to work``) is load-bearing; the skill
+  body bans imperative verbs, gives the runbook ``Production
+  deployment (optional)`` template, and gives the audit-summary
+  paragraph template.  The same phrase is repeated in the
+  ``OPERATIONAL_READINESS.md`` section preamble so the
+  distinction shows up before the reader sees any individual
+  recommendation.
+
+### 98.3 Detection and templates
+
+- [x] Estate-mention detection runs across README, ``docs/*.md``,
+  and the metadata ``summary`` / ``description`` / ``title`` fields
+  via ``_scan_text_for_tokens``.  Token lists
+  (``PRO_MENTION_TOKENS`` covering ``ubuntu pro``, ``ua-client``,
+  ``esm-apps``, ``esm-infra``, ``livepatch``, ``fips``, ``usg``,
+  ``cis benchmark``, …; ``LANDSCAPE_MENTION_TOKENS`` covering the
+  ``landscape-*`` package names plus the bare product name) use
+  word boundaries for single-word terms so ``fips`` does not
+  fire on ``flips``.  Detected mentions promote the matched
+  facet's level to ``already-mentioned`` so the agent reinforces
+  the existing wording rather than duplicating it; a K8s charm
+  that already references Pro or Landscape emits a single
+  host-coverage entry asking the operator to confirm the wording
+  targets the cluster hosts rather than the workload container.
+- [x] Reusable wording snippets ship in
+  ``src/cantrip/skills/estate-operations/SKILL.md`` — the
+  ``Production deployment (optional)`` runbook template, the
+  audit-summary paragraph template, the per-facet trigger table
+  for Ubuntu Pro and Landscape, and explicit anti-patterns
+  (imperative verbs, generic upsell, conflating workload and
+  host layers).  Documented end-to-end in the new
+  ``docs/src/howto-estate-ops.md`` →
+  ``docs/docs/howto-estate-ops.html`` how-to, linked from the
+  sidebar nav under How-to guides.
+
+### What this phase is *not*
+
+- Not a commercial workflow or subscription-purchase flow.
+- Not a mandate that every Cantrip-generated charm mention Pro or
+  Landscape.
+- Not a replacement for the existing security / observability /
+  operational-readiness work.
+
+**Exit criteria:** Cantrip's improvement and operational-readiness flows
+can recommend Ubuntu Pro and Landscape in the right contexts with clear,
+useful guidance and without making them feel bolted on.
+
+---
+
+## Phase 109: Per-Provider Message-Format Normalisation — Unblock Non-Qwen Local Models ✓
+
+**Goal:** Add a per-provider message-rewriting hook so cantrip's
+internal ``Message`` representation (OpenAI/Qwen-shaped, with
+separate ``user`` / ``assistant`` / ``tool`` roles) can be
+serialised to providers whose chat templates expect different
+conventions — most notably Mistral's Tekken format
+(``[TOOL_CALLS]…[/TOOL_CALLS]`` and
+``[TOOL_RESULTS]…[/TOOL_RESULTS]`` markers folded *inline* within
+assistant turns, not as separate role messages).
+
+### Why now
+
+Phase 105.1.7 smoked Mistral Nemo 12B end-to-end and hit a
+fundamental serialisation cliff (see
+``design/LOCAL_MODELS.md`` §5.2.1):
+
+- Mistral's embedded Tekken template enforces strict
+  ``user``/``assistant`` alternation and rejects cantrip's
+  ``tool``-role messages with ``Jinja Exception: After the optional
+  system message, conversation roles must alternate ...``.
+- Override to ``--chat-template chatml`` gets past the input check
+  but the model — trained on Mistral format — can't *generate*
+  ChatML tool-call markers.  It hallucinates tool results inline
+  as natural-language text instead of emitting structured
+  ``tool_calls``.
+
+Both directions are blocked.  Mistral Nemo is the most prominent
+example, but the same shape will affect any model family trained
+on a tools-inline-in-assistant convention (Mistral's own larger
+models, Magistral, anything else built on Mistral's tokeniser
+without an OpenAI-style retrofit).
+
+The current candidate set treats Qwen-family templates as the
+only path to working tool calls.  Phase 109 widens the door so
+non-Qwen candidates can be evaluated fairly.
+
+### 109.1 P0 — Provider hook for outbound message rewriting
+
+- [x] Add ``LLMProvider.rewrite_messages(messages: list[Message])
+  -> list[Message]`` (or equivalent) — default identity, Mistral
+  family overrides to fold consecutive ``tool``-role messages
+  into the *prior* ``assistant`` message's ``content`` /
+  ``tool_calls`` payload using Mistral's required markers.
+- [x] Wire the hook into ``InferenceSnapProvider.complete()`` /
+  ``stream()`` so rewriting fires once per LLM call before the
+  request body is built.  Frontier providers (Gemini, Claude,
+  OpenAI-compatible) inherit the identity default — they already
+  accept the ``tool`` role natively.
+
+### 109.2 P0 — Inbound parser for Mistral-format tool calls
+
+- [x] Mistral models emit
+  ``[TOOL_CALLS][{"name":"…","arguments":{…}}][/TOOL_CALLS]``
+  inline within assistant content rather than the OpenAI-shaped
+  ``tool_calls`` array.  Add a parser that splits
+  ``response.content`` on those markers and returns the cantrip
+  ``ToolCall`` shape.  llama.cpp's ``--jinja`` *should* handle
+  this on the server side, but Phase 105.1.7 showed it doesn't
+  always — fall back to client-side parsing when the server
+  returns ``content`` containing the markers.
+- [x] Negative test: when no ``[TOOL_CALLS]`` markers are present,
+  treat ``content`` as a plain assistant reply.  Don't false-
+  positive on an LLM that mentions the literal token in regular
+  prose.
+
+### 109.3 P1 — Re-run the Mistral Nemo 12B smoke
+
+- [x] With 109.1 + 109.2 landed, retried the
+  ``inference-snaps/mistral-nemo-12b/`` smoke against the same
+  ``smoke-server.sh`` shape on RTX 5070 12 GiB (2026-05-24/25).
+  The three pre-flight checks pass cleanly (``/v1/models``,
+  plain hello with no thinking overhead, synthetic
+  ``get_weather`` tool call) — zero ``role must alternate``
+  500s, the rewriter substrate works end-to-end.  The
+  ntfy-improve run produces a packable 1.13 MiB charm whose
+  ``charmcraft.yaml`` matches improve-02 (4/4 COS relations,
+  3/3 actions, OCI image binding) and whose ``src/charm.py``
+  is an exact match for the prompt's shape constraints (right
+  ``ops_tracing`` import, single ``super().__init__``, four
+  ``framework.observe``, all four ``_on_*`` methods correct).
+  Two cantrip-side wedges remain open and motivate follow-up
+  work: (a) ``tests/unit/test_charm.py`` came out as
+  ``unittest`` + ``Harness`` despite the prompt's "NOT Harness"
+  directive (same negative-instruction-adherence pattern
+  §5.1.1 and §5.5 flagged for Qwen3-8B / gemma4); (b) after the
+  successful ``charmcraft_pack`` the model invoked
+  ``plan_tasks`` twelve times in 3m39s and the resulting
+  CONFIRM tasks wedged the executor (``--yolo`` covers
+  permission ``ask`` events but not work-queue CONFIRMs) →
+  exit 1 at 15m17s wall clock.  Wedge (b) is a Phase 106-shape
+  failure mode that doesn't imply a message-format issue, so
+  the phase's OR-criterion is met.
+- [x] Documented measured findings in
+  ``design/LOCAL_MODELS.md`` §5.2.2 — pre-flight, full tool
+  sequence with timing, per-file output assessment,
+  decode-speed observation (time to first pack ~2.1×
+  Qwen3-14B Run #3's 5m19s), the post-success planner-spiral
+  failure mode, and follow-up phase candidates (convergence
+  heuristic after a successful pack; ``--yolo`` scope vs
+  CONFIRM tasks).
+
+### 109.4 P1 — Family detection + opt-in
+
+- [x] ``InferenceSnapProvider`` should pick the right rewriter
+  based on the snap name (``mistral-nemo-*``,
+  ``magistral-*`` → Mistral path; everything else →
+  identity).
+- [x] Operator-visible env var
+  ``CANTRIP_MESSAGE_FORMAT={openai,mistral,…}`` overrides the
+  family detection for unknown snaps (e.g. a new Mistral fine-
+  tune with a non-standard name).  Defaults to ``openai``.
+
+### 109.5 P1 — Tests
+
+- [x] Unit test ``rewrite_messages`` for the Mistral path: a
+  conversation containing ``[user, assistant(with tool_calls),
+  tool(result)]`` rewrites to ``[user, assistant(content
+  containing the [TOOL_CALLS]/[/TOOL_CALLS] +
+  [TOOL_RESULTS]/[/TOOL_RESULTS] markers folded in)]``.
+- [x] Unit test the inbound parser: response with
+  ``[TOOL_CALLS][...][/TOOL_CALLS]`` content splits into a
+  ``ToolCall`` array and an empty ``content`` field.
+- [x] Recorded-trace test pinning the wire format (the same way
+  Phase 41 pins frontier-provider streaming).
+
+### What this phase is *not*
+
+- **Not a generic chat-template DSL.**  We add Mistral-shaped
+  rewriting for the cases we actually need; we don't build a
+  template-translation framework.  If a third family shows up
+  later we add another concrete rewriter.
+- **Not a fix for DeepSeek-V2-Lite's b8589 segfault.**  That's a
+  llama.cpp version issue (§5.7.1) and unrelated.
+- **Not a change to the ``Message`` dataclass.**  cantrip's
+  internal representation stays OpenAI-shaped; the rewriter
+  produces serialisation-time copies for Mistral providers.
+
+**Exit criteria:** Mistral Nemo 12B drives an end-to-end
+ntfy-improve scenario that produces a packable charm, comparable
+to Qwen3-14B Run #3 (§5.6.1); the two unit tests in 109.5 pin the
+rewrite + parse paths; ``design/LOCAL_MODELS.md`` §5.2.2 records
+the measured outcome.
+
 ---
 
 ## Completed Milestones
@@ -16774,6 +17704,55 @@ Milestones whose phases are complete. Open milestones live in [`ROADMAP.md`](ROA
 | M107: Tool-Call Failure Cap | 107 ✓ | A configurable consecutive-failure threshold (default 5; ``CANTRIP_TOOL_FAILURE_CAP`` env var) flips the active work-queue task to ``BLOCKED`` after N same-tool-same-args failures, so Phase 106's exit path fires instead of the conversation looping for minutes; one round before the cap a SYSTEM message nudges the model to change approach; a "tool retrying (n/cap)" status-bar badge surfaces the streak live; regression tests pin the shape |
 | M110: Phase-Aware Tool Curation | 110 ✓ | The static ``_CORE_TOOL_NAMES`` keep-list is replaced by a curator that picks the right tool slice for the active workflow phase (build / debug / deploy / research); inference-snap providers no longer need to drop ``quick_pack`` / ``charmlint`` / ``run_command`` to fit the 12-tool budget when they're load-bearing for the current phase; an env-var override lets operators pin a custom set; tests pin each phase's expected tool list |
 | M110: Post-Pack Convergence | 110 ✓ | An ``--print --yolo`` run that produces a packable charm exits 0 instead of 1: ``state.pack_succeeded`` short-circuits further ``plan_tasks`` invocations in the same user turn, and ``--yolo`` auto-approves any work-queue CONFIRM still pending at drain time |
+| M93: Tested in Depth | 93 ✓ | High-value unit blind spots closed; failure-injection integration tests cover provider, tool, and recovery paths; restart/resume and worktree isolation exercised end to end; the eval/e2e portfolio reaches beyond the happy-path build/deploy story |
+| M95: Canonical Dev Surfaces | 95 ✓ | Launchpad, Snapcraft, and Charmcraft MCP servers are documented, discoverable via ``/mcp marketplace``, and used by the agent in research, local-model discovery, and packaging flows without bespoke prompting |
+| M97: Canonical Cloud Targets | 97 ✓ | A user asking for MAAS-, OpenStack/Sunbeam-, or MicroCloud-aware work gets substrate-specific guidance or automation rather than a generic "bring your own cloud" answer |
+| M98: Canonical Estate Ops | 98 ✓ | Cantrip's improvement and operational-readiness flows recommend Ubuntu Pro and Landscape in the right day-2 contexts with clear guidance and without feeling bolted on |
+| M109: Non-Qwen Local Models | 109 ✓ | An ``LLMProvider.rewrite_messages`` hook + Mistral-shape inbound tool-call parser unblocks providers whose chat templates expect tool calls / results inline within assistant turns (Mistral Tekken format); Mistral Nemo 12B drives the ntfy improve scenario end-to-end; ``CANTRIP_MESSAGE_FORMAT`` env var lets operators force the rewriter for unknown snaps; recorded-trace tests pin the wire format |
+| M5: Research-Driven | 5 ✓ | Agent proactively researches and proposes grounded designs |
+| M6: Fast | 6 ✓ | Common charm build completes in under two minutes |
+| M9: Terraform | 9 ✓ | Cantrip generates and validates Terraform modules for charms |
+| M10: Charm Improver | 10 ✓ | Cantrip audits and upgrades existing charms to modern standards |
+| M11: Resilient Agent | 11 ✓ | Subagents commit, self-verify, and recover cleanly from failures |
+| M12: Red/Green | 12 ✓ | Red/green TDD — integration tests first, agent iterates until green |
+| M13: Demo-Ready | 13 ✓ | Every charm ships with runnable demo, captured output, and tutorial |
+| M14: Full Transcript | 14 ✓ | Every session exportable as searchable HTML with full audit trail |
+| M15: Web UI | 15 ✓ | Browser-based interface mirroring the TUI via shared event bus |
+| M16: Security & Tracing | 16 ✓ | OWASP security events + clear manual tracing guidance |
+| M17: Acceptance Tested | 17 ✓ | Cantrip deploys, exercises, and reports on every charm it builds |
+| M19: Operationally Ready | 19 ✓ | Cantrip assesses and improves charms against Canonical's Operational Readiness Metrics |
+| M25: Code Health | 25 ✓ | All critical and high code-review findings resolved; `make check` green |
+| M27: Provider Quality | 27 ✓ | Claude caching active; Gemini parallel tool calls correct; extended thinking available |
+| M28: Robust Agent | 28 ✓ | SQLite concurrent writes safe; executor self-heals; subagent context managed |
+| M29: Polished TUI | 29 ✓ | All screens functional; no blocking subprocess calls; dead features wired up or removed |
+| M30: Complete Toolbox | 30 ✓ | Shell injection fixed; missing Juju/git tools available; existing tools hardened |
+| M32: Smart Planning | 32 ✓ | Compact prompt complete; dependency validation; watcher events all routed |
+| M39: ACP Research | 39 ✓ | Written assessment of Agent Client Protocol as an alternative to direct LLM provider calls |
+| M40: Safe Compaction | 40 ✓ | Compaction has cycle detection, retry budgets, and size validation — no infinite loops possible |
+| M41: Provider Parity | 41 ✓ | All providers capture streaming usage; extended thinking available for Claude; accurate token counting; cost visibility; compaction monitoring |
+| M42: GitHub Native | 42 ✓ | Cantrip triages issues, works on branches, opens PRs, and bootstraps repos — all with user approval |
+| M44: Worktree Parallelism | 44 ✓ | Concurrent subagents run in isolated git worktrees with tested merge and revert paths |
+| M45: MCP Client | 45 ✓ | Cantrip can attach third-party MCP servers with OAuth, elicitation, and category-scoped tool access |
+| M46: User Hooks | 46 ✓ | Users configure pre/post lifecycle hooks with conditional filters; PreCompact can block compaction |
+| M47: Best-of-N | 47 ✓ | High-value tasks optionally race multiple models and commit the test-pass-scored winner |
+| M51: Team Research | 51 ✓ | Written assessment of whether and how Cantrip should support teams working on a charm, with architecture sketches and a next-step recommendation |
+| M53: Knowledge-in-Markdown | 53 ✓ | Planner prompts and task descriptions live in Jinja2 templates; `planner.py` split along the deterministic / LLM seam; dev design docs cover tools, skills, and prompts |
+| M57: Test Cleanup | 57 ✓ | Unit coverage ≥85%; zero test warnings; oversized unit files split; quickpack tests reorganised to match charmlint |
+| M58: Rust Tested | 58 ✓ | `cargo test` runs in CI for both Rust crates; every `.rs` file above 60% coverage; regressions surface at unit-test time, not via spread |
+| M59: Property Tested | 59 ✓ | Hypothesis-backed property tests cover the planner dependency graph, charmlint rule engine, quickpack jujuignore, and watcher status-diff |
+| M60: Accessible Web UI | 60 ✓ | Web UI passes WCAG 2.1 AA: visible focus indicators, labelled controls, live regions for chat/status, overlays behave as modal dialogs; rodney/showboat regression guard in CI |
+| M61: Slash Autocomplete | 61 ✓ | Typing ``/`` in the TUI surfaces a catalogue-driven suggestion popup; Tab completes the active verb; CLI readline gets the same catalogue for parity |
+| M62: On-Theme Activity Labels | 62 ✓ | Status-bar and Web "Thinking..." literals replaced by randomly-selected spellcasting verbs (incanting, conjuring, brewing, …) so the UI matches the cantrip/juju theme |
+| M65: Right-Panel Tidy | 65 ✓ | TUI task panel audited and tightened; multi-model pane either earns its space or is retired |
+| M90: Visual Topology | 90 ✓ | Right-panel multi-model pane and F8 graph screen treat the model as a visual topology — edges are first-class clickable objects with interface details, focus-fade dims unconnected apps, and a preset-bundle catalogue grounds layer grouping |
+| M69: Kimi Workflow Features | 69 ✓ | Bounded Ralph-Loop iterate-until-green, ``--yolo`` unattended switch, ``Ctrl-X`` shell mode, and Mermaid/D2 Flow skills — four Kimi CLI patterns that fit Cantrip's autonomous loop, skill system, and CI story |
+| M70: Amp-Inspired Depth | 70 ✓ | Librarian subagent that searches Charmhub and Launchpad, Oracle tool for on-demand second-opinion reasoning, glob-conditional guidance in AGENTS.md / skills, prompt-based review Checks that layer on top of charmlint, and a Painter tool that generates a Charmhub-style ``icon.svg`` |
+| M72: Continue Context Providers | 72 ✓ | Indexed charm-ecosystem docs (``@docs juju|ops|charmcraft|rockcraft``), an ``@``-mention context-provider registry, ``embed`` and ``rerank`` model roles, and ``@problems`` diagnostics-as-pre-turn-context |
+| M82: Pre/Post Tool Captions | 82 ✓ | Tools render an intro caption that updates in place to the post-call caption when the tool returns; the TUI and Web chat surface "running…" status without adding new chat lines |
+| M87: COS Coverage | 87 ✓ | Alertmanager, Catalogue-k8s, and Sloth gain skill-level guidance and worked examples at parity with Prometheus/Grafana; Parca/Pyroscope decision recorded in ``design/PROFILING.md`` (deferred to Phase 89 against four named triggers) |
+| M88: Identity Platform | 88 ✓ | A user asking for "Canonical-Identity-Platform-backed login" gets a charm with correctly-wired Hydra relations, secret fabric, and a passing Phase 17 acceptance test |
+| M43: Memory | 43 ✓ | Cantrip learns per-charm and cross-charm lessons with citations, revalidation, user controls, and skill export |
+| M108: TUI Visual Refresh | 108 ✓ | Welcome state has identity (wordmark + tagline); double frames around the chat are gone; modal screens use single rounded borders without manual ``─`` underlines; ``$primary`` is reserved for focus / accent and shows up in under ten places per screen; ModelInfoBar collapses to one line by default; tool-block captions read as English (``▸ read backend/pyproject.toml``); timestamps appear only on gaps; loading indicator is on-brand; header carries actual context; file tree surfaces charm content first |
 
 ---
 
