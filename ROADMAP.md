@@ -897,6 +897,292 @@ remembers.
 
 ---
 
+## Phase 113: Source-Tree Restructure — Tame the Growth
+
+**Goal:** The codebase has accumulated significant local entropy as
+features have shipped.  Six call-out areas are now disproportionately
+costly to navigate: a 3,843-line `CantripAgent` god-class in
+`src/cantrip/agent/core.py`; tool modules in the 1.5k–2.7k-line range
+in `src/cantrip/agent/tools/` that bundle multiple distinct surfaces;
+59 flat modules at the top of `src/cantrip/agent/`; a 2,047-line slash
+dispatcher; a 2,141-line TUI app with a long pile of confirmation
+handlers; and a `design/` directory that conflates active-contract docs
+with point-in-time research/audit snapshots.  Two repository-layout
+questions are bundled in: what to do about the four overlapping
+illustrative-material directories (`cookbook/`, `demos/`, `examples/`,
+`bundles/`), and getting the 114 GB `inference-snaps/` tree out of the
+repository path while preserving the host ↔ VM share workflow.
+
+This phase exists to land the restructure incrementally without
+freezing feature work.  Each sub-phase is independent and individually
+reviewable; ordering is suggested in the dependencies table, not
+enforced.  The exit bar is *navigability* — files under ~1k lines, no
+single-class god-modules, and a clear rule for what sits at each
+package level — not aesthetic uniformity.
+
+### 113.1 High — Split `agent/core.py`
+
+- [ ] Decompose `CantripAgent` (3,843 lines, 135 methods) by
+  composition.  `CantripAgent` retains the public API; the concerns
+  below move to dedicated services held as attributes.
+  - `ProviderManager` — `_get_provider`, `switch_model`,
+    `_architect_provider`, `_editor_provider`,
+    `_resolve_light_provider`.
+  - `MessageHistory` — `_record_message`,
+    `_rebuild_messages_from_active_branch`, `_build_llm_messages`,
+    `_collapse_messages_for_short_session`,
+    `_maybe_fold_oldest_round_into_ledger`.
+  - `RepoMapService` — `repo_map`, `refresh_repo_map`, `code_intel`,
+    `_code_intel_or_none`, `_render_repo_map`.
+  - `ToolBuilder` — `_build_tools`, `_invalidate_tools_cache`,
+    `_tool_map`, `_curated_tool_names`, `_tools_for_llm`.
+  - `UsageTracker` — `_record_usage`, `_check_cache_cascade`,
+    failure-streak tracking (`_track_tool_failure_streak`,
+    `_maybe_warn_before_failure_cap`,
+    `_consecutive_failure_cap_exceeded`).
+- [ ] Land each extraction as an independent commit (one service per
+  commit) so the diff is reviewable.  Tests touched per extraction
+  stay green throughout; `make check` passes after every commit.
+
+### 113.2 High — Split `agent/tools/juju.py` by sub-domain
+
+- [ ] Move into `src/cantrip/agent/tools/juju/`.  Grouping (27 tool
+  classes → one file each, or grouped where naturally cohesive):
+  - `juju/lifecycle.py` — deploy, refresh, remove, destroy-model,
+    add-model, bundle-deploy.
+  - `juju/relations.py` — relate, offer, consume, list-offers,
+    read-relation-data.
+  - `juju/runtime.py` — status, ssh, run-action, dispatch, wait,
+    config, get-app-config, show-unit.
+  - `juju/secrets.py` — list-secrets, show-secret.
+  - `juju/charm_sync.py` — `CharmSyncTool` (distinct concern).
+  - `juju/cli_passthrough.py` — `JujuCliTool`, `JujuTrustTool`.
+- [ ] Keep `agent/tools/juju.py` as a thin re-export shim only if a
+  caller outside the tools registry imports the classes by full path;
+  otherwise delete it.  (Per the pre-1.0-no-backcompat memory: update
+  call sites in the same change.)
+- [ ] `tests/unit/agent/tools/test_juju*` stays green.
+
+### 113.3 High — Split `agent/tools/publishing.py` by surface
+
+- [ ] Move into `src/cantrip/agent/tools/publishing/`.  The 2,242-line
+  module mixes seven concerns; one module each:
+  - `publishing/charmcraft.py` — `CharmcraftUploadTool`,
+    `CharmcraftReleaseTool`.
+  - `publishing/readme.py` — `GenerateReadmeTool` + helpers.
+  - `publishing/icon.py` — `GenerateIconTool`, `generate_placeholder_svg`.
+  - `publishing/diagram.py` — `GenerateDiagramTool` and mermaid helpers.
+  - `publishing/docs_scaffold.py` — `GenerateDocsTool` and tutorial /
+    actions / deploy block helpers.
+  - `publishing/design_decisions.py` — `ExtractDesignDecisionsTool`,
+    decision-log readers/formatters.
+  - `publishing/troubleshooting.py` — `TroubleshootingEntry`,
+    transcript-pair extraction, `format_troubleshooting_page`.
+- [ ] Same shim-or-delete policy as 113.2.  Tests stay green.
+- [ ] Apply the same lens (no formal split obligation) to
+  `acceptance.py` (1,520), `charm.py` (1,440), `rockcraft.py` (1,298),
+  `observability.py` (1,676) and split only when a clear sub-domain
+  boundary jumps out.
+
+### 113.4 High — Group flat modules under `src/cantrip/agent/`
+
+- [ ] Move 49 of the 59 flat modules into themed subpackages
+  (suggested groupings; rename freely if a better cut presents):
+  - `agent/race/` — `arena.py`, `arena_controller.py`, `race.py`.
+  - `agent/context/` — `context.py`, `context_providers.py`,
+    `context_providers_builtin.py`, `lint_context.py`.
+  - `agent/git/` — `auto_commit.py`, `git_branch.py`, `worktree.py`.
+  - `agent/safety/` — `permissions.py`, `sandbox.py`,
+    `controller_safety.py`, `confirmations.py`.
+  - `agent/runtime/` — `lifecycle.py`, `preflight.py`, `presets.py`,
+    `goal_budget.py`, `durability.py`.
+  - `agent/policy/` — `policy.py`, `routing.py`, `retry.py`,
+    `declarative_retry.py`.
+  - `agent/watcher/` — `watcher.py`, `watcher_controller.py`,
+    `github_issues.py`, `triage_controller.py`.
+  - `agent/skills_runtime/` — `skills.py`, `skill_export.py`,
+    `skill_scanner.py`.
+- [ ] Decide explicitly between two patterns for the five
+  `X.py` + `X_controller.py` pairings (executor, watcher, arena,
+  triage, mcp): either (a) keep the pattern and document it as a
+  convention in CLAUDE.md, or (b) collapse controllers into a
+  shared `controllers/` subdir, or (c) merge each controller into
+  its sibling.  Pick one and apply uniformly.
+- [ ] Update all call sites and `__init__.py` re-exports in the same
+  commit.  No back-compat aliases.
+
+### 113.5 Medium — `slash.py` registry refactor
+
+- [ ] `src/cantrip/agent/commands/slash.py` is 2,047 lines and already
+  delegates to per-family modules for several command groups
+  (`custom`, `mcp`, `recipes`, `flows`, `cost`, `map`, `share`,
+  `codeintel`, `transcript`).  Pull the remaining handlers into
+  per-family modules and reduce `slash.py` to a dispatch table +
+  `help_text` + `format_*_status`:
+  - `commands/session.py` — `handle_undo`, `handle_redo`,
+    `handle_branch`, `handle_tree`, `handle_pause`, `handle_resume`,
+    `_handle_update`, `_handle_model`.
+  - `commands/agent_modes.py` — `handle_plan`, `handle_build`,
+    `handle_architect`, `handle_auto_commit`, `handle_yolo`,
+    `handle_ralph`.
+  - `commands/review.py` — `_ReviewFilters`, `_parse_review_filters`,
+    `_apply_review_filters`, and the review-side handlers.
+- [ ] Dispatcher becomes a `{verb: handler}` mapping rather than a
+  long if/elif chain.
+
+### 113.6 Medium — Extract TUI confirmation orchestration
+
+- [ ] `src/cantrip/tui/app.py` is 2,141 lines with ~14
+  `_present_X_confirmation` + `_handle_X_response` pairs (bootstrap,
+  push, race, triage, maintenance, improvement, PR, …).  Move the
+  pairings behind a `ConfirmationCoordinator` that holds the
+  registry of presenters and response handlers, leaving `CantripApp`
+  with widget composition, event-bus subscriptions, and the
+  bind/action surface.
+- [ ] Each confirmation flow becomes a small dataclass
+  (`ConfirmationFlow(present, handle)`); the coordinator keeps the
+  active flow and routes the next user message accordingly.
+
+### 113.7 Medium — Decide on top-level flat modules in `src/cantrip/`
+
+- [ ] Seven flat modules currently sit beside the subpackages:
+  `cli.py` (777 lines), `clipboard.py`, `compare.py`,
+  `diagnostics.py`, `notifications.py`, `print_mode.py` (577 lines),
+  `workspace.py`.  No rule for what gets promoted.  Pick one and
+  apply uniformly:
+  - **Option A:** pull `cli.py` and `print_mode.py` into a `cli/`
+    package (the two CLI entrypoint surfaces sit together with the
+    `main/` parser layer they call into).  Leave the small utility
+    modules (`clipboard.py`, `compare.py`, `diagnostics.py`,
+    `notifications.py`, `workspace.py`) at the top level.
+  - **Option B:** flatten convention — everything stays at the top
+    level, document in CLAUDE.md that single-file utilities live
+    here.  Then `cli.py` / `print_mode.py` are non-issues at size,
+    just at-the-line.
+- [ ] Whichever wins, write the convention into CLAUDE.md so the
+  next "should this be a package?" question has an answer.
+
+### 113.8 Medium — Split `design/` into active vs research/audit
+
+- [ ] CLAUDE.md already names two classes of `design/*.md`: active
+  contracts ("always relevant to ongoing work") and "point-in-time
+  research and audits".  Realise the split as a directory:
+  - `design/` — active contracts only.  PLAN, AGENT, UI, TOOLS,
+    SKILLS, PROMPTS, CONTEXT_PROVIDERS, PROVIDER_ROLES, DOCS_INDEX,
+    RECIPES (the list in CLAUDE.md).
+  - `design/research/` (or `design/archive/` — pick on tone) — every
+    point-in-time doc.  Sweep candidates: `ACP_RESEARCH.md`,
+    `AGENT_REVIEWS.md`, `CHARMING_WITH_CLAUDE_REVIEW.md`,
+    `CLOUD_GLM_2026-05.md`, `LOCAL_MODELS_SURVEY_2026-05.md`,
+    `PI_RESEARCH.md`, `RESEARCH_DASH_CRAFT.md`,
+    `RIGHT_PANEL_AUDIT.md`, `UPSTREAM_AUDIT.md`,
+    `WEB_UI_ACCESSIBILITY_AUDIT.md`, `jujumate-analysis.md`,
+    `orc-analysis.md`, `FRAMEWORK_EVALUATION.md`,
+    `CHARMING_WITH_CLAUDE_REVIEW.md`, `CANONICAL_SHOWCASE.md`,
+    plus any `*_REVIEW.md` / `*_AUDIT.md` /
+    `*_SURVEY*.md` that landed since.
+- [ ] Update intra-doc links and CLAUDE.md's "Reference Documents"
+  section to reflect the new paths.
+- [ ] Keep the rule in CLAUDE.md so newly-written research lands in
+  the right place from day one.
+
+### 113.9 Low — Decide on `cookbook/` / `demos/` / `examples/` / `bundles/`
+
+- [ ] Four top-level directories carry illustrative material with
+  overlapping intent.  Decide a unification policy or accept the
+  split:
+  - **`cookbook/`** — guided multi-step charm-building walkthroughs
+    (`build-a-stateful-charm`, `migrate-harness-to-scenario`, …).
+  - **`demos/`** — narrative MD demos + screen recordings.
+  - **`examples/`** — small worked example code (`examples/mcp/…`).
+  - **`bundles/`** — generated artefact bundles published downstream
+    (`canonical-skills-juju/`).
+- [ ] Options to evaluate:
+  - **Unify** under a single `examples/` root (`examples/cookbook/`,
+    `examples/demos/`, `examples/mcp/`, `examples/bundles/`) — fewer
+    top-level directories, one entry point for illustrative material.
+  - **Accept the split** but document the rule for each directory's
+    purpose in a top-level `README.md` cross-reference table so
+    contributors know where new material belongs.
+  - **Partial merge** — combine `cookbook/` and `demos/` (both
+    user-facing tutorials), keep `examples/` and `bundles/` separate
+    (one is small code snippets, the other is published downstream
+    output).
+- [ ] Pick one, apply, and write the convention into CLAUDE.md.
+
+### 113.10 High — Move `inference-snaps/` outside the repo path
+
+- [ ] The directory holds 114 GB of model weights and snap build
+  artefacts.  Even gitignored, its presence inside the repository
+  path slows down `find`, `rg`, and editor scans.  Move the tree to
+  a sibling location (`~/inference-snaps/` or
+  `/srv/inference-snaps/` — to be picked by the user) and update
+  any scripts / Make targets / docs that hard-code the in-repo path.
+- [ ] **User-coordinated:** the host ↔ VM share workflow currently
+  relies on the directory living under the cloned repo so files
+  flow into the VM mount.  The user will coordinate the move so
+  the share path is updated in lockstep.  Do not move the
+  directory unilaterally — the cutover requires the host- and VM-
+  side mount config to be updated together.
+- [ ] Update `.gitignore` to drop the `inference-snaps/` rule once
+  the directory is gone from the path.  Add a doc note (likely in
+  `docs/src/howto-light-models.md` or `howto-vm-inference-proxy.md`)
+  recording the new canonical location.
+
+### What this phase is *not*
+
+- Not a behavioural change.  Every sub-phase is a move-and-rename
+  operation; tests stay green and runtime behaviour is unchanged.
+- Not a re-architecture.  `CantripAgent`'s contract with the rest
+  of the system is the public surface today; 113.1 keeps that
+  contract and only redistributes responsibilities behind it.
+- Not a back-compat exercise.  Per the pre-1.0-no-backcompat
+  convention, call sites are updated in the same change.  No
+  re-export shims kept around for hypothetical external callers.
+- Not a split of `ROADMAP_ARCHIVE.md`.  The 17,886-line archive is
+  fine as one file (user decision, 2026-05-26 review).
+
+**Exit criteria:**
+
+- (a) No file in `src/cantrip/agent/` exceeds 1,500 lines (`core.py`,
+  `juju.py`, `publishing.py`, `slash.py`, `app.py` are the named
+  targets; `acceptance.py`, `observability.py`, `rockcraft.py`,
+  `charm.py` are loose follow-ons).
+- (b) `src/cantrip/agent/` has no more than ~15 top-level Python
+  files; the rest live in themed subpackages.
+- (c) `design/` contains only files listed under "active-contract
+  docs" in CLAUDE.md; point-in-time research/audit sits in a
+  sibling subdir.
+- (d) `inference-snaps/` no longer lives under the repo path; the
+  host↔VM share workflow continues to work.
+- (e) A decision is recorded for `cookbook/` / `demos/` /
+  `examples/` / `bundles/` — either unified or explicitly documented.
+- (f) `make check` passes on every commit; no test fixtures or
+  imports break.
+
+**Dependencies:**
+
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 113.1 core split | none | Largest single change; do early so later sub-phases interact with the smaller surface |
+| 113.2 juju split | none | Independent; can land in parallel with 113.1 |
+| 113.3 publishing split | none | Independent |
+| 113.4 agent flat-to-folder | 113.1 (avoids merge conflicts in `core.py`) | Touches many import paths |
+| 113.5 slash registry | 113.4 (post-grouping import paths) | Depends only on stable import paths |
+| 113.6 TUI confirmations | none | Self-contained inside `src/cantrip/tui/app.py` |
+| 113.7 top-level flat | none | Convention call; small physical change |
+| 113.8 design split | none | Pure file moves + link updates |
+| 113.9 cookbook/demos/… | none | Decision-first; physical moves only if option A or C wins |
+| 113.10 inference-snaps | user coordination on host↔VM share | Do not start without the user driving the cutover |
+
+**Discovered:** 2026-05-26 review pass.  The codebase has grown
+substantially through Phases 73–112 and the structure has not been
+revisited since the major Phase 32 / 44 / 45 / 68 layouts landed.
+A targeted pass at file size + package boundaries surfaced the
+six call-out areas without changing the architecture.
+
+---
+
 ## Milestones
 
 High-level targets for **open** work. Completed milestones are listed in [`ROADMAP_ARCHIVE.md`](ROADMAP_ARCHIVE.md).
@@ -907,3 +1193,4 @@ High-level targets for **open** work. Completed milestones are listed in [`ROADM
 | M73: Goose Workflow Packaging | 73 | Parameterised retryable Recipes with sub-recipes, MCP Apps rendered as sandboxed iframes in the Web UI, JSON-schema-enforced structured responses, and declarative retry with shell validators |
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
+| M113: Source-Tree Restructure | 113 | No `src/cantrip/agent/` file over 1,500 lines, agent top-level flattened to ~15 modules with themed subpackages, `design/` split into active vs research, `inference-snaps/` lives outside the repo path, and `cookbook/`/`demos/`/`examples/`/`bundles/` has a recorded convention |
