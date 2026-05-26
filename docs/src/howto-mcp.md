@@ -348,6 +348,12 @@ allowlist refusal, a tool the server doesn't advertise) render
 inline within their section and never abort the surrounding
 command.
 
+For the `maas` server specifically — including the
+capacity-allowlist opt-in and a worked machine-charm flow — see the
+[Target a Canonical-cloud substrate](howto-substrates.html) how-to,
+which also covers the OpenStack / Sunbeam and MicroCloud guidance
+surfaces.
+
 {#security}
 ## Security notes
 

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to target a Canonical-cloud substrate &mdash; Cantrip</title>
+<meta name="description" content="Substrate-aware behaviour for MAAS, Canonical OpenStack / Sunbeam, and MicroCloud &mdash; how Cantrip detects each one, what changes in DESIGN.md and acceptance tests, and the boundary between agent automation and operator workflow.">
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800|jetbrains-mono:400&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<nav class="doc-nav" aria-label="Main">
+  <div class="doc-nav-inner">
+    <a href="../index.html" class="doc-nav-logo">
+      <picture>
+        <source srcset="../logo-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="../logo-light.png" alt="Cantrip" width="28" height="28">
+      </picture>
+      <span>Cantrip</span>
+    </a>
+    <button class="doc-nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="doc-nav-links" id="nav-menu">
+      <a href="index.html" class="current">Docs</a>
+      <a href="../index.html#features">Features</a>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+<div class="doc-layout">
+  <aside class="doc-sidebar">
+    <h4>How-to guides</h4>
+    <ul>
+      <li><a href="howto-provider.html">Choose an LLM provider</a></li>
+      <li><a href="howto-interface.html">Choose an interface</a></li>
+      <li><a href="howto-improve.html">Improve an existing charm</a></li>
+      <li><a href="howto-export.html">Export transcripts</a></li>
+      <li><a href="howto-light-models.html">Configure light models</a></li>
+      <li><a href="howto-memory.html">Use durable memory</a></li>
+      <li><a href="howto-team-sync.html">Share with teammates</a></li>
+      <li><a href="howto-skills.html">Add a custom skill</a></li>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="howto-substrates.html" class="current">Target a Canonical-cloud substrate</a></li>
+      <li><a href="howto-charm-library.html">Search the charm library</a></li>
+      <li><a href="howto-charm-icon.html">Generate a charm icon</a></li>
+      <li><a href="howto-identity-platform.html">Add identity-platform login</a></li>
+      <li><a href="howto-estate-ops.html">Surface Ubuntu Pro and Landscape</a></li>
+      <li><a href="howto-docs-index.html">Index the charm docs</a></li>
+      <li><a href="howto-mentions.html">Use @-mention context</a></li>
+      <li><a href="howto-hooks.html">Configure hooks</a></li>
+      <li><a href="howto-undo.html">Undo agent changes</a></li>
+      <li><a href="howto-session-branching.html">Branch a session</a></li>
+      <li><a href="howto-auto-commit.html">Auto-commit per turn</a></li>
+      <li><a href="howto-permissions.html">Configure tool permissions</a></li>
+      <li><a href="howto-diagnostics-review.html">Run diagnostics and review</a></li>
+      <li><a href="howto-custom-commands.html">Define custom slash commands</a></li>
+      <li><a href="howto-recipes.html">Run a recipe</a></li>
+      <li><a href="howto-flows.html">Walk a flow</a></li>
+      <li><a href="howto-plan-mode.html">Use plan mode</a></li>
+      <li><a href="howto-architect-mode.html">Use architect mode</a></li>
+      <li><a href="howto-unattended.html">Run Cantrip unattended</a></li>
+      <li><a href="howto-print-mode.html">Run a single goal non-interactively</a></li>
+      <li><a href="howto-eval.html">Score against an eval spec</a></li>
+      <li><a href="howto-ralph.html">Run a Ralph loop</a></li>
+      <li><a href="howto-feelings.html">Convene the inner parliament</a></li>
+      <li><a href="howto-vm-inference-proxy.html">Run in a VM with host GPU inference</a></li>
+    </ul>
+    <h4>On this page</h4>
+    <ul>
+      <li><a href="#vocabulary">Substrate vocabulary stays binary</a></li>
+      <li><a href="#maas">MAAS &mdash; bare-metal workloads</a></li>
+      <li><a href="#openstack">OpenStack and Sunbeam</a></li>
+      <li><a href="#microcloud">MicroCloud</a></li>
+      <li><a href="#boundary">What Cantrip does and doesn't do</a></li>
+    </ul>
+    <h4>See also</h4>
+    <ul>
+      <li><a href="howto-mcp.html">Configure MCP servers</a></li>
+      <li><a href="explanation-charm-paths.html">The three charm paths</a></li>
+      <li>
+        <a href="https://github.com/tonyandrewmeyer/cantrip/blob/main/design/SUBSTRATES.md" target="_blank" rel="noopener">Substrate design note</a>
+      </li>
+    </ul>
+  </aside>
+
+  <main id="main" class="doc-content">
+    <div class="breadcrumb">
+      <a href="index.html">Docs</a><span class="sep">/</span>How-to guides<span class="sep">/</span>Substrate targets
+    </div>
+
+    <h1>Target a Canonical-cloud substrate</h1>
+    <p class="subtitle">
+      MAAS for bare metal, Canonical OpenStack / Sunbeam for tenant clouds, and MicroCloud for compact private clouds &mdash; Cantrip adapts its guidance to the substrate the operator already runs.
+    </p>
+
+<h2 id="vocabulary">Substrate vocabulary stays binary</h2>
+<p>Cantrip's primary substrate vocabulary is <strong><code>k8s</code></strong> versus <strong><code>machine</code></strong> &mdash;
+the system prompt's path-A / B / C decision and the Concierge preset
+matrix are both built around that split. MAAS, Canonical OpenStack /
+Sunbeam, and MicroCloud are <em>refinements on the machine path</em>, not
+peer enum members. The agent recognises them, surfaces relevant
+guidance, and adapts acceptance tests; the operator still installs and
+maintains them with the first-party tooling each substrate ships.</p>
+<p>When Cantrip starts a session, the first system-prompt build probes
+the local environment via <code>juju controllers</code> + <code>juju show-controller</code></p>
+<ul>
+<li><code>snap list microcloud</code>, caches the result, and surfaces it as a
+<strong><code>Substrate</code></strong> block inside the prompt's <code>Current Context</code>. The
+block names the active controller's cloud, lists the registered
+controllers, and flips two hints when applicable: <strong>OpenStack target</strong>
+(active cloud is <code>openstack</code> or <code>sunbeam</code>) and <strong>MicroCloud detected</strong>
+(<code>microcloud</code> snap installed locally). The rest of this page walks
+through what changes when each hint fires.</li>
+</ul>
+<h2 id="maas">MAAS &mdash; bare-metal workloads</h2>
+<p>Reach for MAAS when the workload needs real hardware &mdash; kernel-module
+charms, GPU passthrough, BMC-driven labs, multi-NIC topologies,
+anything Juju's LXD provider can't reasonably stand in for. The
+substrate-to-charm wiring already exists in Juju (<code>juju bootstrap maas</code>); what was missing was the agent's awareness, and that is what
+landed in Phases 97.2 / 97.3 / 97.4.</p>
+<h3>Configure the MAAS MCP descriptor</h3>
+<p>The Canonical example catalogue ships a <code>maas</code> server descriptor
+alongside Launchpad, Snapcraft, and Charmcraft. Point your
+marketplace at the bundled directory to pick it up:</p>
+<pre><code>marketplaces:
+  - directory: /path/to/cantrip/examples/mcp/canonical
+</code></pre>
+<p>Then <code>/mcp marketplace</code> lists <code>maas</code> with its description and install
+hint. The MCP server itself (<code>maas-mcp</code>) lives in its own repository;
+the descriptor ships as a template that names the intended invocation,
+and writes go behind the operator's MAAS API key.</p>
+<h3>Read-only baseline</h3>
+<p>Every MAAS API call requires authentication, so reads need the API
+key too &mdash; the split is read vs write, not unauthenticated vs
+authenticated. The read-only <code>cantrip.mcp.yaml</code> entry:</p>
+<pre><code>servers:
+  maas:
+    command: uvx
+    args: [&quot;maas-mcp&quot;]
+    env:
+      MAAS_API_KEY: ${MAAS_API_KEY}
+    allowed_tools:
+      - machine_list
+      - machine_view
+      - tag_search
+      - subnet_list
+      - pool_list
+      - version
+</code></pre>
+<p>With the read verbs in <code>allowed_tools</code>, the agent can ground
+machine-charm design in real inventory (&quot;we see 4 machines with the
+<code>gpu</code> tag in pool <code>lab1</code>, the design assumes one per replica&quot;). The
+existing <code>analyse_framework</code> and planner flows pick this up
+automatically when the controller is on a <code>maas</code> cloud.</p>
+<h3>Capacity allowlist opt-in</h3>
+<p>Capacity-changing verbs (<code>machine_acquire</code>, <code>machine_release</code>,
+<code>machine_deploy</code>) change shared pool capacity, so they stay off the
+allowlist by default. When the operator wants the agent to acquire or
+release machines, add the verbs explicitly:</p>
+<pre><code>servers:
+  maas:
+    command: uvx
+    args: [&quot;maas-mcp&quot;]
+    env:
+      MAAS_API_KEY: ${MAAS_API_KEY}
+    allowed_tools:
+      - machine_list
+      - machine_view
+      - tag_search
+      - subnet_list
+      - pool_list
+      - version
+      - machine_acquire
+      - machine_release
+</code></pre>
+<p>Each capacity call still goes through Cantrip's user-confirmation
+gate; the allowlist is the second of two locks, not the first.</p>
+<h3>A worked machine-charm flow</h3>
+<p>A typical bare-metal charm session, with the MCP descriptor wired up
+and a MAAS-cloud Juju controller already registered:</p>
+<ol>
+<li><strong>Describe the workload</strong>: &quot;build an operator for an out-of-tree
+kernel module &mdash; needs bare metal, the <code>gpu</code> MAAS tag, two NICs.&quot;</li>
+<li><strong>Substrate decision</strong>: the prompt's <code>Substrate</code> block names the
+<code>maas</code> cloud; the path-decision rule routes to <strong>Path C
+(Infrastructure)</strong> because the workload classifies as machine.</li>
+<li><strong>Inventory grounding</strong>: the agent calls <code>machine_list</code> and
+<code>tag_search</code> through the MCP gate, lists the candidate machines,
+and folds the result into DESIGN.md as concrete numbers rather
+than hand-waving (&quot;the design targets 4 GPU-tagged machines in
+<code>lab1</code>&quot;).</li>
+<li><strong>Deploy</strong>: <code>juju deploy &hellip;</code> against the existing MAAS controller.
+Cantrip does <strong>not</strong> run <code>juju bootstrap maas</code> itself &mdash; the
+controller is the operator's responsibility.</li>
+<li><strong>Acceptance</strong>: the standard acceptance task plus MAAS-specific
+probes (the right machines were acquired, the NIC topology
+matches the design) once the operator has approved capacity verbs.</li>
+</ol>
+<h2 id="openstack">OpenStack and Sunbeam</h2>
+<p>OpenStack-shaped work in Cantrip is <strong>guidance-only</strong>. There is no
+OpenStack MCP server in this phase, no Sunbeam installer wrapper, and
+no agent-side tenant-admin tooling. The signal Cantrip needs is &quot;the
+active Juju controller is on cloud <code>openstack</code> or <code>sunbeam</code>&quot;, and the
+agent reads that signal directly from <code>juju controllers</code>. (Sunbeam is
+Canonical's opinionated OpenStack installer; the resulting cluster
+registers as a Juju <code>openstack</code> cloud, so the OpenStack hint covers
+both.)</p>
+<h3>What turns on</h3>
+<p>When the substrate block flags <code>**OpenStack target**</code>, three things
+change:</p>
+<ul>
+<li><strong>DESIGN.md callout</strong> &mdash; the agent folds an <code>## OpenStack target</code>
+sub-section into DESIGN.md naming the storage class and ingress
+shape the charm should prefer (cinder-csi for persistent storage,
+neutron-api-backed ingress) and the resilience scenarios the
+acceptance task will probe (AZ loss, volume detach).</li>
+<li><strong><code>preset-bundles</code> substrate refinements</strong> &mdash; when the agent
+composes relations using a known preset (<code>cos-lite</code>,
+<code>twelve-factor-cos</code>, <code>identity-platform</code>), the skill's
+&quot;Substrate refinements (Canonical clouds)&quot; subsection points it at
+cinder-csi storage and neutron-api ingress rather than ephemeral
+storage and a node-port Service.</li>
+<li><strong>Extra acceptance task</strong> &mdash; the autodeploy hook layers an
+<code>[Acceptance] verify against AZ loss and volume detach (OpenStack)</code>
+task on top of the base acceptance task. The task description
+asks the agent to drain one AZ (or stop the compute node hosting a
+unit), detach and reattach the persistent volume, and record
+outcomes under an <code>## OpenStack resilience</code> heading in
+<code>ACCEPTANCE.md</code>.</li>
+</ul>
+<h3>What stays off</h3>
+<p>OpenStack tenant-admin operations &mdash; image upload, instance create /
+destroy, volume management &mdash; are out of scope. The operator runs
+<code>openstack</code> or <code>juju exec</code> themselves; Cantrip does not ship a
+tenant-side OpenStack tool family. Likewise there is no
+<code>sunbeam</code>-named Concierge preset: Sunbeam itself is an installer
+with its own lifecycle, and operators who want Sunbeam run it first
+and point Cantrip at the resulting Juju controller.</p>
+<h2 id="microcloud">MicroCloud</h2>
+<p>MicroCloud is the compact private-cloud substrate &mdash; LXD + MicroOVN +
+MicroCeph + optional MicroK8s in one <code>microcloud init</code> command. The
+right answer for HA-on-three-nodes, on-prem developer clusters, and
+edge-lab demos where MAAS is overkill and a single LXD host is too
+small.</p>
+<h3>Detection, not provisioning</h3>
+<p>Cantrip does <strong>not</strong> drive <code>microcloud init</code>. The detection signal is
+the presence of the <code>microcloud</code> snap on the same host as the
+running LXD controller &mdash; a cheap <code>snap list microcloud</code> probe,
+guarded so it short-circuits when <code>snap</code> itself is not on <code>PATH</code>.
+When the probe hits, the substrate block flips the
+<code>**MicroCloud detected**</code> hint and the agent adapts:</p>
+<ul>
+<li><strong>DESIGN.md</strong> mentions MicroCloud as the production target in the
+Substrate section and recommends <strong>MicroCeph</strong> as the storage
+backend when the workload needs persistent storage.</li>
+<li><strong>Cross-controller COS</strong> picks up the parallel <strong>MicroK8s sibling
+cluster</strong> that ships with MicroCloud automatically &mdash; the existing
+<code>_find_k8s_controller</code> path treats <code>microk8s</code> as a K8s cloud
+family, so COS lands there without microcloud-specific code.</li>
+<li><strong>Companion charms</strong> named in the agent's <code>preset-bundles</code>
+recommendations reuse the MicroCeph + MicroK8s siblings rather
+than asking the operator to stand up a parallel LXD-only setup.</li>
+</ul>
+<p>The detection is conservative &mdash; Cantrip only switches to
+MicroCloud-aware guidance when there's a positive signal (the snap
+is installed). Otherwise it falls back to single-host LXD guidance.</p>
+<h3>What stays off</h3>
+<p>No <code>microcloud</code> Concierge preset, no installer wrapping, no
+assumption that &quot;LXD controller ⇒ MicroCloud&quot;. MicroCloud's install
+path is interactive (<code>microcloud init</code> walks the operator through
+cluster formation); wrapping it would be a parallel installer with
+its own lifecycle, and Cantrip would lose robustness more than it
+would gain.</p>
+<h2 id="boundary">What Cantrip does and doesn't do</h2>
+<p>The split between agent and operator is deliberate. Cantrip's
+substrate-aware behaviour stays above the
+<a href="https://github.com/canonical/concierge" target="_blank" rel="noopener">Concierge</a> boundary &mdash;
+Concierge owns the install-LXD-and-bootstrap-a-controller story;
+Cantrip owns the recommend-the-right-substrate-and-shape-the-charm
+story.</p>
+<table>
+<thead>
+<tr>
+<th>Substrate</th>
+<th>Concierge owns</th>
+<th>Cantrip owns above Concierge</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LXD</strong></td>
+<td>Install LXD snap; bootstrap LXD controller; install craft tools</td>
+<td>Substrate recommendation, charm scaffolding</td>
+</tr>
+<tr>
+<td><strong>Canonical K8s</strong></td>
+<td>Install <code>k8s</code> snap; bootstrap K8s controller; deploy COS</td>
+<td>Substrate recommendation, charm scaffolding, observability wiring</td>
+</tr>
+<tr>
+<td><strong>MicroK8s</strong> (legacy)</td>
+<td>Install <code>microk8s</code> snap; bootstrap controller</td>
+<td>Same as Canonical K8s, with the registry-add-on caveat in the system prompt</td>
+</tr>
+<tr>
+<td><strong>MAAS</strong></td>
+<td><em>Nothing today</em> &mdash; Concierge has no MAAS preset</td>
+<td>Detect existing MAAS controller; MCP-server-mediated machine inventory; substrate-aware design and runbook hints</td>
+</tr>
+<tr>
+<td><strong>OpenStack / Sunbeam</strong></td>
+<td><em>Nothing today</em> &mdash; Concierge has no Sunbeam preset</td>
+<td>Detect existing OpenStack controller; substrate-aware design, acceptance, and runbook hints</td>
+</tr>
+<tr>
+<td><strong>MicroCloud</strong></td>
+<td><em>Nothing today</em> &mdash; Concierge has no MicroCloud preset</td>
+<td>Detect MicroCloud-flavoured LXD controller (plus optional MicroK8s sibling); substrate-aware design and runbook hints</td>
+</tr>
+</tbody>
+</table>
+<p>MAAS, Sunbeam, and MicroCloud are production-shaped substrates that
+operators install with their own first-party installers; if Concierge
+upstream ever ships presets for any of them, the wiring on Cantrip's
+side is small (one preset name, one cloud family entry, one
+<code>_controller_matches_preset</code> update &mdash; about three lines, no parallel
+abstraction).</p>
+<p>Until then, the contract is: <strong>the agent recommends and consumes; the
+operator installs and maintains</strong>.</p>
+  </main>
+</div>
+
+<footer class="doc-footer">
+  <div class="doc-footer-inner">
+    <span>Cantrip &mdash; free &amp; open source</span>
+    <div>
+      <a href="https://github.com/tonyandrewmeyer/cantrip" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  var toggle = document.querySelector('.doc-nav-toggle');
+  var links = document.querySelector('.doc-nav-links');
+  if (!toggle || !links) return;
+  toggle.addEventListener('click', function() {
+    var open = links.classList.toggle('open');
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  });
+  links.querySelectorAll('a').forEach(function(a) {
+    a.addEventListener('click', function() {
+      links.classList.remove('open');
+      toggle.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Open menu');
+    });
+  });
+})();
+
+(function() {
+  document.querySelectorAll('.doc-content pre').forEach(function(pre) {
+    var code = pre.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.setAttribute('aria-label', 'Copy code to clipboard');
+    btn.addEventListener('click', function() {
+      var text = code.innerText;
+      var done = function() {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function() {});
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -1549,11 +1549,28 @@ lowest-friction high-value pieces first.
 
 ### 97.4 Examples and docs
 
-- [ ] Ship at least one worked example for a MAAS-backed machine-charm
-  workflow and one for an OpenStack- or MicroCloud-oriented
-  infrastructure workflow.
-- [ ] Document the boundaries clearly: when the phase gives actual agent
-  automation vs when it gives substrate-aware guidance and runbooks.
+- [x] Shipped ``docs/src/howto-substrates.md`` (rendered to
+  ``docs/docs/howto-substrates.html``, linked from the sidebar
+  nav under How-to guides between ``howto-mcp`` and
+  ``howto-charm-library``) covering all three substrate refinements
+  in a single page: the MAAS read-only baseline + capacity-allowlist
+  opt-in + a worked machine-charm flow that grounds DESIGN.md in
+  real ``machine_list`` / ``tag_search`` inventory; the
+  OpenStack / Sunbeam guidance set (DESIGN.md ``## OpenStack target``
+  callout, ``preset-bundles`` cinder-csi / neutron-api hints,
+  AZ-loss + volume-detach acceptance task); and the MicroCloud
+  detection-and-routing path (MicroCeph storage recommendation,
+  sibling MicroK8s cluster picked up by the existing
+  ``_find_k8s_controller``).  A cross-link from
+  ``howto-mcp.md``'s "Canonical-native catalogue" section points
+  readers at the new page when they want the MAAS-specific worked
+  flow rather than just the catalogue descriptor.
+- [x] The "What Cantrip does and doesn't do" matrix from
+  ``design/SUBSTRATES.md`` §4 lifts into the new how-to verbatim so
+  the boundary between Concierge-owned and Cantrip-owned territory
+  is visible to readers without opening the design note.  The page
+  closes with the contract sentence: *the agent recommends and
+  consumes; the operator installs and maintains.*
 
 ### What this phase is *not*
 

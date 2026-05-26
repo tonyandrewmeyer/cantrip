@@ -17,6 +17,7 @@ sections:
       - { slug: howto-team-sync, label: "Share with teammates" }
       - { slug: howto-skills, label: "Add a custom skill" }
       - { slug: howto-mcp, label: "Configure MCP servers" }
+      - { slug: howto-substrates, label: "Target a Canonical-cloud substrate" }
       - { slug: howto-charm-library, label: "Search the charm library" }
       - { slug: howto-charm-icon, label: "Generate a charm icon" }
       - { slug: howto-identity-platform, label: "Add identity-platform login" }

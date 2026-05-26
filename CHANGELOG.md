@@ -5,6 +5,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 97.4 — substrate-targets how-to and boundary matrix.**
+  New ``docs/src/howto-substrates.md`` (rendered to
+  ``docs/docs/howto-substrates.html``) walks through all three
+  Canonical-cloud substrate refinements in one page: a MAAS
+  read-only baseline + capacity-allowlist opt-in + worked
+  machine-charm flow, the OpenStack / Sunbeam guidance set
+  (DESIGN.md callout, ``preset-bundles`` cinder-csi / neutron-api
+  hints, AZ-loss + volume-detach acceptance task), and the
+  MicroCloud detection-and-routing path (MicroCeph storage
+  recommendation, sibling MicroK8s cluster reuse).  Includes the
+  "What Cantrip does and doesn't do" matrix from
+  ``design/SUBSTRATES.md`` §4 so the boundary between
+  Concierge-owned and Cantrip-owned territory is visible to readers
+  without opening the design note.  Added to the sidebar nav under
+  How-to guides between Configure MCP servers and Search the charm
+  library; ``howto-mcp.md``'s Canonical-native catalogue section
+  cross-links to it for the MAAS worked flow.
 - **Phase 97.3 — substrate-aware guidance for OpenStack / Sunbeam
   and MicroCloud.**  Preflight gains ``detect_microcloud()`` (cheap
   ``snap list microcloud`` probe) and a ``substrate_summary()``
