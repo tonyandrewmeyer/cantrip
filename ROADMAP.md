@@ -1183,6 +1183,174 @@ six call-out areas without changing the architecture.
 
 ---
 
+## Phase 114: Test-Suite Tidy-Up — Command Coverage, Shared Fakes, Snapshots
+
+**Goal:** The test suite is healthy overall (92.41% line coverage,
+8,336 unit tests, ~117 s parallel run) but a 2026-05-26 review
+surfaced six concrete weak spots that are individually small and
+collectively worth a focused pass: the user-facing slash-command
+modules under `src/cantrip/agent/commands/` are the lowest-covered
+non-trivial code in the tree; 23 inline `_Fake…` / `_Stub…` classes
+remain in test files despite `tests/support/` existing for exactly
+this; there is no snapshot/golden-file machinery anywhere, so prompt
+and structured-response regression tests assert via brittle string
+contains; `tests/unit/test_cli_bdd.py` is 168 lines and does not
+match its name; many modules between 85–92% have missing coverage
+clustered on error/edge branches; and the slash-command dispatch
+path has thin unit coverage and no integration coverage.
+
+Each sub-phase is independent and individually shippable.  The exit
+bar is *navigability + regression catch* on user-facing surfaces,
+not a higher overall coverage number — the current 88% gate stays.
+
+### 114.1 High — Command-layer coverage gap
+
+- [ ] Add `tests/unit/agent/commands/test_map.py` covering
+  `src/cantrip/agent/commands/map.py` (currently 60%, missing
+  lines 46, 74, 92, 112–132 — sympath resolution and dispatch).
+- [ ] Add `tests/unit/agent/commands/test_cost.py` covering
+  `src/cantrip/agent/commands/cost.py` (currently 67%, missing
+  lines 44–46, 60, 67, 91–106, 109–114, 151–159, 162–164 — rate
+  calculation branches and token-pricing edges).
+- [ ] Extend `tests/unit/agent/commands/test_recipe_slash.py`
+  (and/or add `test_recipes.py`) to cover the 35 missing lines in
+  `recipes.py` (recipe parse/load edges around lines 63–93, 227–240,
+  334–347, 386–401).
+- [ ] Extend coverage on `commands/share.py` (80%, 9 missing) and
+  `commands/flows.py` (87%, 10 missing).  These are smaller and may
+  fold into existing files.
+- [ ] Exit: every module under `src/cantrip/agent/commands/` ≥ 90%
+  line coverage.  No coverage-gate change; the 88% project gate
+  stays.
+
+### 114.2 High — Promote inline MCP fakes to `tests/support/`
+
+- [ ] Move `_FakeTextBlock`, `_FakeUIBlock`, `_FakeMetaResourceBlock`
+  (currently in `tests/unit/test_mcp_apps.py`) into
+  `tests/support/mcp_fakes.py` with the same shape and the
+  established `tests/support/` docstring conventions.
+- [ ] Update `tests/README.md` shared-fakes table to list them.
+- [ ] Sweep the remaining ~20 inline `_Fake…` / `_Stub…` definitions
+  in `tests/unit/` (`grep -rE "^class _(Fake|Stub)" tests/`).
+  Promote any that are domain-shaped and reused across files; leave
+  test-local fakes inline (the `test_race.py` trio is fine where it
+  is — race-specific, not shared).
+- [ ] Per the pre-1.0-no-backcompat convention, update call sites in
+  the same change; no shim modules.
+
+### 114.3 Should-fix — Adopt snapshot testing (syrupy)
+
+- [ ] Add `syrupy` as a dev dependency via `uv add --dev syrupy`.
+- [ ] Pilot conversion: port
+  `tests/unit/planner/test_planner_prompt_snapshots.py` from
+  string-contains assertions to syrupy snapshots.  Establish the
+  on-disk snapshot layout convention (`__snapshots__/` next to the
+  test file) and document it in `tests/README.md`.
+- [ ] Land a second conversion on structured-response / parsed-design
+  outputs (`tests/unit/planner/` or `tests/unit/subagent/` — pick the
+  narrowest file where this pays).  This proves the pattern beyond
+  the pilot.
+- [ ] Document the regeneration path
+  (`uv run pytest --snapshot-update <file>`) in `tests/README.md`
+  alongside the existing "Running tests" block.
+- [ ] **Not in scope:** TUI rendering snapshots.  Textual's pilot
+  testing covers actions/state; the rendering layer is volatile
+  enough that golden files would churn more than they catch.  Leave
+  as an explicit deferral here so it does not silently reappear.
+
+### 114.4 Should-fix — Resolve `test_cli_bdd.py` naming/scope mismatch
+
+- [ ] `tests/unit/test_cli_bdd.py` is 168 lines and does not
+  implement BDD-style scenarios as the filename implies.  Pick one
+  of:
+  - **(a)** Rename to match what it actually covers (likely
+    `test_cli_smoke.py` or `test_cli_basic.py` — confirm against
+    contents).
+  - **(b)** Expand into proper BDD coverage of the CLI surface,
+    either with a stepdef framework (`pytest-bdd`) or with explicit
+    given/when/then comment blocks and a documented scope.
+- [ ] Recommendation pending review: option (a) is the cheap honest
+  fix; option (b) is a real investment.  Default to (a) unless the
+  reviewer wants the BDD coverage.
+
+### 114.5 Should-fix — Slash-command dispatch integration test
+
+- [ ] Add a `tests/integration/test_slash_dispatch.py` that exercises
+  the slash-command dispatch path end-to-end (user types `/<cmd>` →
+  parser → command module → effect).  The unit layer under
+  `tests/unit/agent/commands/` is the right place for argument
+  parsing and branch coverage; this integration test catches wiring
+  regressions across the dispatcher seam, which currently has no
+  coverage at that level.
+- [ ] Cover at least: a state-mutating command (e.g. `/budget`), a
+  pure read command (e.g. `/cost`), and an error path (unknown
+  command).  Use `MultiRoleProvider` / `CallbackProvider` from
+  `tests.support.providers` per the existing integration
+  conventions.
+
+### 114.6 Nice-to-have — Error-path pass on 85–92% modules
+
+- [ ] Many `src/cantrip/agent/**` files sit between 85% and 92% line
+  coverage with the gaps clustered on error / edge branches
+  (timeouts, parse failures, fallback paths).  Run
+  `make coverage` and walk the report from lowest to highest in this
+  band, adding focused tests where the missing branch represents a
+  real failure mode (skip cosmetic branches like unreachable
+  `else: pass`).
+- [ ] Target: project line coverage ≥ 95% without raising the gate.
+  This is an upper bound — stop sooner if remaining misses are
+  defensive-only.
+- [ ] **Not:** a mechanical race-to-100%.  Each test added must
+  exercise a real failure mode.  Pin implementation, don't pin
+  irrelevance.
+
+**Non-goals:**
+
+- Not a coverage-gate bump.  The 88% project gate stays; the value
+  of this phase is concentrated user-facing coverage, not a higher
+  number.
+- Not a sweep to unit-test individual skills.  The single
+  `tests/integration/test_skills_loading.py` covering discovery /
+  parsing is the right level — skill content is data, not logic.
+- Not a TUI rendering-snapshot programme (see 114.3 deferral).
+
+**Exit criteria:**
+
+- (a) Every module under `src/cantrip/agent/commands/` ≥ 90% line
+  coverage.
+- (b) `tests/support/mcp_fakes.py` exists; `tests/unit/test_mcp_apps.py`
+  no longer defines `_FakeTextBlock` / `_FakeUIBlock` /
+  `_FakeMetaResourceBlock`; `tests/README.md` table is updated.
+- (c) `syrupy` is a dev dep; at least two snapshot files exist
+  on disk and round-trip cleanly under
+  `pytest --snapshot-update`; `tests/README.md` documents the
+  regeneration path.
+- (d) `tests/unit/test_cli_bdd.py` either renamed to match its
+  contents (114.4 option a) or expanded into real BDD coverage
+  (114.4 option b).  Filename matches scope.
+- (e) `tests/integration/test_slash_dispatch.py` exists and covers
+  at least one state-mutating command, one read command, and one
+  error path.
+- (f) `make check` passes on every commit.
+
+**Dependencies:**
+
+| Item | Depends On | Notes |
+|------|-----------|-------|
+| 114.1 command coverage | none | Largest single chunk; do early |
+| 114.2 promote MCP fakes | none | Pure refactor of test files |
+| 114.3 syrupy adoption | none | Dev-dep addition + two pilot conversions |
+| 114.4 cli_bdd rename | none | Trivial under option (a); larger under (b) |
+| 114.5 slash dispatch integration | 114.1 (so unit + integration land in coherent order) | Optional ordering; mostly independent |
+| 114.6 error-path pass | 114.1 (cheaper after command modules are tested first) | Long-tail; cap by judgement, not a target % |
+
+**Discovered:** 2026-05-26 test-suite review.  Coverage and structure
+were healthy enough that the review surfaced concentrated weak spots
+rather than systemic problems — hence a single phase of focused
+sub-tasks rather than a re-architecture.
+
+---
+
 ## Milestones
 
 High-level targets for **open** work. Completed milestones are listed in [`ROADMAP_ARCHIVE.md`](ROADMAP_ARCHIVE.md).
@@ -1194,3 +1362,4 @@ High-level targets for **open** work. Completed milestones are listed in [`ROADM
 | M79: Eval Gates Prompt Changes | 79 | System-prompt edits trigger a per-provider LLM-in-loop smoke test that runs in CI against a cheap model, closing the "narrow eval missed a cross-model regression" gap described in Anthropic's April 23 postmortem |
 | M84: Deferred-Item Sweep | 84 | `design/DEFERRED.md` exists, every "Deferred:" entry across `ROADMAP.md` and `ROADMAP_ARCHIVE.md` is labelled fired / not-fired / dropped, and the next sweep is on the calendar so deferrals don't rot into forgotten todos |
 | M113: Source-Tree Restructure | 113 | No `src/cantrip/agent/` file over 1,500 lines, agent top-level flattened to ~15 modules with themed subpackages, `design/` split into active vs research, `inference-snaps/` lives outside the repo path, and `cookbook/`/`demos/`/`examples/`/`bundles/` has a recorded convention |
+| M114: Test-Suite Tidy-Up | 114 | Every `src/cantrip/agent/commands/` module ≥ 90% line coverage, `tests/support/mcp_fakes.py` replaces inline MCP fakes, `syrupy` adopted with at least two snapshot conversions, `test_cli_bdd.py` matches its scope, and a slash-command dispatch integration test covers the wiring seam |
