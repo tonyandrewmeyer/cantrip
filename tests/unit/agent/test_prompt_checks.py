@@ -575,7 +575,8 @@ class TestSlashReview:
         body = await result.followup
         assert "No checks configured" in body
 
-    def test_handler_rejects_unknown_args(self) -> None:
+    def test_handler_rejects_unknown_flag(self) -> None:
+        """``/review`` rejects unknown flags with a usage hint."""
         from types import SimpleNamespace
 
         from cantrip.agent.commands import slash as slash_commands
@@ -584,9 +585,200 @@ class TestSlashReview:
             state=SimpleNamespace(charm_path=pathlib.Path("/tmp")),
             provider=StubProvider(payload={}),
         )
-        result = slash_commands._handle_review(agent, "--severity high")  # type: ignore[arg-type]
+        result = slash_commands._handle_review(agent, "--bogus 1")  # type: ignore[arg-type]
         assert result.followup is None
-        assert "Per-check filters are not implemented" in result.text
+        assert "Unknown" in result.text and "--bogus" in result.text
+        assert "--severity" in result.text and "--name" in result.text
+
+    def test_handler_rejects_unknown_severity(self) -> None:
+        """``/review`` rejects severity values outside the allow-list."""
+        from types import SimpleNamespace
+
+        from cantrip.agent.commands import slash as slash_commands
+
+        agent = SimpleNamespace(
+            state=SimpleNamespace(charm_path=pathlib.Path("/tmp")),
+            provider=StubProvider(payload={}),
+        )
+        result = slash_commands._handle_review(agent, "--severity tofu")  # type: ignore[arg-type]
+        assert result.followup is None
+        assert "Unknown severity" in result.text
+
+    async def test_handler_filters_by_severity(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``--severity high`` runs only checks whose severity matches."""
+        from types import SimpleNamespace
+
+        from cantrip.agent import lint_context
+        from cantrip.agent.commands import slash as slash_commands
+
+        monkeypatch.setattr(
+            lint_context,
+            "gather_project_diagnostics",
+            _stub_diagnostics,
+        )
+        discovered = [
+            _check(name="alpha", severity="high"),
+            _check(name="beta", severity="warning"),
+            _check(name="gamma", severity="high"),
+        ]
+        monkeypatch.setattr(
+            checks.CheckIndex,
+            "discover",
+            lambda _self: discovered,
+        )
+        seen_inputs: list[list[checks.Check]] = []
+
+        async def fake_run_all_checks(
+            picked,
+            **_kwargs,
+        ) -> checks.CheckReport:
+            seen_inputs.append(list(picked))
+            return checks.CheckReport(
+                results=tuple(
+                    checks.CheckResult(
+                        name=c.name,
+                        status="pass",
+                        severity=c.severity,
+                        message="ok",
+                    )
+                    for c in picked
+                )
+            )
+
+        monkeypatch.setattr(checks, "run_all_checks", fake_run_all_checks)
+
+        agent = SimpleNamespace(
+            state=SimpleNamespace(charm_path=tmp_path),
+            provider=StubProvider(payload={}),
+        )
+        result = slash_commands._handle_review(agent, "--severity high")  # type: ignore[arg-type]
+        body = await result.followup
+        assert seen_inputs and {c.name for c in seen_inputs[0]} == {"alpha", "gamma"}
+        assert "beta" not in body
+
+    async def test_handler_filters_by_name_glob(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``--name 'cos-*'`` matches via fnmatch."""
+        from types import SimpleNamespace
+
+        from cantrip.agent import lint_context
+        from cantrip.agent.commands import slash as slash_commands
+
+        monkeypatch.setattr(
+            lint_context,
+            "gather_project_diagnostics",
+            _stub_diagnostics,
+        )
+        discovered = [
+            _check(name="cos-relations", severity="warning"),
+            _check(name="cos-dashboards", severity="warning"),
+            _check(name="charm-readme", severity="warning"),
+        ]
+        monkeypatch.setattr(checks.CheckIndex, "discover", lambda _self: discovered)
+        seen: list[set[str]] = []
+
+        async def fake(picked, **_kwargs):
+            seen.append({c.name for c in picked})
+            return checks.CheckReport(results=())
+
+        monkeypatch.setattr(checks, "run_all_checks", fake)
+
+        agent = SimpleNamespace(
+            state=SimpleNamespace(charm_path=tmp_path),
+            provider=StubProvider(payload={}),
+        )
+        result = slash_commands._handle_review(agent, "--name 'cos-*'")  # type: ignore[arg-type]
+        await result.followup
+        assert seen == [{"cos-relations", "cos-dashboards"}]
+
+    def test_parse_review_filters_accepts_equals_form(self) -> None:
+        from cantrip.agent.commands import slash as slash_commands
+
+        filters, error = slash_commands._parse_review_filters("--severity=high")
+        assert error is None
+        assert filters is not None
+        assert filters.severities == frozenset({"high"})
+        assert filters.name_globs is None
+
+    def test_parse_review_filters_accepts_comma_separated_values(self) -> None:
+        from cantrip.agent.commands import slash as slash_commands
+
+        filters, error = slash_commands._parse_review_filters(
+            "--severity high,warning --name foo,bar"
+        )
+        assert error is None
+        assert filters is not None
+        assert filters.severities == frozenset({"high", "warning"})
+        assert filters.name_globs == ("foo", "bar")
+
+    def test_parse_review_filters_repeatable_flags_accumulate(self) -> None:
+        from cantrip.agent.commands import slash as slash_commands
+
+        filters, error = slash_commands._parse_review_filters("--name a --name 'b-*'")
+        assert error is None
+        assert filters is not None
+        assert filters.name_globs == ("a", "b-*")
+
+    def test_parse_review_filters_empty_string_no_filter(self) -> None:
+        from cantrip.agent.commands import slash as slash_commands
+
+        filters, error = slash_commands._parse_review_filters("")
+        assert error is None
+        assert filters is not None
+        assert filters.severities is None
+        assert filters.name_globs is None
+
+    def test_parse_review_filters_severity_without_value_errors(self) -> None:
+        from cantrip.agent.commands import slash as slash_commands
+
+        filters, error = slash_commands._parse_review_filters("--severity")
+        assert filters is None
+        assert error is not None and "needs a value" in error
+
+    def test_parse_review_filters_unbalanced_quote_errors(self) -> None:
+        from cantrip.agent.commands import slash as slash_commands
+
+        filters, error = slash_commands._parse_review_filters("--name 'unterminated")
+        assert filters is None
+        assert error is not None and "Bad" in error
+
+    def test_review_severities_match_checks_module(self) -> None:
+        """``slash._REVIEW_SEVERITIES`` must stay in sync with ``checks._SEVERITIES``."""
+        from cantrip.agent import checks
+        from cantrip.agent.commands import slash as slash_commands
+
+        assert frozenset(checks._SEVERITIES) == slash_commands._REVIEW_SEVERITIES
+
+    async def test_handler_filter_miss_renders_hint(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When filters elide every check, show what's configured."""
+        from types import SimpleNamespace
+
+        from cantrip.agent.commands import slash as slash_commands
+
+        discovered = [_check(name="alpha", severity="warning")]
+        monkeypatch.setattr(checks.CheckIndex, "discover", lambda _self: discovered)
+        # Should never reach run_all_checks — leave it as the live import,
+        # because the filter-miss path bails out before invoking it.
+        agent = SimpleNamespace(
+            state=SimpleNamespace(charm_path=tmp_path),
+            provider=StubProvider(payload={}),
+        )
+        result = slash_commands._handle_review(agent, "--severity critical")  # type: ignore[arg-type]
+        body = await result.followup
+        assert "No checks matched" in body
+        assert "critical" in body
+        assert "alpha" in body  # the configured catalogue is listed
 
     def test_handler_without_charm_path(self) -> None:
         from types import SimpleNamespace

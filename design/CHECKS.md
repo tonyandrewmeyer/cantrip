@@ -119,5 +119,13 @@ default. Quiet shadowing is the documented anti-pattern.
 * Phase 10 (existing-charm improvement) and Phase 17 (acceptance
   testing) will run Checks automatically when those flows ship
   the planner integration.
+
+## Shipped
+
 * `--severity` and `--name` filters on `/review` for incremental
-  triage.
+  triage.  Both flags accept comma-separated values and are
+  repeatable; `--name` uses `fnmatch.fnmatchcase` so
+  `--name 'cos-*'` does what an operator expects.  Implemented
+  in `src/cantrip/agent/commands/slash.py` (`_parse_review_filters`
+  + `_apply_review_filters`); pinned by twelve cases in
+  `tests/unit/agent/test_prompt_checks.py::TestSlashReview`.

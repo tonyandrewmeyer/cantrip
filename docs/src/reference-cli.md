@@ -1284,18 +1284,33 @@ metadata YAML; other languages still go through
 ### Review checks
 
 <dl>
-  <dt><code>/review</code></dt>
+  <dt><code>/review [--severity LEVEL] [--name PATTERN]</code></dt>
   <dd>
-    Run every loaded prompt-based Check against the active charm.
-    Each Check is one structured LLM call (the
-    <code>CHECK_RESULT</code> schema constrains the reply to
-    <code>{status, severity, message, evidence?, suggested_fix?}</code>),
-    so the report is uniform regardless of which model you're
-    using.  Failures appear first, then errors (couldn't reach a
-    verdict), then skipped (no matching files), then passes.  When
-    the active charm also has linter diagnostics, they appear
-    underneath as a <em>Deterministic checks</em> section so you
-    see one combined view.
+    Run loaded prompt-based Checks against the active charm.  Each
+    Check is one structured LLM call (the <code>CHECK_RESULT</code>
+    schema constrains the reply to <code>{status, severity, message,
+    evidence?, suggested_fix?}</code>), so the report is uniform
+    regardless of which model you're using.  Failures appear first,
+    then errors (couldn't reach a verdict), then skipped (no
+    matching files), then passes.  When the active charm also has
+    linter diagnostics, they appear underneath as a <em>Deterministic
+    checks</em> section so you see one combined view.
+    <p>
+      <code>--severity</code> filters to one or more severity levels
+      (<code>critical</code>, <code>high</code>, <code>error</code>,
+      <code>medium</code>, <code>warning</code>, <code>low</code>,
+      <code>info</code>); accepts comma-separated values
+      (<code>--severity high,error</code>) and is repeatable.
+      <code>--name</code> filters by check name using
+      <code>fnmatch</code> globs, so <code>--name 'cos-*'</code>
+      matches every check whose name starts with <code>cos-</code>;
+      also accepts comma-separated values and is repeatable.  Both
+      filters AND-combine across axes (a check must match every
+      requested axis to run) and OR-combine within an axis (any
+      listed severity, any listed pattern).  When no Checks match,
+      the command lists what's configured so the filter
+      <em>missing</em> case is obvious rather than silent.
+    </p>
   </dd>
 </dl>
 

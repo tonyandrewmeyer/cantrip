@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **``/review --severity`` and ``--name`` filters.**  Closes item 3
+  of ``design/CHECKS.md``'s "Future work".  ``/review`` now accepts
+  ``--severity <level>`` and ``--name <pattern>`` (both repeatable,
+  both accept comma-separated values); ``--name`` uses
+  ``fnmatch.fnmatchcase`` so ``--name 'cos-*'`` matches every check
+  whose name starts with ``cos-``.  Filters AND-combine across axes
+  and OR-combine within an axis.  When a filter eliminates every
+  configured check the command lists the catalogue so the
+  empty-result case is obvious rather than silent.  Unknown flags
+  and unknown severity values surface a clean usage hint with the
+  allowed values listed.  Pinned by twelve cases in
+  ``tests/unit/agent/test_prompt_checks.py::TestSlashReview``;
+  ``docs/src/reference-cli.md`` updated accordingly.
 - **Mid-flight race-mode budget accounting (Phase 47.4 follow-up).**
   Resolves the deferred ``47.4`` row from ``design/DEFERRED.md`` now
   that Phase 41.6 streaming-usage aggregation has bedded in.  The
