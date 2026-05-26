@@ -3,12 +3,14 @@
 from cantrip.agent.autodeploy import (
     _ACCEPTANCE_FIX_PREFIX,
     _DEMO_TITLE_PREFIX,
+    _OPENSTACK_ACCEPTANCE_TITLE,
     _RETRY_PREFIX,
     _VERIFY_PREFIX,
     _WATCHER_PREFIX,
     _extract_acceptance_failures,
     _extract_test_counts,
     followup_tasks,
+    openstack_acceptance_task,
     task_for_watcher_event,
     tasks_after_acceptance,
     tasks_after_acceptance_failure,
@@ -416,6 +418,77 @@ class TestTasksAfterTest:
         assert "action_exerciser" in result[0].description
         assert "relation_smoke_test" in result[0].description
         assert "acceptance_report" in result[0].description
+
+
+# ===================================================================
+# Phase 97.3 — OpenStack acceptance task
+# ===================================================================
+
+
+class TestOpenStackAcceptanceTask:
+    """The OpenStack acceptance task fires alongside the base one when relevant."""
+
+    def _done_test(self) -> AgentTask:
+        task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+        return task
+
+    def test_creates_openstack_task_when_active_cloud_is_openstack(self) -> None:
+        result = openstack_acceptance_task(self._done_test(), active_cloud="openstack")
+        assert len(result) == 1
+        assert result[0].title == _OPENSTACK_ACCEPTANCE_TITLE
+        assert result[0].category == TaskCategory.TEST
+        assert result[0].model_hint == ModelHint.PRIMARY
+        assert result[0].dependencies == ["t1"]
+
+    def test_sunbeam_cloud_also_triggers_the_task(self) -> None:
+        result = openstack_acceptance_task(self._done_test(), active_cloud="sunbeam")
+        assert len(result) == 1
+
+    def test_cloud_match_is_case_insensitive(self) -> None:
+        result = openstack_acceptance_task(self._done_test(), active_cloud="OpenStack")
+        assert len(result) == 1
+
+    def test_no_task_when_cloud_is_other(self) -> None:
+        assert openstack_acceptance_task(self._done_test(), active_cloud="localhost") == []
+        assert openstack_acceptance_task(self._done_test(), active_cloud="microk8s") == []
+
+    def test_no_task_when_cloud_is_unknown(self) -> None:
+        assert openstack_acceptance_task(self._done_test(), active_cloud="") == []
+
+    def test_no_task_for_failed_test(self) -> None:
+        task = self._done_test()
+        task.status = TaskStatus.FAILED
+        assert openstack_acceptance_task(task, active_cloud="openstack") == []
+
+    def test_no_task_for_non_test_category(self) -> None:
+        task = AgentTask(id="b1", title="Build charm", category=TaskCategory.BUILD)
+        task.status = TaskStatus.DONE
+        assert openstack_acceptance_task(task, active_cloud="openstack") == []
+
+    def test_no_chain_off_acceptance_task(self) -> None:
+        """Prevent runaway — an already-acceptance task doesn't spawn another."""
+        task = AgentTask(
+            id="a1",
+            title=f"{_ACCEPTANCE_PREFIX} put the charm through its paces",
+            category=TaskCategory.TEST,
+        )
+        task.status = TaskStatus.DONE
+        assert openstack_acceptance_task(task, active_cloud="openstack") == []
+
+    def test_no_chain_off_demo_task(self) -> None:
+        task = AgentTask(
+            id="d1",
+            title=f"Validate {_DEMO_TITLE_PREFIX} artefacts",
+            category=TaskCategory.TEST,
+        )
+        task.status = TaskStatus.DONE
+        assert openstack_acceptance_task(task, active_cloud="openstack") == []
+
+    def test_description_names_az_loss_and_volume_detach(self) -> None:
+        result = openstack_acceptance_task(self._done_test(), active_cloud="openstack")
+        assert "AZ loss" in result[0].description
+        assert "Volume detach" in result[0].description or "volume detach" in result[0].description
 
 
 # ===================================================================

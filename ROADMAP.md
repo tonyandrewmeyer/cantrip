@@ -1525,13 +1525,27 @@ lowest-friction high-value pieces first.
 
 ### 97.3 OpenStack and MicroCloud profiles
 
-- [ ] Add substrate-aware profiles or guidance for "target OpenStack"
-  and "target MicroCloud" so infrastructure-charm work can tailor
-  assumptions, companion charms, and acceptance guidance to those
-  Canonical environments.
-- [ ] Extend topology / bundle-style outputs so these substrates appear
-  as first-class deployment contexts in generated design notes when
-  relevant.
+- [x] Substrate-aware guidance lands as a ``Substrate`` sub-section
+  of the system prompt's ``Current Context``, populated from a new
+  :class:`preflight.SubstrateSummary` (active controller's cloud,
+  full controller list, MicroCloud-snap detection).  An
+  ``openstack`` / ``sunbeam`` active cloud emits a callout pointing
+  the agent at cinder-csi storage + neutron-api ingress and asks
+  for an ``## OpenStack target`` sub-section in DESIGN.md covering
+  AZ-loss / volume-detach behaviour; a MicroCloud-snap hit emits a
+  MicroCeph + sibling-MicroK8s callout.  The autodeploy hook
+  (``openstack_acceptance_task`` in ``src/cantrip/agent/autodeploy.py``)
+  layers an "[Acceptance] verify against AZ loss and volume detach"
+  task on top of the base acceptance task whenever
+  ``state.active_cloud`` is openstack-shaped.
+- [x] Topology / bundle-style outputs already pick up the new
+  guidance through the ``preset-bundles`` skill — a new
+  "Substrate refinements (Canonical clouds)" subsection in
+  ``src/cantrip/skills/preset-bundles/SKILL.md`` mirrors the
+  system-prompt callouts so the agent's relation-composition step
+  treats OpenStack and MicroCloud as first-class deployment
+  contexts when the substrate block flags them, rather than
+  re-deriving the guidance per turn.
 
 ### 97.4 Examples and docs
 

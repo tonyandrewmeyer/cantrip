@@ -593,6 +593,13 @@ class CantripAgent:
         # first ``_build_system_prompt`` call kicks off the parse.
         self._repo_map_cache: RepoMap | None = None
 
+        # Phase 97.3: substrate summary (controllers, active cloud,
+        # MicroCloud detection).  Cached for the agent's lifetime; the
+        # first ``_build_system_prompt`` call shells out, subsequent
+        # calls reuse the result.  Set to a sentinel ``False`` after a
+        # failed probe so we don't retry on every turn.
+        self._substrate_cache: Any = None
+
         # Phase 72b: read-only code-intelligence index.  Built lazily
         # via :pyattr:`code_intel`; the codeintel tools call into it
         # through ``self._code_intel_or_none`` so a session without a
@@ -1442,6 +1449,7 @@ class CantripAgent:
             environment_ready=self.state.environment_ready,
             watcher_enabled=self.state.watcher_enabled and self.state.watcher_reacting,
             repo_map=repo_map,
+            substrate=self._get_substrate_cached(),
             compact=compact,
         )
         if self.state.plan_mode:
@@ -1449,6 +1457,35 @@ class CantripAgent:
         if self.state.was_resumed:
             prompt = f"{prompt}\n\n{_RESUMED_MUST_READ_GUIDANCE}"
         return prompt
+
+    def _get_substrate_cached(self) -> Any:
+        """Return the cached :class:`preflight.SubstrateSummary` or ``None``.
+
+        Phase 97.3: substrate detection (controllers, active cloud,
+        MicroCloud presence) shells out to ``juju`` and ``snap``.  We
+        compute it once on the first ``_build_system_prompt`` call and
+        reuse the result for the agent's lifetime.  Probe failures are
+        treated as "no substrate info" — the prompt section degrades
+        cleanly when the summary is ``None`` or has no fields set.
+
+        Callers wanting to force a refresh (e.g. after a fresh
+        ``concierge`` run) clear ``self._substrate_cache`` directly.
+        """
+        if self._substrate_cache is not None:
+            return self._substrate_cache or None
+        try:
+            from cantrip.agent.preflight import substrate_summary
+
+            self._substrate_cache = substrate_summary()
+        except Exception:  # noqa: BLE001 - never block the prompt on a probe error.
+            log.debug("substrate_summary probe failed", exc_info=True)
+            self._substrate_cache = False  # cache the failure so we don't retry
+            return None
+        # Mirror the active cloud onto AgentState so the autodeploy hook
+        # (which only sees state, not the agent) can pick up the
+        # OpenStack acceptance task.  Empty string = "unknown".
+        self.state.active_cloud = self._substrate_cache.active_cloud or ""
+        return self._substrate_cache
 
     @property
     def repo_map(self) -> RepoMap | None:

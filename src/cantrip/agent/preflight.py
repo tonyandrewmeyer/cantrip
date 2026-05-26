@@ -653,6 +653,87 @@ def list_controllers() -> list[dict[str, Any]]:
     ]
 
 
+# Phase 97.3: substrate refinements on the machine path.  MicroCloud is
+# detected by the presence of its snap (cheap and reliable), OpenStack
+# by the Juju controller's cloud name.  Both are *hints* for the
+# planner / DESIGN.md author — neither flips Cantrip's primary
+# substrate vocabulary, which stays binary (``k8s`` vs ``machine``).
+_OPENSTACK_CLOUD_NAMES = frozenset({"openstack", "sunbeam"})
+
+
+def detect_microcloud() -> bool:
+    """Return ``True`` when the ``microcloud`` snap is installed locally.
+
+    Guarded by ``shutil.which("snap")`` so test environments without
+    snapd return ``False`` rather than raising.  The check uses
+    ``snap list microcloud`` because ``snap info`` reaches over the
+    network (slower, fails offline) and the local install is the only
+    signal we need.
+    """
+    snap_bin = shutil.which("snap")
+    if not snap_bin:
+        return False
+    try:
+        result = subprocess.run(
+            [snap_bin, "list", "microcloud"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
+
+
+@dataclasses.dataclass(frozen=True)
+class SubstrateSummary:
+    """Substrate-aware view of the current Juju environment.
+
+    ``controllers`` is the same shape :func:`list_controllers` returns.
+    ``active_cloud`` is the cloud of the currently-selected controller
+    (``""`` when no controller is active or none has been picked yet).
+    ``openstack_target`` / ``microcloud_detected`` are convenience
+    flags consumed by the system prompt and the autodeploy
+    acceptance-task hook.
+    """
+
+    controllers: list[dict[str, Any]]
+    active_cloud: str
+    microcloud_detected: bool
+
+    @property
+    def openstack_target(self) -> bool:
+        return self.active_cloud in _OPENSTACK_CLOUD_NAMES
+
+
+def _current_controller_cloud() -> str:
+    """Return the cloud name of the active Juju controller, or ``""``."""
+    data = _run_juju_json(["show-controller"], timeout=10)
+    if not data:
+        return ""
+    for info in data.values():
+        details = info.get("details", {})
+        cloud = details.get("cloud", "")
+        if cloud:
+            return str(cloud)
+    return ""
+
+
+def substrate_summary() -> SubstrateSummary:
+    """Build the substrate summary surfaced to the system prompt.
+
+    Combines :func:`list_controllers` + :func:`_current_controller_cloud`
+    + :func:`detect_microcloud`.  All probes degrade to safe defaults
+    when their underlying CLI is missing, so the summary can be built
+    in any environment.
+    """
+    return SubstrateSummary(
+        controllers=list_controllers(),
+        active_cloud=_current_controller_cloud(),
+        microcloud_detected=detect_microcloud(),
+    )
+
+
 def _create_model_on_controller(
     model_name: str,
     controller: str,

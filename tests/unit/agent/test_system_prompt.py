@@ -297,3 +297,84 @@ class TestWatcherPrompt:
         assert "Investigate" in result
         assert "Diagnose" in result
         assert "observability" in result.lower()
+
+
+class TestSubstratePrompt:
+    """Phase 97.3 — substrate summary block in the Current Context section."""
+
+    def test_substrate_section_absent_when_summary_is_none(self):
+        result = build_system_prompt(substrate=None)
+        assert "**Substrate**" not in result
+
+    def test_substrate_section_absent_when_summary_is_empty(self):
+        from cantrip.agent.preflight import SubstrateSummary
+
+        empty = SubstrateSummary(controllers=[], active_cloud="", microcloud_detected=False)
+        result = build_system_prompt(substrate=empty)
+        assert "**Substrate**" not in result
+
+    def test_controllers_rendered_when_present(self):
+        from cantrip.agent.preflight import SubstrateSummary
+
+        summary = SubstrateSummary(
+            controllers=[
+                {"name": "lxd", "cloud": "localhost", "is_k8s": False, "models": 2},
+                {"name": "k8s", "cloud": "microk8s", "is_k8s": True, "models": 1},
+            ],
+            active_cloud="localhost",
+            microcloud_detected=False,
+        )
+        result = build_system_prompt(substrate=summary)
+        assert "**Substrate**" in result
+        assert "lxd (localhost)" in result
+        assert "k8s (microk8s)" in result
+        assert "Active cloud: localhost" in result
+
+    def test_openstack_target_emits_design_hint(self):
+        from cantrip.agent.preflight import SubstrateSummary
+
+        summary = SubstrateSummary(
+            controllers=[
+                {"name": "openstack", "cloud": "openstack", "is_k8s": False, "models": 0}
+            ],
+            active_cloud="openstack",
+            microcloud_detected=False,
+        )
+        result = build_system_prompt(substrate=summary)
+        assert "OpenStack target" in result
+        # The DESIGN.md guidance mentions the canonical resilience scenarios.
+        assert "AZ-loss" in result or "volume-detach" in result
+        # And the storage/ingress preference is named.
+        assert "cinder-csi" in result
+        assert "neutron-api" in result
+
+    def test_sunbeam_active_cloud_also_emits_openstack_hint(self):
+        from cantrip.agent.preflight import SubstrateSummary
+
+        summary = SubstrateSummary(
+            controllers=[], active_cloud="sunbeam", microcloud_detected=False
+        )
+        result = build_system_prompt(substrate=summary)
+        assert "OpenStack target" in result
+
+    def test_microcloud_emits_microceph_hint(self):
+        from cantrip.agent.preflight import SubstrateSummary
+
+        summary = SubstrateSummary(controllers=[], active_cloud="", microcloud_detected=True)
+        result = build_system_prompt(substrate=summary)
+        assert "MicroCloud detected" in result
+        assert "MicroCeph" in result
+        assert "MicroK8s sibling cluster" in result
+
+    def test_non_openstack_cloud_does_not_emit_openstack_hint(self):
+        """A bare LXD controller doesn't trigger the OpenStack callout."""
+        from cantrip.agent.preflight import SubstrateSummary
+
+        summary = SubstrateSummary(
+            controllers=[{"name": "lxd", "cloud": "localhost", "is_k8s": False, "models": 0}],
+            active_cloud="localhost",
+            microcloud_detected=False,
+        )
+        result = build_system_prompt(substrate=summary)
+        assert "OpenStack target" not in result
+        assert "cinder-csi" not in result

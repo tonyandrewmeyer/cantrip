@@ -312,3 +312,60 @@ class TestDefaultFallback:
             state_service=svc,
         )
         assert executor._state_service is svc
+
+
+# ---------------------------------------------------------------------------
+# Phase 97.3 — Default planner layers the OpenStack acceptance task on top
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultFollowupPlannerOpenStackLayer:
+    """``_DefaultFollowupPlanner.followup_tasks`` adds the OpenStack task."""
+
+    def _done_test_task(self) -> AgentTask:
+        from cantrip.agent.queue import TaskCategory, TaskStatus
+
+        task = AgentTask(id="t1", title="Validate charm", category=TaskCategory.TEST)
+        task.status = TaskStatus.DONE
+        return task
+
+    def test_layers_openstack_task_when_state_active_cloud_is_openstack(self) -> None:
+        from cantrip.agent.autodeploy import _OPENSTACK_ACCEPTANCE_TITLE
+        from cantrip.agent.executor.policies import _DefaultFollowupPlanner
+
+        state = AgentState(dev_model="dev", active_cloud="openstack")
+        planner = _DefaultFollowupPlanner(state)
+        followups = planner.followup_tasks(self._done_test_task())
+        titles = [t.title for t in followups]
+        # Base acceptance task always present.
+        assert any("put the charm through its paces" in t for t in titles)
+        # OpenStack-specific task layered on top.
+        assert _OPENSTACK_ACCEPTANCE_TITLE in titles
+
+    def test_no_openstack_task_when_active_cloud_is_empty(self) -> None:
+        from cantrip.agent.autodeploy import _OPENSTACK_ACCEPTANCE_TITLE
+        from cantrip.agent.executor.policies import _DefaultFollowupPlanner
+
+        state = AgentState(dev_model="dev", active_cloud="")
+        planner = _DefaultFollowupPlanner(state)
+        followups = planner.followup_tasks(self._done_test_task())
+        titles = [t.title for t in followups]
+        assert _OPENSTACK_ACCEPTANCE_TITLE not in titles
+
+    def test_no_openstack_task_when_active_cloud_is_lxd(self) -> None:
+        from cantrip.agent.autodeploy import _OPENSTACK_ACCEPTANCE_TITLE
+        from cantrip.agent.executor.policies import _DefaultFollowupPlanner
+
+        state = AgentState(dev_model="dev", active_cloud="localhost")
+        planner = _DefaultFollowupPlanner(state)
+        followups = planner.followup_tasks(self._done_test_task())
+        titles = [t.title for t in followups]
+        assert _OPENSTACK_ACCEPTANCE_TITLE not in titles
+
+    def test_no_followups_when_no_dev_model(self) -> None:
+        """The dev-model guard short-circuits before any base or OpenStack task."""
+        from cantrip.agent.executor.policies import _DefaultFollowupPlanner
+
+        state = AgentState(dev_model=None, active_cloud="openstack")
+        planner = _DefaultFollowupPlanner(state)
+        assert planner.followup_tasks(self._done_test_task()) == []

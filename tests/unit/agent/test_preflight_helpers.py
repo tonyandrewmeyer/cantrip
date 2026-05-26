@@ -705,3 +705,152 @@ class TestEnsureCosCreatePaths:
 
         # The early return means no offer-related event is emitted.
         assert events == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 97.3 — substrate refinements (MicroCloud / OpenStack)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectMicroCloud:
+    """``detect_microcloud`` checks for the locally-installed snap."""
+
+    def test_returns_false_when_snap_missing(self) -> None:
+        from cantrip.agent.preflight import detect_microcloud
+
+        with patch("cantrip.agent.preflight.shutil.which", return_value=None):
+            assert detect_microcloud() is False
+
+    def test_returns_true_when_snap_list_succeeds(self) -> None:
+        from cantrip.agent.preflight import detect_microcloud
+
+        fake_proc = MagicMock(returncode=0, stdout="microcloud  1/stable  …\n", stderr="")
+        with (
+            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch("cantrip.agent.preflight.subprocess.run", return_value=fake_proc),
+        ):
+            assert detect_microcloud() is True
+
+    def test_returns_false_when_snap_list_fails(self) -> None:
+        from cantrip.agent.preflight import detect_microcloud
+
+        fake_proc = MagicMock(
+            returncode=1, stdout="", stderr="error: snap 'microcloud' not installed"
+        )
+        with (
+            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch("cantrip.agent.preflight.subprocess.run", return_value=fake_proc),
+        ):
+            assert detect_microcloud() is False
+
+    def test_swallows_timeout(self) -> None:
+        from cantrip.agent.preflight import detect_microcloud
+
+        with (
+            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch(
+                "cantrip.agent.preflight.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="snap", timeout=5),
+            ),
+        ):
+            assert detect_microcloud() is False
+
+    def test_swallows_oserror(self) -> None:
+        from cantrip.agent.preflight import detect_microcloud
+
+        with (
+            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch("cantrip.agent.preflight.subprocess.run", side_effect=OSError("boom")),
+        ):
+            assert detect_microcloud() is False
+
+
+class TestCurrentControllerCloud:
+    """``_current_controller_cloud`` extracts the cloud-name of the active controller."""
+
+    def test_returns_empty_when_juju_returns_nothing(self) -> None:
+        from cantrip.agent.preflight import _current_controller_cloud
+
+        with patch("cantrip.agent.preflight._run_juju_json", return_value=None):
+            assert _current_controller_cloud() == ""
+
+    def test_returns_cloud_when_present(self) -> None:
+        from cantrip.agent.preflight import _current_controller_cloud
+
+        payload = {"my-controller": {"details": {"cloud": "openstack"}}}
+        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+            assert _current_controller_cloud() == "openstack"
+
+    def test_returns_empty_when_details_missing(self) -> None:
+        from cantrip.agent.preflight import _current_controller_cloud
+
+        # No ``details`` key — old controller versions used a different shape;
+        # be tolerant rather than crashing on it.
+        payload = {"my-controller": {"foo": "bar"}}
+        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+            assert _current_controller_cloud() == ""
+
+
+class TestSubstrateSummary:
+    """``substrate_summary`` composes the three substrate probes."""
+
+    def test_openstack_target_flag_set_by_active_cloud(self) -> None:
+        from cantrip.agent.preflight import substrate_summary
+
+        with (
+            patch(
+                "cantrip.agent.preflight.list_controllers",
+                return_value=[
+                    {"name": "openstack", "cloud": "openstack", "is_k8s": False, "models": 1}
+                ],
+            ),
+            patch("cantrip.agent.preflight._current_controller_cloud", return_value="openstack"),
+            patch("cantrip.agent.preflight.detect_microcloud", return_value=False),
+        ):
+            summary = substrate_summary()
+        assert summary.active_cloud == "openstack"
+        assert summary.openstack_target is True
+        assert summary.microcloud_detected is False
+        assert summary.controllers[0]["cloud"] == "openstack"
+
+    def test_sunbeam_cloud_also_flags_openstack_target(self) -> None:
+        """Sunbeam exposes the same OpenStack tenant API — treat as one."""
+        from cantrip.agent.preflight import substrate_summary
+
+        with (
+            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.preflight._current_controller_cloud", return_value="sunbeam"),
+            patch("cantrip.agent.preflight.detect_microcloud", return_value=False),
+        ):
+            summary = substrate_summary()
+        assert summary.openstack_target is True
+
+    def test_lxd_controller_with_microcloud_snap(self) -> None:
+        from cantrip.agent.preflight import substrate_summary
+
+        with (
+            patch(
+                "cantrip.agent.preflight.list_controllers",
+                return_value=[{"name": "lxd", "cloud": "localhost", "is_k8s": False, "models": 0}],
+            ),
+            patch("cantrip.agent.preflight._current_controller_cloud", return_value="localhost"),
+            patch("cantrip.agent.preflight.detect_microcloud", return_value=True),
+        ):
+            summary = substrate_summary()
+        assert summary.openstack_target is False
+        assert summary.microcloud_detected is True
+        assert summary.active_cloud == "localhost"
+
+    def test_no_controllers_returns_empty_summary(self) -> None:
+        from cantrip.agent.preflight import substrate_summary
+
+        with (
+            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.preflight._current_controller_cloud", return_value=""),
+            patch("cantrip.agent.preflight.detect_microcloud", return_value=False),
+        ):
+            summary = substrate_summary()
+        assert summary.controllers == []
+        assert summary.active_cloud == ""
+        assert summary.openstack_target is False
+        assert summary.microcloud_detected is False

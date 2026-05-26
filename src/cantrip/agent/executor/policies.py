@@ -2,7 +2,7 @@
 
 import pathlib
 
-from cantrip.agent.autodeploy import followup_tasks
+from cantrip.agent.autodeploy import followup_tasks, openstack_acceptance_task
 from cantrip.agent.queue import AgentTask, TaskCategory
 from cantrip.agent.state import AgentState
 
@@ -43,4 +43,13 @@ class _DefaultFollowupPlanner:
     def followup_tasks(self, task: AgentTask) -> list[AgentTask]:
         if not self._state.dev_model:
             return []
-        return followup_tasks(task)
+        followups = list(followup_tasks(task))
+        # Phase 97.3: layer the OpenStack acceptance task on top of the
+        # base follow-ups when the active controller is on a Canonical
+        # OpenStack / Sunbeam cloud.  ``state.active_cloud`` is empty
+        # until the agent has built a system prompt at least once —
+        # which always happens before the executor dispatches a TEST
+        # task, so the hint is reliably present by the time a TEST
+        # finishes.
+        followups.extend(openstack_acceptance_task(task, active_cloud=self._state.active_cloud))
+        return followups

@@ -239,6 +239,14 @@ class AgentState:
 
     # Transient — not persisted to SQLite, re-determined each startup.
     environment_ready: bool = False
+    # Phase 97.3: Juju cloud-name for the active controller, surfaced by
+    # ``preflight.substrate_summary``.  Empty string means "unknown" —
+    # the autodeploy hook treats an empty value as "not openstack" and
+    # the system-prompt substrate block falls back to the controller
+    # list when this is missing.  Populated lazily by the agent on the
+    # first ``_build_system_prompt`` call; refreshes only when the
+    # operator re-runs preflight or restarts.
+    active_cloud: str = ""
     watcher_enabled: bool = False
     # When ``False`` the watcher keeps observing the model (status panes
     # and ``[Watcher]`` chat notices still update) but detected events are

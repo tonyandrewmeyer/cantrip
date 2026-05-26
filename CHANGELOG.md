@@ -5,6 +5,30 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Phase 97.3 — substrate-aware guidance for OpenStack / Sunbeam
+  and MicroCloud.**  Preflight gains ``detect_microcloud()`` (cheap
+  ``snap list microcloud`` probe) and a ``substrate_summary()``
+  helper that bundles the active controller's cloud, the full
+  controller list, and the MicroCloud-snap flag into a single
+  :class:`SubstrateSummary`.  The agent caches the result on first
+  ``_build_system_prompt`` call and surfaces it as a ``Substrate``
+  block in the prompt's ``Current Context`` section: a Canonical
+  OpenStack / Sunbeam active cloud emits a callout pointing the
+  agent at cinder-csi storage + neutron-api ingress and asks for an
+  ``## OpenStack target`` sub-section in DESIGN.md covering AZ-loss
+  and volume-detach behaviour; a MicroCloud-snap hit emits a
+  MicroCeph + sibling-MicroK8s callout.  ``AgentState`` carries a
+  transient ``active_cloud`` field; the autodeploy
+  ``_DefaultFollowupPlanner`` layers an
+  ``[Acceptance] verify against AZ loss and volume detach (OpenStack)``
+  task on top of the base acceptance task whenever ``active_cloud``
+  is openstack-shaped.  The ``preset-bundles`` skill gains a new
+  "Substrate refinements (Canonical clouds)" subsection that mirrors
+  the system-prompt callouts so the agent's relation-composition
+  step treats OpenStack and MicroCloud as first-class deployment
+  contexts.  Pinned by 25 new unit cases across
+  ``test_preflight_helpers.py``, ``test_system_prompt.py``,
+  ``test_autodeploy.py``, and ``test_executor_services.py``.
 - **Phase 95.3 — agent-side adoption of the Canonical MCP catalogue.**
   Three optional integrations light up when the user has configured
   the matching MCP server from ``examples/mcp/canonical/marketplace.json``;

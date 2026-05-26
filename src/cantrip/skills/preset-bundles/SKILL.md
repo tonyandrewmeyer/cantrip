@@ -48,6 +48,48 @@ it. Current entries:
   `alertmanager_dispatch` between Prometheus and Alertmanager) is a
   concrete "you forgot to relate X and Y" finding.
 
+## Substrate refinements (Canonical clouds)
+
+When the active Juju controller targets a Canonical cloud, the preset's
+shape still holds — but the *implementation choices* under the edges
+shift. The system prompt's `Substrate` block (Phase 97.3) surfaces the
+relevant flag; mirror its guidance in your DESIGN.md choices and your
+`juju_deploy` calls.
+
+### OpenStack / Sunbeam
+
+When `active cloud: openstack` (or `sunbeam`) is in the substrate block:
+
+- **Persistent storage**: prefer the **cinder-csi** storage class for
+  stateful workloads rather than the default ephemeral storage. The
+  preset's relation list is unchanged; what changes is the `storage:`
+  entry in `charmcraft.yaml` and the storage class consumed at deploy
+  time.
+- **Ingress**: prefer **neutron-api**-backed ingress (the OpenStack
+  load-balancer-as-a-service surface) over a generic NodePort. For the
+  `twelve-factor-cos` preset's Traefik edge this means a neutron-api
+  relation in front of the Traefik unit rather than a node-port
+  Service.
+- **Resilience acceptance**: the autodeploy hook adds an OpenStack
+  acceptance task that exercises AZ-loss + volume-detach recovery —
+  align the charm's `pebble` lifecycle and storage handling so those
+  scenarios survive without manual intervention.
+
+### MicroCloud
+
+When `MicroCloud detected` is in the substrate block:
+
+- **Stateful workloads**: recommend **MicroCeph** as the storage
+  backend. The relation shape is the same as any other Ceph-aware
+  storage relation; what changes is the cluster the charm consumes —
+  point storage requirers at the MicroCeph deployment that ships
+  alongside the LXD substrate.
+- **K8s components on the same host**: MicroCloud installs a parallel
+  **MicroK8s sibling cluster** on the same machine. Cantrip's existing
+  cross-controller COS path (`_find_k8s_controller`) picks it up
+  automatically — surface this in DESIGN.md so a reader doesn't think
+  K8s components need a remote controller.
+
 ## Scope
 
 - Not a `bundle.yaml` generator and not a deployment runbook — it

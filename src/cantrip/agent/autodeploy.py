@@ -17,6 +17,18 @@ from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
 # Title prefix for demo generation tasks — used to prevent loops.
 _DEMO_TITLE_PREFIX = "Generate demo"
 
+# Phase 97.3: OpenStack-specific acceptance task.  Title format mirrors
+# the base ``_ACCEPTANCE_PREFIX`` shape so the loop-prevention guard in
+# ``tasks_after_test`` skips it on follow-up just like the base task.
+_OPENSTACK_ACCEPTANCE_TITLE = (
+    f"{_ACCEPTANCE_PREFIX} verify against AZ loss and volume detach (OpenStack)"
+)
+
+# Clouds that surface as "Canonical OpenStack tenant" — Sunbeam shares
+# the same tenant API, so both should trigger the OpenStack acceptance
+# task.  Kept in sync with ``preflight._OPENSTACK_CLOUD_NAMES``.
+_OPENSTACK_TARGET_CLOUDS = frozenset({"openstack", "sunbeam"})
+
 # Prefix for retry tasks — used to prevent infinite retry chains.
 _RETRY_PREFIX = "[Red/Green retry]"
 
@@ -190,6 +202,54 @@ def tasks_after_test(task: AgentTask) -> list[AgentTask]:
                 "6. Run `acceptance_report` to consolidate results into "
                 "ACCEPTANCE.md.\n\n"
                 "Report the overall verdict. Failures become follow-up tasks."
+            ),
+            dependencies=[task.id],
+        ),
+    ]
+
+
+def openstack_acceptance_task(task: AgentTask, *, active_cloud: str) -> list[AgentTask]:
+    """Return an OpenStack-specific acceptance task when relevant (Phase 97.3).
+
+    Fires alongside :func:`tasks_after_test` when the active controller's
+    cloud is in :data:`_OPENSTACK_TARGET_CLOUDS`.  The new task verifies
+    the resilience properties Canonical OpenStack tenants care about
+    most — AZ-loss survival and volume-detach recovery — which the
+    generic acceptance task doesn't reach for.
+
+    Skips for non-TEST tasks, non-DONE tasks, or when the cloud is
+    unknown / not OpenStack.  Avoids chaining off acceptance / demo /
+    its own previous outputs so the loop-prevention guarantees the
+    base path provides still hold.
+    """
+    if task.category != TaskCategory.TEST:
+        return []
+    if task.status != TaskStatus.DONE:
+        return []
+    if task.title.startswith(_ACCEPTANCE_PREFIX):
+        return []
+    if _DEMO_TITLE_PREFIX in task.title:
+        return []
+    if (active_cloud or "").lower() not in _OPENSTACK_TARGET_CLOUDS:
+        return []
+    return [
+        AgentTask(
+            title=_OPENSTACK_ACCEPTANCE_TITLE,
+            category=TaskCategory.TEST,
+            model_hint=ModelHint.PRIMARY,
+            description=(
+                "The charm has been deployed and passed integration tests on a "
+                "Canonical OpenStack / Sunbeam controller. Verify the resilience "
+                "properties OpenStack tenants depend on:\n\n"
+                "1. Simulate AZ loss: drain one availability zone (or stop the "
+                "compute node hosting a unit) and confirm the workload recovers "
+                "without manual intervention.\n"
+                "2. Volume detach: detach the persistent volume from a unit "
+                "(`openstack volume detach …` or via Juju storage), reattach, "
+                "and confirm the charm reaches `active/idle` with data intact.\n"
+                "3. Record outcomes in ACCEPTANCE.md under an "
+                "`## OpenStack resilience` heading. Failures become follow-up "
+                "tasks the usual way."
             ),
             dependencies=[task.id],
         ),
