@@ -4,6 +4,28 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Added
+- **Phase 95.3 — agent-side adoption of the Canonical MCP catalogue.**
+  Three optional integrations light up when the user has configured
+  the matching MCP server from ``examples/mcp/canonical/marketplace.json``;
+  every code path is additive, so users without the catalogue see no
+  change in output.  (1) ``/search-charms`` appends a third
+  ``## Launchpad (mcp__launchpad)`` section with the server's
+  ``project_lookup`` and ``bug_search`` results alongside the built-in
+  Charmhub + Launchpad-REST output.  (2) ``ListInferenceSnapsTool``
+  enriches each enumerated snap with Snap Store metadata
+  (publisher, summary, channels) via the snapcraft server's
+  ``snap_info`` tool and renders it under a dedicated section.
+  (3) ``CharmlintTool`` runs the charmcraft server's ``lint`` and
+  ``analyse`` tools after the local linter and surfaces them under a
+  ``Second opinion (mcp__charmcraft)`` block.  Local tooling remains
+  the source of truth in every case — a local failure short-circuits
+  before any MCP call, and per-tool MCP errors render inline rather
+  than aborting the rest of the run.  Pinned by 17 new unit cases
+  across ``tests/unit/agent/tools/test_charmlint_tool.py``,
+  ``tests/unit/llm/test_inference_snap.py``, and
+  ``tests/unit/agent/tools/test_librarian.py``.
+
 ### Fixed
 - **`uses_scenario_tests` rubric check accepts `from ops import
   testing` idiom.**  The check at ``tests/eval/checks.py:218``

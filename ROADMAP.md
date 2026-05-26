@@ -1410,18 +1410,29 @@ mentioning them in docs.
 
 ### 95.3 Agent-side adoption
 
-- [ ] When a Launchpad server is configured, feed its results into the
-  **Librarian** / `/search-charms` workflow so unpublished or
-  in-progress Launchpad projects become first-class citations rather
-  than a hidden parallel workflow.
-- [ ] When a Snapcraft server is configured, use it in the
-  inference-snap and provider-selection flows: enrich local snap
-  discovery with store metadata, aliases, summaries, and supported
-  channels rather than relying only on local enumeration.
-- [ ] When a Charmcraft server is configured, use it as an optional
-  second-opinion surface for `lint` / `analyse` in build and
-  improvement flows, while keeping the built-in local tooling as the
-  default fallback.
+- [x] When a Launchpad server is configured, its ``project_lookup``
+  and ``bug_search`` outputs are appended as a third
+  ``## Launchpad (mcp__launchpad)`` section in ``/search-charms``
+  alongside the built-in Charmhub + Launchpad-REST results.  Tools
+  not advertised by the server are skipped; per-call errors render
+  inline so one failing tool never starves the others.  Pinned by
+  ``TestLaunchpadMCPInSearchCharms`` (6 cases) in
+  ``tests/unit/agent/tools/test_librarian.py``.
+- [x] When a Snapcraft server is configured, ``ListInferenceSnapsTool``
+  enriches each enumerated snap with Snap Store metadata via
+  ``snap_info`` and renders the per-snap reply under a dedicated
+  ``Snap Store metadata (mcp__snapcraft)`` section.  Servers that
+  don't advertise ``snap_info`` are skipped; per-snap failures
+  surface inline alongside the working entries.  Pinned by five
+  new cases in ``tests/unit/llm/test_inference_snap.py``.
+- [x] When a Charmcraft server is configured, ``CharmlintTool``
+  appends a ``Second opinion (mcp__charmcraft)`` section with the
+  server's ``lint`` and ``analyse`` outputs after the local lint
+  result.  Local lint stays authoritative — a local failure
+  short-circuits before the MCP call, and any MCP error is
+  isolated to its section.  Pinned by ``TestCharmcraftMCPSecondOpinion``
+  (6 cases) in
+  ``tests/unit/agent/tools/test_charmlint_tool.py``.
 
 ### What this phase is *not*
 

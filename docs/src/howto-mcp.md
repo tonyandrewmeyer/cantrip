@@ -330,6 +330,24 @@ The same pattern applies to Launchpad bug edits and Snapcraft
 revisions — name the verb, supply the credential, leave everything
 else off the list.
 
+### How Cantrip uses these servers
+
+Three of the catalogue's servers are wired into existing Cantrip
+surfaces. Nothing changes for users without the catalogue
+installed; the integrations only light up when the matching server
+appears in the registry.
+
+| Server | Surface | What changes |
+| --- | --- | --- |
+| `launchpad` | `/search-charms` | A third `## Launchpad (mcp__launchpad)` section appears under the Charmhub + Launchpad-REST results, populated from `project_lookup` and `bug_search`. Unpublished or in-progress Launchpad projects surface as first-class citations rather than being hidden behind a manual second search. |
+| `snapcraft` | `list_inference_snaps` | Each enumerated snap is enriched with Snap Store metadata (publisher, summary, channels) via `snap_info`, rendered under a dedicated `Snap Store metadata (mcp__snapcraft)` section. Local discovery still drives "what's installed and reachable". |
+| `charmcraft` | `charmlint` | After the built-in linter finishes, the charmcraft server's `lint` and `analyse` outputs are appended under a `Second opinion (mcp__charmcraft)` block. The local linter remains authoritative — a local failure short-circuits before the MCP call. |
+
+Per-tool failures (a server that's unreachable mid-call, an
+allowlist refusal, a tool the server doesn't advertise) render
+inline within their section and never abort the surrounding
+command.
+
 {#security}
 ## Security notes
 

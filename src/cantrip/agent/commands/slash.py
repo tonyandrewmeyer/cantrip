@@ -23,7 +23,7 @@ import dataclasses
 import logging
 import pathlib
 from collections.abc import Awaitable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cantrip import diagnostics
 from cantrip import update as update_module
@@ -318,7 +318,7 @@ def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
     if verb == "/review":
         return _handle_review(agent, args)
     if verb == "/search-charms":
-        return _handle_search_charms(args)
+        return _handle_search_charms(agent, args)
     if verb == "/icon":
         return _handle_icon(agent, args)
     if verb in {"/quit", "/exit"}:
@@ -1700,7 +1700,7 @@ def _handle_share(agent: CantripAgent) -> SlashResult:
 # ---------------------------------------------------------------------------
 
 
-def _handle_search_charms(args: str) -> SlashResult:
+def _handle_search_charms(agent: CantripAgent, args: str) -> SlashResult:
     """Dispatch the ``/search-charms`` slash command.
 
     Returns an immediate "searching…" prelude plus a followup that
@@ -1708,6 +1708,11 @@ def _handle_search_charms(args: str) -> SlashResult:
     result blocks together as Markdown.  Cheap — no source fetch is
     triggered from the slash; the agent invokes ``charmhub_fetch``
     / ``launchpad_fetch`` if it needs to read source.
+
+    When the user has configured a ``launchpad`` MCP server (Phase 95.3),
+    its ``project_lookup`` and ``bug_search`` outputs are appended as
+    a third section so unpublished projects and tracker entries
+    surface alongside the public REST results.
     """
     query = args.strip()
     if not query:
@@ -1719,12 +1724,24 @@ def _handle_search_charms(args: str) -> SlashResult:
         )
     return SlashResult(
         text=f"Searching Charmhub and Launchpad for `{query}`…",
-        followup=_run_search_charms(query),
+        followup=_run_search_charms(agent, query),
         markdown=True,
     )
 
 
-async def _run_search_charms(query: str) -> str:
+# Phase 95.3: tool name → argument-dict template applied when the
+# launchpad MCP server is configured.  Kept narrow so the integration
+# doesn't speculate about server-side schemas — calls that don't match
+# the server's actual argument names surface their error in the
+# rendered section rather than blocking the rest of the search.
+_LAUNCHPAD_MCP_SERVER = "launchpad"
+_LAUNCHPAD_MCP_CALLS: tuple[tuple[str, str], ...] = (
+    ("project_lookup", "name"),
+    ("bug_search", "text"),
+)
+
+
+async def _run_search_charms(agent: CantripAgent, query: str) -> str:
     """Query Charmhub + Launchpad concurrently; render combined Markdown."""
     # Late imports keep the slash module's cold-start cheap when the
     # user never reaches for the Librarian.
@@ -1755,7 +1772,69 @@ async def _run_search_charms(query: str) -> str:
     else:
         sections.append(f"_Launchpad search failed: {launchpad_result.error}_")
 
+    mcp_block = await _launchpad_mcp_section(agent, query)
+    if mcp_block is not None:
+        sections.append("")
+        sections.append(mcp_block)
+
     return "\n".join(sections)
+
+
+async def _launchpad_mcp_section(agent: CantripAgent, query: str) -> str | None:
+    """Render the Launchpad MCP results as a Markdown section.
+
+    Returns ``None`` when no ``launchpad`` MCP server is configured or
+    connected, so the slash command's output stays unchanged for
+    users without the catalogue entry installed.
+    """
+    registry = _mcp_registry_or_none(agent)
+    if registry is None:
+        return None
+    client = registry.get_client(_LAUNCHPAD_MCP_SERVER)
+    if client is None:
+        return None
+    available = {tool.name for tool in client.tools}
+    candidates = [(name, arg) for name, arg in _LAUNCHPAD_MCP_CALLS if name in available]
+    if not candidates:
+        return None
+
+    lines: list[str] = [f"## Launchpad (mcp__{_LAUNCHPAD_MCP_SERVER})"]
+    rendered_any = False
+    for tool_name, arg_name in candidates:
+        try:
+            result = await client.call_tool(tool_name, {arg_name: query})
+        except Exception as exc:  # noqa: BLE001 - MCP SDK can raise anything
+            log.debug(
+                "launchpad MCP %s call failed: %s",
+                tool_name,
+                exc,
+                exc_info=True,
+            )
+            lines.append(f"_[{tool_name}] failed: {exc}_")
+            rendered_any = True
+            continue
+        text = (result.text or "").strip()
+        lines.append(f"### {tool_name}")
+        lines.append(text if text else "_No results._")
+        rendered_any = True
+    if not rendered_any:
+        return None
+    return "\n".join(lines)
+
+
+def _mcp_registry_or_none(agent: CantripAgent) -> Any:
+    """Return the agent's MCP registry if one has been materialised."""
+    mcp = getattr(agent, "_mcp", None)
+    if mcp is None:
+        return None
+    getter = getattr(mcp, "registry_if_loaded", None)
+    if getter is None:
+        return None
+    try:
+        return getter()
+    except Exception:  # noqa: BLE001 - never block the slash on registry errors
+        log.debug("registry_if_loaded raised", exc_info=True)
+        return None
 
 
 # ---------------------------------------------------------------------------

@@ -565,16 +565,24 @@ class TestLaunchpadFetch:
 # ---------------------------------------------------------------------------
 
 
+def _agent_without_mcp() -> object:
+    """Cheap agent stub with no MCP registry materialised."""
+    from types import SimpleNamespace
+
+    mcp = SimpleNamespace(registry_if_loaded=lambda: None)
+    return SimpleNamespace(_mcp=mcp)
+
+
 class TestSearchCharmsSlash:
     """The /search-charms verb wires both backends and renders the combined view."""
 
     def test_empty_args_returns_usage(self) -> None:
-        result = slash_commands._handle_search_charms("")
+        result = slash_commands._handle_search_charms(_agent_without_mcp(), "")
         assert result.followup is None
         assert "Usage" in result.text
 
     def test_with_query_returns_followup(self) -> None:
-        result = slash_commands._handle_search_charms("kafka operator")
+        result = slash_commands._handle_search_charms(_agent_without_mcp(), "kafka operator")
         assert result.followup is not None
         assert "Searching" in result.text
         assert result.markdown is True
@@ -632,7 +640,7 @@ class TestSearchCharmsSlash:
 
         calls: list[None] = []
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms("redis")
+            text = await slash_commands._run_search_charms(_agent_without_mcp(), "redis")
 
         assert "## Charmhub" in text
         assert "redis-k8s" in text
@@ -656,7 +664,7 @@ class TestSearchCharmsSlash:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms("anything")
+            text = await slash_commands._run_search_charms(_agent_without_mcp(), "anything")
 
         assert "Launchpad search failed" in text
         assert "## Charmhub" in text
@@ -667,3 +675,186 @@ class TestSearchCharmsSlash:
         verbs = {cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE}
         assert "/search-charms" in verbs
         assert "/search-charms" in slash_commands.SHARED_VERBS
+
+
+# ---------------------------------------------------------------------------
+# Phase 95.3 — Launchpad MCP enrichment in /search-charms
+# ---------------------------------------------------------------------------
+
+
+class _FakeLaunchpadMCPClient:
+    def __init__(
+        self,
+        *,
+        tools: list[str],
+        responses: dict[str, str] | None = None,
+        errors: dict[str, Exception] | None = None,
+    ) -> None:
+        from types import SimpleNamespace
+
+        self.tools = [SimpleNamespace(name=name) for name in tools]
+        self._responses = responses or {}
+        self._errors = errors or {}
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+        from types import SimpleNamespace
+
+        self.calls.append((name, arguments))
+        if name in self._errors:
+            raise self._errors[name]
+        return SimpleNamespace(text=self._responses.get(name, ""))
+
+
+class _FakeLaunchpadRegistry:
+    def __init__(self, clients: dict[str, _FakeLaunchpadMCPClient]) -> None:
+        self._clients = clients
+
+    def get_client(self, name: str) -> _FakeLaunchpadMCPClient | None:
+        return self._clients.get(name)
+
+
+def _agent_with_launchpad_mcp(client: _FakeLaunchpadMCPClient | None) -> object:
+    """Agent stub whose ``registry_if_loaded()`` returns a registry."""
+    from types import SimpleNamespace
+
+    clients = {"launchpad": client} if client is not None else {}
+    registry = _FakeLaunchpadRegistry(clients)
+    mcp = SimpleNamespace(registry_if_loaded=lambda: registry)
+    return SimpleNamespace(_mcp=mcp)
+
+
+def _stub_search_backends_empty() -> tuple[object, object]:
+    """Build httpx clients that make Charmhub + Launchpad return empty results."""
+    return (
+        _http_client(_http_response(json_body={"results": []})),
+        _http_client(_http_response(json_body={"entries": []})),
+    )
+
+
+class TestLaunchpadMCPInSearchCharms:
+    """Phase 95.3 — launchpad MCP results appear as a third section."""
+
+    @pytest.mark.asyncio
+    async def test_no_registry_omits_mcp_section(self) -> None:
+        charm_client, lp_client = _stub_search_backends_empty()
+        calls: list[None] = []
+
+        def _factory(*_args, **_kwargs):
+            calls.append(None)
+            return charm_client if len(calls) == 1 else lp_client
+
+        with patch("httpx.AsyncClient", side_effect=_factory):
+            text = await slash_commands._run_search_charms(_agent_without_mcp(), "redis")
+
+        assert "## Charmhub" in text
+        assert "## Launchpad" in text
+        assert "mcp__launchpad" not in text
+
+    @pytest.mark.asyncio
+    async def test_registry_without_launchpad_server_omits_mcp_section(self) -> None:
+        charm_client, lp_client = _stub_search_backends_empty()
+        agent = _agent_with_launchpad_mcp(None)
+        calls: list[None] = []
+
+        def _factory(*_args, **_kwargs):
+            calls.append(None)
+            return charm_client if len(calls) == 1 else lp_client
+
+        with patch("httpx.AsyncClient", side_effect=_factory):
+            text = await slash_commands._run_search_charms(agent, "redis")
+
+        assert "mcp__launchpad" not in text
+
+    @pytest.mark.asyncio
+    async def test_appends_mcp_section_when_server_advertises_tools(self) -> None:
+        client = _FakeLaunchpadMCPClient(
+            tools=["project_lookup", "bug_search"],
+            responses={
+                "project_lookup": "Project redis: https://launchpad.net/redis-private",
+                "bug_search": "Bugs 1, 7: needs review",
+            },
+        )
+        agent = _agent_with_launchpad_mcp(client)
+        charm_client, lp_client = _stub_search_backends_empty()
+        calls: list[None] = []
+
+        def _factory(*_args, **_kwargs):
+            calls.append(None)
+            return charm_client if len(calls) == 1 else lp_client
+
+        with patch("httpx.AsyncClient", side_effect=_factory):
+            text = await slash_commands._run_search_charms(agent, "redis")
+
+        assert "## Launchpad (mcp__launchpad)" in text
+        assert "### project_lookup" in text
+        assert "Project redis: https://launchpad.net/redis-private" in text
+        assert "### bug_search" in text
+        assert "Bugs 1, 7: needs review" in text
+        assert client.calls == [
+            ("project_lookup", {"name": "redis"}),
+            ("bug_search", {"text": "redis"}),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_skips_tools_not_advertised_by_server(self) -> None:
+        """A server that only advertises ``project_lookup`` doesn't get a bug_search call."""
+        client = _FakeLaunchpadMCPClient(
+            tools=["project_lookup"],
+            responses={"project_lookup": "Project redis"},
+        )
+        agent = _agent_with_launchpad_mcp(client)
+        charm_client, lp_client = _stub_search_backends_empty()
+        calls: list[None] = []
+
+        def _factory(*_args, **_kwargs):
+            calls.append(None)
+            return charm_client if len(calls) == 1 else lp_client
+
+        with patch("httpx.AsyncClient", side_effect=_factory):
+            text = await slash_commands._run_search_charms(agent, "redis")
+
+        assert "### project_lookup" in text
+        assert "### bug_search" not in text
+        assert [name for name, _ in client.calls] == ["project_lookup"]
+
+    @pytest.mark.asyncio
+    async def test_no_overlap_with_advertised_tools_returns_no_section(self) -> None:
+        """The server can advertise irrelevant tools — we still skip the section."""
+        client = _FakeLaunchpadMCPClient(tools=["merge_proposals"])  # not in our call set
+        agent = _agent_with_launchpad_mcp(client)
+        charm_client, lp_client = _stub_search_backends_empty()
+        calls: list[None] = []
+
+        def _factory(*_args, **_kwargs):
+            calls.append(None)
+            return charm_client if len(calls) == 1 else lp_client
+
+        with patch("httpx.AsyncClient", side_effect=_factory):
+            text = await slash_commands._run_search_charms(agent, "redis")
+
+        assert "mcp__launchpad" not in text
+        assert client.calls == []
+
+    @pytest.mark.asyncio
+    async def test_mcp_error_renders_inline_and_other_tools_succeed(self) -> None:
+        from cantrip.mcp.exceptions import MCPInvocationError
+
+        client = _FakeLaunchpadMCPClient(
+            tools=["project_lookup", "bug_search"],
+            responses={"bug_search": "OK"},
+            errors={"project_lookup": MCPInvocationError("forbidden")},
+        )
+        agent = _agent_with_launchpad_mcp(client)
+        charm_client, lp_client = _stub_search_backends_empty()
+        calls: list[None] = []
+
+        def _factory(*_args, **_kwargs):
+            calls.append(None)
+            return charm_client if len(calls) == 1 else lp_client
+
+        with patch("httpx.AsyncClient", side_effect=_factory):
+            text = await slash_commands._run_search_charms(agent, "redis")
+
+        assert "[project_lookup] failed: forbidden" in text
+        assert "### bug_search" in text

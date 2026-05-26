@@ -295,3 +295,172 @@ class TestCharmlintToolExecute:
 
         assert result.success
         assert result.output == "No issues found."
+
+
+# ---------------------------------------------------------------------------
+# Phase 95.3 — Charmcraft MCP second-opinion integration
+# ---------------------------------------------------------------------------
+
+
+class _FakeMCPClient:
+    """In-test stand-in for :class:`MCPClient` exposing only the
+    surface :class:`CharmlintTool` exercises: a ``tools`` list and an
+    awaitable ``call_tool``.
+    """
+
+    def __init__(
+        self,
+        *,
+        tools: list[str],
+        responses: dict[str, str] | None = None,
+        errors: dict[str, Exception] | None = None,
+    ) -> None:
+        self.tools = [SimpleNamespace(name=name) for name in tools]
+        self._responses = responses or {}
+        self._errors = errors or {}
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+        self.calls.append((name, arguments))
+        if name in self._errors:
+            raise self._errors[name]
+        return SimpleNamespace(text=self._responses.get(name, ""))
+
+
+class _FakeRegistry:
+    def __init__(self, clients: dict[str, _FakeMCPClient]) -> None:
+        self._clients = clients
+
+    def get_client(self, name: str) -> _FakeMCPClient | None:
+        return self._clients.get(name)
+
+
+class TestCharmcraftMCPSecondOpinion:
+    """Phase 95.3 — second-opinion enrichment from the charmcraft MCP server."""
+
+    @pytest.fixture
+    def fake_report(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            diagnostics=[],
+            summary_line=lambda: "No issues found.",
+            to_dict=lambda: {"diagnostics": [], "total": 0},
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_registry_falls_back_to_local_only(
+        self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
+    ) -> None:
+        tool = CharmlintTool(mcp_registry=None)
+        with (
+            mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
+            mock.patch("charmlint.lint", return_value=fake_report),
+        ):
+            result = await tool.execute(path=str(tmp_path))
+        assert result.success
+        assert "Second opinion" not in result.output
+        assert "mcp_second_opinion" not in result.data
+
+    @pytest.mark.asyncio
+    async def test_no_charmcraft_server_falls_back_to_local_only(
+        self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
+    ) -> None:
+        registry = _FakeRegistry({})  # no charmcraft server registered
+        tool = CharmlintTool(mcp_registry=registry)
+        with (
+            mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
+            mock.patch("charmlint.lint", return_value=fake_report),
+        ):
+            result = await tool.execute(path=str(tmp_path))
+        assert "Second opinion" not in result.output
+        assert "mcp_second_opinion" not in result.data
+
+    @pytest.mark.asyncio
+    async def test_appends_second_opinion_when_server_responds(
+        self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
+    ) -> None:
+        client = _FakeMCPClient(
+            tools=["lint", "analyse"],
+            responses={
+                "lint": "Charmcraft lint: 1 warning (MD001 missing description).",
+                "analyse": "Charmcraft analyse: clean, no recommendations.",
+            },
+        )
+        registry = _FakeRegistry({"charmcraft": client})
+        tool = CharmlintTool(mcp_registry=registry)
+        with (
+            mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
+            mock.patch("charmlint.lint", return_value=fake_report),
+        ):
+            result = await tool.execute(path=str(tmp_path))
+        assert result.success
+        assert "No issues found." in result.output
+        assert "Second opinion (mcp__charmcraft)" in result.output
+        assert "[lint]" in result.output
+        assert "MD001 missing description" in result.output
+        assert "[analyse]" in result.output
+        assert "clean, no recommendations" in result.output
+        # Both MCP tools were probed with the resolved charm path.
+        assert [name for name, _ in client.calls] == ["lint", "analyse"]
+        assert all(args == {"path": str(tmp_path.resolve())} for _, args in client.calls)
+        # Structured data preserves the per-tool sections.
+        second_opinion = result.data["mcp_second_opinion"]
+        assert second_opinion["server"] == "charmcraft"
+        assert {s["tool"] for s in second_opinion["sections"]} == {"lint", "analyse"}
+
+    @pytest.mark.asyncio
+    async def test_skips_tools_not_advertised_by_server(
+        self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
+    ) -> None:
+        """If the server only advertises ``lint``, ``analyse`` is skipped silently."""
+        client = _FakeMCPClient(
+            tools=["lint"],  # no ``analyse``
+            responses={"lint": "Charmcraft lint: clean."},
+        )
+        registry = _FakeRegistry({"charmcraft": client})
+        tool = CharmlintTool(mcp_registry=registry)
+        with (
+            mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
+            mock.patch("charmlint.lint", return_value=fake_report),
+        ):
+            result = await tool.execute(path=str(tmp_path))
+        assert "[lint]" in result.output
+        assert "[analyse]" not in result.output
+        assert [name for name, _ in client.calls] == ["lint"]
+
+    @pytest.mark.asyncio
+    async def test_records_error_section_when_call_raises(
+        self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
+    ) -> None:
+        """An MCP-side exception surfaces inline and does not break local lint."""
+        from cantrip.mcp.exceptions import MCPInvocationError
+
+        client = _FakeMCPClient(
+            tools=["lint", "analyse"],
+            responses={"analyse": "all good"},
+            errors={"lint": MCPInvocationError("server refused")},
+        )
+        registry = _FakeRegistry({"charmcraft": client})
+        tool = CharmlintTool(mcp_registry=registry)
+        with (
+            mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
+            mock.patch("charmlint.lint", return_value=fake_report),
+        ):
+            result = await tool.execute(path=str(tmp_path))
+        assert result.success
+        assert "[lint] failed: server refused" in result.output
+        assert "[analyse]" in result.output
+
+    @pytest.mark.asyncio
+    async def test_local_failure_skips_second_opinion(self, tmp_path: pathlib.Path) -> None:
+        """A failed local lint short-circuits before the MCP call.
+
+        We never want a missing-path error to grow a confusing
+        "second opinion (empty)" block.
+        """
+        client = _FakeMCPClient(tools=["lint"], responses={"lint": "should not appear"})
+        registry = _FakeRegistry({"charmcraft": client})
+        tool = CharmlintTool(mcp_registry=registry)
+        result = await tool.execute(path=str(tmp_path / "missing"))
+        assert not result.success
+        assert client.calls == []
+        assert "Second opinion" not in (result.output or "")

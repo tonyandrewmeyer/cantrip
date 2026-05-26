@@ -376,6 +376,41 @@ Each call still goes through the user-confirmation gate as well:</p>
 <p>The same pattern applies to Launchpad bug edits and Snapcraft
 revisions &mdash; name the verb, supply the credential, leave everything
 else off the list.</p>
+<h3>How Cantrip uses these servers</h3>
+<p>Three of the catalogue's servers are wired into existing Cantrip
+surfaces. Nothing changes for users without the catalogue
+installed; the integrations only light up when the matching server
+appears in the registry.</p>
+<table>
+<thead>
+<tr>
+<th>Server</th>
+<th>Surface</th>
+<th>What changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>launchpad</code></td>
+<td><code>/search-charms</code></td>
+<td>A third <code>## Launchpad (mcp__launchpad)</code> section appears under the Charmhub + Launchpad-REST results, populated from <code>project_lookup</code> and <code>bug_search</code>. Unpublished or in-progress Launchpad projects surface as first-class citations rather than being hidden behind a manual second search.</td>
+</tr>
+<tr>
+<td><code>snapcraft</code></td>
+<td><code>list_inference_snaps</code></td>
+<td>Each enumerated snap is enriched with Snap Store metadata (publisher, summary, channels) via <code>snap_info</code>, rendered under a dedicated <code>Snap Store metadata (mcp__snapcraft)</code> section. Local discovery still drives &quot;what's installed and reachable&quot;.</td>
+</tr>
+<tr>
+<td><code>charmcraft</code></td>
+<td><code>charmlint</code></td>
+<td>After the built-in linter finishes, the charmcraft server's <code>lint</code> and <code>analyse</code> outputs are appended under a <code>Second opinion (mcp__charmcraft)</code> block. The local linter remains authoritative &mdash; a local failure short-circuits before the MCP call.</td>
+</tr>
+</tbody>
+</table>
+<p>Per-tool failures (a server that's unreachable mid-call, an
+allowlist refusal, a tool the server doesn't advertise) render
+inline within their section and never abort the surrounding
+command.</p>
 <h2 id="security">Security notes</h2>
 <ul>
 <li><strong>Token files live at <code>0600</code> in a <code>0700</code>

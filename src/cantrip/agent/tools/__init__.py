@@ -208,7 +208,7 @@ def build_tools(
         MultiEditTool(base_path=base_path),
         # Audit & lint
         CharmAuditTool(),
-        CharmlintTool(),
+        CharmlintTool(mcp_registry=mcp_registry),
         HarnessInventoryTool(),
         ScenarioCoverageTool(),
         OperationalReadinessTool(),
@@ -361,7 +361,7 @@ def build_tools(
         TempoWaterfallTool(),
         JujuStatusRenderTool(),
         # Inference snaps
-        ListInferenceSnapsTool(),
+        ListInferenceSnapsTool(mcp_registry=mcp_registry),
         # Testing — ``state`` for the same charm-dir resolution
         # reason as ``CharmcraftPackTool`` above.
         RunCharmTestsTool(state=state),
