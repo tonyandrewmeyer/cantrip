@@ -1138,7 +1138,11 @@ class BackgroundExecutor:
             payload["budget_tokens"] = str(self._race_config.budget_tokens)
         self._state_service.record_event("race_downgraded", payload)
 
-    def _build_race_subagent_factory(self, parent_task: AgentTask) -> race.SubagentFactory:
+    def _build_race_subagent_factory(
+        self,
+        parent_task: AgentTask,
+        monitor: race.RaceBudgetMonitor | None = None,
+    ) -> race.SubagentFactory:
         """Return a factory that builds per-candidate subagents.
 
         Each candidate runs under a shadow task whose id is
@@ -1146,6 +1150,12 @@ class BackgroundExecutor:
         records land in their own ``subagent_messages`` partition — every
         candidate's full tool-call trace is preserved for review, not
         just the winner's.
+
+        *monitor* (Phase 47.4 follow-up) is the mid-flight budget
+        monitor.  When supplied, each candidate's ``on_usage`` callback
+        is wrapped so the monitor sees the per-round usage *before* the
+        normal cost-recording path does.  Mid-flight cancellation kicks
+        in through the watcher inside :class:`RaceCoordinator`.
         """
 
         async def factory(
@@ -1164,12 +1174,21 @@ class BackgroundExecutor:
             extra: dict[str, int] = {}
             if parent_task.category == TaskCategory.BUILD:
                 extra["max_rounds"] = MAX_BUILD_ROUNDS
+
+            def on_usage(response: llm.Response) -> None:
+                # Phase 47.4 follow-up: feed the mid-flight monitor
+                # before the standard cost-recording path so the budget
+                # trip races the next round, not the next call site.
+                if monitor is not None:
+                    monitor.record_candidate_usage(spec.candidate_id, response)
+                self._record_usage(response)
+
             return Subagent(
                 context,
                 self._tools,
                 spec.provider,
                 light_provider=spec.light_provider or self._light_provider,
-                on_usage=self._record_usage,
+                on_usage=on_usage,
                 throttle=self._throttle,
                 store=self._store,
                 on_phase_change=self._queue.notify_task,
@@ -1250,7 +1269,15 @@ class BackgroundExecutor:
         """
         base_path = self._state.charm_path
         assert base_path is not None  # _should_race guards this  # noqa: S101
-        build_subagent = self._build_race_subagent_factory(task)
+        # Phase 47.4 follow-up: per-race budget monitor.  ``budget_tokens``
+        # of zero disables the watcher entirely (matches the dispatch
+        # gate's semantics for the same field).  The monitor's
+        # ``cancel_event`` flips when the *actual* sum of per-round
+        # usage across all candidates first crosses the hard cap —
+        # giving us a mid-flight downgrade where the dispatch-time
+        # ``estimate * candidate_count`` could only guess.
+        monitor = race.RaceBudgetMonitor(budget_tokens=self._race_config.budget_tokens)
+        build_subagent = self._build_race_subagent_factory(task, monitor=monitor)
 
         if self._state_service is not None:
             self._state_service.record_event(
@@ -1268,6 +1295,7 @@ class BackgroundExecutor:
                 base_path=pathlib.Path(base_path),
                 specs=specs,
                 build_subagent=build_subagent,
+                monitor=monitor,
             )
         except (OSError, RuntimeError, ValueError) as exc:
             log.exception("Race for task %s failed: %s", task.id, exc)
@@ -1277,6 +1305,25 @@ class BackgroundExecutor:
             return
 
         self._record_race_events(task, specs, result)
+
+        if result.cancelled_for_budget:
+            # Phase 47.4 follow-up: mid-flight downgrade.  The race was
+            # cancelled because the *actual* token usage crossed the
+            # hard budget cap.  Decline the race for this task so the
+            # next executor pass takes the single-subagent path,
+            # record the downgrade event for visibility in ``/cost`` /
+            # ``/diagnostics``, and reset the task to PENDING so the
+            # main loop re-picks it up.
+            self._record_race_downgrade(
+                task,
+                specs,
+                reason="over_budget_midflight",
+                estimate=result.total_tokens_at_cancel,
+            )
+            task.race_decision = "declined"
+            self._queue.set_pending(task.id)
+            self._persist()
+            return
 
         if result.winner is None or result.winner_outcome is None:
             self._fail_task(task, "All race candidates failed", None, snapshot=None)

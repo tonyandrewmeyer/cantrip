@@ -23,6 +23,7 @@ See ROADMAP.md Phase 47 for the full design rationale.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import enum
 import logging
@@ -250,6 +251,12 @@ class RaceResult:
     every candidate failed.  ``all_scores`` and ``all_outcomes`` preserve
     losing-candidate metadata so the caller can release their worktrees
     and record their transcripts for post-hoc review.
+
+    ``cancelled_for_budget`` (Phase 47.4 follow-up) is ``True`` when a
+    :class:`RaceBudgetMonitor` tripped mid-flight and cancelled every
+    candidate before any could win.  The caller treats this as a
+    distinct condition from "all candidates failed" — it signals a
+    *downgrade*, not a fault.
     """
 
     task_id: str
@@ -257,6 +264,8 @@ class RaceResult:
     all_scores: list[CandidateScore]
     all_outcomes: list[CandidateOutcome]
     elapsed_seconds: float
+    cancelled_for_budget: bool = False
+    total_tokens_at_cancel: int = 0
 
     def outcome_for(self, candidate_id: str) -> CandidateOutcome | None:
         """Return the outcome for ``candidate_id`` if present."""
@@ -271,6 +280,102 @@ class RaceResult:
         if self.winner is None:
             return None
         return self.outcome_for(self.winner.candidate_id)
+
+
+# ---------------------------------------------------------------------------
+# RaceBudgetMonitor — Phase 47.4 follow-up
+# ---------------------------------------------------------------------------
+
+
+class RaceBudgetMonitor:
+    """Track per-candidate token usage and cancel the race when over budget.
+
+    Phase 47.4's dispatch-time gate (:meth:`RaceConfig.race_gate`) uses
+    a *static estimate* — baseline tokens per run multiplied by candidate
+    count.  That gate caught racers whose *predicted* spend exceeded the
+    cap, but a candidate that spiralled mid-task (verbose tool output,
+    runaway tool-call loops) could still cost an order of magnitude
+    more than the baseline before the race finished.
+
+    This monitor closes that gap.  The coordinator wires each candidate's
+    ``on_usage`` callback to :meth:`record_candidate_usage`, which sums
+    ``prompt_tokens + completion_tokens`` onto a per-candidate counter
+    and sets :attr:`cancel_event` once the aggregate crosses
+    ``budget_tokens``.  The coordinator's watcher task awaits the event
+    and cancels every candidate — losing worktrees release cleanly
+    through the existing :class:`asyncio.CancelledError` path in
+    ``_run_candidate``.
+
+    A ``budget_tokens`` of zero (the :class:`RaceConfig` default) means
+    "no monitoring" — :meth:`record_candidate_usage` is a no-op and
+    :attr:`cancel_event` never fires.  This matches the gate semantics
+    where a zero budget disables the dispatch-time hard cap too.
+    """
+
+    def __init__(self, budget_tokens: int) -> None:
+        if budget_tokens < 0:
+            raise ValueError(f"budget_tokens must be >= 0, got {budget_tokens!r}")
+        self._budget_tokens = budget_tokens
+        self._per_candidate: dict[str, int] = {}
+        self._cancel_event = asyncio.Event()
+
+    @property
+    def budget_tokens(self) -> int:
+        """Configured cap.  Zero means monitoring is disabled."""
+        return self._budget_tokens
+
+    @property
+    def cancel_event(self) -> asyncio.Event:
+        """Event set when :attr:`total_tokens` first exceeds the budget."""
+        return self._cancel_event
+
+    @property
+    def total_tokens(self) -> int:
+        """Sum of ``prompt + completion`` across every candidate."""
+        return sum(self._per_candidate.values())
+
+    @property
+    def tripped(self) -> bool:
+        """``True`` once the budget has been crossed at least once."""
+        return self._cancel_event.is_set()
+
+    def per_candidate(self) -> dict[str, int]:
+        """Return a copy of the per-candidate token counters."""
+        return dict(self._per_candidate)
+
+    def record_candidate_usage(self, candidate_id: str, response: object) -> None:
+        """Add a completed-round's usage to this candidate's counter.
+
+        Accepts the full :class:`~cantrip.llm.base.Response` (the same
+        object the ``on_usage`` callback already receives) so the wiring
+        in the executor's race-subagent factory stays one wrapper call
+        deep.  Missing or non-int usage fields are skipped silently —
+        a provider that doesn't report usage simply doesn't move the
+        meter, which matches today's cost-recording behaviour.
+        """
+        if self._budget_tokens == 0:
+            return
+        usage = getattr(response, "usage", None)
+        if not isinstance(usage, dict):
+            return
+        prompt = usage.get("prompt_tokens")
+        completion = usage.get("completion_tokens")
+        delta = 0
+        if isinstance(prompt, int):
+            delta += prompt
+        if isinstance(completion, int):
+            delta += completion
+        if delta == 0:
+            return
+        self._per_candidate[candidate_id] = self._per_candidate.get(candidate_id, 0) + delta
+        if self.total_tokens > self._budget_tokens and not self._cancel_event.is_set():
+            log.warning(
+                "Race budget tripped mid-flight: total=%d > budget=%d (per-candidate=%s)",
+                self.total_tokens,
+                self._budget_tokens,
+                self._per_candidate,
+            )
+            self._cancel_event.set()
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +764,7 @@ class RaceCoordinator:
         base_path: pathlib.Path,
         specs: list[CandidateSpec],
         build_subagent: SubagentFactory,
+        monitor: RaceBudgetMonitor | None = None,
     ) -> RaceResult:
         """Race *specs* against each other on *task_id*.
 
@@ -667,6 +773,15 @@ class RaceCoordinator:
         have already been released by the time this returns.  When every
         candidate fails, ``winner`` is ``None`` and all worktrees are
         released — the caller has nothing to merge.
+
+        *monitor* (Phase 47.4 follow-up) enables mid-flight budget
+        cancellation.  When supplied, a watcher coroutine awaits
+        ``monitor.cancel_event``; when the event fires (because some
+        candidate's cumulative usage pushed the aggregate over the
+        budget), every candidate task is cancelled and the returned
+        ``RaceResult.cancelled_for_budget`` is ``True``.  The caller —
+        typically the executor's :meth:`_execute_race` — treats this
+        as a downgrade-to-single-subagent signal, not a fault.
         """
         if not specs:
             raise ValueError("race requires at least one candidate")
@@ -690,8 +805,91 @@ class RaceCoordinator:
         # default ``return_exceptions=False`` and only sees normal
         # outcomes.  ``CancelledError`` is re-raised on purpose so
         # operator-driven cancellation still propagates.
-        coros = [self._run_candidate(task_id, base_path, spec, build_subagent) for spec in clamped]
-        outcomes: list[CandidateOutcome] = await asyncio.gather(*coros, return_exceptions=False)
+        #
+        # Each candidate runs as its own :class:`asyncio.Task` (rather
+        # than the bare coroutine ``asyncio.gather`` would otherwise
+        # wrap) so the budget watcher below can cancel them
+        # individually without taking down the whole event loop.
+        candidate_tasks = [
+            asyncio.create_task(
+                self._run_candidate(task_id, base_path, spec, build_subagent),
+                name=f"race[{task_id}/{spec.candidate_id}]",
+            )
+            for spec in clamped
+        ]
+
+        watcher: asyncio.Task | None = None
+        if monitor is not None and monitor.budget_tokens > 0:
+            watcher = asyncio.create_task(
+                self._budget_watcher(task_id, monitor, candidate_tasks),
+                name=f"race[{task_id}]/budget-watcher",
+            )
+
+        # ``return_exceptions=True`` lets a watcher-driven cancel turn
+        # each in-flight candidate into an ``asyncio.CancelledError`` we
+        # can convert to a synthetic outcome rather than aborting the
+        # gather and discarding the others' partial progress.
+        try:
+            raw_outcomes: list[CandidateOutcome | BaseException] = await asyncio.gather(
+                *candidate_tasks, return_exceptions=True
+            )
+        finally:
+            if watcher is not None:
+                watcher.cancel()
+                # Drain the watcher cleanly so an unhandled
+                # CancelledError doesn't leak as a "task exception was
+                # never retrieved" warning.
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await watcher
+
+        outcomes: list[CandidateOutcome] = []
+        for spec, raw in zip(clamped, raw_outcomes, strict=True):
+            if isinstance(raw, asyncio.CancelledError):
+                outcomes.append(
+                    CandidateOutcome(
+                        spec=spec,
+                        handle=None,
+                        result=None,
+                        error="cancelled mid-flight (budget)",
+                    )
+                )
+            elif isinstance(raw, BaseException):
+                # Re-raise non-Cancelled exceptions — ``_run_candidate``
+                # is supposed to catch every non-cancel error itself, so
+                # anything reaching this branch is an unexpected escape
+                # that should crash the run loudly.
+                raise raw
+            else:
+                outcomes.append(raw)
+
+        cancelled_for_budget = monitor is not None and monitor.tripped
+        if cancelled_for_budget:
+            # Don't score or pick a winner: every candidate was
+            # interrupted mid-flight and their worktrees may carry
+            # half-written changes.  Release everything and surface a
+            # downgrade-shaped result.
+            await self._release_losers(
+                [o for o in outcomes if o is not None],
+                winner=None,
+            )
+            elapsed = time.monotonic() - start
+            log.info(
+                "Race for task %s cancelled mid-flight after %.1fs: budget=%d tokens, total=%d (per-candidate=%s)",
+                task_id,
+                elapsed,
+                monitor.budget_tokens if monitor else 0,
+                monitor.total_tokens if monitor else 0,
+                monitor.per_candidate() if monitor else {},
+            )
+            return RaceResult(
+                task_id=task_id,
+                winner=None,
+                all_scores=[],
+                all_outcomes=outcomes,
+                elapsed_seconds=round(elapsed, 3),
+                cancelled_for_budget=True,
+                total_tokens_at_cancel=monitor.total_tokens if monitor else 0,
+            )
 
         # Score every outcome.  Scoring is cheap and parallelisable but
         # touches disk through charmlint/readiness; run concurrently so a
@@ -723,6 +921,32 @@ class RaceCoordinator:
             all_outcomes=outcomes,
             elapsed_seconds=round(elapsed, 3),
         )
+
+    async def _budget_watcher(
+        self,
+        task_id: str,
+        monitor: RaceBudgetMonitor,
+        candidate_tasks: list[asyncio.Task],
+    ) -> None:
+        """Cancel every candidate task once *monitor* trips.
+
+        Lives as its own task so it competes for the event loop with
+        the candidate-run tasks rather than blocking inside the gather
+        call.  Cancelled cleanly by :meth:`run` when the gather
+        returns normally — never raises into the outer scope.
+        """
+        await monitor.cancel_event.wait()
+        log.warning(
+            "Race for task %s tripped the mid-flight budget cap "
+            "(total=%d tokens > budget=%d); cancelling %d candidate task(s)",
+            task_id,
+            monitor.total_tokens,
+            monitor.budget_tokens,
+            sum(1 for t in candidate_tasks if not t.done()),
+        )
+        for task in candidate_tasks:
+            if not task.done():
+                task.cancel()
 
     async def _run_candidate(
         self,

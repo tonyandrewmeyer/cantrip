@@ -5,6 +5,33 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Mid-flight race-mode budget accounting (Phase 47.4 follow-up).**
+  Resolves the deferred ``47.4`` row from ``design/DEFERRED.md`` now
+  that Phase 41.6 streaming-usage aggregation has bedded in.  The
+  dispatch-time race gate (``RaceConfig.race_gate``) caught racers
+  whose *predicted* spend exceeded the budget, but a candidate that
+  spiralled mid-task could still cost an order of magnitude more
+  than the baseline before the race finished.  A new
+  ``RaceBudgetMonitor`` aggregates per-candidate
+  ``prompt_tokens + completion_tokens`` from each round's usage and
+  trips an ``asyncio.Event`` when the total crosses
+  ``budget_tokens``.  ``RaceCoordinator.run`` accepts the monitor and
+  spawns a watcher coroutine that cancels every candidate task when
+  the event fires; cancellation outcomes are synthesised so
+  ``_release_losers`` still cleans worktrees through the existing
+  best-effort release path.  ``RaceResult`` carries
+  ``cancelled_for_budget`` + ``total_tokens_at_cancel`` fields.  The
+  executor's race-subagent factory wraps each candidate's
+  ``on_usage`` so the monitor sees per-round usage before the
+  standard cost-recording path; ``_execute_race`` translates a
+  cancelled-for-budget result into a ``race_downgraded`` event with
+  ``reason="over_budget_midflight"``, flips
+  ``task.race_decision="declined"``, and resets the task to PENDING
+  so the main loop re-dispatches under the single-subagent path.
+  Backwards-compatible: a ``budget_tokens=0`` monitor (the
+  ``RaceConfig`` default for the field) disables the watcher
+  entirely, matching the gate's "no hard cap" semantics.  18 new
+  unit cases across ``test_race.py`` and ``test_executor_race.py``.
 - **`@terminal` context provider (Phase 72.2 follow-up).** Resolves
   the deferred ``@terminal`` row from ``design/DEFERRED.md`` now
   that Phase 69.3's shell-mode buffer has bedded in.  A new

@@ -633,6 +633,115 @@ class TestExecuteRaceNoWinner:
         assert "kaboom" in (final.blocked_reason or final.result or "")
 
 
+class TestExecuteRaceBudgetMidflight:
+    """Phase 47.4 follow-up — mid-flight budget cancellation downgrades cleanly."""
+
+    @pytest.mark.asyncio
+    async def test_cancelled_for_budget_resets_task_and_records_event(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        allocator = _make_allocator(tmp_path)
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            budget_tokens=500_000,
+        )
+        executor = _make_executor(
+            allocator,
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        events: list[tuple[str, dict[str, str]]] = []
+
+        class _FakeStateService:
+            def record_event(self, name: str, payload: dict[str, str]) -> None:
+                events.append((name, payload))
+
+            def save_tasks(self, _tasks: list[object]) -> None:  # noqa: ARG002
+                pass
+
+        executor._state_service = _FakeStateService()
+
+        task = AgentTask(id="t-mid", title="Build a thing", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+        executor._queue.set_active(task.id)
+
+        race_result = race.RaceResult(
+            task_id="t-mid",
+            winner=None,
+            all_scores=[],
+            all_outcomes=[],
+            elapsed_seconds=0.1,
+            cancelled_for_budget=True,
+            total_tokens_at_cancel=750_000,
+        )
+        await _stub_coordinator_run(executor, lambda **_: race_result)
+
+        merge = AsyncMock()
+        with patch.object(executor, "_merge_worktree", merge):
+            await executor._execute_task(task)
+
+        merge.assert_not_awaited()
+        final = executor._queue.get_task(task.id)
+        # Task is *not* failed — it's reset to PENDING for the executor
+        # to re-pick up under the single-subagent path.
+        assert final.status == TaskStatus.PENDING
+        # ``race_decision`` flipped to ``declined`` so the next pass
+        # through ``_dispatch_race_gate`` falls straight through to
+        # ``RaceGate.DOWNGRADE`` without re-prompting the user.
+        assert final.race_decision == "declined"
+        # A downgrade event was recorded with the mid-flight reason and
+        # the actual aggregate token count (not the dispatch estimate).
+        downgrade_events = [(n, p) for n, p in events if n == "race_downgraded"]
+        assert len(downgrade_events) == 1
+        _, payload = downgrade_events[0]
+        assert payload["reason"] == "over_budget_midflight"
+        assert payload["estimate_tokens"] == "750000"
+        assert payload["budget_tokens"] == "500000"
+
+    @pytest.mark.asyncio
+    async def test_non_cancelled_run_takes_normal_path(self, tmp_path: pathlib.Path) -> None:
+        """A race that completes normally (cancelled_for_budget=False) follows the no-winner path."""
+        allocator = _make_allocator(tmp_path)
+        config = race.RaceConfig(
+            enabled_categories=frozenset({TaskCategory.BUILD}),
+            budget_tokens=1_000_000,
+        )
+        executor = _make_executor(
+            allocator,
+            charm_path=tmp_path,
+            light_provider=_named_provider("light-model"),
+            race_config=config,
+        )
+        task = AgentTask(id="t-ok", title="Build", category=TaskCategory.BUILD)
+        executor._queue.add_task(task)
+        executor._queue.set_active(task.id)
+
+        # A regular no-winner result (every candidate FAILED) must
+        # still drive the task to FAILED — not get caught by the new
+        # cancelled-for-budget branch.
+        race_result = race.RaceResult(
+            task_id="t-ok",
+            winner=None,
+            all_scores=[
+                race.CandidateScore(
+                    candidate_id="primary-model",
+                    exit_state=ExitState.FAILED,
+                    total=0.0,
+                ),
+            ],
+            all_outcomes=[],
+            elapsed_seconds=0.1,
+            cancelled_for_budget=False,
+        )
+        await _stub_coordinator_run(executor, lambda **_: race_result)
+
+        await executor._execute_task(task)
+
+        final = executor._queue.get_task(task.id)
+        assert final.status == TaskStatus.FAILED
+
+
 class TestExecuteRaceBlockedWinner:
     @pytest.mark.asyncio
     async def test_blocked_winner_preserves_branch_does_not_merge(

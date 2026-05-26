@@ -770,6 +770,130 @@ class TestRaceCoordinator:
         assert result.winner is not None
 
 
+class TestRaceCoordinatorBudgetMonitor:
+    """Phase 47.4 follow-up — mid-flight budget cancellation through the coordinator."""
+
+    @pytest.fixture
+    def _slow_subagent_factory(self):
+        """Factory that yields subagents which never complete on their own.
+
+        The race body cancels them via the watcher task; the test
+        verifies that ``RaceResult.cancelled_for_budget`` is set and
+        the synthetic outcomes carry the cancellation marker.
+        """
+        import asyncio as _asyncio
+
+        class _Slow:
+            async def run(self):
+                # Long enough that we know the watcher must be the
+                # reason the race ends; cancellation raises here.
+                await _asyncio.sleep(60)
+                raise AssertionError("unreachable — should have been cancelled")
+
+        async def factory(_spec, _work_path, _handle):
+            return _Slow()
+
+        return factory
+
+    @pytest.mark.asyncio
+    async def test_monitor_cancels_candidates_when_tripped(
+        self, tmp_path: pathlib.Path, _slow_subagent_factory
+    ) -> None:
+        import asyncio as _asyncio
+
+        monitor = race.RaceBudgetMonitor(budget_tokens=100)
+        allocator = _make_allocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+
+        async def _trip_after_dispatch() -> None:
+            # Yield long enough that the coordinator has spawned its
+            # candidate tasks and the watcher is awaiting the event.
+            await _asyncio.sleep(0.05)
+            monitor.record_candidate_usage(
+                "a", _StubResponse(prompt_tokens=120, completion_tokens=0)
+            )
+
+        # Side task that trips the monitor mid-race.
+        tripper = _asyncio.create_task(_trip_after_dispatch())
+
+        import contextlib as _contextlib
+
+        try:
+            result = await coord.run(
+                task_id="t-budget",
+                base_path=tmp_path,
+                specs=[_spec("a"), _spec("b")],
+                build_subagent=_slow_subagent_factory,
+                monitor=monitor,
+            )
+        finally:
+            tripper.cancel()
+            with _contextlib.suppress(_asyncio.CancelledError):
+                await tripper
+
+        assert result.cancelled_for_budget is True
+        assert result.winner is None
+        assert result.total_tokens_at_cancel >= 120
+        # Every outcome is a synthetic cancellation record.
+        assert {o.error for o in result.all_outcomes} == {"cancelled mid-flight (budget)"}
+        # No scores were computed because no candidate produced a result.
+        assert result.all_scores == []
+
+    @pytest.mark.asyncio
+    async def test_monitor_not_tripped_completes_normally(self, tmp_path: pathlib.Path) -> None:
+        """A configured monitor that never trips behaves like no monitor at all."""
+        monitor = race.RaceBudgetMonitor(budget_tokens=1_000_000)
+        allocator = _make_allocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results = {
+            "good": SubagentResult(ExitState.COMPLETED, summary="done", detail=""),
+            "bad": SubagentResult(ExitState.FAILED, summary="broke", detail=""),
+        }
+
+        result = await coord.run(
+            task_id="t-ok",
+            base_path=tmp_path,
+            specs=[_spec("good"), _spec("bad")],
+            build_subagent=_fake_factory(results),
+            monitor=monitor,
+        )
+
+        assert result.cancelled_for_budget is False
+        assert result.winner is not None
+        assert result.winner.candidate_id == "good"
+
+    @pytest.mark.asyncio
+    async def test_zero_budget_monitor_skips_watcher(self, tmp_path: pathlib.Path) -> None:
+        """A monitor with budget_tokens=0 disables the watcher entirely.
+
+        Even recording over-budget usage shouldn't cancel anything
+        because the monitor wouldn't trip without a positive budget.
+        """
+        monitor = race.RaceBudgetMonitor(budget_tokens=0)
+        allocator = _make_allocator(tmp_path)
+        coord = race.RaceCoordinator(allocator=allocator, config=race.RaceConfig())
+        results = {
+            "a": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+            "b": SubagentResult(ExitState.COMPLETED, summary="", detail=""),
+        }
+
+        # Hammer the monitor with huge usage — none of it matters.
+        monitor.record_candidate_usage(
+            "a", _StubResponse(prompt_tokens=999_999, completion_tokens=999_999)
+        )
+
+        result = await coord.run(
+            task_id="t-zero",
+            base_path=tmp_path,
+            specs=[_spec("a"), _spec("b")],
+            build_subagent=_fake_factory(results),
+            monitor=monitor,
+        )
+
+        assert result.cancelled_for_budget is False
+        assert result.winner is not None
+
+
 @pytest.mark.asyncio
 async def test_score_candidate_against_real_worktree(tmp_path: pathlib.Path) -> None:
     """Drive :func:`score_candidate` against a real git tree so the diff
@@ -828,3 +952,159 @@ async def test_score_candidate_against_real_worktree(tmp_path: pathlib.Path) -> 
     # because we have a charmcraft.yaml.
     assert score.readiness_pct is not None
     assert 0 <= score.readiness_pct <= 100
+
+
+# ---------------------------------------------------------------------------
+# Phase 47.4 follow-up — RaceBudgetMonitor
+# ---------------------------------------------------------------------------
+
+
+class _StubResponse:
+    """Minimal stand-in for :class:`~cantrip.llm.base.Response` with usage."""
+
+    def __init__(
+        self,
+        *,
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
+        usage: dict | None = None,
+    ) -> None:
+        if usage is not None:
+            self.usage: object = usage
+        else:
+            self.usage = {}
+            if prompt_tokens is not None:
+                self.usage["prompt_tokens"] = prompt_tokens
+            if completion_tokens is not None:
+                self.usage["completion_tokens"] = completion_tokens
+
+
+class TestRaceBudgetMonitor:
+    """``RaceBudgetMonitor`` tracks per-candidate tokens and trips at the cap."""
+
+    def test_zero_budget_disables_monitoring(self) -> None:
+        monitor = race.RaceBudgetMonitor(budget_tokens=0)
+        monitor.record_candidate_usage("opus", _StubResponse(prompt_tokens=1_000_000))
+        assert monitor.total_tokens == 0
+        assert monitor.tripped is False
+        assert monitor.cancel_event.is_set() is False
+
+    def test_negative_budget_rejected(self) -> None:
+        with pytest.raises(ValueError, match="budget_tokens"):
+            race.RaceBudgetMonitor(budget_tokens=-1)
+
+    def test_accumulates_per_candidate(self) -> None:
+        monitor = race.RaceBudgetMonitor(budget_tokens=100_000)
+        monitor.record_candidate_usage(
+            "opus", _StubResponse(prompt_tokens=1000, completion_tokens=500)
+        )
+        monitor.record_candidate_usage(
+            "opus", _StubResponse(prompt_tokens=2000, completion_tokens=400)
+        )
+        monitor.record_candidate_usage(
+            "sonnet", _StubResponse(prompt_tokens=500, completion_tokens=100)
+        )
+        per = monitor.per_candidate()
+        assert per == {"opus": 3900, "sonnet": 600}
+        assert monitor.total_tokens == 4500
+        assert monitor.tripped is False
+
+    def test_under_budget_does_not_trip(self) -> None:
+        monitor = race.RaceBudgetMonitor(budget_tokens=1_000)
+        monitor.record_candidate_usage(
+            "opus", _StubResponse(prompt_tokens=500, completion_tokens=400)
+        )
+        assert monitor.tripped is False
+        assert monitor.cancel_event.is_set() is False
+
+    def test_exceeding_budget_trips_event(self) -> None:
+        monitor = race.RaceBudgetMonitor(budget_tokens=1_000)
+        monitor.record_candidate_usage(
+            "opus", _StubResponse(prompt_tokens=800, completion_tokens=300)
+        )
+        assert monitor.tripped is True
+        assert monitor.cancel_event.is_set() is True
+        assert monitor.total_tokens == 1_100
+
+    def test_exactly_at_budget_does_not_trip(self) -> None:
+        """Strict ``>`` so a candidate that lands exactly on the cap still wins."""
+        monitor = race.RaceBudgetMonitor(budget_tokens=1_000)
+        monitor.record_candidate_usage(
+            "opus", _StubResponse(prompt_tokens=600, completion_tokens=400)
+        )
+        assert monitor.tripped is False
+
+    def test_cross_candidate_aggregate_trips(self) -> None:
+        """No single candidate exceeds the budget alone, but the sum does."""
+        monitor = race.RaceBudgetMonitor(budget_tokens=1_000)
+        monitor.record_candidate_usage(
+            "opus", _StubResponse(prompt_tokens=400, completion_tokens=200)
+        )
+        assert monitor.tripped is False
+        monitor.record_candidate_usage(
+            "sonnet", _StubResponse(prompt_tokens=300, completion_tokens=200)
+        )
+        assert monitor.tripped is True
+
+    def test_missing_usage_dict_is_a_noop(self) -> None:
+        monitor = race.RaceBudgetMonitor(budget_tokens=100)
+        monitor.record_candidate_usage("opus", _StubResponse(usage=None))
+        assert monitor.total_tokens == 0
+        assert monitor.tripped is False
+
+    def test_non_int_usage_fields_are_skipped(self) -> None:
+        """A provider that returns ``usage={"prompt_tokens": "??"}`` must not crash."""
+        monitor = race.RaceBudgetMonitor(budget_tokens=100)
+        monitor.record_candidate_usage(
+            "opus", _StubResponse(usage={"prompt_tokens": "n/a", "completion_tokens": "n/a"})
+        )
+        assert monitor.total_tokens == 0
+        assert monitor.tripped is False
+
+    def test_response_without_usage_attr_is_a_noop(self) -> None:
+        """Some test doubles don't carry a ``usage`` attribute at all."""
+        monitor = race.RaceBudgetMonitor(budget_tokens=100)
+
+        class _Bare:
+            pass
+
+        monitor.record_candidate_usage("opus", _Bare())
+        assert monitor.total_tokens == 0
+        assert monitor.tripped is False
+
+    def test_trip_is_idempotent(self) -> None:
+        """Subsequent over-budget recordings don't re-set or unset the event."""
+        monitor = race.RaceBudgetMonitor(budget_tokens=100)
+        monitor.record_candidate_usage("opus", _StubResponse(prompt_tokens=200))
+        assert monitor.tripped is True
+        monitor.record_candidate_usage("opus", _StubResponse(prompt_tokens=200))
+        assert monitor.tripped is True
+        assert monitor.total_tokens == 400
+
+
+class TestRaceResultBudgetFields:
+    """``RaceResult.cancelled_for_budget`` defaults to False for backward compat."""
+
+    def test_default_is_false(self) -> None:
+        result = race.RaceResult(
+            task_id="t1",
+            winner=None,
+            all_scores=[],
+            all_outcomes=[],
+            elapsed_seconds=0.1,
+        )
+        assert result.cancelled_for_budget is False
+        assert result.total_tokens_at_cancel == 0
+
+    def test_explicit_true(self) -> None:
+        result = race.RaceResult(
+            task_id="t1",
+            winner=None,
+            all_scores=[],
+            all_outcomes=[],
+            elapsed_seconds=0.1,
+            cancelled_for_budget=True,
+            total_tokens_at_cancel=12_345,
+        )
+        assert result.cancelled_for_budget is True
+        assert result.total_tokens_at_cancel == 12_345
