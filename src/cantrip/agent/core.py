@@ -70,6 +70,7 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import agents_md, build_system_prompt
+from cantrip.agent.prompts.workshop import workshop_prompt_text
 from cantrip.agent.queue import (
     AgentTask,
     TaskCategory,
@@ -1455,6 +1456,7 @@ class CantripAgent:
             watcher_enabled=self.state.watcher_enabled and self.state.watcher_reacting,
             repo_map=repo_map,
             substrate=self._get_substrate_cached(),
+            workshop_prompt=workshop_prompt_text(),
             compact=compact,
         )
         if self.state.plan_mode:

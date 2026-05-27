@@ -782,6 +782,17 @@ All charm files (`charmcraft.yaml`, `src/`, `tests/`, …) live **directly** at 
 {%- endfor %}
 {% endif %}
 {% endif %}
+{% if workshop_prompt %}
+
+## Workshop Environment
+
+You are running inside a Canonical Workshop sandbox.  The following guidance
+was installed by the Cantrip SDK and lives at
+`~/.config/cantrip/workshop-prompt.md` — treat it as authoritative for the
+container's capabilities and constraints.
+
+{{ workshop_prompt }}
+{% endif %}
 {% if watcher_enabled %}
 
 ## Event Watcher

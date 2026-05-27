@@ -97,6 +97,7 @@ def build_system_prompt(
     watcher_enabled: bool | None = None,
     repo_map: str | None = None,
     substrate: Any = None,
+    workshop_prompt: str | None = None,
     compact: bool = False,
 ) -> str:
     """Build the full system prompt with current context.
@@ -122,6 +123,9 @@ def build_system_prompt(
             Carries the controller list, active-cloud name, and the
             MicroCloud-detected / OpenStack-target hints.  ``None`` skips
             the section.
+        workshop_prompt: Pre-read content of
+            ``~/.config/cantrip/workshop-prompt.md`` when Cantrip runs inside
+            a Canonical Workshop sandbox.  ``None`` skips the section.
 
     Returns:
         Complete system prompt with context.
@@ -154,4 +158,5 @@ def build_system_prompt(
         watcher_enabled=watcher_enabled,
         repo_map=repo_map,
         substrate=substrate,
+        workshop_prompt=_sanitise(workshop_prompt),
     )

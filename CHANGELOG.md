@@ -5,6 +5,14 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Added
+- **Workshop environment system-prompt injection.**  When Cantrip runs
+  inside a Canonical Workshop sandbox, the system prompt now picks up
+  ``~/.config/cantrip/workshop-prompt.md`` (seeded into the persistent
+  mount by the Cantrip Workshop SDK) and surfaces it as a dedicated
+  *Workshop Environment* section.  The probe is cached after the first
+  read; no syscall is added to the hot path on subsequent turns.  Outside
+  a workshop the file is normally absent and the section is omitted —
+  see ``design/WORKSHOP_SDK.md §5.6`` for the broader plan.
 - **``/review --severity`` and ``--name`` filters.**  Closes item 3
   of ``design/CHECKS.md``'s "Future work".  ``/review`` now accepts
   ``--severity <level>`` and ``--name <pattern>`` (both repeatable,
