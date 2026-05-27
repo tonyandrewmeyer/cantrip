@@ -1,32 +1,19 @@
-# Cantrip Foundry Capsule — V1 and Later Plan
+# Cantrip Workshop SDK — V1 and Later Plan
 
-> This is a design and rollout plan for packaging Cantrip into a
-> containerised development environment product that is still under wraps.
-> It intentionally uses temporary code words so the document can live in
-> tree before the external naming freeze.
-
-## Temporary terminology
-
-Use these placeholders throughout this document:
-
-| Placeholder | Meaning | Replace later with |
-|---|---|---|
-| **Foundry** | The external container-based development environment product | Real product name |
-| **Capsule** | A packaged environment layer installed into a Foundry | Real package type name |
-
-The goal is that a later rename pass can swap terminology mechanically
-without changing the plan itself.
+> Design and rollout plan for packaging Cantrip as an SDK for Canonical's
+> Workshop — the snap-delivered, LXD-backed sandboxed development
+> environment product.
 
 ## TL;DR
 
-- **Yes, a Cantrip Foundry Capsule makes sense** if v1 is framed as a
+- **Yes, a Cantrip Workshop SDK makes sense** if v1 is framed as a
   **remote-controller-first charm authoring environment**, not as a fully
   self-contained local infrastructure stack.
 - **V1 should optimise for authoring, review, unit tests, local charm
   edits, Cantrip memory/transcript persistence, and remote Juju-client
   workflows.**
 - **V1 should not promise local controller bootstrap, nested LXD, or
-  "real cluster inside the container" behaviour.**  The current Foundry
+  "real cluster inside the container" behaviour.**  The current Workshop
   interface model does not show a first-class path for that.
 - **Later phases can expand** toward richer build/deploy flows, host-side
   service tunnelling, and possibly local-controller support if the
@@ -53,20 +40,27 @@ Today, a new Cantrip user still has to assemble:
 - provider credentials,
 - and, for charm work, some subset of Juju and charm-build tooling.
 
-A Foundry Capsule is the natural way to collapse that setup into one
+A Workshop SDK is the natural way to collapse that setup into one
 declared environment.
 
 ## 2. Constraints from the platform model
 
-The current Foundry model appears to provide a constrained but useful set
-of host/container integration primitives:
+Workshop exposes a constrained but useful set of host/container
+integration primitives, configured via simple YAML documents:
 
 - **project mount** into the container,
 - **persistent host-backed mounts** for selected directories,
+- **device pass-through** for things like GPUs,
+- **desktop GUI access** from the host,
 - **manual SSH-agent access**,
 - **network tunnelling** between host and container services,
 - and a small fixed interface catalogue rather than arbitrary custom
   interfaces.
+
+Workshop environments run as **unprivileged system containers** on
+**LXD 6.8 or newer**, with non-privileged defaults and strict access
+controls; the SDK should respect that posture rather than expecting
+elevated host capabilities.
 
 Two constraints matter most for Cantrip:
 
@@ -76,10 +70,10 @@ The current evidence does **not** show a documented path for:
 
 - nested LXD,
 - host LXD socket pass-through,
-- local controller bootstrap inside the Foundry,
+- local controller bootstrap inside the Workshop environment,
 - or a first-class Juju-specific integration surface.
 
-That makes a "full local controller in the Foundry" shape speculative.
+That makes a "full local controller in the Workshop" shape speculative.
 It may eventually be possible, but it should not define v1.
 
 ### 2.2 Remote-client workflows do fit
@@ -96,7 +90,7 @@ product story is honest about the boundary.
 
 ## 3. Product goal
 
-Ship a **Cantrip Foundry Capsule** that gives a charm author a repeatable
+Ship a **Cantrip Workshop SDK** that gives a charm author a repeatable
 environment for:
 
 1. planning and editing a charm project with Cantrip,
@@ -104,13 +98,13 @@ environment for:
 3. performing transcript and memory workflows,
 4. using Juju as a **client** against an already-available controller,
 5. and, where validated, performing at least some charm build/deploy
-   steps without leaving the Foundry.
+   steps without leaving the Workshop environment.
 
 ## 4. Non-goals for v1
 
 V1 should explicitly *not* promise:
 
-- local controller bootstrap inside the Foundry,
+- local controller bootstrap inside the Workshop environment,
 - nested container orchestration,
 - local Kubernetes substrate management,
 - full parity with a bespoke host machine used by an expert charm
@@ -125,16 +119,16 @@ controller step.
 
 ### 5.1 V1 headline
 
-**A single Cantrip Capsule for remote-controller-first charm authoring.**
+**A single Cantrip SDK for remote-controller-first charm authoring.**
 
 This is the best first version because it:
 
 - has a simple user story,
-- minimises cross-Capsule coordination,
+- minimises cross-SDK coordination,
 - makes installation easy to explain,
 - and keeps the initial packaging/testing matrix small.
 
-### 5.2 What the Capsule should include
+### 5.2 What the SDK should include
 
 At minimum:
 
@@ -161,7 +155,7 @@ The key distinction is:
 
 ### 5.3 Persistent mounts
 
-The Capsule should declare persistent mounts for the user state that
+The SDK should declare persistent mounts for the user state that
 benefits from surviving refreshes:
 
 - Cantrip state and global memory
@@ -178,7 +172,7 @@ Nice-to-have, but optional for v1:
 - and optional per-provider config directories.
 
 The design should prefer **directory-level persistence** over bespoke
-save/restore hooks when the Foundry mount model already solves the same
+save/restore hooks when the Workshop mount model already solves the same
 problem cleanly.
 
 ### 5.4 Connections and credentials
@@ -186,10 +180,10 @@ problem cleanly.
 Recommended credential model for v1:
 
 - **LLM provider keys:** supplied by environment variables at launch or
-  shell time, not auto-persisted by the Capsule.
+  shell time, not auto-persisted by the SDK.
 - **SSH identities:** exposed only via the SSH-agent connection.
-- **Juju auth:** either established inside the Foundry by normal CLI
-  login, or recovered from the mounted Juju client state.
+- **Juju auth:** either established inside the Workshop environment by
+  normal CLI login, or recovered from the mounted Juju client state.
 
 The principle is simple:
 
@@ -199,7 +193,9 @@ The principle is simple:
 
 ### 5.5 Hooks
 
-The Cantrip Capsule likely needs four hook concerns.
+The Cantrip SDK likely needs four hook concerns.  (The hook names below
+are working labels; align them with whatever names Workshop exposes in
+the SDK schema once that surface is documented.)
 
 #### setup-base
 
@@ -235,7 +231,7 @@ The health model should separate:
 - **environment is valid**, from
 - **user has completed controller/provider login**.
 
-Missing authentication is a user-readiness issue, not a broken Capsule.
+Missing authentication is a user-readiness issue, not a broken SDK.
 
 #### save-state / restore-state
 
@@ -244,10 +240,10 @@ state cannot be represented as a mounted directory.  Mounted directories
 are simpler, more inspectable, and easier to reason about than custom
 state migration hooks.
 
-### 5.6 Foundry-specific Cantrip prompting
+### 5.6 Workshop-specific Cantrip prompting
 
-The Capsule should ship a short environment note for the agent, similar
-to the other AI-agent Capsules.
+The SDK should ship a short environment note for the agent, similar to
+other AI-agent SDKs in the Workshop catalogue (e.g. OpenCode, Ollama).
 
 That note should teach Cantrip:
 
@@ -267,7 +263,7 @@ These are the workflows v1 should aim to support confidently.
 
 ### 6.1 Guaranteed
 
-- open a project in the Foundry and run Cantrip against it,
+- open a project in the Workshop environment and run Cantrip against it,
 - read/edit files,
 - use Cantrip memory and transcript features across refreshes,
 - run repo-local checks and tests,
@@ -277,8 +273,8 @@ These are the workflows v1 should aim to support confidently.
 
 ### 6.2 Nice to have in v1, but validate before promising
 
-- charm packaging inside the Foundry,
-- deploy / refresh from the Foundry,
+- charm packaging inside the Workshop environment,
+- deploy / refresh from the Workshop environment,
 - and end-to-end "author -> pack -> deploy -> inspect" flows without
   leaving the environment.
 
@@ -290,7 +286,7 @@ of the charm toolchain and should be validated explicitly.
 These questions should be answered by short spikes before implementation
 is declared final.
 
-### 7.1 Can charm packaging run cleanly inside the Foundry?
+### 7.1 Can charm packaging run cleanly inside the Workshop environment?
 
 This is the biggest unknown.
 
@@ -311,7 +307,7 @@ We should identify the minimum stable set of Juju client paths needed for:
 - SSH materials if any,
 - and normal CLI behaviour after refresh.
 
-### 7.3 Should Juju and charmcraft live in the same Capsule?
+### 7.3 Should Juju and charmcraft live in the same SDK?
 
 The default recommendation is **yes for v1** because it keeps the user
 story simple.  But a quick spike should still answer:
@@ -335,9 +331,9 @@ We should lock down a crisp contract:
 
 ## 8.1 Phase A — feasibility spikes
 
-Before productising the Capsule:
+Before productising the SDK:
 
-1. package Cantrip alone in a minimal Foundry,
+1. package Cantrip alone in a minimal Workshop environment,
 2. add persistent Cantrip config,
 3. add Juju client and validate state persistence,
 4. test remote-controller login and status flows,
@@ -346,16 +342,16 @@ Before productising the Capsule:
 
 Exit criterion: we know whether packaging/deploy belongs in v1 or v1.1.
 
-## 8.2 Phase B — v1 Capsule
+## 8.2 Phase B — v1 SDK
 
-Build the first real Capsule with:
+Build the first real SDK with:
 
 - Cantrip,
 - persistent Cantrip config,
 - persistent Juju config,
 - GitHub CLI config persistence,
 - SSH-agent support,
-- a Foundry-specific prompt note,
+- a Workshop-specific prompt note,
 - and a health check that validates the environment without requiring
   live logins.
 
@@ -375,22 +371,22 @@ After the first release:
 
 ## 9. Later phases
 
-### 9.1 Later: split into companion Capsules if the single bundle gets too heavy
+### 9.1 Later: split into companion SDKs if the single bundle gets too heavy
 
 Possible future decomposition:
 
-- **Cantrip Capsule** — agent, memory, transcripts, repo tooling
-- **Juju Client Capsule** — Juju CLI and controller-facing config
-- **Charm Build Capsule** — charmcraft and build-time dependencies
+- **Cantrip SDK** — agent, memory, transcripts, repo tooling
+- **Juju Client SDK** — Juju CLI and controller-facing config
+- **Charm Build SDK** — charmcraft and build-time dependencies
 
-The single Capsule is better for first adoption.  The split only becomes
+The single SDK is better for first adoption.  The split only becomes
 worth it if image size, update cadence, or support burden becomes
 painful.
 
 ### 9.2 Later: host-service tunnelling
 
-If users want to reach host-local services from inside the Foundry,
-tunnel support could power things like:
+If users want to reach host-local services from inside the Workshop
+environment, tunnel support could power things like:
 
 - a host-local inference endpoint,
 - browser-facing local dashboards,
@@ -400,7 +396,7 @@ This should be a later refinement, not a prerequisite for v1.
 
 ### 9.3 Later: stronger team flows
 
-Once the single-user Capsule is stable, we can consider:
+Once the single-user SDK is stable, we can consider:
 
 - shared Cantrip memory mounts,
 - repo-scoped caches,
@@ -415,15 +411,15 @@ The right order is:
 
 This is the most important deferred future shape.
 
-Revisit local-controller support only if Foundry gains a documented path
-for one of:
+Revisit local-controller support only if Workshop gains a documented
+path for one of:
 
 - nested container orchestration,
 - safe host daemon access,
 - a first-class local-controller integration,
 - or another officially supported mechanism that replaces those.
 
-At that point, the Cantrip Capsule could expand from:
+At that point, the Cantrip SDK could expand from:
 
 - **remote-controller-first charm authoring**, to
 - **full local build/deploy/test lab**.
@@ -432,7 +428,7 @@ Until then, designing around that future would distort v1.
 
 ## 10. Recommendation
 
-Proceed with a **Cantrip Foundry Capsule**, but do it with an explicit
+Proceed with a **Cantrip Workshop SDK**, but do it with an explicit
 v1 boundary:
 
 - **yes** to Cantrip in a repeatable container environment,
@@ -442,7 +438,7 @@ v1 boundary:
 - **maybe** to in-container charm packaging, pending a spike,
 - **no** to local-controller promises until the platform says otherwise.
 
-That gives Cantrip a strong entry point into the Foundry ecosystem
+That gives Cantrip a strong entry point into the Workshop ecosystem
 without tying the first release to the hardest, least-proven part of the
 problem.
 
@@ -452,7 +448,7 @@ If this plan is accepted, the next practical step is a short
 implementation spike outside the Cantrip repo to answer the three
 highest-risk unknowns:
 
-1. **Cantrip-only Capsule boots and runs cleanly.**
+1. **Cantrip-only SDK boots and runs cleanly.**
 2. **Juju client state survives refresh and can talk to a real remote
    controller.**
 3. **Charm packaging either works in-container or is formally deferred
