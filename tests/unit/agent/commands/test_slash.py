@@ -460,6 +460,56 @@ class TestBudget:
         assert result is not None
         assert ">= 0" in result.text
 
+    def test_flag_without_value_shows_per_flag_usage(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, "/budget --max-iterations")
+        assert result is not None
+        assert "/budget --max-iterations N" in result.text
+
+    def test_rejects_non_integer_value(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, "/budget --max-iterations seven")
+        assert result is not None
+        assert "must be an integer" in result.text
+
+    def test_set_completion_token_cap(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        dispatch(agent, "/budget --max-completion-tokens 4096")
+        assert agent.state.goal_budget is not None
+        assert agent.state.goal_budget.max_completion_tokens == 4096
+
+    def test_summary_without_store_is_usage_unavailable(
+        self, memory_manager: MemoryManager
+    ) -> None:
+        from cantrip.agent.goal_budget import GoalBudget
+        from cantrip.agent.queue import WorkQueue
+
+        agent = SimpleNamespace(
+            _memory_manager=memory_manager,
+            state=SimpleNamespace(
+                charm_path=None,
+                goal_budget=GoalBudget(max_iterations=5),
+                messages=[],
+            ),
+            mcp_registry=None,
+            mcp_marketplace_sources=[],
+            mcp_marketplace_loader=None,
+            store=None,
+            provider=SimpleNamespace(model_name="fake-model"),
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            work_queue=WorkQueue(),
+        )
+        result = dispatch(agent, "/budget")
+        assert result is not None
+        assert "Usage unavailable" in result.text
+
 
 class TestGoal:
     """Phase 99.3: ``/goal`` shows, sets, and clears the user-prose objective."""
@@ -748,6 +798,101 @@ class TestShare:
         assert "Failed to upload gist" in result
         assert "gh auth login" in result
         assert "gh gist create" in result
+
+    @pytest.mark.asyncio
+    async def test_share_render_failure_surfaces_message(self, tmp_path: pathlib.Path) -> None:
+        """A renderer error returns a friendly note rather than raising."""
+        from unittest.mock import patch
+
+        charm_path = tmp_path / "charm"
+        charm_path.mkdir()
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+
+        with patch(
+            "cantrip.transcript.export.load_transcript",
+            side_effect=ValueError("corrupt db"),
+        ):
+            result = await share_commands.share_to_gist(charm_path / ".cantrip", charm_path)
+
+        assert "Failed to render transcript" in result
+        assert "corrupt db" in result
+
+    @pytest.mark.asyncio
+    async def test_share_tempfile_failure_surfaces_message(self, tmp_path: pathlib.Path) -> None:
+        """An OSError writing the temp HTML returns a clear note."""
+        from unittest.mock import patch
+
+        charm_path = tmp_path / "charm"
+        charm_path.mkdir()
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+
+        with (
+            patch("cantrip.transcript.export.load_transcript", return_value={}),
+            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
+            patch(
+                "cantrip.agent.commands.share.tempfile.NamedTemporaryFile",
+                side_effect=OSError("disk full"),
+            ),
+        ):
+            result = await share_commands.share_to_gist(charm_path / ".cantrip", charm_path)
+
+        assert "Failed to write temp transcript" in result
+        assert "disk full" in result
+
+    @pytest.mark.asyncio
+    async def test_share_gh_launch_failure_surfaces_path(self, tmp_path: pathlib.Path) -> None:
+        """If ``gh`` cannot be launched, the local path + manual command surface."""
+        from unittest.mock import patch
+
+        charm_path = tmp_path / "charm"
+        charm_path.mkdir()
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+
+        with (
+            patch("cantrip.transcript.export.load_transcript", return_value={}),
+            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
+            patch("cantrip.agent.commands.share.shutil.which", return_value="/usr/bin/gh"),
+            patch(
+                "cantrip.agent.commands.share.asyncio.create_subprocess_exec",
+                side_effect=OSError("no exec"),
+            ),
+        ):
+            result = await share_commands.share_to_gist(charm_path / ".cantrip", charm_path)
+
+        assert "Failed to launch `gh`" in result
+        assert "upload manually" in result
+
+    @pytest.mark.asyncio
+    async def test_share_unparseable_url_returns_raw_output(self, tmp_path: pathlib.Path) -> None:
+        """A success exit with no URL line returns the raw gh output."""
+        from unittest.mock import patch
+
+        charm_path = tmp_path / "charm"
+        charm_path.mkdir()
+        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
+
+        async def _fake_comm(_self):
+            return (b"some non-url progress noise\n", b"")
+
+        with (
+            patch("cantrip.transcript.export.load_transcript", return_value={}),
+            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
+            patch("cantrip.agent.commands.share.shutil.which", return_value="/usr/bin/gh"),
+            patch("cantrip.agent.commands.share.asyncio.create_subprocess_exec") as mock_exec,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate = _fake_comm.__get__(mock_proc)
+
+            async def _fake_exec(*_args, **_kwargs):
+                return mock_proc
+
+            mock_exec.side_effect = _fake_exec
+
+            result = await share_commands.share_to_gist(charm_path / ".cantrip", charm_path)
+
+        assert "could not parse a URL" in result
+        assert "some non-url progress noise" in result
 
 
 class TestCopy:

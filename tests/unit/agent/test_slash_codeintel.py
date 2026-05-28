@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pathlib
 import textwrap
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from cantrip.agent.commands import codeintel as codeintel_commands
 from cantrip.agent.commands.codeintel import (
     handle_definition,
     handle_references,
@@ -166,3 +168,56 @@ class TestCatalogueRegistration:
         assert "/symbols" in verbs
         assert "/definition" in verbs
         assert "/references" in verbs
+
+
+# ---------------------------------------------------------------------------
+# Error / multi-result branches
+# ---------------------------------------------------------------------------
+
+
+def _agent_with_failing_index() -> MagicMock:
+    """Agent whose code-intel ``build`` raises — drives the diagnostics path."""
+    ci = MagicMock()
+    ci.build.side_effect = RuntimeError("index exploded")
+    agent = MagicMock()
+    agent.code_intel = ci
+    return agent
+
+
+class TestBuildFailuresRouteToDiagnostics:
+    def test_symbols_build_failure(self) -> None:
+        text = handle_symbols(_agent_with_failing_index(), "anything")
+        assert "/symbols" in text
+
+    def test_definition_build_failure(self) -> None:
+        text = handle_definition(_agent_with_failing_index(), "anything")
+        assert "/definition" in text
+
+    def test_references_build_failure(self) -> None:
+        text = handle_references(_agent_with_failing_index(), "anything")
+        assert "/references" in text
+
+
+class TestMultiResultHeaders:
+    def test_multiple_candidate_definitions_header(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Two semantic matches → the "N candidate definitions" header.
+        result = SimpleNamespace(semantic=True, matches=[object(), object()])
+        ci = MagicMock()
+        ci.go_to_definition.return_value = result
+        agent = MagicMock()
+        agent.code_intel = ci
+        monkeypatch.setattr(codeintel_commands, "render_definitions", lambda _r: "body")
+        text = handle_definition(agent, "ambiguous")
+        assert "2 candidate definitions for `ambiguous`" in text
+
+    def test_truncated_references_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A non-zero ``truncated`` count appends the elided-references note.
+        location = SimpleNamespace(file="src/charm.py")
+        result = SimpleNamespace(semantic=True, locations=[location], truncated=7)
+        ci = MagicMock()
+        ci.find_references.return_value = result
+        agent = MagicMock()
+        agent.code_intel = ci
+        monkeypatch.setattr(codeintel_commands, "render_references", lambda _r: "body")
+        text = handle_references(agent, "popular")
+        assert "(+7 elided)" in text

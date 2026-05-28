@@ -109,6 +109,61 @@ class TestCatalogue:
         result = handle_flow(agent, "/flow", "help missing")
         assert "No flow named" in result.text
 
+    def test_help_name_form_shows_detail(self) -> None:
+        # ``/flow help <name>`` is the twin of ``/flow <name> --help``.
+        registry = flows.FlowRegistry(flows=(_make_flow("alpha"),))
+        agent = _agent(flows_registry=registry)
+        result = handle_flow(agent, "/flow", "help alpha")
+        assert "Entry node:" in result.text
+
+    def test_help_with_two_names_refused(self) -> None:
+        registry = flows.FlowRegistry(flows=(_make_flow("alpha"),))
+        agent = _agent(flows_registry=registry)
+        result = handle_flow(agent, "/flow", "help alpha beta")
+        assert "at most one flow name" in result.text
+
+    def test_help_detail_includes_intro_and_decision_nodes(self) -> None:
+        # A flow with intro prose and a decision node exercises the
+        # optional blocks in ``_format_flow_help``.
+        nodes = (
+            flows.FlowNode(
+                id="start",
+                label="Begin",
+                kind=flows.NodeKind.DECISION,
+                annotation="Pick a path.",
+            ),
+            flows.FlowNode(
+                id="finish",
+                label="Done",
+                kind=flows.NodeKind.TERMINAL,
+                annotation="Stop.",
+            ),
+        )
+        edges = (
+            flows.FlowEdge(src="start", dest="finish", label="yes"),
+            flows.FlowEdge(src="start", dest="finish", label="no"),
+        )
+        flow = flows.Flow(
+            name="branchy",
+            description="A branching flow.",
+            intro_prose="This flow has prose.",
+            diagram_source="flowchart TD\nstart{Begin}\nfinish(Done)",
+            entry_node="start",
+            nodes=nodes,
+            edges=edges,
+        )
+        registry = flows.FlowRegistry(flows=(flow,))
+        agent = _agent(flows_registry=registry)
+        result = handle_flow(agent, "/flow", "branchy --help")
+        assert "This flow has prose." in result.text
+        assert "Decision nodes:" in result.text
+        assert "`yes`" in result.text and "`no`" in result.text
+
+    def test_no_flow_registry_is_unavailable(self) -> None:
+        agent = SimpleNamespace(flows=None)
+        result = handle_flow(agent, "/flow", "")
+        assert "no flow registry" in result.text
+
 
 # ---------------------------------------------------------------------------
 # Invocation paths

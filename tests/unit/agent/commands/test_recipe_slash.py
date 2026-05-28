@@ -7,7 +7,7 @@ import pathlib
 from collections.abc import Awaitable
 from types import SimpleNamespace
 
-from cantrip.agent import recipes
+from cantrip.agent import declarative_retry, recipes
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.recipes import handle_recipe
 from cantrip.agent.commands.slash import SlashResult, dispatch
@@ -607,3 +607,207 @@ class TestDispatch:
         # ``test_slash.py`` doesn't catch a missing entry.
         text = slash_commands.help_text(None)
         assert "/recipe" in text
+
+
+# ---------------------------------------------------------------------------
+# Help-page rendering — the optional detail blocks
+# ---------------------------------------------------------------------------
+
+
+class TestHelpPageBlocks:
+    """``/recipe <name> --help`` renders each optional section."""
+
+    def test_no_recipe_registry_is_unavailable(self) -> None:
+        # An agent missing the ``recipes`` attribute (or holding a
+        # non-registry) short-circuits before any parsing.
+        agent = SimpleNamespace(recipes=None)
+        result = handle_recipe(agent, "anything")
+        assert "is unavailable" in result.text
+
+    def test_help_name_form_shows_parameters(self) -> None:
+        # ``/recipe help <name>`` is the colon-free twin of
+        # ``/recipe <name> --help`` and routes through the same renderer.
+        registry = recipes.RecipeRegistry(recipes=(_make_recipe("first"),))
+        agent = _agent(recipes_registry=registry)
+        result = handle_recipe(agent, "help first")
+        assert "Parameters:" in result.text
+
+    def test_no_parameters_block(self) -> None:
+        recipe = _make_recipe("plain", parameters=(), instructions="ok")
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        result = handle_recipe(_agent(recipes_registry=registry), "plain --help")
+        assert "_No parameters._" in result.text
+
+    def test_inline_response_schema_note(self) -> None:
+        recipe = _make_recipe(
+            "schema-inline",
+            parameters=(),
+            response=recipes.RecipeResponseSpec(
+                schema={"type": "object", "properties": {"ok": {"type": "string"}}},
+            ),
+        )
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        result = handle_recipe(_agent(recipes_registry=registry), "schema-inline --help")
+        assert "inline JSON Schema" in result.text
+
+    def test_named_response_schema_note(self) -> None:
+        recipe = _make_recipe(
+            "schema-named",
+            parameters=(),
+            response=recipes.RecipeResponseSpec(schema_name="charm_plan"),
+        )
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        result = handle_recipe(_agent(recipes_registry=registry), "schema-named --help")
+        assert "built-in schema" in result.text
+        assert "charm_plan" in result.text
+
+    def test_retry_note(self) -> None:
+        retry = declarative_retry.RetryConfig(
+            max_retries=2,
+            checks=(declarative_retry.JsonSchemaCheck(schema={"type": "object"}),),
+        )
+        recipe = _make_recipe("with-retry", parameters=(), retry_config=retry)
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        result = handle_recipe(_agent(recipes_registry=registry), "with-retry --help")
+        assert "Retries up to" in result.text
+        assert "1 check(s)" in result.text
+
+    def test_extensions_note(self) -> None:
+        recipe = _make_recipe("with-ext", parameters=(), extensions=("mcp:charmhub",))
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        result = handle_recipe(_agent(recipes_registry=registry), "with-ext --help")
+        assert "Required extensions" in result.text
+        assert "mcp:charmhub" in result.text
+
+    def test_sub_recipes_note(self) -> None:
+        recipe = _make_recipe(
+            "parent",
+            parameters=(),
+            sub_recipes=(recipes.SubRecipeRef(name="child"),),
+        )
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        result = handle_recipe(_agent(recipes_registry=registry), "parent --help")
+        assert "sub-recipe(s) sequentially" in result.text
+
+
+# ---------------------------------------------------------------------------
+# Render-time failure and unknown-prefix extensions
+# ---------------------------------------------------------------------------
+
+
+class TestRenderAndExtensionEdges:
+    def test_render_error_surfaces_recipe_failure(self) -> None:
+        # ``render_instructions`` uses StrictUndefined; an instruction
+        # referencing a variable with no matching parameter raises a
+        # RecipeError that the handler turns into a friendly failure.
+        recipe = _make_recipe(
+            "bad-template",
+            parameters=(),
+            instructions="Use {{ undefined_thing }}.",
+        )
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        agent = _agent(recipes_registry=registry)
+        result = handle_recipe(agent, "bad-template")
+        output = asyncio.run(_drain(result.followup))
+        assert "failed:" in output
+        assert agent._received == []
+
+    def test_unknown_prefix_with_colon_treated_as_missing(self) -> None:
+        # ``foo:bar`` has a colon but an unrecognised prefix — the
+        # else-branch of the extension classifier flags it as missing.
+        recipe = _make_recipe(
+            "weird-ext",
+            parameters=(),
+            instructions="run it",
+            extensions=("foo:bar",),
+        )
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        agent = _agent(recipes_registry=registry)
+        result = handle_recipe(agent, "weird-ext")
+        output = asyncio.run(_drain(result.followup))
+        assert "cannot run" in output
+        assert "foo:bar" in output
+
+    def test_mcp_snapshot_error_counts_as_unconnected(self) -> None:
+        # A registry whose ``snapshot`` raises (an unusual shim) is the
+        # same as "nothing connected" — the mcp extension stays unmet.
+        recipe = _make_recipe(
+            "needs-charmhub",
+            parameters=(),
+            instructions="run it",
+            extensions=("mcp:charmhub",),
+        )
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        agent = _agent(recipes_registry=registry)
+
+        def _boom() -> list:
+            raise TypeError("bad shim")
+
+        agent.mcp_registry = SimpleNamespace(snapshot=_boom)
+        result = handle_recipe(agent, "needs-charmhub")
+        output = asyncio.run(_drain(result.followup))
+        assert "cannot run" in output
+        assert "mcp:charmhub" in output
+
+
+# ---------------------------------------------------------------------------
+# Retry-outcome rendering
+# ---------------------------------------------------------------------------
+
+
+class TestRetryOutcomeRendering:
+    def test_converged_single_attempt_is_bare_output(self) -> None:
+        outcome = declarative_retry.RetryOutcome(
+            output="done", attempts=1, converged=True, timed_out=False
+        )
+        from cantrip.agent.commands.recipes import _format_retry_outcome
+
+        assert _format_retry_outcome(outcome) == "done"
+
+    def test_converged_multi_attempt_appends_note(self) -> None:
+        from cantrip.agent.commands.recipes import _format_retry_outcome
+
+        outcome = declarative_retry.RetryOutcome(
+            output="done", attempts=3, converged=True, timed_out=False
+        )
+        text = _format_retry_outcome(outcome)
+        assert "converged after 3 attempts" in text
+
+    def test_unconverged_lists_failed_checks(self) -> None:
+        from cantrip.agent.commands.recipes import _format_retry_outcome
+
+        failure = declarative_retry.CheckResult(
+            check=declarative_retry.JsonSchemaCheck(schema={"type": "object"}),
+            passed=False,
+            detail="not an object",
+        )
+        outcome = declarative_retry.RetryOutcome(
+            output="partial",
+            attempts=2,
+            converged=False,
+            timed_out=True,
+            failures=(failure,),
+            on_failure_ran=True,
+        )
+        text = _format_retry_outcome(outcome)
+        assert "did not converge after 2 attempt(s)" in text
+        assert "(timed out)" in text
+        assert "json_schema: not an object" in text
+        assert "on_failure cleanup ran." in text
+
+    def test_retry_path_runs_through_invoke(self) -> None:
+        # End-to-end: a recipe with a retry block routes through
+        # ``run_with_retry`` and the converged single-attempt outcome
+        # surfaces as the plain reply.
+        retry = declarative_retry.RetryConfig(max_retries=1, checks=())
+        recipe = _make_recipe(
+            "retrying",
+            parameters=(),
+            instructions="do it",
+            retry_config=retry,
+        )
+        registry = recipes.RecipeRegistry(recipes=(recipe,))
+        agent = _agent(recipes_registry=registry, process_response="all good")
+        result = handle_recipe(agent, "retrying")
+        output = asyncio.run(_drain(result.followup))
+        assert output == "all good"
