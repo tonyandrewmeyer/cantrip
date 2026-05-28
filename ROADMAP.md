@@ -1275,14 +1275,14 @@ not a higher overall coverage number — the current 88% gate stays.
 
 ### 114.5 Should-fix — Slash-command dispatch integration test
 
-- [ ] Add a `tests/integration/test_slash_dispatch.py` that exercises
+- [x] Add a `tests/integration/test_slash_dispatch.py` that exercises
   the slash-command dispatch path end-to-end (user types `/<cmd>` →
   parser → command module → effect).  The unit layer under
   `tests/unit/agent/commands/` is the right place for argument
   parsing and branch coverage; this integration test catches wiring
   regressions across the dispatcher seam, which currently has no
   coverage at that level.
-- [ ] Cover at least: a state-mutating command (e.g. `/budget`), a
+- [x] Cover at least: a state-mutating command (e.g. `/budget`), a
   pure read command (e.g. `/cost`), and an error path (unknown
   command).  Use `MultiRoleProvider` / `CallbackProvider` from
   `tests.support.providers` per the existing integration
