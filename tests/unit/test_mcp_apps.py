@@ -14,7 +14,6 @@ Covers the four spec invariants the phase calls out:
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import pathlib
 from typing import Any
 
@@ -34,36 +33,11 @@ from cantrip.mcp import MCPToolInfo
 from cantrip.mcp.client import _content_to_structured, _extract_app_render
 from cantrip.mcp.types import MCPAppRender, MCPCallResult
 from cantrip.ui import events as ui_events
-
-# ---------------------------------------------------------------------------
-# Fake SDK content blocks — enough to drive ``_content_to_structured`` without
-# pulling in the live MCP SDK (every test would otherwise need a real server).
-# ---------------------------------------------------------------------------
-
-
-@dataclasses.dataclass
-class _FakeTextBlock:
-    text: str
-    type: str = "text"
-
-
-@dataclasses.dataclass
-class _FakeUIBlock:
-    html: str
-    type: str = "ui"
-    mimeType: str = "text/html"
-    title: str | None = None
-    meta: dict[str, Any] | None = None
-
-
-@dataclasses.dataclass
-class _FakeMetaResourceBlock:
-    """Shape B: a generic resource that carries an MCP-Apps ``_meta`` field."""
-
-    type: str = "resource"
-    text: str = ""
-    _meta: dict[str, Any] = dataclasses.field(default_factory=dict)
-
+from tests.support.mcp_fakes import (
+    FakeMetaResourceBlock,
+    FakeTextBlock,
+    FakeUIBlock,
+)
 
 # ---------------------------------------------------------------------------
 # Client-side extraction.
@@ -73,7 +47,7 @@ class _FakeMetaResourceBlock:
 class TestContentToStructured:
     def test_pure_text_content_has_no_app_renders(self) -> None:
         result = _content_to_structured(
-            [_FakeTextBlock("hello"), _FakeTextBlock("world")],
+            [FakeTextBlock("hello"), FakeTextBlock("world")],
             server_name="srv",
         )
         assert isinstance(result, MCPCallResult)
@@ -83,8 +57,8 @@ class TestContentToStructured:
     def test_ui_block_extracted_and_placeholder_kept(self) -> None:
         result = _content_to_structured(
             [
-                _FakeTextBlock("see the form below"),
-                _FakeUIBlock(
+                FakeTextBlock("see the form below"),
+                FakeUIBlock(
                     html="<button>Click</button>",
                     title="Pebble Editor",
                     meta={"fallback": "Open in the web UI to edit the layer"},
@@ -104,13 +78,13 @@ class TestContentToStructured:
 
     def test_ui_block_without_html_is_ignored(self) -> None:
         result = _content_to_structured(
-            [_FakeUIBlock(html="")],
+            [FakeUIBlock(html="")],
             server_name="srv",
         )
         assert result.app_renders == ()
 
     def test_meta_shape_b_is_recognised(self) -> None:
-        block = _FakeMetaResourceBlock(
+        block = FakeMetaResourceBlock(
             text="see the form",
             _meta={"app": {"html": "<p>hi</p>", "title": "Inspector"}},
         )
@@ -120,11 +94,11 @@ class TestContentToStructured:
         assert result.app_renders[0].html == "<p>hi</p>"
 
     def test_non_html_mime_is_ignored(self) -> None:
-        block = _FakeUIBlock(html="<p>hi</p>", mimeType="application/svg+xml")
+        block = FakeUIBlock(html="<p>hi</p>", mimeType="application/svg+xml")
         assert _extract_app_render(block, server_name="srv") is None
 
     def test_max_height_clamped_to_int(self) -> None:
-        block = _FakeUIBlock(
+        block = FakeUIBlock(
             html="<p>hi</p>",
             meta={"max_height_px": 320},
         )
@@ -133,7 +107,7 @@ class TestContentToStructured:
         assert render.max_height_px == 320
 
     def test_negative_max_height_dropped(self) -> None:
-        block = _FakeUIBlock(html="<p>hi</p>", meta={"max_height_px": -10})
+        block = FakeUIBlock(html="<p>hi</p>", meta={"max_height_px": -10})
         render = _extract_app_render(block, server_name="srv")
         assert render is not None
         assert render.max_height_px is None

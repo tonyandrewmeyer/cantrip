@@ -9,6 +9,7 @@ from unittest import mock
 import pytest
 
 from cantrip.agent.tools.charmlint_tool import CharmlintTool
+from tests.support.mcp_fakes import FakeMCPClient, FakeMCPRegistry
 
 
 def _fake_proc(returncode: int = 0, stdout: str = "", stderr: str = "") -> SimpleNamespace:
@@ -302,39 +303,6 @@ class TestCharmlintToolExecute:
 # ---------------------------------------------------------------------------
 
 
-class _FakeMCPClient:
-    """In-test stand-in for :class:`MCPClient` exposing only the
-    surface :class:`CharmlintTool` exercises: a ``tools`` list and an
-    awaitable ``call_tool``.
-    """
-
-    def __init__(
-        self,
-        *,
-        tools: list[str],
-        responses: dict[str, str] | None = None,
-        errors: dict[str, Exception] | None = None,
-    ) -> None:
-        self.tools = [SimpleNamespace(name=name) for name in tools]
-        self._responses = responses or {}
-        self._errors = errors or {}
-        self.calls: list[tuple[str, dict[str, object]]] = []
-
-    async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
-        self.calls.append((name, arguments))
-        if name in self._errors:
-            raise self._errors[name]
-        return SimpleNamespace(text=self._responses.get(name, ""))
-
-
-class _FakeRegistry:
-    def __init__(self, clients: dict[str, _FakeMCPClient]) -> None:
-        self._clients = clients
-
-    def get_client(self, name: str) -> _FakeMCPClient | None:
-        return self._clients.get(name)
-
-
 class TestCharmcraftMCPSecondOpinion:
     """Phase 95.3 — second-opinion enrichment from the charmcraft MCP server."""
 
@@ -364,7 +332,7 @@ class TestCharmcraftMCPSecondOpinion:
     async def test_no_charmcraft_server_falls_back_to_local_only(
         self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
     ) -> None:
-        registry = _FakeRegistry({})  # no charmcraft server registered
+        registry = FakeMCPRegistry({})  # no charmcraft server registered
         tool = CharmlintTool(mcp_registry=registry)
         with (
             mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
@@ -378,14 +346,14 @@ class TestCharmcraftMCPSecondOpinion:
     async def test_appends_second_opinion_when_server_responds(
         self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
     ) -> None:
-        client = _FakeMCPClient(
+        client = FakeMCPClient(
             tools=["lint", "analyse"],
             responses={
                 "lint": "Charmcraft lint: 1 warning (MD001 missing description).",
                 "analyse": "Charmcraft analyse: clean, no recommendations.",
             },
         )
-        registry = _FakeRegistry({"charmcraft": client})
+        registry = FakeMCPRegistry({"charmcraft": client})
         tool = CharmlintTool(mcp_registry=registry)
         with (
             mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
@@ -412,11 +380,11 @@ class TestCharmcraftMCPSecondOpinion:
         self, tmp_path: pathlib.Path, fake_report: SimpleNamespace
     ) -> None:
         """If the server only advertises ``lint``, ``analyse`` is skipped silently."""
-        client = _FakeMCPClient(
+        client = FakeMCPClient(
             tools=["lint"],  # no ``analyse``
             responses={"lint": "Charmcraft lint: clean."},
         )
-        registry = _FakeRegistry({"charmcraft": client})
+        registry = FakeMCPRegistry({"charmcraft": client})
         tool = CharmlintTool(mcp_registry=registry)
         with (
             mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
@@ -434,12 +402,12 @@ class TestCharmcraftMCPSecondOpinion:
         """An MCP-side exception surfaces inline and does not break local lint."""
         from cantrip.mcp.exceptions import MCPInvocationError
 
-        client = _FakeMCPClient(
+        client = FakeMCPClient(
             tools=["lint", "analyse"],
             responses={"analyse": "all good"},
             errors={"lint": MCPInvocationError("server refused")},
         )
-        registry = _FakeRegistry({"charmcraft": client})
+        registry = FakeMCPRegistry({"charmcraft": client})
         tool = CharmlintTool(mcp_registry=registry)
         with (
             mock.patch.object(CharmlintTool, "_find_rust_binary", return_value=None),
@@ -457,8 +425,8 @@ class TestCharmcraftMCPSecondOpinion:
         We never want a missing-path error to grow a confusing
         "second opinion (empty)" block.
         """
-        client = _FakeMCPClient(tools=["lint"], responses={"lint": "should not appear"})
-        registry = _FakeRegistry({"charmcraft": client})
+        client = FakeMCPClient(tools=["lint"], responses={"lint": "should not appear"})
+        registry = FakeMCPRegistry({"charmcraft": client})
         tool = CharmlintTool(mcp_registry=registry)
         result = await tool.execute(path=str(tmp_path / "missing"))
         assert not result.success

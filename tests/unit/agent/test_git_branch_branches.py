@@ -13,6 +13,7 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 from cantrip.agent import git_branch as gb
+from tests.support.git_fakes import FakeTask
 
 
 def _proc(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMock:
@@ -97,39 +98,24 @@ class TestCreatePullRequestExceptions:
 # ---------------------------------------------------------------------------
 
 
-class _FakeTask:
-    def __init__(
-        self,
-        *,
-        title: str,
-        category: str,
-        status: str,
-        result: str | None = None,
-    ) -> None:
-        self.title = title
-        self.category = category
-        self.status = status
-        self.result = result
-
-
 class TestBuildPrBodyBranches:
     """Failed-task icon and result-truncation branches."""
 
     def test_failed_task_uses_cross_icon(self) -> None:
         body = gb.build_pr_body(
-            [_FakeTask(title="t1", category="BUILD", status="failed")],
+            [FakeTask(title="t1", category="BUILD", status="failed")],
         )
         assert "✗" in body
 
     def test_blocked_task_uses_circle_icon(self) -> None:
         body = gb.build_pr_body(
-            [_FakeTask(title="t1", category="BUILD", status="blocked")],
+            [FakeTask(title="t1", category="BUILD", status="blocked")],
         )
         assert "○" in body
 
     def test_task_without_title_is_skipped(self) -> None:
         body = gb.build_pr_body(
-            [_FakeTask(title="", category="BUILD", status="done")],
+            [FakeTask(title="", category="BUILD", status="done")],
         )
         # No bullet entry should appear because the title was missing.
         assert "**BUILD**" not in body

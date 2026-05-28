@@ -24,6 +24,7 @@ from cantrip.agent.git_branch import (
     slugify,
     switch_branch,
 )
+from tests.support.git_fakes import FakeTask
 
 # ---------------------------------------------------------------------------
 # slugify
@@ -258,22 +259,6 @@ class TestCreatePullRequest:
 # ---------------------------------------------------------------------------
 
 
-class _FakeTask:
-    """Minimal task-like object for testing build_pr_body."""
-
-    def __init__(
-        self,
-        title: str = "",
-        category: str = "",
-        status: str = "done",
-        result: str | None = None,
-    ) -> None:
-        self.title = title
-        self.category = category
-        self.status = status
-        self.result = result
-
-
 class TestBuildPrBody:
     """Tests for build_pr_body()."""
 
@@ -283,8 +268,8 @@ class TestBuildPrBody:
 
     def test_includes_task_summaries(self) -> None:
         tasks = [
-            _FakeTask(title="Research bug", category="research", status="done"),
-            _FakeTask(title="Fix bug", category="build", status="done"),
+            FakeTask(title="Research bug", category="research", status="done"),
+            FakeTask(title="Fix bug", category="build", status="done"),
         ]
         body = build_pr_body(tasks)
         assert "Research bug" in body
@@ -295,13 +280,13 @@ class TestBuildPrBody:
         assert "Cantrip" in body
 
     def test_includes_collapsible_details(self) -> None:
-        tasks = [_FakeTask(title="Fix", category="build", result="Changed files X and Y")]
+        tasks = [FakeTask(title="Fix", category="build", result="Changed files X and Y")]
         body = build_pr_body(tasks)
         assert "<details>" in body
         assert "Changed files X and Y" in body
 
     def test_truncates_long_results(self) -> None:
-        tasks = [_FakeTask(title="Fix", category="build", result="x" * 1000)]
+        tasks = [FakeTask(title="Fix", category="build", result="x" * 1000)]
         body = build_pr_body(tasks)
         assert "truncated" in body
 

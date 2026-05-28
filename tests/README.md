@@ -12,6 +12,8 @@ tests/
 │   ├── tools.py          #   make_stub_tool — minimal Tool stand-in
 │   ├── worktrees.py      #   FakeAllocator, AllocCall, ReleaseCall
 │   ├── roles.py          #   StubEmbed, StubRerank
+│   ├── mcp_fakes.py      #   FakeMCPClient/Registry + MCP-Apps content blocks
+│   ├── git_fakes.py      #   FakeTask — minimal task shape for build_pr_body
 │   ├── wait.py           #   wait_until / wait_for_task_status / wait_for_queue_state
 │   └── transcript_seed.py#   Seeds a `.cantrip` session store for export tests
 ├── unit/                 # Pure unit tests — fast, no subprocesses, no real network
@@ -61,6 +63,9 @@ fakes — in `tests/conftest.py`. Reach for these before writing your own.
 | `make_stub_tool` | `tests.support.tools` | `cantrip.agent.tools.base.Tool` — minimal placeholder |
 | `FakeAllocator` | `tests.support.worktrees` | `cantrip.agent.worktree.WorktreeAllocator` |
 | `StubEmbed` / `StubRerank` | `tests.support.roles` | `cantrip.llm.roles.EmbedProvider` / `RerankProvider` |
+| `FakeMCPClient` / `FakeMCPRegistry` | `tests.support.mcp_fakes` | `cantrip.mcp.client.MCPClient` / registry — canned `call_tool` responses (set `key_arg` to key on an argument) |
+| `FakeTextBlock` / `FakeUIBlock` / `FakeMetaResourceBlock` | `tests.support.mcp_fakes` | MCP SDK content blocks driving `_content_to_structured` |
+| `FakeTask` | `tests.support.git_fakes` | Minimal task shape (`title`/`category`/`status`/`result`) for `build_pr_body` |
 | `wait_until` / `wait_for_*` | `tests.support.wait` | Polling helpers — replace fixed `asyncio.sleep` waits |
 | `seed_cli_export_session` | `tests.support.transcript_seed` | Populates a `.cantrip` store with messages, tasks, events |
 

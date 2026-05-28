@@ -32,6 +32,7 @@ from cantrip.agent.tools.charmhub import (
     _quality_flags,
 )
 from cantrip.agent.tools.launchpad import LaunchpadFetchTool, LaunchpadSearchTool
+from tests.support.mcp_fakes import FakeMCPClient, FakeMCPRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -682,44 +683,12 @@ class TestSearchCharmsSlash:
 # ---------------------------------------------------------------------------
 
 
-class _FakeLaunchpadMCPClient:
-    def __init__(
-        self,
-        *,
-        tools: list[str],
-        responses: dict[str, str] | None = None,
-        errors: dict[str, Exception] | None = None,
-    ) -> None:
-        from types import SimpleNamespace
-
-        self.tools = [SimpleNamespace(name=name) for name in tools]
-        self._responses = responses or {}
-        self._errors = errors or {}
-        self.calls: list[tuple[str, dict[str, object]]] = []
-
-    async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
-        from types import SimpleNamespace
-
-        self.calls.append((name, arguments))
-        if name in self._errors:
-            raise self._errors[name]
-        return SimpleNamespace(text=self._responses.get(name, ""))
-
-
-class _FakeLaunchpadRegistry:
-    def __init__(self, clients: dict[str, _FakeLaunchpadMCPClient]) -> None:
-        self._clients = clients
-
-    def get_client(self, name: str) -> _FakeLaunchpadMCPClient | None:
-        return self._clients.get(name)
-
-
-def _agent_with_launchpad_mcp(client: _FakeLaunchpadMCPClient | None) -> object:
+def _agent_with_launchpad_mcp(client: FakeMCPClient | None) -> object:
     """Agent stub whose ``registry_if_loaded()`` returns a registry."""
     from types import SimpleNamespace
 
     clients = {"launchpad": client} if client is not None else {}
-    registry = _FakeLaunchpadRegistry(clients)
+    registry = FakeMCPRegistry(clients)
     mcp = SimpleNamespace(registry_if_loaded=lambda: registry)
     return SimpleNamespace(_mcp=mcp)
 
@@ -768,7 +737,7 @@ class TestLaunchpadMCPInSearchCharms:
 
     @pytest.mark.asyncio
     async def test_appends_mcp_section_when_server_advertises_tools(self) -> None:
-        client = _FakeLaunchpadMCPClient(
+        client = FakeMCPClient(
             tools=["project_lookup", "bug_search"],
             responses={
                 "project_lookup": "Project redis: https://launchpad.net/redis-private",
@@ -799,7 +768,7 @@ class TestLaunchpadMCPInSearchCharms:
     @pytest.mark.asyncio
     async def test_skips_tools_not_advertised_by_server(self) -> None:
         """A server that only advertises ``project_lookup`` doesn't get a bug_search call."""
-        client = _FakeLaunchpadMCPClient(
+        client = FakeMCPClient(
             tools=["project_lookup"],
             responses={"project_lookup": "Project redis"},
         )
@@ -821,7 +790,7 @@ class TestLaunchpadMCPInSearchCharms:
     @pytest.mark.asyncio
     async def test_no_overlap_with_advertised_tools_returns_no_section(self) -> None:
         """The server can advertise irrelevant tools — we still skip the section."""
-        client = _FakeLaunchpadMCPClient(tools=["merge_proposals"])  # not in our call set
+        client = FakeMCPClient(tools=["merge_proposals"])  # not in our call set
         agent = _agent_with_launchpad_mcp(client)
         charm_client, lp_client = _stub_search_backends_empty()
         calls: list[None] = []
@@ -840,7 +809,7 @@ class TestLaunchpadMCPInSearchCharms:
     async def test_mcp_error_renders_inline_and_other_tools_succeed(self) -> None:
         from cantrip.mcp.exceptions import MCPInvocationError
 
-        client = _FakeLaunchpadMCPClient(
+        client = FakeMCPClient(
             tools=["project_lookup", "bug_search"],
             responses={"bug_search": "OK"},
             errors={"project_lookup": MCPInvocationError("forbidden")},

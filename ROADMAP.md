@@ -1205,37 +1205,37 @@ not a higher overall coverage number — the current 88% gate stays.
 
 ### 114.1 High — Command-layer coverage gap
 
-- [ ] Add `tests/unit/agent/commands/test_map.py` covering
+- [x] Add `tests/unit/agent/commands/test_map.py` covering
   `src/cantrip/agent/commands/map.py` (currently 60%, missing
   lines 46, 74, 92, 112–132 — sympath resolution and dispatch).
-- [ ] Add `tests/unit/agent/commands/test_cost.py` covering
+- [x] Add `tests/unit/agent/commands/test_cost.py` covering
   `src/cantrip/agent/commands/cost.py` (currently 67%, missing
   lines 44–46, 60, 67, 91–106, 109–114, 151–159, 162–164 — rate
   calculation branches and token-pricing edges).
-- [ ] Extend `tests/unit/agent/commands/test_recipe_slash.py`
+- [x] Extend `tests/unit/agent/commands/test_recipe_slash.py`
   (and/or add `test_recipes.py`) to cover the 35 missing lines in
   `recipes.py` (recipe parse/load edges around lines 63–93, 227–240,
   334–347, 386–401).
-- [ ] Extend coverage on `commands/share.py` (80%, 9 missing) and
+- [x] Extend coverage on `commands/share.py` (80%, 9 missing) and
   `commands/flows.py` (87%, 10 missing).  These are smaller and may
   fold into existing files.
-- [ ] Exit: every module under `src/cantrip/agent/commands/` ≥ 90%
+- [x] Exit: every module under `src/cantrip/agent/commands/` ≥ 90%
   line coverage.  No coverage-gate change; the 88% project gate
   stays.
 
 ### 114.2 High — Promote inline MCP fakes to `tests/support/`
 
-- [ ] Move `_FakeTextBlock`, `_FakeUIBlock`, `_FakeMetaResourceBlock`
+- [x] Move `_FakeTextBlock`, `_FakeUIBlock`, `_FakeMetaResourceBlock`
   (currently in `tests/unit/test_mcp_apps.py`) into
   `tests/support/mcp_fakes.py` with the same shape and the
   established `tests/support/` docstring conventions.
-- [ ] Update `tests/README.md` shared-fakes table to list them.
-- [ ] Sweep the remaining ~20 inline `_Fake…` / `_Stub…` definitions
+- [x] Update `tests/README.md` shared-fakes table to list them.
+- [x] Sweep the remaining ~20 inline `_Fake…` / `_Stub…` definitions
   in `tests/unit/` (`grep -rE "^class _(Fake|Stub)" tests/`).
   Promote any that are domain-shaped and reused across files; leave
   test-local fakes inline (the `test_race.py` trio is fine where it
   is — race-specific, not shared).
-- [ ] Per the pre-1.0-no-backcompat convention, update call sites in
+- [x] Per the pre-1.0-no-backcompat convention, update call sites in
   the same change; no shim modules.
 
 ### 114.3 Should-fix — Adopt snapshot testing (syrupy)

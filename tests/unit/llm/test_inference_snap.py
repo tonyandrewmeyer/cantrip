@@ -18,6 +18,7 @@ from cantrip.llm.inference_snap import (
     discover_snap_endpoint,
     list_available_snaps,
 )
+from tests.support.mcp_fakes import FakeMCPClient, FakeMCPRegistry
 
 
 class TestDiscoverSnapEndpoint:
@@ -1658,41 +1659,6 @@ class TestGracefulDegradation:
 # ---------------------------------------------------------------------------
 
 
-class _FakeSnapcraftClient:
-    """In-test stand-in for an MCPClient against the snapcraft server."""
-
-    def __init__(
-        self,
-        *,
-        tools: list[str],
-        responses: dict[str, str] | None = None,
-        errors: dict[str, Exception] | None = None,
-    ) -> None:
-        from types import SimpleNamespace
-
-        self.tools = [SimpleNamespace(name=name) for name in tools]
-        self._responses = responses or {}
-        self._errors = errors or {}
-        self.calls: list[tuple[str, dict[str, object]]] = []
-
-    async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
-        from types import SimpleNamespace
-
-        self.calls.append((name, arguments))
-        key = arguments.get("name", "")
-        if isinstance(key, str) and key in self._errors:
-            raise self._errors[key]
-        return SimpleNamespace(text=self._responses.get(key if isinstance(key, str) else "", ""))
-
-
-class _FakeSnapcraftRegistry:
-    def __init__(self, clients: dict[str, _FakeSnapcraftClient]) -> None:
-        self._clients = clients
-
-    def get_client(self, name: str) -> _FakeSnapcraftClient | None:
-        return self._clients.get(name)
-
-
 @pytest.fixture
 def _patched_local_lookup():
     """Stub local snap discovery for the MCP enrichment tests."""
@@ -1722,13 +1688,14 @@ async def test_snapcraft_mcp_enriches_each_snap(_patched_local_lookup) -> None:
     """Store metadata for each installed snap appears under a dedicated section."""
     from cantrip.agent.tools.inference import ListInferenceSnapsTool
 
-    client = _FakeSnapcraftClient(
+    client = FakeMCPClient(
+        key_arg="name",
         tools=["snap_info"],
         responses={
             "qwen3-14b": "Publisher: Canonical\nChannels:\n  stable: 2026-04-12 (14B)\n  edge: 2026-05-20",
         },
     )
-    registry = _FakeSnapcraftRegistry({"snapcraft": client})
+    registry = FakeMCPRegistry({"snapcraft": client})
     tool = ListInferenceSnapsTool(mcp_registry=registry)
     result = await tool.execute()
     assert result.success is True
@@ -1745,7 +1712,7 @@ async def test_snapcraft_mcp_enriches_each_snap(_patched_local_lookup) -> None:
 async def test_no_snapcraft_server_skips_enrichment(_patched_local_lookup) -> None:
     from cantrip.agent.tools.inference import ListInferenceSnapsTool
 
-    tool = ListInferenceSnapsTool(mcp_registry=_FakeSnapcraftRegistry({}))
+    tool = ListInferenceSnapsTool(mcp_registry=FakeMCPRegistry({}))
     result = await tool.execute()
     assert result.success is True
     assert "Snap Store metadata" not in result.output
@@ -1759,8 +1726,8 @@ async def test_snapcraft_server_without_snap_info_skips_enrichment(
     """If the server connects but doesn't advertise ``snap_info``, do nothing."""
     from cantrip.agent.tools.inference import ListInferenceSnapsTool
 
-    client = _FakeSnapcraftClient(tools=["snap_search"])  # no snap_info
-    registry = _FakeSnapcraftRegistry({"snapcraft": client})
+    client = FakeMCPClient(tools=["snap_search"], key_arg="name")  # no snap_info
+    registry = FakeMCPRegistry({"snapcraft": client})
     tool = ListInferenceSnapsTool(mcp_registry=registry)
     result = await tool.execute()
     assert "Snap Store metadata" not in result.output
@@ -1781,12 +1748,13 @@ async def test_snapcraft_mcp_error_surfaces_inline_and_others_succeed() -> None:
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.return_value = mock_resp
 
-    client = _FakeSnapcraftClient(
+    client = FakeMCPClient(
+        key_arg="name",
         tools=["snap_info"],
         responses={"qwen3-14b": "OK"},
         errors={"phi4-mini": MCPInvocationError("store 404")},
     )
-    registry = _FakeSnapcraftRegistry({"snapcraft": client})
+    registry = FakeMCPRegistry({"snapcraft": client})
     tool = ListInferenceSnapsTool(mcp_registry=registry)
     with (
         patch(
@@ -1811,8 +1779,8 @@ async def test_no_installed_snaps_skips_mcp_lookup() -> None:
     """When there are no local snaps to enrich, never bother the MCP server."""
     from cantrip.agent.tools.inference import ListInferenceSnapsTool
 
-    client = _FakeSnapcraftClient(tools=["snap_info"], responses={})
-    registry = _FakeSnapcraftRegistry({"snapcraft": client})
+    client = FakeMCPClient(tools=["snap_info"], key_arg="name", responses={})
+    registry = FakeMCPRegistry({"snapcraft": client})
     tool = ListInferenceSnapsTool(mcp_registry=registry)
     with patch("cantrip.agent.tools.inference.list_available_snaps", return_value=[]):
         result = await tool.execute()
