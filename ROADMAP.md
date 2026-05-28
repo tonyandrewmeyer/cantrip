@@ -1260,7 +1260,7 @@ not a higher overall coverage number — the current 88% gate stays.
 
 ### 114.4 Should-fix — Resolve `test_cli_bdd.py` naming/scope mismatch
 
-- [ ] `tests/unit/test_cli_bdd.py` is 168 lines and does not
+- [x] `tests/unit/test_cli_bdd.py` is 168 lines and does not
   implement BDD-style scenarios as the filename implies.  Pick one
   of:
   - **(a)** Rename to match what it actually covers (likely
@@ -1269,7 +1269,7 @@ not a higher overall coverage number — the current 88% gate stays.
   - **(b)** Expand into proper BDD coverage of the CLI surface,
     either with a stepdef framework (`pytest-bdd`) or with explicit
     given/when/then comment blocks and a documented scope.
-- [ ] Recommendation pending review: option (a) is the cheap honest
+- [x] Recommendation pending review: option (a) is the cheap honest
   fix; option (b) is a real investment.  Default to (a) unless the
   reviewer wants the BDD coverage.
 

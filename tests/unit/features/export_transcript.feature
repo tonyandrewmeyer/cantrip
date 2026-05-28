@@ -22,6 +22,14 @@ Feature: Exporting a recorded transcript
       And the file "custom-session.md" is created
       And the file "custom-session.md" contains "cli-test-charm"
 
+  Rule: A phase filter scopes the export to matching tasks
+    Scenario: Exporting only the research phase succeeds
+      Given a charm project with a recorded session
+      When I export the transcript as "markdown" filtered to phase "research"
+      Then the export succeeds
+      And the file "transcript.md" is created
+      And the file "transcript.md" contains "cli-test-charm"
+
   Rule: Missing session data is reported clearly
     Scenario: Exporting without a .cantrip database fails
       Given a charm project without session data

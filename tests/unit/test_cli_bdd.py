@@ -7,6 +7,7 @@ import contextlib
 import dataclasses
 import io
 import pathlib
+import shlex
 import types
 
 import pytest
@@ -35,6 +36,17 @@ class CliWorld:
 def cli_world() -> CliWorld:
     """Create a fresh scenario world for each example."""
     return CliWorld()
+
+
+@pytest_bdd.given(pytest_bdd.parsers.parse('the command line "{argv}"'))
+def given_command_line(cli_world: CliWorld, argv: str) -> None:
+    """Seed an arbitrary argv from a shell-style command line.
+
+    Lets parsing scenarios spell the exact invocation in the feature
+    file (``--provider claude``, ``export-transcript ./charm --phase
+    build``) without a per-shape Given step.
+    """
+    cli_world.argv = shlex.split(argv)
 
 
 @pytest_bdd.given('only the "--no-tui" flag was provided')
@@ -69,6 +81,13 @@ def then_option_is_enabled(cli_world: CliWorld, option_name: str) -> None:
     """Assert a boolean CLI option is enabled."""
     assert cli_world.parsed_args is not None
     assert getattr(cli_world.parsed_args, option_name) is True
+
+
+@pytest_bdd.then(pytest_bdd.parsers.parse('the "{option_name}" option equals "{value}"'))
+def then_option_equals(cli_world: CliWorld, option_name: str, value: str) -> None:
+    """Assert a CLI option parsed to the expected (stringified) value."""
+    assert cli_world.parsed_args is not None
+    assert str(getattr(cli_world.parsed_args, option_name)) == value
 
 
 @pytest_bdd.then("the selected path is that project path")
@@ -111,6 +130,14 @@ def when_exporting_transcript_to_output(
     _run_export(cli_world, fmt=fmt, output=cli_world.charm_path / relative_output)
 
 
+@pytest_bdd.when(
+    pytest_bdd.parsers.parse('I export the transcript as "{fmt}" filtered to phase "{phase}"')
+)
+def when_exporting_transcript_for_phase(cli_world: CliWorld, fmt: str, phase: str) -> None:
+    """Export only the tasks belonging to a single workflow phase."""
+    _run_export(cli_world, fmt=fmt, output=None, filter_phase=phase)
+
+
 @pytest_bdd.then("the export succeeds")
 def then_export_succeeds(cli_world: CliWorld) -> None:
     """Assert the export returned success."""
@@ -143,7 +170,13 @@ def then_export_output_contains(cli_world: CliWorld, expected_text: str) -> None
     assert expected_text in cli_world.export_output
 
 
-def _run_export(cli_world: CliWorld, *, fmt: str, output: pathlib.Path | None) -> None:
+def _run_export(
+    cli_world: CliWorld,
+    *,
+    fmt: str,
+    output: pathlib.Path | None,
+    filter_phase: str | None = None,
+) -> None:
     """Call the export command and capture its printed status."""
     assert cli_world.charm_path is not None
     args = types.SimpleNamespace(
@@ -151,7 +184,7 @@ def _run_export(cli_world: CliWorld, *, fmt: str, output: pathlib.Path | None) -
         fmt=fmt,
         output=output,
         filter_task=None,
-        filter_phase=None,
+        filter_phase=filter_phase,
         filter_since=None,
         filter_branch=None,
         page_size=None,
