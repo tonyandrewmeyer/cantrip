@@ -150,6 +150,40 @@ class TestTokenUsage:
         total = store.get_total_usage()
         assert total["prompt_tokens"] == 0
         assert total["completion_tokens"] == 0
+        assert total["cache_read_tokens"] == 0
+        assert total["cache_creation_tokens"] == 0
+
+    def test_record_and_total_cache_tokens(self, store: SessionStore) -> None:
+        """Prompt-cache token counts are persisted and summed in the total."""
+        store.record_usage(
+            "claude",
+            "claude-opus-4-7",
+            100,
+            50,
+            cache_read_tokens=4000,
+            cache_creation_tokens=2000,
+        )
+        store.record_usage(
+            "claude",
+            "claude-opus-4-7",
+            80,
+            40,
+            cache_read_tokens=6000,
+            cache_creation_tokens=0,
+        )
+
+        total = store.get_total_usage()
+        assert total["prompt_tokens"] == 180
+        assert total["completion_tokens"] == 90
+        assert total["cache_read_tokens"] == 10000
+        assert total["cache_creation_tokens"] == 2000
+
+    def test_cache_tokens_default_to_zero(self, store: SessionStore) -> None:
+        """Providers without prompt caching (no cache args) record zero."""
+        store.record_usage("gemini", "gemini-2.0-flash", 100, 50)
+        total = store.get_total_usage()
+        assert total["cache_read_tokens"] == 0
+        assert total["cache_creation_tokens"] == 0
 
     def test_usage_by_model(self, store: SessionStore) -> None:
         store.record_usage("gemini", "gemini-2.0-flash", 100, 50)
@@ -673,6 +707,39 @@ class TestObjectivePersistence:
             assert loaded is not None
             assert loaded.charm_name == "legacy"
             assert loaded.objective is None
+        finally:
+            second.close()
+
+    def test_pre_v17_database_gains_cache_columns(self, db_path: pathlib.Path) -> None:
+        """A pre-v17 token_usage table is migrated to carry cache columns.
+
+        Forces schema_version back to 16 with the v17 columns dropped to
+        mimic an on-disk shape from before the cache-token persistence
+        change, then re-opens and asserts the migration backfills the
+        columns (legacy rows read as 0) and ``get_total_usage`` works.
+        """
+        first = SessionStore(db_path)
+        first.open()
+        try:
+            first.record_usage("claude", "claude-opus-4-7", 100, 50)
+            first._db.execute("UPDATE schema_version SET version = 16")
+            first._db.execute("ALTER TABLE token_usage DROP COLUMN cache_read_tokens")
+            first._db.execute("ALTER TABLE token_usage DROP COLUMN cache_creation_tokens")
+            first._db.commit()
+        finally:
+            first.close()
+
+        second = SessionStore(db_path)
+        second.open()
+        try:
+            total = second.get_total_usage()
+            assert total["prompt_tokens"] == 100
+            # Legacy row had no cache data; the migration backfills 0.
+            assert total["cache_read_tokens"] == 0
+            assert total["cache_creation_tokens"] == 0
+            # New rows persist real cache counts.
+            second.record_usage("claude", "claude-opus-4-7", 10, 5, cache_read_tokens=999)
+            assert second.get_total_usage()["cache_read_tokens"] == 999
         finally:
             second.close()
 

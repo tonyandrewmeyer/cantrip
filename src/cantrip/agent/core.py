@@ -579,6 +579,7 @@ class CantripAgent:
             get_store=lambda: self._store,
             reset_store=self._reset_store,
             restore_safety_state=self._context_manager.restore_safety_state,
+            restore_cache_tokens=self._restore_cache_tokens,
             rebuild_messages=self._rebuild_messages_from_active_branch,
         )
 
@@ -1107,8 +1108,22 @@ class CantripAgent:
                 model=attribution.model_name,
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
+                cache_read_tokens=response.usage.get("cache_read_input_tokens", 0) or 0,
+                cache_creation_tokens=response.usage.get("cache_creation_input_tokens", 0) or 0,
             )
         return None
+
+    def _restore_cache_tokens(self, cache_creation_tokens: int, cache_read_tokens: int) -> None:
+        """Seed the in-memory prompt-cache accumulators from persisted totals.
+
+        Called on session resume so cache cost and hit-rate pick up where
+        the prior session left off — the ``/cost`` block and the
+        end-of-session summary both read these in-memory counters, so
+        rehydrating them keeps those surfaces accurate across a restart
+        without any change to the display code.
+        """
+        self.cache_creation_tokens = max(0, cache_creation_tokens)
+        self.cache_read_tokens = max(0, cache_read_tokens)
 
     def _check_cache_cascade(self, usage: dict[str, int]) -> None:
         """Feed per-turn usage into the cache cascade detector.

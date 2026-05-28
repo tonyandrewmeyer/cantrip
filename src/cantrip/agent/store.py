@@ -15,7 +15,7 @@ from cantrip.agent.state import AgentState, Decision, load_shared_decisions
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 def _safe_json_load(raw: str | None, fallback: object = None) -> object:
@@ -106,6 +106,14 @@ CREATE TABLE IF NOT EXISTS token_usage (
     -- role router.  Lets /cost separate retrieval spend from chat
     -- spend without losing the per-model breakdown.
     role TEXT,
+    -- Anthropic prompt-cache token counts for this request.  ``prompt_tokens``
+    -- above is the fresh (non-cached) input only; these two record the
+    -- cache-read (billed at 0.1x) and cache-creation (1.25x / 2x) tokens
+    -- so cost survives a session resume and the cache hit-rate can be
+    -- reconstructed from the store rather than only the live in-memory
+    -- accumulators.  Zero for providers without prompt caching.
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -524,6 +532,25 @@ class SessionStore:
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(session)").fetchall()}
             if "objective" not in cols:
                 self._conn.execute("ALTER TABLE session ADD COLUMN objective TEXT")
+
+        if current < 17:
+            # v17: persist Anthropic prompt-cache token counts on
+            # token_usage so cache cost and hit-rate survive a session
+            # resume (previously they lived only in the in-memory
+            # accumulators and reset to zero on reload).  Existing rows get
+            # 0 — historical totals stay correct, just without a
+            # retroactive cache breakdown they never had.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(token_usage)").fetchall()}
+            if "cache_read_tokens" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE token_usage ADD COLUMN "
+                    "cache_read_tokens INTEGER NOT NULL DEFAULT 0"
+                )
+            if "cache_creation_tokens" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE token_usage ADD COLUMN "
+                    "cache_creation_tokens INTEGER NOT NULL DEFAULT 0"
+                )
 
         if current < SCHEMA_VERSION:
             self._conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
@@ -1212,6 +1239,8 @@ class SessionStore:
         completion_tokens: int,
         category: str | None = None,
         role: str | None = None,
+        cache_read_tokens: int = 0,
+        cache_creation_tokens: int = 0,
     ) -> int:
         """Record token usage for a single LLM request. Returns the row ID.
 
@@ -1224,14 +1253,31 @@ class SessionStore:
         tokens — ``"chat"``, ``"embed"``, ``"rerank"``.  ``None`` is
         treated as ``"chat"`` by aggregation queries so legacy rows
         and current chat traffic share the same bucket.
+
+        *cache_read_tokens* / *cache_creation_tokens* are Anthropic's
+        prompt-cache counts for this request — persisted so cache cost
+        and hit-rate survive a session resume.  *prompt_tokens* is the
+        fresh (non-cached) input only, matching the provider's
+        ``input_tokens``.  Both default to 0 for providers without
+        prompt caching.
         """
         cursor = self._db.execute(
             """\
             INSERT INTO token_usage
-                (provider, model, prompt_tokens, completion_tokens, category, role)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (provider, model, prompt_tokens, completion_tokens, category, role,
+                 cache_read_tokens, cache_creation_tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (provider, model, prompt_tokens, completion_tokens, category, role),
+            (
+                provider,
+                model,
+                prompt_tokens,
+                completion_tokens,
+                category,
+                role,
+                cache_read_tokens,
+                cache_creation_tokens,
+            ),
         )
         self._db.commit()
         assert cursor.lastrowid is not None
@@ -1266,17 +1312,27 @@ class SessionStore:
         ]
 
     def get_total_usage(self) -> dict[str, int]:
-        """Return aggregate token counts across all requests."""
+        """Return aggregate token counts across all requests.
+
+        Includes the prompt-cache totals (``cache_read_tokens`` /
+        ``cache_creation_tokens``) so a resumed session can rehydrate its
+        in-memory cache accumulators and report cache cost / hit-rate as
+        if it had never restarted.
+        """
         row = self._db.execute(
             """\
-            SELECT COALESCE(SUM(prompt_tokens), 0)     AS prompt_tokens,
-                   COALESCE(SUM(completion_tokens), 0)  AS completion_tokens
+            SELECT COALESCE(SUM(prompt_tokens), 0)         AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens), 0)      AS completion_tokens,
+                   COALESCE(SUM(cache_read_tokens), 0)      AS cache_read_tokens,
+                   COALESCE(SUM(cache_creation_tokens), 0)  AS cache_creation_tokens
             FROM token_usage
             """
         ).fetchone()
         return {
             "prompt_tokens": row["prompt_tokens"],
             "completion_tokens": row["completion_tokens"],
+            "cache_read_tokens": row["cache_read_tokens"],
+            "cache_creation_tokens": row["cache_creation_tokens"],
         }
 
     def get_usage_by_model(self) -> list[dict[str, object]]:

@@ -44,6 +44,7 @@ class PersistenceController:
         get_store: Callable[[], SessionStore | None],
         reset_store: Callable[[], None],
         restore_safety_state: Callable[[int, int, bool, bool], None],
+        restore_cache_tokens: Callable[[int, int], None],
         rebuild_messages: Callable[[], int],
     ) -> None:
         self._state = state
@@ -52,6 +53,7 @@ class PersistenceController:
         self._get_store = get_store
         self._reset_store = reset_store
         self._restore_safety_state = restore_safety_state
+        self._restore_cache_tokens = restore_cache_tokens
         self._rebuild_messages = rebuild_messages
 
     # -- Save ------------------------------------------------------------------
@@ -230,6 +232,18 @@ class PersistenceController:
             )
         except sqlite3.Error:
             log.warning("Failed to restore compaction counters")
+
+        # Rehydrate the prompt-cache accumulators from persisted totals so
+        # cache cost and hit-rate carry across the resume (the /cost block
+        # and session summary read these in-memory counters).
+        try:
+            totals = store.get_total_usage()
+            self._restore_cache_tokens(
+                int(totals.get("cache_creation_tokens", 0) or 0),
+                int(totals.get("cache_read_tokens", 0) or 0),
+            )
+        except sqlite3.Error:
+            log.warning("Failed to restore prompt-cache token totals")
 
         # Restore conversation history so the LLM retains context.
         # Phase 67.1: load only the active branch so a /branch made

@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **Prompt-cache cost and hit-rate now survive a session resume.**  The
+  per-request cache-read and cache-creation token counts lived only in
+  in-memory accumulators, so on resume they reset to zero and ``/cost``
+  (plus the end-of-session summary) silently dropped the cache discount,
+  the write premium, and the cache hit-rate for everything done before
+  the restart.  ``token_usage`` gains ``cache_read_tokens`` and
+  ``cache_creation_tokens`` columns (additive v17 migration; legacy rows
+  read as 0), ``record_usage`` persists them, and ``load_state``
+  rehydrates the accumulators from the stored totals on resume — so the
+  cost surfaces pick up exactly where they left off.
 - **All SYSTEM messages now reach the model, not just one.**  Every
   provider's message converter collapsed the conversation's multiple
   SYSTEM messages down to a single one — Claude and Gemini kept the

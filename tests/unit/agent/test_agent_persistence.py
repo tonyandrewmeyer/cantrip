@@ -30,6 +30,41 @@ class TestStoreBackedPersistence:
         assert agent2.state.charm_type == "k8s"
         assert len(agent2.state.decisions) == 1
 
+    def test_resume_rehydrates_cache_token_accumulators(self, tmp_path: pathlib.Path) -> None:
+        """Prompt-cache totals survive a resume so /cost stays accurate.
+
+        The cache cost and hit-rate are read from in-memory accumulators;
+        persisting the per-request cache counts and rehydrating them on
+        resume keeps those surfaces correct across a restart.
+        """
+        provider = FakeProvider()
+        agent = CantripAgent(provider=provider, charm_path=tmp_path)
+        agent.state.charm_name = "my-charm"
+        agent.save_state()
+        # Persist two requests' worth of cache usage.
+        assert agent.store is not None
+        agent.store.record_usage(
+            "claude",
+            "claude-opus-4-7",
+            100,
+            50,
+            cache_read_tokens=8000,
+            cache_creation_tokens=3000,
+        )
+        agent.store.record_usage(
+            "claude", "claude-opus-4-7", 80, 40, cache_read_tokens=5000, cache_creation_tokens=0
+        )
+
+        # A fresh agent resuming the same session starts with zeroed
+        # accumulators, then rehydrates them from the store on load.
+        agent2 = CantripAgent(provider=provider, charm_path=tmp_path)
+        assert agent2.cache_read_tokens == 0
+        assert agent2.cache_creation_tokens == 0
+
+        assert agent2.load_state() is True
+        assert agent2.cache_read_tokens == 13000
+        assert agent2.cache_creation_tokens == 3000
+
     def test_load_state_returns_false_when_empty(self, tmp_path: pathlib.Path) -> None:
         provider = FakeProvider()
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
