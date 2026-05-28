@@ -1,6 +1,10 @@
 """Tests for system prompt rendering."""
 
-from cantrip.agent.prompts.system import SYSTEM_PROMPT, build_system_prompt
+from cantrip.agent.prompts.system import (
+    SYSTEM_PROMPT,
+    build_dynamic_context,
+    build_system_prompt,
+)
 
 
 class TestDefaultSystemPrompt:
@@ -112,18 +116,36 @@ class TestBuildSystemPromptDecisions:
 
 
 class TestBuildSystemPromptSkillsIndex:
-    """Tests for skills index injection."""
+    """The skills index lives in the dynamic-context block, not the system prompt.
 
-    def test_skills_index_injected(self):
-        """The 'Available Skills' section should appear when skills_index is set."""
-        result = build_system_prompt(skills_index="<available_skills>...</available_skills>")
+    Phase: per-turn-volatile sections were moved out of the cached system
+    prompt so it stays byte-stable across turns.  The skills index now
+    renders via :func:`build_dynamic_context`; the static system prompt
+    must never carry it (that would invalidate the prompt cache).
+    """
+
+    def test_skills_index_not_in_static_system_prompt(self):
+        """The static system prompt no longer carries the skills index."""
+        result = build_system_prompt()
+        assert "Available Skills" not in result
+
+    def test_skills_index_injected_into_dynamic_context(self):
+        """The 'Available Skills' section appears when skills_index is set."""
+        result = build_dynamic_context(skills_index="<available_skills>...</available_skills>")
+        assert result is not None
         assert "Available Skills" in result
         assert "<available_skills>...</available_skills>" in result
 
-    def test_skills_index_none_excluded(self):
-        """The 'Available Skills' section should be absent when skills_index is None."""
-        result = build_system_prompt(skills_index=None)
-        assert "Available Skills" not in result
+    def test_dynamic_context_empty_when_nothing_to_inject(self):
+        """No skills and no repo map yields None (no message to append)."""
+        assert build_dynamic_context(skills_index=None, repo_map=None) is None
+
+    def test_dynamic_context_renders_repo_map(self):
+        """The repo map section appears when repo_map is set."""
+        result = build_dynamic_context(repo_map="charm.py\n  Charm.on_start")
+        assert result is not None
+        assert "Repository Map" in result
+        assert "Charm.on_start" in result
 
 
 class TestWorkloadResearchPrompt:

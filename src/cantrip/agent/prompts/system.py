@@ -13,6 +13,7 @@ _TEMPLATE_DIR = pathlib.Path(__file__).parent
 _JINJA_ENV: Any = None
 _SYSTEM_TEMPLATE: Any = None
 _COMPACT_TEMPLATE: Any = None
+_DYNAMIC_TEMPLATE: Any = None
 
 
 def _get_env() -> Any:
@@ -41,6 +42,14 @@ def _get_template(*, compact: bool = False) -> Any:
     if _SYSTEM_TEMPLATE is None:
         _SYSTEM_TEMPLATE = _get_env().get_template("system.md.j2")
     return _SYSTEM_TEMPLATE
+
+
+def _get_dynamic_template() -> Any:
+    """Return the dynamic-context template, loading it on first call."""
+    global _DYNAMIC_TEMPLATE  # noqa: PLW0603
+    if _DYNAMIC_TEMPLATE is None:
+        _DYNAMIC_TEMPLATE = _get_env().get_template("dynamic_context.md.j2")
+    return _DYNAMIC_TEMPLATE
 
 
 class _LazyPrompt:
@@ -91,11 +100,9 @@ def build_system_prompt(
     dev_model: str | None = None,
     cos_model: str | None = None,
     recent_decisions: list[dict] | None = None,
-    skills_index: str | None = None,
     memory_index: str | None = None,
     environment_ready: bool | None = None,
     watcher_enabled: bool | None = None,
-    repo_map: str | None = None,
     substrate: Any = None,
     compact: bool = False,
 ) -> str:
@@ -109,19 +116,22 @@ def build_system_prompt(
         dev_model: Name of the development Juju model.
         cos_model: Name of the COS Juju model.
         recent_decisions: List of recent decisions made.
-        skills_index: Pre-rendered XML listing available skills.
         memory_index: Pre-rendered Markdown listing available memories —
             global MEMORY.md contents plus charm-scope titles.  Bodies are
             loaded on demand via the ``memory_read`` tool to keep this
             section small.
         environment_ready: Whether the dev environment is fully provisioned.
         watcher_enabled: Whether the event-driven watcher is active.
-        repo_map: Pre-rendered, token-budgeted graph-ranked symbol view of
-            the active charm repo (Phase 71.1).  ``None`` skips the section.
         substrate: Phase 97.3 substrate summary (``preflight.SubstrateSummary``).
             Carries the controller list, active-cloud name, and the
             MicroCloud-detected / OpenStack-target hints.  ``None`` skips
             the section.
+
+    The per-turn-volatile sections (the skills index and the repo map)
+    live in :func:`build_dynamic_context` instead, so this prompt stays
+    byte-stable across turns and the provider's prompt cache keeps
+    hitting.  The cache is prefix-keyed, so any change here invalidates
+    the whole cached system + message prefix.
 
     Returns:
         Complete system prompt with context.
@@ -148,10 +158,41 @@ def build_system_prompt(
         dev_model=_sanitise(dev_model),
         cos_model=_sanitise(cos_model),
         recent_decisions=safe_decisions,
-        skills_index=skills_index,
         memory_index=_sanitise(memory_index),
         environment_ready=environment_ready,
         watcher_enabled=watcher_enabled,
-        repo_map=repo_map,
         substrate=substrate,
     )
+
+
+def build_dynamic_context(
+    skills_index: str | None = None,
+    repo_map: str | None = None,
+) -> str | None:
+    """Render the per-turn-volatile context block, or ``None`` when empty.
+
+    The skills index (filtered by the files in play this turn) and the
+    repo map (scaled by live context pressure) are recomputed every turn,
+    so they must NOT sit in the cached system prompt — placing them there
+    invalidates the whole prefix on each call.  Instead they are rendered
+    here and appended to the conversation as a trailing ephemeral message
+    (see ``CantripAgent._build_dynamic_context_message``), after the
+    history cache breakpoint, so the static system + history prefix keeps
+    caching and only this small tail is re-sent at full price.
+
+    Args:
+        skills_index: Pre-rendered XML listing the skills available to
+            load this turn.
+        repo_map: Pre-rendered, token-budgeted graph-ranked symbol view of
+            the active charm repo.  ``None`` skips the section.
+
+    Returns:
+        The rendered Markdown block, or ``None`` when both inputs are empty.
+    """
+    if not skills_index and not repo_map:
+        return None
+    rendered = _get_dynamic_template().render(
+        skills_index=skills_index,
+        repo_map=repo_map,
+    )
+    return rendered.strip() or None

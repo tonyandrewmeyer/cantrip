@@ -47,11 +47,23 @@ class TestSkillsInAgentContext:
         assert not tool_result.is_error
         assert len(tool_result.content) > 0
 
-    def test_system_prompt_includes_skills(self, tmp_path: pathlib.Path):
-        """The built system prompt should reference available skills."""
+    def test_dynamic_context_includes_skills(self, tmp_path: pathlib.Path):
+        """The dynamic-context message references available skills.
+
+        Skills moved out of the cached system prompt into a per-turn
+        ephemeral context message so the system prompt stays byte-stable
+        for prompt caching.
+        """
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
 
-        prompt = agent._build_system_prompt()
+        # The static system prompt no longer carries the skills index.
+        assert "Available Skills" not in agent._build_system_prompt()
 
-        assert "Available Skills" in prompt
-        assert "scenario-tests" in prompt
+        dynamic = agent._build_dynamic_context_message()
+        assert dynamic is not None
+        assert "Available Skills" in dynamic.content
+        # At least one skill is rendered (assert on the stable XML shape
+        # rather than a specific skill name, which churns over time).
+        assert "<available_skills>" in dynamic.content
+        assert "<skill" in dynamic.content
+        assert dynamic.ephemeral is True

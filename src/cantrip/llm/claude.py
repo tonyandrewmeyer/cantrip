@@ -46,16 +46,20 @@ _CACHE_MIN_TOKENS_OPUS = 4096
 _CACHE_MIN_TOKENS_HAIKU = 4096
 _CACHE_MIN_TOKENS_DEFAULT = 1024
 
-# Extended (1-hour) cache TTL for the most stable prefix segment.  The
-# tools block rarely changes within a session, and Cantrip's tool calls
-# (charmcraft pack, juju deploy/wait, integration tests) routinely run
-# longer than the 5-minute default TTL — without the extended TTL the
-# tools cache expires mid-turn and is re-created at full price on the next
-# call.  Reads cost 0.1x for both TTLs; the 1h write premium (2x vs 1.25x)
-# is recovered after a single >5-minute gap, which this workload hits
-# constantly.  The system and message breakpoints stay on the default
-# 5-minute TTL until the system prompt is byte-stable across turns.
-_TOOLS_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral", "ttl": "1h"}
+# Extended (1-hour) cache TTL for the stable prefix segments — the tools
+# block and the system prompt.  Both rarely change within a session (the
+# agent's per-turn-volatile context rides in a trailing message, not the
+# system prompt), and Cantrip's tool calls (charmcraft pack, juju
+# deploy/wait, integration tests) routinely run longer than the 5-minute
+# default TTL — without the extended TTL these caches expire mid-turn and
+# are re-created at full price on the next call.  Reads cost 0.1x for both
+# TTLs; the 1h write premium (2x vs 1.25x) is recovered after a single
+# >5-minute gap, which this workload hits constantly.  The message-history
+# breakpoint stays on the default 5-minute TTL — history turns over far
+# faster, so the extended write premium would not pay back.  Per Anthropic's
+# ordering rule, the longer-TTL blocks (tools, system) precede the shorter
+# one (messages) in the prefix.
+_STABLE_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral", "ttl": "1h"}
 
 # Anthropic's documented per-image cap is 5 MB of raw bytes; larger
 # payloads are rejected server-side.  We enforce the same limit client-
@@ -232,7 +236,7 @@ class ClaudeProvider(LLMProvider):
         system prompt.  With Cantrip's large tool catalogue this is the
         single biggest cache hit available — without the marker the
         tools are sent fresh on every call.  The marker uses the 1-hour
-        TTL (:data:`_TOOLS_CACHE_CONTROL`) because the tools block is the
+        TTL (:data:`_STABLE_CACHE_CONTROL`) because the tools block is the
         most stable part of the prefix and must survive the
         minutes-long tool calls between LLM turns.
         """
@@ -247,7 +251,7 @@ class ClaudeProvider(LLMProvider):
             }
             for tool in tools
         ]
-        api_tools[-1]["cache_control"] = dict(_TOOLS_CACHE_CONTROL)
+        api_tools[-1]["cache_control"] = dict(_STABLE_CACHE_CONTROL)
         return api_tools
 
     @staticmethod
@@ -331,7 +335,7 @@ class ClaudeProvider(LLMProvider):
                 {
                     "type": "text",
                     "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
+                    "cache_control": dict(_STABLE_CACHE_CONTROL),
                 }
             ]
         if api_tools:

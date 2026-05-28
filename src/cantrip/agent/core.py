@@ -69,7 +69,7 @@ from cantrip.agent.preflight import (
     PreflightResult,
     PreflightRunner,
 )
-from cantrip.agent.prompts import agents_md, build_system_prompt
+from cantrip.agent.prompts import agents_md, build_dynamic_context, build_system_prompt
 from cantrip.agent.queue import (
     AgentTask,
     TaskCategory,
@@ -1431,16 +1431,15 @@ class CantripAgent:
         active (Phase 68.4) an appendix explains the read-only stance
         and asks for a *Proposed changes* summary so ``/build`` can
         pick up where the plan left off.
+
+        Per-turn-volatile context (the skills index and repo map) is
+        *not* built here — it lives in :meth:`_build_dynamic_context_message`
+        and rides along as a trailing ephemeral message so this prompt
+        stays byte-stable across turns and the provider's prompt cache
+        keeps hitting.
         """
         compact = self.provider.max_tools is not None
         memory_index = self._memory_manager.render_prompt_index() or None
-        current_files = self._current_turn_files()
-        skills_index = self._skills_index.format_for_prompt(
-            current_files=current_files,
-            charm_path=self.state.charm_path,
-        )
-        self._record_skill_filtering(current_files)
-        repo_map = None if compact else self._render_repo_map()
         prompt = build_system_prompt(
             charm_name=self.state.charm_name,
             charm_path=str(self.state.charm_path) if self.state.charm_path else None,
@@ -1449,11 +1448,9 @@ class CantripAgent:
             dev_model=self.state.dev_model,
             cos_model=self.state.cos_model,
             recent_decisions=[d.to_dict() for d in self.state.decisions],
-            skills_index=skills_index,
             memory_index=memory_index,
             environment_ready=self.state.environment_ready,
             watcher_enabled=self.state.watcher_enabled and self.state.watcher_reacting,
-            repo_map=repo_map,
             substrate=self._get_substrate_cached(),
             compact=compact,
         )
@@ -1462,6 +1459,40 @@ class CantripAgent:
         if self.state.was_resumed:
             prompt = f"{prompt}\n\n{_RESUMED_MUST_READ_GUIDANCE}"
         return prompt
+
+    def _build_dynamic_context_message(self) -> Message | None:
+        """Render the per-turn-volatile context as a trailing ephemeral message.
+
+        The skills index (filtered by the files in play this turn) and the
+        repo map (scaled by live context pressure) are recomputed every
+        turn, so they cannot live in the cached system prompt without
+        invalidating the whole prefix on each call.  They ride along as a
+        ``USER`` message flagged :attr:`Message.ephemeral` so the provider
+        keeps its cache breakpoint on the stable history before it and only
+        this small tail is re-sent at full input price.
+
+        Returns ``None`` when there is nothing to inject (no skills, no
+        repo map) so :meth:`_build_llm_messages` can skip it entirely.
+        """
+        compact = self.provider.max_tools is not None
+        current_files = self._current_turn_files()
+        skills_index = self._skills_index.format_for_prompt(
+            current_files=current_files,
+            charm_path=self.state.charm_path,
+        )
+        self._record_skill_filtering(current_files)
+        repo_map = None if compact else self._render_repo_map()
+        body = build_dynamic_context(skills_index=skills_index, repo_map=repo_map)
+        if not body:
+            return None
+        framed = (
+            "<system_note>\n"
+            "Current working context (skills you can load, repo map) — reference "
+            "material for your own planning, not a user message.  Do not echo it.\n\n"
+            f"{body}\n"
+            "</system_note>"
+        )
+        return Message(role=Role.USER, content=framed, ephemeral=True)
 
     def _get_substrate_cached(self) -> Any:
         """Return the cached :class:`preflight.SubstrateSummary` or ``None``.
@@ -1915,11 +1946,20 @@ class CantripAgent:
         of past actions even though the raw transcript has been dropped.
         Like the budget message, it is built fresh each turn and never
         stored in ``state.messages``.
+
+        The per-turn-volatile dynamic context (skills index, repo map) and
+        the budget note are appended *after* the conversation as ephemeral
+        messages.  The provider keeps its history cache breakpoint on the
+        last non-ephemeral message, so this tail is re-sent at full price
+        but never invalidates the cached system + history prefix.
         """
         messages = [Message(role=Role.SYSTEM, content=self._build_system_prompt())]
         if self._context_manager.short_session_mode and self.state.ledger:
             messages.append(self._context_manager.build_ledger_message(self.state.ledger))
         messages.extend(self.state.messages)
+        dynamic = self._build_dynamic_context_message()
+        if dynamic is not None:
+            messages.append(dynamic)
         if include_budget:
             messages.append(self._context_manager.build_budget_message(messages))
         return messages

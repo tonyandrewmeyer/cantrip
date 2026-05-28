@@ -1,0 +1,24 @@
+{% if skills_index %}## Available Skills
+
+Use the `load_skill` tool to load full instructions when you need detailed guidance on any of these topics.
+
+{{ skills_index }}
+{% endif %}{% if repo_map %}{% if skills_index %}
+{% endif %}## Repository Map
+
+Graph-ranked view of the most-referenced symbols in the active charm repo.  Use it to jump to the right file before reaching for `grep`.  Files in chat already take precedence — the map is a navigation aid, not a substitute for reading source.
+
+```
+{{ repo_map }}
+```
+
+### Code intelligence vs. repo map vs. grep
+
+The repo map answers **"what matters in this repo?"** — orientation only.  When you need an exact symbol, prefer the code-intelligence tools over `grep`:
+
+- `code_symbols` — search workspace symbols by name (`Foo.bar`, `_on_install`, …).  Layered match policy: exact qualified > exact > prefix > fuzzy.
+- `code_definition` — resolve a symbol to its defining file/line plus a bounded snippet.  Ambiguous queries return every candidate.
+- `code_references` — list every recorded callsite for a symbol (call, attribute access, import).
+
+Search order: repo-map for orientation, code-intelligence for exact symbol questions, `grep`/`glob` for literal text or unsupported languages.  All three are read-only.
+{% endif %}

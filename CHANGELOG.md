@@ -43,6 +43,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Haiku bisect had already observed).
 
 ### Changed
+- **System prompt is now byte-stable across turns, and caches for 1
+  hour.**  The system prompt previously baked in two sections that are
+  recomputed every turn — the **skills index** (filtered by the files in
+  play) and the **repo map** (scaled by live context pressure) — so the
+  prompt's bytes changed almost every call.  Because Anthropic caching is
+  prefix-keyed (`tools → system → messages`), a changing system block
+  invalidated the system cache *and* every message-level cache hit on
+  each turn, leaving only the tools block reliably cached.  Those two
+  sections now render via a new ``build_dynamic_context`` into a trailing
+  ephemeral message appended after the conversation (after the history
+  cache breakpoint), so they are re-sent at full price but never
+  invalidate the cached prefix.  The static system prompt now changes
+  only on discrete session events (charm setup, model switch, plan-mode
+  toggle), so it carries the 1-hour extended cache TTL alongside the
+  tools block.
 - **Tools block now uses the 1-hour extended cache TTL.**  The tools
   block is the most stable part of the request prefix, and Cantrip's
   tool calls (``charmcraft pack``, ``juju deploy``/``wait``,

@@ -683,7 +683,21 @@ class TestClaudeProviderMessageHistoryCaching:
         kwargs = provider._build_kwargs(messages, tools=None, temperature=0.7, max_tokens=None)
 
         last = kwargs["messages"][-1]
+        # The message-history breakpoint uses the default 5-minute TTL.
         assert last["content"][-1]["cache_control"] == {"type": "ephemeral"}
+
+    @pytest.mark.asyncio
+    async def test_system_prompt_uses_1h_ttl(self):
+        """The system prompt is byte-stable now, so it gets the 1-hour extended TTL."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.SYSTEM, content="You are helpful."),
+            Message(role=Role.USER, content="hi"),
+        ]
+
+        kwargs = provider._build_kwargs(messages, tools=None, temperature=0.7, max_tokens=None)
+
+        assert kwargs["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
     @pytest.mark.asyncio
     async def test_all_system_messages_reach_system_prompt(self):

@@ -385,13 +385,13 @@ class TestExtractUserMentionedFiles:
 
 
 class TestAgentEmitsSkillFilterEvent:
-    """``CantripAgent._build_system_prompt`` records a ``skill_filter`` event."""
+    """``CantripAgent._build_dynamic_context_message`` records a ``skill_filter`` event."""
 
     def test_event_recorded_on_first_filter(self, tmp_path: pathlib.Path) -> None:
         # Build an agent and replace its skills index with one that
         # has globbed skills.  ``process_message`` is heavy; we drive
-        # ``_build_system_prompt`` directly because that's where the
-        # filter runs.
+        # ``_build_dynamic_context_message`` directly because that's where
+        # the skills index (and its glob filter) is now rendered.
         provider = FakeProvider([Response(content="ok")])
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
 
@@ -426,7 +426,7 @@ class TestAgentEmitsSkillFilterEvent:
         agent._ensure_store()
         assert agent._store is not None
 
-        agent._build_system_prompt()
+        agent._build_dynamic_context_message()
 
         events = agent._store.load_events(event_type="skill_filter")
         assert len(events) == 1
@@ -453,9 +453,9 @@ class TestAgentEmitsSkillFilterEvent:
         agent._ensure_store()
         assert agent._store is not None
 
-        agent._build_system_prompt()
-        agent._build_system_prompt()
-        agent._build_system_prompt()
+        agent._build_dynamic_context_message()
+        agent._build_dynamic_context_message()
+        agent._build_dynamic_context_message()
 
         events = agent._store.load_events(event_type="skill_filter")
         # Only the *first* call records — subsequent identical
@@ -486,12 +486,12 @@ class TestAgentEmitsSkillFilterEvent:
 
         # Turn 1: user mentions metadata.yaml.
         agent.state.messages.append(Message(role=Role.USER, content="edit metadata.yaml"))
-        agent._build_system_prompt()
+        agent._build_dynamic_context_message()
         # Turn 2: user pivots to integration tests.
         agent.state.messages.append(
             Message(role=Role.USER, content="now write tests/integration/test_x.py")
         )
-        agent._build_system_prompt()
+        agent._build_dynamic_context_message()
 
         events = agent._store.load_events(event_type="skill_filter")
         assert len(events) == 2
@@ -523,7 +523,7 @@ class TestAgentEmitsSkillFilterEvent:
         agent._ensure_store()
         assert agent._store is not None
 
-        agent._build_system_prompt()
+        agent._build_dynamic_context_message()
 
         events = agent._store.load_events(event_type="skill_filter")
         assert events == []
