@@ -552,14 +552,37 @@ problem.
    arm64; `workshop launch` reaches `Ready`; `cantrip --version`
    prints from inside.
 2. **Juju client state survives refresh and can talk to a real remote
-   controller.** — *plumbing verified, full round-trip still open.*
-   The Charm Tech `juju` SDK draft mounts `~/.local/share/juju` and
-   survives refresh; a `juju:controller` tunnel plug bound to a host
-   endpoint via manual `workshop connect` reaches the host (verified
-   with a placeholder service on `:17070`).  The end-to-end `juju
-   register` + `juju status` round-trip against a real controller
-   wasn't exercised in the Charm Tech run and remains the open piece
-   of this spike.
+   controller.** — **done.**  Validated end-to-end (2026-05-28) in
+   `/tmp/cantrip-juju-test/`:
+
+   - A workshop composing `try-cantrip` + `try-juju` reaches `Ready`.
+     The cantrip-sdk no longer declares `juju-config` (the upstream
+     `juju` SDK owns `juju-data` at the same target — see §7.3); the
+     two used to conflict on launch.
+   - **Direct connectivity** from inside the workshop to the host's
+     Juju controller at `10.168.35.165:17070` works on the default
+     LXD bridge, with no tunnel plug or `workshop connect` step.  A
+     `tunnel` plug is only needed when the controller is *not* on the
+     same LXD bridge as the workshop.
+   - `workshop remount cantrip-juju/juju:juju-data ~/.local/share/juju`
+     (with `workshop stop` / `workshop start` around it) shares the
+     host's Juju state.  Inside, `juju controllers` shows both host
+     controllers (`concierge-lxd`, `concierge-k8s`) and `juju status
+     -m concierge-lxd:testing` returns the live model state — full
+     client round-trip.
+   - Container rebuild via `workshop stop` + `workshop start` preserves
+     state across the round-trip (controllers/models still visible,
+     `juju status` still works).
+   - **Caveat (upstream):** the Charm Tech `juju` SDK draft's
+     `save-state` hook does `cp --archive` from the workshop user's
+     `~/.local/share/juju`.  When that path is a remount of a host
+     directory containing root-owned files (e.g. `lxd/` and
+     `cookies/`), the unprivileged-with-idmap workshop can't read
+     them and the hook exits 1.  Workshop refreshes cleanly roll
+     back, so the workshop is never left broken — but this should be
+     reported back to Charm Tech before their `juju` SDK ships
+     (their `save-state` should `sudo -u workshop` the copy *or* skip
+     when the mount is already a host-backed bind).
 3. **Charm packaging either works in-container or is formally deferred
    out of v1.** — **done.**  Works with `--destructive-mode` when the
    workshop base matches `build-on` and the charm's build-packages /
@@ -569,12 +592,16 @@ problem.
    should *compose* the Charm Tech `charmcraft` SDK rather than bundle
    it (see §7.3).
 
-The remaining open work — packaged into smaller chunks — is:
+All three v1 spikes are now answered.  The remaining loose ends are
+status updates and minor doc work, not unknowns:
 
-- the full Juju controller round-trip from item 2,
 - a Cantrip-side `check-health` mount-target probe (**done** —
   shipped in `cantrip-sdk` commit `86b976e`),
 - the Cantrip-side workshop-prompt consumption (**done** — shipped in
   the cantrip repo commit `d13812e`),
 - a documented reference workshop in `cantrip-sdk/README.md` that
-  composes `cantrip` + `juju` + `charmcraft` (open).
+  composes `cantrip` + `juju` + `charmcraft` (**done** — verified and
+  written up in the `cantrip-sdk` README after the §11.2 round-trip).
+- the `cantrip-sdk` dropped its `juju-config` and `gh-config` mount
+  plugs to align with §7.3's composition model and unblock
+  `cantrip` + `juju` composition (`cantrip-sdk` commit `e356844`).
