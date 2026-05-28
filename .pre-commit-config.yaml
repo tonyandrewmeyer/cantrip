@@ -3,7 +3,12 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        # syrupy snapshots (``.ambr``) capture rendered output verbatim,
+        # including significant trailing whitespace from Jinja templates;
+        # stripping it would corrupt the golden files.
+        exclude: '\.ambr$'
       - id: end-of-file-fixer
+        exclude: '\.ambr$'
       - id: check-yaml
       - id: check-added-large-files
         # ``demos/recordings/web.gif`` is the Web-UI marketing

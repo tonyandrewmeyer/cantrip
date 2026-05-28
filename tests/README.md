@@ -106,6 +106,36 @@ uv run pytest tests/unit/test_tools.py::test_name -v
 uv run pytest tests/unit/test_tools.py -v --run-slow   # Opt into @pytest.mark.slow
 ```
 
+## Snapshot tests (syrupy)
+
+Tests that freeze a large, deterministic text or structured output — rendered
+prompts, parsed-design task lists — use [`syrupy`](https://github.com/syrupy-project/syrupy)
+instead of hand-maintained SHA256 / length / substring assertions, so an
+unintended change shows up as a readable diff. Ask for the `snapshot` fixture and
+compare against it:
+
+```python
+def test_planning_prompt_snapshot(snapshot) -> None:
+    assert _build_planning_prompt(_CANONICAL_CONTEXT) == snapshot
+```
+
+The on-disk snapshot lives in a `__snapshots__/` directory **next to the test
+file**, in a `.ambr` file named after the module (e.g.
+`tests/unit/agent/__snapshots__/test_planner_prompt_snapshots.ambr`). Commit the
+`.ambr` alongside the test. After an *intentional* change, regenerate and review
+the diff before committing:
+
+```bash
+uv run pytest path/to/test_file.py --snapshot-update   # rewrite this file's snapshots
+```
+
+Drop any non-deterministic fields (uuids, timestamps) from the value before
+asserting — snapshot a normalised view, not the raw object. Snapshots are for
+stable, high-volume output; a handful of field assertions stays a plain `assert`.
+
+**Not** snapshotted: TUI rendering. Textual's pilot tests cover actions and
+state; the render layer churns too much for golden files to pay off.
+
 ## Adding a new shared fake
 
 1. Find the right home — `tests/conftest.py` for project-wide protocol fakes,

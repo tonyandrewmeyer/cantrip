@@ -1,0 +1,25 @@
+# serializer version: 1
+# name: test_one_shot_build_structure_snapshot
+  list([
+    dict({
+      'category': 'build',
+      'dependencies': list([
+      ]),
+      'description': '''
+        Build a complete flask 12-factor PaaS charm for my-app in a single red/green pass.
+        
+        **Done when:** the charm packs into a `.charm` file, integration tests deploy → relate → exercise actions and config without failure, and unit tests cover the edge cases integration tests cannot reach (missing relations, invalid config, Pebble not ready).
+        
+        **Approach:** scaffold with `charmcraft init`, declare the external contract first (charmcraft.yaml + integration tests derived from the approved design), then implement charm code (src/charm.py with Pebble layer + integrations + config; rockcraft.yaml if the flask workload needs one) until the integration tests pass. Add Scenario unit tests for the edge cases. Pack last with `charmcraft pack` (or `quick_pack` if the parts plugin is `uv` or `dump`).
+        
+        If the design lists companion charms, deploy and relate each one before asserting status in integration tests.
+        
+        Approved design:
+        ## Design
+        A Flask charm with COS.
+      ''',
+      'model_hint': 'primary',
+      'title': 'Build flask charm for my-app',
+    }),
+  ])
+# ---

@@ -1240,20 +1240,20 @@ not a higher overall coverage number — the current 88% gate stays.
 
 ### 114.3 Should-fix — Adopt snapshot testing (syrupy)
 
-- [ ] Add `syrupy` as a dev dependency via `uv add --dev syrupy`.
-- [ ] Pilot conversion: port
+- [x] Add `syrupy` as a dev dependency via `uv add --dev syrupy`.
+- [x] Pilot conversion: port
   `tests/unit/planner/test_planner_prompt_snapshots.py` from
   string-contains assertions to syrupy snapshots.  Establish the
   on-disk snapshot layout convention (`__snapshots__/` next to the
   test file) and document it in `tests/README.md`.
-- [ ] Land a second conversion on structured-response / parsed-design
+- [x] Land a second conversion on structured-response / parsed-design
   outputs (`tests/unit/planner/` or `tests/unit/subagent/` — pick the
   narrowest file where this pays).  This proves the pattern beyond
   the pilot.
-- [ ] Document the regeneration path
+- [x] Document the regeneration path
   (`uv run pytest --snapshot-update <file>`) in `tests/README.md`
   alongside the existing "Running tests" block.
-- [ ] **Not in scope:** TUI rendering snapshots.  Textual's pilot
+- [x] **Not in scope:** TUI rendering snapshots.  Textual's pilot
   testing covers actions/state; the rendering layer is volatile
   enough that golden files would churn more than they catch.  Leave
   as an explicit deferral here so it does not silently reappear.
