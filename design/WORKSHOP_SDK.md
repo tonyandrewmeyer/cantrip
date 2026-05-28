@@ -4,6 +4,16 @@
 > Workshop — the snap-delivered, LXD-backed sandboxed development
 > environment product.
 
+> **Empirical validation (2026-05-28).** A separate Charm Tech evaluation
+> exercised Workshop 0.9.0 + sdkcraft 0.1.14 + LXD 6.7 directly: built and
+> launched draft `juju`, `tox`, `charmcraft`, and `pi` SDKs end-to-end,
+> verified the mount and tunnel interface behaviour, and probed several
+> "can we host the substrate inside a workshop?" topologies.  Their
+> findings and analysis live at
+> `~/charm-tech-workshop/docs/{findings,analysis}.md`.  This plan has been
+> updated with concrete answers where they had hypotheticals; sections
+> that cite empirical results carry "(verified)" markers.
+
 ## TL;DR
 
 - **Yes, a Cantrip Workshop SDK makes sense** if v1 is framed as a
@@ -48,33 +58,71 @@ declared environment.
 Workshop exposes a constrained but useful set of host/container
 integration primitives, configured via simple YAML documents:
 
-- **project mount** into the container,
-- **persistent host-backed mounts** for selected directories,
+- **project mount** into the container, at the well-known path
+  `/project` (verified — Workshop convention),
+- **persistent host-backed mounts** for selected directories
+  (verified — the workshop reports an auto-allocated host-source path
+  under `~/.local/share/workshop/id/<id>/...` for each declared `mount`
+  plug, no explicit slot binding needed),
 - **device pass-through** for things like GPUs,
 - **desktop GUI access** from the host,
 - **manual SSH-agent access**,
-- **network tunnelling** between host and container services,
-- and a small fixed interface catalogue rather than arbitrary custom
-  interfaces.
+- **network tunnelling** between host and container services
+  (verified — and supports both TCP endpoints and unix sockets),
+- and a small fixed interface catalogue (`camera / desktop / gpu /
+  mount / ssh-agent / tunnel`) rather than arbitrary custom interfaces.
 
 Workshop environments run as **unprivileged system containers** on
-**LXD 6.8 or newer**, with non-privileged defaults and strict access
-controls; the SDK should respect that posture rather than expecting
-elevated host capabilities.
+**LXD 6.8 or newer**, with `security.nesting=true` set by default
+(verified by inspecting `internal/workshop/lxd/lxd_backend.go`) and
+non-privileged defaults; the SDK should respect that posture rather
+than expecting elevated host capabilities.  The container's single
+`raw.lxc` slot is already pinned by Workshop (a tmpfs entry for
+`/tmp`), so an SDK cannot append extra LXC config of its own.
+
+Hook scripts run as **root** inside the container (verified).  Tooling
+that's configured per-user (npm prefix, `uv tool`) must be invoked via
+`sudo -iu workshop` so it lands in the workshop user's `$HOME`, not
+root's.  Passwordless `sudo` works inside the workshop, so an action or
+hook can shell out for ad-hoc package installs.
+
+**Tunnel-slot gotcha:** `system`-SDK tunnel slots are deliberately not
+auto-connected from a workshop's `connections:` block (security).  An
+SDK that declares a `tunnel` plug for a host endpoint must either
+document the manual `workshop connect <plug> <slot>` step, or wrap it
+in a workshop action — putting the bind in `connections:` is silently
+ignored.
 
 Two constraints matter most for Cantrip:
 
 ### 2.1 Local "real controller inside the container" is not the starting point
 
-The current evidence does **not** show a documented path for:
+Three of the four assumptions in this section have moved from
+"speculative" to "tested":
 
-- nested LXD,
-- host LXD socket pass-through,
-- local controller bootstrap inside the Workshop environment,
-- or a first-class Juju-specific integration surface.
+- **Nested LXD works** (verified).  `snap install lxd` + `lxd init
+  --auto` + `lxc launch ubuntu:24.04 inner` all succeed inside a
+  workshop.  Good enough for `charmcraft pack` LXD-provider mode and
+  for rockcraft.
+- **`juju bootstrap localhost` does *not* work** (verified on LXD 5.21
+  *and* 6.7).  The Juju controller machine ends up as an LXD container
+  at nesting depth 2 (inside the workshop's own nested LXD); `snapd
+  .service` does not come up there, so Juju cannot install the
+  `juju-db` snap, and bootstrap fails with a `mongod`-install error.
+  Inner-LXD profile tweaks do not fix it.  This is a hard "no" for v1.
+- **Canonical Kubernetes also doesn't come up** (verified).  `k8s
+  bootstrap` succeeds, but the kubelet won't start (`/dev/kmsg`
+  missing — the workshop is an unprivileged user-namespaced
+  container).  Even with the documented in-userns workarounds the CNI
+  cannot start pods, so `juju add-k8s` against an in-workshop cluster
+  isn't reachable either.
+- **Host LXD socket pass-through** remains undocumented.
 
-That makes a "full local controller in the Workshop" shape speculative.
-It may eventually be possible, but it should not define v1.
+So the "full local controller in the Workshop" shape is not just
+speculative, it is **demonstrated to be blocked** by a Workshop-level
+container-capabilities choice (no privileged-container opt-in, the one
+`raw.lxc` slot is taken).  The fix would have to land in Workshop
+itself; until then, v1 stays remote-controller-first.
 
 ### 2.2 Remote-client workflows do fit
 
@@ -286,35 +334,62 @@ of the charm toolchain and should be validated explicitly.
 These questions should be answered by short spikes before implementation
 is declared final.
 
-### 7.1 Can charm packaging run cleanly inside the Workshop environment?
+### 7.1 Can charm packaging run cleanly inside the Workshop environment? — *answered*
 
-This is the biggest unknown.
+**Yes, with caveats** (verified — a draft `charmcraft` SDK ran
+`charmcraft pack --destructive-mode` end-to-end and produced a valid
+`.charm`).  The caveats:
 
-Questions to answer:
+- The workshop `base` must match the charm's `build-on` base.
+  `--destructive-mode` packs *in* the current environment, so a
+  ubuntu@24.04 workshop cannot pack a charm whose only `build-on` is
+  ubuntu@22.04.  Multi-base charms either need the LXD provider (→ a
+  nested-LXD SDK) or one workshop per base.
+- The charm's declared `build-packages` and `build-snaps` must be
+  pre-installed by a root setup hook.  Running as the `workshop` user,
+  `charmcraft` itself cannot `apt`-install or `snap`-install them and
+  fails with *"not running as superuser"*.  The Charm Tech `charmcraft`
+  SDK does this in `setup-base` (apt update + apt-install the usual
+  build deps + `snap install astral-uv`).
+- For Cantrip's own SDK, this means: **do not** bundle `charmcraft`
+  into the Cantrip SDK.  Compose: workshops that need packing declare
+  both `cantrip` and `charmcraft` SDKs.
 
-- Can `charmcraft pack` run in the container without extra host
-  integration?
-- If not, is there a workable destructive-mode or direct-build path that
-  covers the Cantrip use case?
-- If not, should packaging move out of v1 and become a later phase?
+### 7.2 What exact Juju directories must persist? — *answered*
 
-### 7.2 What exact Juju directories must persist?
+`~/.local/share/juju` is the right target (verified by the Charm Tech
+`juju` SDK draft, mounted at exactly that path).  Workshop refresh
+re-creates the container; the `mount` plug keeps the directory on a
+host-backed source, so registrations, accounts, credentials, and
+bootstrap config survive.  No additional Juju-side dirs need explicit
+mounting for the client story.
 
-We should identify the minimum stable set of Juju client paths needed for:
+The Cantrip SDK already declares this plug as `juju-config`.
 
-- controller definitions,
-- cached credentials,
-- SSH materials if any,
-- and normal CLI behaviour after refresh.
+### 7.3 Should Juju and charmcraft live in the same SDK? — *answered*
 
-### 7.3 Should Juju and charmcraft live in the same SDK?
+**No**, on two pieces of evidence:
 
-The default recommendation is **yes for v1** because it keeps the user
-story simple.  But a quick spike should still answer:
+- The Charm Tech proposal contributes `juju`, `tox`, `charmcraft` as
+  separate SDKs to `canonical/sdks`.  Bundling them into ours would
+  duplicate effort and freeze us to their release cadence.
+- Both SDKs have very different build shapes — `juju` is a `dump` of
+  the release tarball; `charmcraft` is `plugin: nil` + a snap install
+  in `setup-base` (its PyPI deps overlap sdkcraft's own and the
+  `python` part plugin refuses).  Bundling means choosing the messier
+  shape.
 
-- does this make the image too large,
-- does it complicate support,
-- and would a split produce meaningfully better failure isolation?
+So the **composition model** is:
+
+- `cantrip` SDK (this plan) — agent + workshop-prompt + persistent
+  config/data/juju/gh mounts.
+- `juju` SDK (Charm Tech contribution) — the client binary,
+  `juju-data` mount, `controller` tunnel.
+- `charmcraft` SDK (Charm Tech contribution) — the snap, build deps,
+  destructive-mode pack.
+
+Users compose these in their `workshop.yaml`.  Our README's reference
+workshop should show this composition.
 
 ### 7.4 What should health mean?
 
@@ -333,14 +408,36 @@ We should lock down a crisp contract:
 
 Before productising the SDK:
 
-1. package Cantrip alone in a minimal Workshop environment,
-2. add persistent Cantrip config,
-3. add Juju client and validate state persistence,
-4. test remote-controller login and status flows,
-5. test charm packaging in-container,
-6. confirm what breaks and what is merely undocumented.
+1. package Cantrip alone in a minimal Workshop environment — **done**
+   (the `cantrip-sdk` repo at `github.com/tonyandrewmeyer/cantrip-sdk`
+   ships an SDK that `workshop launch` brings to `Ready`; `cantrip
+   --version` runs inside),
+2. add persistent Cantrip config — **done** (four mount plugs:
+   `cantrip-config`, `cantrip-data`, `juju-config`, `gh-config`; the
+   tighter `check-health` verifies each is workshop-owned and
+   writable),
+3. add Juju client and validate state persistence — **answered by the
+   Charm Tech `juju` SDK draft**: end-to-end verified, `juju-data`
+   mount at `~/.local/share/juju` survives `workshop refresh`,
+   `juju-data` source is host-backed.  Cantrip workshops will declare
+   the Charm Tech `juju` SDK as a peer in their `workshop.yaml`
+   rather than bundle the client.
+4. test remote-controller login and status flows — see §11.2 below.
+   The `juju:controller` tunnel + host-side controller pattern is
+   plumbing-verified but the full `juju register` round-trip wasn't
+   exercised in the Charm Tech run; this is the remaining open spike.
+5. test charm packaging in-container — **done** (verified by the
+   Charm Tech `charmcraft` SDK; see §7.1).
+6. confirm what breaks and what is merely undocumented — **largely
+   done**.  The hard "no" items are `juju bootstrap localhost` and
+   Canonical K8s inside a workshop (both need a Workshop-level
+   privileged-container opt-in); see §2.1 and §9.4.
 
 Exit criterion: we know whether packaging/deploy belongs in v1 or v1.1.
+**Provisional answer:** packaging belongs in v1 *as composition* (a
+Cantrip workshop with both `cantrip` and `charmcraft` SDKs); deploy
+belongs in v1 against a host-side controller, with bind-time setup
+documented.
 
 ## 8.2 Phase B — v1 SDK
 
@@ -411,13 +508,19 @@ The right order is:
 
 This is the most important deferred future shape.
 
-Revisit local-controller support only if Workshop gains a documented
-path for one of:
+The Charm Tech evaluation isolated the specific blocker: workshop
+containers run unprivileged and Workshop's single `raw.lxc` slot is
+already pinned, so an SDK cannot grant itself the capabilities Juju
+(`security.privileged: true` / a working depth-2 snapd) or Canonical
+K8s (`/dev/kmsg` bind + apparmor unconfined + extra `raw.lxc`) need.
+A `system`-SDK capability — analogous to `gpu` or `camera`, but
+granting privileged(-ish) container semantics — would unblock both.
 
-- nested container orchestration,
-- safe host daemon access,
-- a first-class local-controller integration,
-- or another officially supported mechanism that replaces those.
+Revisit local-controller support only if Workshop gains that opt-in,
+or an equivalent documented path: nested container orchestration with
+working snapd, safe host LXD-daemon access, a first-class
+local-controller integration, or another officially supported
+mechanism that replaces those.
 
 At that point, the Cantrip SDK could expand from:
 
@@ -442,17 +545,36 @@ That gives Cantrip a strong entry point into the Workshop ecosystem
 without tying the first release to the hardest, least-proven part of the
 problem.
 
-## 11. Concrete next steps
+## 11. Concrete next steps — status
 
-If this plan is accepted, the next practical step is a short
-implementation spike outside the Cantrip repo to answer the three
-highest-risk unknowns:
-
-1. **Cantrip-only SDK boots and runs cleanly.**
+1. **Cantrip-only SDK boots and runs cleanly.** — **done.**
+   `github.com/tonyandrewmeyer/cantrip-sdk` packs cleanly for amd64 +
+   arm64; `workshop launch` reaches `Ready`; `cantrip --version`
+   prints from inside.
 2. **Juju client state survives refresh and can talk to a real remote
-   controller.**
+   controller.** — *plumbing verified, full round-trip still open.*
+   The Charm Tech `juju` SDK draft mounts `~/.local/share/juju` and
+   survives refresh; a `juju:controller` tunnel plug bound to a host
+   endpoint via manual `workshop connect` reaches the host (verified
+   with a placeholder service on `:17070`).  The end-to-end `juju
+   register` + `juju status` round-trip against a real controller
+   wasn't exercised in the Charm Tech run and remains the open piece
+   of this spike.
 3. **Charm packaging either works in-container or is formally deferred
-   out of v1.**
+   out of v1.** — **done.**  Works with `--destructive-mode` when the
+   workshop base matches `build-on` and the charm's build-packages /
+   build-snaps are pre-installed by a root hook (the Charm Tech
+   `charmcraft` SDK does this).  Multi-base charms still need either
+   the nested-LXD provider or per-base workshops.  Cantrip workshops
+   should *compose* the Charm Tech `charmcraft` SDK rather than bundle
+   it (see §7.3).
 
-Those three answers are enough to turn this document into an execution
-plan.
+The remaining open work — packaged into smaller chunks — is:
+
+- the full Juju controller round-trip from item 2,
+- a Cantrip-side `check-health` mount-target probe (**done** —
+  shipped in `cantrip-sdk` commit `86b976e`),
+- the Cantrip-side workshop-prompt consumption (**done** — shipped in
+  the cantrip repo commit `d13812e`),
+- a documented reference workshop in `cantrip-sdk/README.md` that
+  composes `cantrip` + `juju` + `charmcraft` (open).
