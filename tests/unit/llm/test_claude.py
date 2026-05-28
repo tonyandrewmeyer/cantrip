@@ -671,6 +671,54 @@ class TestClaudeProviderMessageHistoryCaching:
 
         assert api_messages[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
+    def test_short_history_has_no_anchor(self):
+        """Below the anchor stride, only the tip breakpoint is set."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content=f"m{i}") for i in range(4)]
+        api_messages = [{"role": "user", "content": f"m{i}"} for i in range(4)]
+
+        provider._mark_last_message_for_caching(messages, api_messages)
+
+        marked = [i for i, m in enumerate(api_messages) if isinstance(m["content"], list)]
+        assert marked == [3]  # tip only
+
+    def test_long_history_anchors_bulk_at_1h(self):
+        """A long history gets a 1-hour anchor breakpoint plus the 5-minute tip.
+
+        The anchor lets the stable bulk of the transcript survive the
+        frequent >5-minute tool gaps instead of re-creating from scratch.
+        """
+        provider = self._make_provider()
+        # 20 real messages: tip at index 19, anchor quantised to 16.
+        messages = [Message(role=Role.USER, content=f"m{i}") for i in range(20)]
+        api_messages = [{"role": "user", "content": f"m{i}"} for i in range(20)]
+
+        provider._mark_last_message_for_caching(messages, api_messages)
+
+        # Anchor at the largest multiple of the stride below the tip, 1h TTL.
+        assert api_messages[16]["content"][0]["cache_control"] == {
+            "type": "ephemeral",
+            "ttl": "1h",
+        }
+        # Tip stays on the default 5-minute TTL.
+        assert api_messages[19]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        # Exactly two message breakpoints (anchor + tip), within the 4-breakpoint budget.
+        marked = [i for i, m in enumerate(api_messages) if isinstance(m["content"], list)]
+        assert marked == [16, 19]
+
+    def test_anchor_skipped_when_it_would_equal_tip(self):
+        """When the tip sits on a stride boundary the anchor steps back, never onto the tip."""
+        provider = self._make_provider()
+        # tip at index 16 (a multiple of the stride) → anchor would be 16,
+        # which equals the tip, so the anchor is skipped (only the tip is set).
+        messages = [Message(role=Role.USER, content=f"m{i}") for i in range(17)]
+        api_messages = [{"role": "user", "content": f"m{i}"} for i in range(17)]
+
+        provider._mark_last_message_for_caching(messages, api_messages)
+
+        marked = [i for i, m in enumerate(api_messages) if isinstance(m["content"], list)]
+        assert marked == [16]  # tip only; anchor==tip is not double-marked
+
     @pytest.mark.asyncio
     async def test_build_kwargs_marks_last_message(self):
         """The wire payload from _build_kwargs carries the cache marker on the trailing message."""

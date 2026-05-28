@@ -43,6 +43,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   Haiku bisect had already observed).
 
 ### Changed
+- **History "anchor" cache breakpoint survives long tool gaps.**  The
+  conversation history carried a single rolling cache breakpoint at the
+  default 5-minute TTL.  Cantrip's tool calls (``charmcraft pack``,
+  ``juju wait``, integration tests) routinely exceed 5 minutes, so after
+  almost every long tool call the message cache had expired and the
+  *entire* transcript was re-created from the system breakpoint.  A
+  second breakpoint now anchors the stable bulk of the history at the
+  1-hour TTL, quantised to a stride so it stays put across calls (re-read,
+  not re-written); the rolling tip stays on the 5-minute TTL.  After a
+  long gap only the recent tail re-creates instead of the whole history.
+  Uses the 4th of Anthropic's four allowed breakpoints (tools, system,
+  anchor, tip), and only engages once the history is long enough to be
+  worth anchoring.
 - **System prompt is now byte-stable across turns, and caches for 1
   hour.**  The system prompt previously baked in two sections that are
   recomputed every turn — the **skills index** (filtered by the files in

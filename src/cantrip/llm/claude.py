@@ -61,6 +61,17 @@ _CACHE_MIN_TOKENS_DEFAULT = 1024
 # one (messages) in the prefix.
 _STABLE_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral", "ttl": "1h"}
 
+# Stride (in messages) for the history "anchor" cache breakpoint.  The
+# rolling tip breakpoint caches the newest turn at the default 5-minute
+# TTL; the anchor gives the *stable bulk* of a long history the 1-hour TTL
+# so it survives the frequent >5-minute tool gaps (charmcraft pack, juju
+# wait) instead of the whole transcript re-creating from the system
+# breakpoint after every gap.  The anchor position is quantised to this
+# stride so it stays put for several calls — and is therefore re-read,
+# not re-written — rather than moving forward on every call.  Below this
+# many messages there is nothing worth anchoring, so only the tip is set.
+_CACHE_ANCHOR_STRIDE = 8
+
 # Anthropic's documented per-image cap is 5 MB of raw bytes; larger
 # payloads are rejected server-side.  We enforce the same limit client-
 # side so the caller gets a fast, clear error.
@@ -255,22 +266,46 @@ class ClaudeProvider(LLMProvider):
         return api_tools
 
     @staticmethod
+    def _set_cache_control(api_message: dict, control: dict) -> None:
+        """Attach *control* to *api_message*'s final content block.
+
+        String content is upgraded to a single text block so the marker
+        has somewhere to attach; an existing block list is marked in place.
+        """
+        content = api_message["content"]
+        if isinstance(content, str):
+            api_message["content"] = [{"type": "text", "text": content, "cache_control": control}]
+        elif content:
+            content[-1]["cache_control"] = control
+
+    @staticmethod
     def _mark_last_message_for_caching(messages: list[Message], api_messages: list[dict]) -> None:
-        """Attach ``cache_control`` to the last cacheable message's final block.
+        """Place the message-history cache breakpoints (tip + history anchor).
 
-        Uses a third Anthropic cache breakpoint (system + tools + history)
-        so multi-turn agent loops cache the conversation prefix and only
-        the new turn's tokens are billed at full input rate.  String
-        content is upgraded to a text block so the marker has somewhere
-        to attach.
+        Multi-turn agent loops cache the conversation prefix so only the
+        new turn's tokens are billed at full input rate.  Two breakpoints
+        are set in the message body:
 
-        The breakpoint goes on the last *non-ephemeral* message.  Per-turn
-        volatile content (the context-budget note, ``Message.ephemeral``)
-        is appended after the real conversation; marking it would move the
-        breakpoint off the stable history and re-create the whole prefix
-        on every call.  ``_convert_messages`` drops SYSTEM messages, so the
-        remaining non-system messages align 1:1, in order, with
-        *api_messages*.
+        * **Tip** — the last *non-ephemeral* message, on the default
+          5-minute TTL.  It is re-written every call as the conversation
+          grows, so the extended TTL would not pay back.  Per-turn volatile
+          content (the context-budget note and dynamic-context block,
+          ``Message.ephemeral``) is appended after the real conversation;
+          marking it would move the breakpoint off the stable history and
+          re-create the whole prefix on every call.
+
+        * **Anchor** — a quantised, stable earlier position on the 1-hour
+          TTL (:data:`_STABLE_CACHE_CONTROL`).  It gives the bulk of a long
+          history a TTL that survives the frequent >5-minute tool gaps, so
+          a post-gap call re-creates only the recent tail instead of the
+          whole transcript.  Quantising to :data:`_CACHE_ANCHOR_STRIDE`
+          keeps the anchor put for several calls so it is re-read, not
+          re-written.
+
+        ``_convert_messages`` drops SYSTEM messages, so the remaining
+        non-system messages align 1:1, in order, with *api_messages*; the
+        ephemeral tail therefore sits at indices above the tip, leaving
+        every index below it non-ephemeral.
         """
         if not api_messages:
             return
@@ -278,23 +313,21 @@ class ClaudeProvider(LLMProvider):
         # Default to the final block, then walk back to the last message
         # the caller did not flag as volatile.  ``min`` guards against any
         # future divergence between the two lists' lengths.
-        target_idx = len(api_messages) - 1
+        tip_idx = len(api_messages) - 1
         for i in range(min(len(non_system), len(api_messages)) - 1, -1, -1):
             if not non_system[i].ephemeral:
-                target_idx = i
+                tip_idx = i
                 break
-        target = api_messages[target_idx]
-        content = target["content"]
-        if isinstance(content, str):
-            target["content"] = [
-                {
-                    "type": "text",
-                    "text": content,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
-        elif content:
-            content[-1]["cache_control"] = {"type": "ephemeral"}
+        ClaudeProvider._set_cache_control(api_messages[tip_idx], {"type": "ephemeral"})
+
+        # Anchor the stable bulk of a long history at the 1-hour TTL.
+        # Indices below the tip are always non-ephemeral (the volatile tail
+        # is appended last), so no ephemeral check is needed here.
+        anchor_idx = (tip_idx // _CACHE_ANCHOR_STRIDE) * _CACHE_ANCHOR_STRIDE
+        if _CACHE_ANCHOR_STRIDE <= anchor_idx < tip_idx:
+            ClaudeProvider._set_cache_control(
+                api_messages[anchor_idx], dict(_STABLE_CACHE_CONTROL)
+            )
 
     def _build_kwargs(
         self,
