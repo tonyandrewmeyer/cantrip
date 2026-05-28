@@ -36,17 +36,26 @@ _CONTEXT_WINDOWS: dict[str, int] = {
 _DEFAULT_CONTEXT_WINDOW = 200_000
 
 # Minimum cached-prefix size for Anthropic prompt caching to activate.
-# Sonnet: 1024 tokens.  Opus and Haiku: 2048 tokens.  Below these, the
-# ``cache_control`` hint is silently ignored by the API — the call goes
-# through and ``cache_creation_input_tokens`` stays at 0, with no error
-# returned.  A live bisect against ``claude-haiku-4-5-20251001`` showed
-# Haiku does not start caching until well above 2048 tokens (~4100 in
-# observation), so the warning floor matches Anthropic's documented
-# minimum and reality is more conservative — operators see the warning
-# whenever their Haiku-routed prompt is genuinely too short.
-_CACHE_MIN_TOKENS_OPUS = 2048
-_CACHE_MIN_TOKENS_HAIKU = 2048
+# Sonnet 4.5/4.6: 1024 tokens.  Opus 4.5/4.6/4.7 and Haiku 4.5: 4096
+# tokens.  Below these, the ``cache_control`` hint is silently ignored by
+# the API — the call goes through and ``cache_creation_input_tokens``
+# stays at 0, with no error returned.  A live bisect against
+# ``claude-haiku-4-5-20251001`` showed caching does not start until ~4100
+# tokens, matching Anthropic's documented 4096 floor for that model.
+_CACHE_MIN_TOKENS_OPUS = 4096
+_CACHE_MIN_TOKENS_HAIKU = 4096
 _CACHE_MIN_TOKENS_DEFAULT = 1024
+
+# Extended (1-hour) cache TTL for the most stable prefix segment.  The
+# tools block rarely changes within a session, and Cantrip's tool calls
+# (charmcraft pack, juju deploy/wait, integration tests) routinely run
+# longer than the 5-minute default TTL — without the extended TTL the
+# tools cache expires mid-turn and is re-created at full price on the next
+# call.  Reads cost 0.1x for both TTLs; the 1h write premium (2x vs 1.25x)
+# is recovered after a single >5-minute gap, which this workload hits
+# constantly.  The system and message breakpoints stay on the default
+# 5-minute TTL until the system prompt is byte-stable across turns.
+_TOOLS_CACHE_CONTROL: dict[str, str] = {"type": "ephemeral", "ttl": "1h"}
 
 # Anthropic's documented per-image cap is 5 MB of raw bytes; larger
 # payloads are rejected server-side.  We enforce the same limit client-
@@ -222,7 +231,10 @@ class ClaudeProvider(LLMProvider):
         prefix extends across the entire tools block, not just the
         system prompt.  With Cantrip's large tool catalogue this is the
         single biggest cache hit available — without the marker the
-        tools are sent fresh on every call.
+        tools are sent fresh on every call.  The marker uses the 1-hour
+        TTL (:data:`_TOOLS_CACHE_CONTROL`) because the tools block is the
+        most stable part of the prefix and must survive the
+        minutes-long tool calls between LLM turns.
         """
         if not tools:
             return None
@@ -235,25 +247,42 @@ class ClaudeProvider(LLMProvider):
             }
             for tool in tools
         ]
-        api_tools[-1]["cache_control"] = {"type": "ephemeral"}
+        api_tools[-1]["cache_control"] = dict(_TOOLS_CACHE_CONTROL)
         return api_tools
 
     @staticmethod
-    def _mark_last_message_for_caching(api_messages: list[dict]) -> None:
-        """Attach ``cache_control`` to the final message's last content block.
+    def _mark_last_message_for_caching(messages: list[Message], api_messages: list[dict]) -> None:
+        """Attach ``cache_control`` to the last cacheable message's final block.
 
         Uses a third Anthropic cache breakpoint (system + tools + history)
         so multi-turn agent loops cache the conversation prefix and only
         the new turn's tokens are billed at full input rate.  String
         content is upgraded to a text block so the marker has somewhere
         to attach.
+
+        The breakpoint goes on the last *non-ephemeral* message.  Per-turn
+        volatile content (the context-budget note, ``Message.ephemeral``)
+        is appended after the real conversation; marking it would move the
+        breakpoint off the stable history and re-create the whole prefix
+        on every call.  ``_convert_messages`` drops SYSTEM messages, so the
+        remaining non-system messages align 1:1, in order, with
+        *api_messages*.
         """
         if not api_messages:
             return
-        last = api_messages[-1]
-        content = last["content"]
+        non_system = [m for m in messages if m.role != Role.SYSTEM]
+        # Default to the final block, then walk back to the last message
+        # the caller did not flag as volatile.  ``min`` guards against any
+        # future divergence between the two lists' lengths.
+        target_idx = len(api_messages) - 1
+        for i in range(min(len(non_system), len(api_messages)) - 1, -1, -1):
+            if not non_system[i].ephemeral:
+                target_idx = i
+                break
+        target = api_messages[target_idx]
+        content = target["content"]
         if isinstance(content, str):
-            last["content"] = [
+            target["content"] = [
                 {
                     "type": "text",
                     "text": content,
@@ -274,7 +303,7 @@ class ClaudeProvider(LLMProvider):
         """Build the shared kwargs dict for ``messages.create`` / ``messages.stream``."""
         system_prompt = self._get_system_prompt(messages)
         api_messages = self._convert_messages(messages)
-        self._mark_last_message_for_caching(api_messages)
+        self._mark_last_message_for_caching(messages, api_messages)
         api_tools = self._convert_tools(tools)
 
         effective_max = max_tokens or 8192

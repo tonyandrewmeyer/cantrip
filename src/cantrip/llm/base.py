@@ -77,6 +77,13 @@ class Message:
     tool_results: list[ToolResult] = dataclasses.field(default_factory=list)
     images: list[Image] = dataclasses.field(default_factory=list)
     metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
+    # Per-turn volatile content (e.g. the context-budget note) that is
+    # rebuilt every call and appended after the real conversation.  A
+    # provider that uses prefix caching must NOT place a cache breakpoint
+    # on an ephemeral message — its bytes change every turn, so doing so
+    # moves the breakpoint off the stable history and re-creates the whole
+    # prefix on every call.  See ClaudeProvider._mark_last_message_for_caching.
+    ephemeral: bool = False
 
 
 @dataclasses.dataclass
@@ -292,11 +299,21 @@ class LLMProvider(ABC):
 
     @staticmethod
     def _get_system_prompt(messages: list[Message]) -> str | None:
-        """Extract the first system prompt from *messages*, or ``None``."""
-        for msg in messages:
-            if msg.role == Role.SYSTEM:
-                return msg.content
-        return None
+        """Concatenate every system-role message's content, in order, or ``None``.
+
+        A single request routinely carries more than one SYSTEM message:
+        the main system prompt, an optional compaction summary that stands
+        in for dropped history, the short-session history ledger, and
+        cache-cascade warnings.  Returning only the first (and the
+        ``_convert_messages`` of every provider drops them all from the
+        body) silently discarded the rest — losing the compaction summary
+        meant the model forgot the whole compacted past.  Joining them
+        here keeps every system note in the request; the common
+        single-system case is unchanged (``join`` of one part is that
+        part).
+        """
+        parts = [m.content for m in messages if m.role == Role.SYSTEM and m.content]
+        return "\n\n".join(parts) if parts else None
 
     def count_tokens(self, messages: list[Message]) -> int:
         """Count tokens in messages (approximate).

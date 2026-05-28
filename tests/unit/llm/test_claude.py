@@ -136,17 +136,17 @@ class TestClaudeProviderCacheEligibility:
         assert any("1024-token minimum" in m for m in warnings)
 
     def test_short_prompt_logs_warning_opus(self, caplog):
-        """Opus warns at its higher 2048-token threshold."""
+        """Opus warns at its higher 4096-token threshold."""
         import logging
 
         provider = self._make_provider("claude-opus-4-7")
-        # ~1500 tokens — fine for Sonnet but below Opus's 2048 threshold.
-        prompt = "x" * (1500 * 4)
+        # ~3000 tokens — fine for Sonnet but below Opus's 4096 threshold.
+        prompt = "x" * (3000 * 4)
         with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
             provider._check_cache_eligibility(prompt)
 
         warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("2048-token minimum" in m for m in warnings)
+        assert any("4096-token minimum" in m for m in warnings)
 
     def test_long_prompt_does_not_warn(self, caplog):
         """A prompt well over the threshold produces no warning."""
@@ -175,34 +175,34 @@ class TestClaudeProviderCacheEligibility:
         assert len(warnings) == 1
 
     def test_short_prompt_logs_warning_haiku(self, caplog):
-        """Haiku models warn at the 2048-token threshold, not 1024.
+        """Haiku models warn at the 4096-token threshold, not 1024.
 
-        Anthropic's documented Haiku minimum is 2048 tokens (Sonnet
+        Anthropic's documented Haiku 4.5 minimum is 4096 tokens (Sonnet
         uses 1024).  A live bisect against ``claude-haiku-4-5`` showed
         the API silently ignores the ``cache_control`` hint below that
         threshold — the call goes through with ``cache_creation_input_tokens=0``
         and no error.  Treating Haiku like Sonnet here used to make the
-        warning under-fire, so an operator with a 1500-token Haiku
+        warning under-fire, so an operator with a 3000-token Haiku
         system prompt thought they were caching when they weren't.
         """
         import logging
 
         provider = self._make_provider("claude-haiku-4-5-20251001")
-        # ~1500 tokens — fine for Sonnet but below Haiku's 2048 threshold.
-        prompt = "x" * (1500 * 4)
+        # ~3000 tokens — fine for Sonnet but below Haiku's 4096 threshold.
+        prompt = "x" * (3000 * 4)
         with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
             provider._check_cache_eligibility(prompt)
 
         warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("2048-token minimum" in m for m in warnings)
+        assert any("4096-token minimum" in m for m in warnings)
 
     def test_haiku_long_prompt_does_not_warn(self, caplog):
-        """A Haiku prompt well over 2048 tokens produces no warning."""
+        """A Haiku prompt well over 4096 tokens produces no warning."""
         import logging
 
         provider = self._make_provider("claude-haiku-4-5-20251001")
-        # ~3000 tokens — over Haiku's 2048-token floor.
-        prompt = "x" * (3000 * 4)
+        # ~5000 tokens — over Haiku's 4096-token floor.
+        prompt = "x" * (5000 * 4)
         with caplog.at_level(logging.WARNING, logger="cantrip.llm.claude"):
             provider._check_cache_eligibility(prompt)
 
@@ -546,7 +546,9 @@ class TestClaudeProviderToolConversion:
         assert result is not None
         assert "cache_control" not in result[0]
         assert "cache_control" not in result[1]
-        assert result[-1]["cache_control"] == {"type": "ephemeral"}
+        # The tools block carries the 1-hour extended TTL so it survives
+        # the minutes-long tool calls between LLM turns.
+        assert result[-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
     def test_convert_tools_single_tool_marked(self):
         """A single tool is still marked — the cached prefix covers system + that tool."""
@@ -558,7 +560,7 @@ class TestClaudeProviderToolConversion:
         result = provider._convert_tools(tools)
 
         assert result is not None
-        assert result[0]["cache_control"] == {"type": "ephemeral"}
+        assert result[0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
 
 class TestClaudeProviderMessageHistoryCaching:
@@ -576,16 +578,17 @@ class TestClaudeProviderMessageHistoryCaching:
         provider = self._make_provider()
         api_messages: list[dict] = []
 
-        provider._mark_last_message_for_caching(api_messages)
+        provider._mark_last_message_for_caching([], api_messages)
 
         assert api_messages == []
 
     def test_string_content_upgraded_to_text_block(self):
         """Plain user-string content is converted to a text block carrying cache_control."""
         provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="Hello")]
         api_messages = [{"role": "user", "content": "Hello"}]
 
-        provider._mark_last_message_for_caching(api_messages)
+        provider._mark_last_message_for_caching(messages, api_messages)
 
         assert api_messages[0]["content"] == [
             {
@@ -598,13 +601,18 @@ class TestClaudeProviderMessageHistoryCaching:
     def test_only_last_message_marked(self):
         """Earlier messages are untouched; only the trailing message gets the marker."""
         provider = self._make_provider()
+        messages = [
+            Message(role=Role.USER, content="first"),
+            Message(role=Role.ASSISTANT, content="second"),
+            Message(role=Role.USER, content="third"),
+        ]
         api_messages = [
             {"role": "user", "content": "first"},
             {"role": "assistant", "content": "second"},
             {"role": "user", "content": "third"},
         ]
 
-        provider._mark_last_message_for_caching(api_messages)
+        provider._mark_last_message_for_caching(messages, api_messages)
 
         assert api_messages[0]["content"] == "first"
         assert api_messages[1]["content"] == "second"
@@ -613,6 +621,7 @@ class TestClaudeProviderMessageHistoryCaching:
     def test_block_list_marks_final_block(self):
         """When content is already a list of blocks, mark the last one in place."""
         provider = self._make_provider()
+        messages = [Message(role=Role.TOOL, content="")]
         api_messages = [
             {
                 "role": "user",
@@ -623,11 +632,44 @@ class TestClaudeProviderMessageHistoryCaching:
             }
         ]
 
-        provider._mark_last_message_for_caching(api_messages)
+        provider._mark_last_message_for_caching(messages, api_messages)
 
         blocks = api_messages[0]["content"]
         assert "cache_control" not in blocks[0]
         assert blocks[1]["cache_control"] == {"type": "ephemeral"}
+
+    def test_ephemeral_trailing_message_is_skipped(self):
+        """A trailing ephemeral message (e.g. the budget note) does not carry the breakpoint.
+
+        Marking volatile per-turn content would move the breakpoint off the
+        stable history and re-create the whole prefix every call.  The
+        breakpoint must land on the last *non-ephemeral* message instead.
+        """
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.USER, content="real question"),
+            Message(role=Role.USER, content="[Context Budget] 1/2", ephemeral=True),
+        ]
+        api_messages = [
+            {"role": "user", "content": "real question"},
+            {"role": "user", "content": "[Context Budget] 1/2"},
+        ]
+
+        provider._mark_last_message_for_caching(messages, api_messages)
+
+        # The real message carries the marker; the volatile budget note does not.
+        assert api_messages[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        assert api_messages[1]["content"] == "[Context Budget] 1/2"
+
+    def test_all_ephemeral_falls_back_to_last(self):
+        """If every message is ephemeral, the marker still lands somewhere (the last block)."""
+        provider = self._make_provider()
+        messages = [Message(role=Role.USER, content="only", ephemeral=True)]
+        api_messages = [{"role": "user", "content": "only"}]
+
+        provider._mark_last_message_for_caching(messages, api_messages)
+
+        assert api_messages[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
     async def test_build_kwargs_marks_last_message(self):
@@ -642,6 +684,52 @@ class TestClaudeProviderMessageHistoryCaching:
 
         last = kwargs["messages"][-1]
         assert last["content"][-1]["cache_control"] == {"type": "ephemeral"}
+
+    @pytest.mark.asyncio
+    async def test_all_system_messages_reach_system_prompt(self):
+        """Every SYSTEM message is coalesced into the system param, not just the first.
+
+        The agent appends a compaction summary, short-session ledger, and
+        cache-cascade warnings as SYSTEM messages; ``_convert_messages``
+        drops all SYSTEM messages from the body, so losing the non-first
+        ones meant the compacted-history summary never reached the model.
+        """
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.SYSTEM, content="MAIN PROMPT"),
+            Message(role=Role.SYSTEM, content="[Conversation Summary] earlier work"),
+            Message(role=Role.USER, content="hi"),
+            Message(role=Role.SYSTEM, content="cache cascade detected"),
+        ]
+
+        kwargs = provider._build_kwargs(messages, tools=None, temperature=0.7, max_tokens=None)
+
+        system_text = kwargs["system"][0]["text"]
+        assert "MAIN PROMPT" in system_text
+        assert "[Conversation Summary] earlier work" in system_text
+        assert "cache cascade detected" in system_text
+        # SYSTEM notes are not duplicated into the message body — only the
+        # single user turn survives (carrying the history cache marker).
+        assert len(kwargs["messages"]) == 1
+        assert kwargs["messages"][0]["role"] == "user"
+        assert kwargs["messages"][0]["content"][0]["text"] == "hi"
+
+    @pytest.mark.asyncio
+    async def test_build_kwargs_skips_ephemeral_budget_message(self):
+        """When a budget note trails the conversation, the breakpoint stays on the real turn."""
+        provider = self._make_provider()
+        messages = [
+            Message(role=Role.SYSTEM, content="You are helpful."),
+            Message(role=Role.USER, content="real question"),
+            Message(role=Role.USER, content="[Context Budget] 10/200", ephemeral=True),
+        ]
+
+        kwargs = provider._build_kwargs(messages, tools=None, temperature=0.7, max_tokens=None)
+
+        api_messages = kwargs["messages"]
+        assert api_messages[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        # The trailing budget note is plain text with no breakpoint.
+        assert api_messages[1]["content"] == "[Context Budget] 10/200"
 
 
 class TestClaudeProviderStream:

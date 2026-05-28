@@ -46,6 +46,28 @@ class TestConvertMessages:
         assert system == "You are helpful."
         assert msgs == [{"role": "user", "content": "Hi"}]
 
+    def test_coalesces_all_system_messages(self):
+        """Every SYSTEM message is concatenated, not just the first or last.
+
+        The agent emits a compaction summary, short-session ledger, and
+        cascade warnings as additional SYSTEM messages; dropping them lost
+        the compacted-history context entirely.
+        """
+        p = _DummyProvider()
+        system, msgs = p._convert_messages(
+            [
+                Message(role=Role.SYSTEM, content="MAIN PROMPT"),
+                Message(role=Role.SYSTEM, content="[Conversation Summary] earlier work"),
+                Message(role=Role.USER, content="Hi"),
+                Message(role=Role.SYSTEM, content="[History Ledger] 3 calls"),
+            ]
+        )
+        assert system == (
+            "MAIN PROMPT\n\n[Conversation Summary] earlier work\n\n[History Ledger] 3 calls"
+        )
+        # The SYSTEM notes are not left in the message body.
+        assert msgs == [{"role": "user", "content": "Hi"}]
+
     def test_merges_consecutive_user_messages(self):
         """Some local backends reject consecutive same-role turns."""
         p = _DummyProvider()

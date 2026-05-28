@@ -4,6 +4,57 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **All SYSTEM messages now reach the model, not just one.**  Every
+  provider's message converter collapsed the conversation's multiple
+  SYSTEM messages down to a single one — Claude and Gemini kept the
+  *first*, the OpenAI-compatible path kept the *last* — and dropped the
+  rest from the request entirely.  Cantrip emits several SYSTEM messages
+  per request: the main system prompt, the **compaction summary** that
+  stands in for dropped history, the short-session **history ledger**,
+  and **cache-cascade warnings**.  The most damaging loss was the
+  compaction summary: after a long Claude session compacted, the summary
+  meant to replace the dropped transcript was itself silently discarded,
+  so the model kept only the last few raw messages and forgot the
+  compacted past.  ``LLMProvider._get_system_prompt`` and the
+  OpenAI-compatible ``_convert_messages`` now concatenate every SYSTEM
+  message's content (in order) into the system prompt; the common
+  single-system case is byte-for-byte unchanged.
+- **Prompt caching no longer defeated by the per-turn budget note.**
+  Anthropic prompt caching is prefix-keyed, so the cache breakpoint
+  must sit on byte-stable content.  ``_build_llm_messages`` appends a
+  ``[Context Budget] N / M tokens`` note as the final message every
+  turn, and ``ClaudeProvider._mark_last_message_for_caching`` was
+  placing the conversation-history breakpoint *on that note* — whose
+  token counts change every call.  The result: the message-history
+  prefix was re-created at full price on every tool round and every
+  turn (only the tools/system blocks could ever hit), and the marker
+  itself forced a 1.25x cache *write* on volatile content for no
+  payback.  ``Message`` gains an ``ephemeral`` flag (set on the budget
+  note); the breakpoint now lands on the last non-ephemeral message so
+  the stable history is cached and only the new turn's tokens are
+  billed at full input rate.
+- **Cache-eligibility warning now uses the correct 4096-token floor
+  for Opus 4.7 and Haiku 4.5.**  ``_CACHE_MIN_TOKENS_OPUS`` and
+  ``_CACHE_MIN_TOKENS_HAIKU`` were 2048, but both models require a
+  4096-token cached prefix; a 2.5–4k-token system prompt would
+  silently fail to cache with no warning.  Raised to 4096 to match
+  Anthropic's documented minimums (and the ~4100-token figure a live
+  Haiku bisect had already observed).
+
+### Changed
+- **Tools block now uses the 1-hour extended cache TTL.**  The tools
+  block is the most stable part of the request prefix, and Cantrip's
+  tool calls (``charmcraft pack``, ``juju deploy``/``wait``,
+  integration tests) routinely run longer than the 5-minute default
+  cache TTL — so without the extended TTL the tools cache expired
+  mid-turn and was re-created at full price.  The tools breakpoint now
+  carries ``cache_control: {type: ephemeral, ttl: "1h"}``; reads stay
+  at 0.1x and the 1h write premium (2x vs 1.25x) is recovered after a
+  single >5-minute gap.  System and message breakpoints stay on the
+  5-minute TTL until the system prompt is made byte-stable across
+  turns (tracked as a follow-up).
+
 ### Added
 - **``/review --severity`` and ``--name`` filters.**  Closes item 3
   of ``design/CHECKS.md``'s "Future work".  ``/review`` now accepts

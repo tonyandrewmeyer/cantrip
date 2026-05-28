@@ -576,7 +576,10 @@ class ContextManager:
             f"{body}\n"
             "</system_note>"
         )
-        return Message(role=Role.USER, content=framed)
+        # Marked ephemeral: the token counts change every turn, so a
+        # prefix-caching provider must keep its message breakpoint on the
+        # stable history before this note rather than on the note itself.
+        return Message(role=Role.USER, content=framed, ephemeral=True)
 
     def should_compact(self, messages: list[Message]) -> bool:
         """Return True if the conversation should be compacted.

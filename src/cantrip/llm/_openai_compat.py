@@ -141,9 +141,12 @@ class OpenAICompatBase(LLMProvider):
     def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
         """Convert messages to OpenAI chat API format.
 
-        Returns a (system_prompt, messages) tuple.  The system prompt is
-        extracted from the first SYSTEM message and returned separately
-        so callers can prepend it if the API expects a system role.
+        Returns a (system_prompt, messages) tuple.  Every SYSTEM message's
+        content is concatenated (in order) into the system prompt and
+        returned separately so callers can prepend it if the API expects a
+        system role.  The agent emits several SYSTEM messages per request
+        (main prompt, compaction summary, short-session ledger, cascade
+        warnings); keeping only one silently dropped the others.
 
         Consecutive user or assistant messages are merged into a single
         message because some local backends (notably Mediapipe in the
@@ -159,12 +162,13 @@ class OpenAICompatBase(LLMProvider):
                 f"Switch to a vision-capable model or drop the image attachments."
             )
 
-        system_prompt: str | None = None
+        system_parts: list[str] = []
         result: list[dict[str, Any]] = []
 
         for msg in messages:
             if msg.role == Role.SYSTEM:
-                system_prompt = msg.content
+                if msg.content:
+                    system_parts.append(msg.content)
                 continue
 
             if msg.role == Role.USER:
@@ -220,6 +224,7 @@ class OpenAICompatBase(LLMProvider):
                         }
                     )
 
+        system_prompt = "\n\n".join(system_parts) if system_parts else None
         return system_prompt, result
 
     @staticmethod

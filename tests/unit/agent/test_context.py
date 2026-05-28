@@ -292,6 +292,9 @@ class TestContextManagerBudget:
         budget = cm.build_budget_message(messages)
 
         assert budget.role == Role.USER
+        # Volatile per-turn content: flagged so the prefix-caching provider
+        # keeps its message breakpoint on the stable history, not this note.
+        assert budget.ephemeral is True
         assert "[Context Budget]" in budget.content
         assert "100 / 100,000" in budget.content
         assert "vf_1" in budget.content
