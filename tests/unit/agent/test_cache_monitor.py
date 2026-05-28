@@ -69,16 +69,56 @@ class TestCacheCascadeDetector:
         for _ in range(4):
             assert detector.observe(_create()) is None
 
-    def test_fresh_session_never_fires_without_prior_reads(self):
-        """A session that has never read from the cache can't cascade.
+    def test_early_creation_turns_are_tolerated(self):
+        """The opening turns may create without read while the charm settles."""
+        detector = CacheCascadeDetector()
+        # Four creates with no read yet — under the chronic threshold,
+        # so still quiet (warm-up is allowed).
+        for _ in range(4):
+            assert detector.observe(_create()) is None
 
-        The detector only warns on the "was working, now failing"
-        pattern — the first few turns after a prompt change are
-        allowed to create without being flagged.
+    def test_chronic_miss_fires_when_cache_never_reads(self):
+        """A cache that never reads trips the chronic warning at the threshold.
+
+        This is the blind spot the original detector had: it latched on
+        "have we ever read?" and so never fired for a cache that was
+        broken from turn one.
         """
         detector = CacheCascadeDetector()
-        for _ in range(10):
+        # Four creates: under threshold, quiet.
+        for _ in range(4):
             assert detector.observe(_create()) is None
+        # The fifth consecutive create with no read ever trips it.
+        warning = detector.observe(_create())
+        assert warning is not None
+        assert "never hit" in warning.lower()
+
+    def test_chronic_warning_fires_only_once(self):
+        """After the chronic warning fires, further creation turns stay quiet."""
+        detector = CacheCascadeDetector()
+        for _ in range(4):
+            detector.observe(_create())
+        assert detector.observe(_create()) is not None
+        for _ in range(4):
+            assert detector.observe(_create()) is None
+
+    def test_a_read_during_warmup_prevents_chronic(self):
+        """A read within the warm-up window latches the healthy path, not chronic.
+
+        Once the cache reads even once, the chronic branch can never fire;
+        only the cascade branch (was-reading-then-broke) applies.
+        """
+        detector = CacheCascadeDetector()
+        detector.observe(_create())
+        detector.observe(_create())
+        detector.observe(_read())  # cache started working
+        # Now four more creates: chronic can't fire (we have read), and
+        # cascade needs only three — so this is the cascade path.
+        assert detector.observe(_create()) is None
+        assert detector.observe(_create()) is None
+        warning = detector.observe(_create())
+        assert warning is not None
+        assert "cascade" in warning.lower()
 
     def test_read_turn_resets_streak(self):
         """A single read turn interrupts the creation streak."""

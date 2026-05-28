@@ -5,6 +5,15 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **Cache-cascade detector now also catches a cache that never worked.**
+  The detector only fired on the "was reading, then stopped" regression
+  — it latched on *have we ever read from the cache?*, so a cache that
+  was broken from the very first turn (prefix below the minimum cacheable
+  size, or a prompt that changes shape every turn) advanced the
+  creation streak forever without ever warning.  A second trigger now
+  fires when the cache has never produced a read after enough turns to
+  rule out normal warm-up, pointing at the likely cause (prefix too
+  small, or unstable tools/system prompt).
 - **Prompt-cache cost and hit-rate now survive a session resume.**  The
   per-request cache-read and cache-creation token counts lived only in
   in-memory accumulators, so on resume they reset to zero and ``/cost``
