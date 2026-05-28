@@ -140,3 +140,61 @@ class TestCacheMetricsEvent:
             )
         )
         assert events == []
+
+
+class TestSubagentCacheAccumulation:
+    """Subagent prompt-cache tokens fold into the session-level accumulators."""
+
+    def _make_agent(self) -> CantripAgent:
+        return CantripAgent(provider=FakeProvider([]))
+
+    def test_accumulate_adds_to_session_totals_and_publishes(self) -> None:
+        """Subagent cache tokens add to the totals and fire one metrics event."""
+        from cantrip.ui.events import EventType
+
+        agent = self._make_agent()
+        # Seed a main-loop turn so the accumulators start non-zero.
+        agent._record_usage(
+            Response(
+                content="",
+                usage={
+                    "prompt_tokens": 100,
+                    "completion_tokens": 10,
+                    "cache_creation_input_tokens": 1000,
+                    "cache_read_input_tokens": 2000,
+                },
+            )
+        )
+        events: list = []
+        agent.event_bus.subscribe(EventType.CACHE_METRICS_UPDATED, lambda e: events.append(e))
+
+        agent._accumulate_subagent_cache(cache_creation_tokens=500, cache_read_tokens=3000)
+
+        assert agent.cache_creation_tokens == 1500
+        assert agent.cache_read_tokens == 5000
+        assert len(events) == 1
+        assert events[0].payload["cache_creation_tokens"] == 1500
+        assert events[0].payload["cache_read_tokens"] == 5000
+
+    def test_accumulate_noop_without_cache_tokens(self) -> None:
+        """A subagent turn with no cache activity neither bumps nor publishes."""
+        from cantrip.ui.events import EventType
+
+        agent = self._make_agent()
+        events: list = []
+        agent.event_bus.subscribe(EventType.CACHE_METRICS_UPDATED, lambda e: events.append(e))
+
+        agent._accumulate_subagent_cache(cache_creation_tokens=0, cache_read_tokens=0)
+
+        assert agent.cache_creation_tokens == 0
+        assert agent.cache_read_tokens == 0
+        assert events == []
+
+    def test_subagent_cache_does_not_feed_cascade_detector(self) -> None:
+        """The cascade detector watches the main prefix only, not subagent turns."""
+        agent = self._make_agent()
+        # Many creation-only subagent folds must not trip the detector,
+        # which only observes main-loop usage via _record_usage.
+        for _ in range(10):
+            agent._accumulate_subagent_cache(cache_creation_tokens=1000, cache_read_tokens=0)
+        assert [m for m in agent.state.messages if m.role == Role.SYSTEM] == []

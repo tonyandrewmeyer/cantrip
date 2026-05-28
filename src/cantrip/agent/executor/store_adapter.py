@@ -20,6 +20,8 @@ class _SessionStoreAdapter:
         prompt_tokens: int,
         completion_tokens: int,
         category: str | None = None,
+        cache_read_tokens: int = 0,
+        cache_creation_tokens: int = 0,
     ) -> None:
         self._store.record_usage(
             provider=provider,
@@ -27,6 +29,8 @@ class _SessionStoreAdapter:
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             category=category,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
         )
 
     def save_tasks(self, tasks: list[AgentTask]) -> None:

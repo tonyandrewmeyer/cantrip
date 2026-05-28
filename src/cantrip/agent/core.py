@@ -537,6 +537,7 @@ class CantripAgent:
             event_bus=self._event_bus,
             publish_tool_invoked=self._publish_tool_invoked,
             publish_tool_invoked_pending=self._publish_tool_invoked_pending,
+            on_cache_usage=self._accumulate_subagent_cache,
         )
         self._triage_ctl = TriageController(
             state=self.state,
@@ -1124,6 +1125,31 @@ class CantripAgent:
         """
         self.cache_creation_tokens = max(0, cache_creation_tokens)
         self.cache_read_tokens = max(0, cache_read_tokens)
+
+    def _accumulate_subagent_cache(
+        self, cache_creation_tokens: int, cache_read_tokens: int
+    ) -> None:
+        """Fold a subagent turn's prompt-cache tokens into the session totals.
+
+        Subagents bill against the same session as the main loop, so their
+        cache reads and writes belong in the session-level accumulators
+        that ``/cost`` and the end-of-session summary read.  Persisted by
+        the executor's ``_record_usage`` too, so resume rehydration (which
+        sums every stored row) stays in step with the live counters.
+
+        The cascade detector is deliberately *not* fed here — it watches
+        the main conversation's prompt prefix, which subagents don't share.
+        """
+        if not cache_creation_tokens and not cache_read_tokens:
+            return
+        self.cache_creation_tokens += cache_creation_tokens
+        self.cache_read_tokens += cache_read_tokens
+        self._event_bus.publish(
+            ui_events.cache_metrics_updated(
+                cache_creation_tokens=self.cache_creation_tokens,
+                cache_read_tokens=self.cache_read_tokens,
+            )
+        )
 
     def _check_cache_cascade(self, usage: dict[str, int]) -> None:
         """Feed per-turn usage into the cache cascade detector.

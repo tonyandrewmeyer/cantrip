@@ -275,6 +275,8 @@ class TestUsageRecordingProviderIdentity:
             prompt_tokens=100,
             completion_tokens=20,
             category=None,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
         )
 
     def test_record_usage_falls_back_to_primary(self) -> None:
@@ -299,6 +301,8 @@ class TestUsageRecordingProviderIdentity:
             prompt_tokens=50,
             completion_tokens=10,
             category=None,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
         )
 
     def test_record_usage_passes_task_category(self) -> None:
@@ -327,6 +331,8 @@ class TestUsageRecordingProviderIdentity:
             prompt_tokens=100,
             completion_tokens=20,
             category="build",
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
         )
 
     def test_record_usage_ignores_non_string_category(self) -> None:
@@ -347,6 +353,56 @@ class TestUsageRecordingProviderIdentity:
         executor._record_usage(response)
 
         assert store.record_usage.call_args.kwargs["category"] is None
+
+    def test_record_usage_persists_and_forwards_cache_tokens(self) -> None:
+        """Subagent prompt-cache tokens are persisted and folded into the session totals."""
+        store = MagicMock()
+        store.record_event = MagicMock()
+        store.record_usage = MagicMock()
+        store.save_tasks = MagicMock()
+
+        folded: list[tuple[int, int]] = []
+        executor = _make_executor(
+            store=store,
+            on_cache_usage=lambda creation, read: folded.append((creation, read)),
+        )
+
+        response = Response(
+            content="done",
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "cache_read_input_tokens": 7000,
+                "cache_creation_input_tokens": 1500,
+            },
+            metadata={"_provider_name": "claude", "_provider_model": "claude-opus-4-7"},
+        )
+        executor._record_usage(response)
+
+        # Persisted to the store with the cache breakdown.
+        kwargs = store.record_usage.call_args.kwargs
+        assert kwargs["cache_read_tokens"] == 7000
+        assert kwargs["cache_creation_tokens"] == 1500
+        # Folded into the session accumulators as (creation, read).
+        assert folded == [(1500, 7000)]
+
+    def test_record_usage_skips_cache_callback_when_no_cache(self) -> None:
+        """A turn with no cache activity does not invoke the cache callback."""
+        store = MagicMock()
+        store.record_event = MagicMock()
+        store.record_usage = MagicMock()
+        store.save_tasks = MagicMock()
+
+        folded: list[tuple[int, int]] = []
+        executor = _make_executor(
+            store=store,
+            on_cache_usage=lambda creation, read: folded.append((creation, read)),
+        )
+
+        response = Response(content="done", usage={"prompt_tokens": 10, "completion_tokens": 5})
+        executor._record_usage(response)
+
+        assert folded == []
 
 
 class TestPermissionCallbackErrorSwallowing:

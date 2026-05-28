@@ -48,11 +48,15 @@ class ExecutorController:
         event_bus: ui_events.EventBus,
         publish_tool_invoked: Callable[..., None],
         publish_tool_invoked_pending: Callable[..., None],
+        on_cache_usage: Callable[[int, int], None] | None = None,
     ) -> None:
         self._state = state
         self._event_bus = event_bus
         self._publish_tool_invoked = publish_tool_invoked
         self._publish_tool_invoked_pending = publish_tool_invoked_pending
+        # Forwarded to the executor so subagent prompt-cache tokens reach
+        # the agent's session-level accumulators (see ``_record_usage``).
+        self._on_cache_usage = on_cache_usage
         self._executor: BackgroundExecutor | None = None
         # Phase 99.1: ``/pause`` and ``/resume`` set this flag so the
         # transient pause/resume around each chat turn doesn't accidentally
@@ -251,6 +255,7 @@ class ExecutorController:
             "on_tool_invoked_pending": _forward_subagent_tool_invoked_pending,
             "on_budget_exceeded": _forward_budget_exceeded,
             "on_rate_limited": _forward_rate_limited,
+            "on_cache_usage": self._on_cache_usage,
         }
         if max_concurrency is not None:
             kwargs["max_concurrency"] = max_concurrency

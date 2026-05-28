@@ -21,6 +21,7 @@ def _make_executor(
     light_provider: FakeProvider | None = None,
     on_task_done: Any = None,
     on_task_failed: Any = None,
+    on_cache_usage: Any = None,
 ) -> BackgroundExecutor:
     """Build a BackgroundExecutor with sensible defaults."""
     return BackgroundExecutor(
@@ -32,4 +33,5 @@ def _make_executor(
         light_provider=light_provider,
         on_task_done=on_task_done,
         on_task_failed=on_task_failed,
+        on_cache_usage=on_cache_usage,
     )

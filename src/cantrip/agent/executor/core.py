@@ -194,6 +194,7 @@ class BackgroundExecutor:
         on_tool_invoked_pending: ToolInvokedPendingCallback | None = None,
         on_budget_exceeded: BudgetExceededCallback = None,
         on_rate_limited: RateLimitedCallback = None,
+        on_cache_usage: Callable[[int, int], None] | None = None,
     ) -> None:
         self._queue = queue
         self._tools = tools
@@ -207,6 +208,10 @@ class BackgroundExecutor:
         self._hook_runner = hook_runner if hook_runner is not None else HookRunner()
         self._on_budget_exceeded = on_budget_exceeded
         self._on_rate_limited = on_rate_limited
+        # Folds each subagent turn's prompt-cache tokens into the agent's
+        # session-level accumulators so /cost counts subagent cache spend,
+        # not just the main conversation loop's.
+        self._on_cache_usage = on_cache_usage
         # Phase 80.3: compose the policy stack once per executor run to
         # read its ``max_calls_per_request`` cap.  The subagent's own
         # per-run enforcer still does tool-level ALLOW/DENY/REVIEW; the
@@ -1591,8 +1596,17 @@ class BackgroundExecutor:
         task's category into ``response.metadata`` so we record the
         correct model (even when the subagent used the light provider)
         and the right category for the Phase 31.4 cost breakdown.
+
+        Prompt-cache tokens are persisted alongside (so cost survives a
+        resume) and folded into the session-level accumulators via
+        ``on_cache_usage`` so ``/cost`` reflects subagent cache spend, not
+        just the main conversation loop's.
         """
-        if self._state_service and response.usage:
+        if not response.usage:
+            return
+        cache_read = response.usage.get("cache_read_input_tokens", 0) or 0
+        cache_creation = response.usage.get("cache_creation_input_tokens", 0) or 0
+        if self._state_service:
             provider_name = response.metadata.get("_provider_name", self._provider.name)
             model_name = response.metadata.get("_provider_model", self._provider.model_name)
             category = response.metadata.get("_task_category")
@@ -1602,7 +1616,11 @@ class BackgroundExecutor:
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
                 category=category if isinstance(category, str) else None,
+                cache_read_tokens=cache_read,
+                cache_creation_tokens=cache_creation,
             )
+        if self._on_cache_usage is not None and (cache_read or cache_creation):
+            self._on_cache_usage(cache_creation, cache_read)
 
     # -- Persistence ---------------------------------------------------------
 

@@ -5,6 +5,16 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **Subagent prompt-cache spend now counts toward cost and hit-rate.**
+  Only the main conversation loop fed the session-level cache
+  accumulators, so the cache reads and writes from autonomous subagents
+  (research, build, deploy, test) were invisible to ``/cost`` and the
+  session summary, and were not persisted.  Subagent turns now persist
+  their cache token counts and fold them into the session accumulators
+  via a callback — so resume rehydration (which sums every stored row)
+  stays in step with the live counters.  The cascade detector is
+  deliberately not fed from subagents: it watches the main conversation's
+  prompt prefix, which subagents do not share.
 - **Cache-cascade detector now also catches a cache that never worked.**
   The detector only fired on the "was reading, then stopped" regression
   — it latched on *have we ever read from the cache?*, so a cache that
