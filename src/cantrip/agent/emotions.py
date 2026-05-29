@@ -19,7 +19,7 @@ import logging
 import pathlib
 from importlib import resources
 
-from cantrip.agent.retry import complete_with_retry
+from cantrip.agent.policy.retry import complete_with_retry
 from cantrip.llm import base as llm
 
 log = logging.getLogger(__name__)

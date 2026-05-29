@@ -10,7 +10,6 @@ import subprocess
 import time
 from collections.abc import Callable
 
-from cantrip.agent import routing
 from cantrip.agent.context import lint_context
 from cantrip.agent.executor.git_service import _DefaultGitService
 from cantrip.agent.executor.policies import (
@@ -19,16 +18,17 @@ from cantrip.agent.executor.policies import (
 )
 from cantrip.agent.executor.store_adapter import _SessionStoreAdapter
 from cantrip.agent.git.worktree import WorktreeHandle, _DefaultWorktreeAllocator
-from cantrip.agent.goal_budget import check_budget
-from cantrip.agent.policy import (
+from cantrip.agent.policy import routing
+from cantrip.agent.policy.policy import (
     MCP_TOOL_PREFIX,
     ORG_WIDE_POLICY,
     compose_policies,
     discover_policies,
 )
+from cantrip.agent.policy.routing import RouteAction, route, snapshot_from_queue
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.race import race
-from cantrip.agent.routing import RouteAction, route, snapshot_from_queue
+from cantrip.agent.runtime.goal_budget import check_budget
 from cantrip.agent.safety.permissions import (
     PLAN_MODE_OVERLAY,
     PermissionDecision,

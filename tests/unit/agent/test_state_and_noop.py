@@ -6,8 +6,8 @@ import pathlib
 import pytest
 
 from cantrip.agent.executor import BackgroundExecutor
+from cantrip.agent.policy.routing import TaskSnapshot, snapshot_from_queue
 from cantrip.agent.queue import AgentTask, TaskCategory
-from cantrip.agent.routing import TaskSnapshot, snapshot_from_queue
 from cantrip.agent.state import (
     AgentState,
     Decision,

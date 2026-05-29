@@ -10,8 +10,8 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
 
-from cantrip.agent.preflight import CheckStatus
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.runtime.preflight import CheckStatus
 
 # Display order and labels for category groups.
 _CATEGORY_ORDER: list[tuple[TaskCategory, str]] = [

@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cantrip.agent.commands.slash import SlashResult
-from cantrip.agent.preflight import CheckStatus, PreflightEvent
+from cantrip.agent.runtime.preflight import CheckStatus, PreflightEvent
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.llm.base import Message, Role
 from cantrip.tui.app import CantripApp
@@ -151,7 +151,7 @@ class TestPreflightHandlers:
     async def test_start_bootstrap_skips_when_already_ready(self) -> None:
         p1, p2, mock_agent = _patch_app()
         # charm_type matches the default preset and prepare is fully ready.
-        from cantrip.agent.preflight import DEFAULT_PRESET
+        from cantrip.agent.runtime.preflight import DEFAULT_PRESET
 
         mock_agent.state.charm_type = DEFAULT_PRESET
         mock_agent.preflight_result.fully_ready = True

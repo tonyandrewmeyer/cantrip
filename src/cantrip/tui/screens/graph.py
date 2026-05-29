@@ -28,7 +28,7 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-from cantrip.agent import presets
+from cantrip.agent.runtime import presets
 from cantrip.tui import topology
 
 # Cycle order for the ``f`` binding; ``None`` means show every app.

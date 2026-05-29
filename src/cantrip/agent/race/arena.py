@@ -23,7 +23,7 @@ import random
 import secrets
 from typing import TYPE_CHECKING
 
-from cantrip.agent.retry import complete_with_retry
+from cantrip.agent.policy.retry import complete_with_retry
 from cantrip.llm.base import Message, Role
 
 if TYPE_CHECKING:

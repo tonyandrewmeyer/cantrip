@@ -9,8 +9,8 @@ import sqlite3
 import stat
 
 from cantrip.agent import design as design_mod
-from cantrip.agent.goal_budget import GoalBudget
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
+from cantrip.agent.runtime.goal_budget import GoalBudget
 from cantrip.agent.state import AgentState, Decision, load_shared_decisions
 
 log = logging.getLogger(__name__)
@@ -1455,7 +1455,7 @@ class SessionStore:
 
         Reads ``checkpoint_hit`` events whose detail carries
         ``prompt_tokens`` / ``completion_tokens`` (stamped by
-        :func:`cantrip.agent.durability.checkpoint` on
+        :func:`cantrip.agent.runtime.durability.checkpoint` on
         ``KIND_LLM_RESPONSE`` hits) and returns the running totals so
         ``/cost`` can show "cached from checkpoint" alongside the live
         token counts.  Tool hits contribute zero.
@@ -1660,7 +1660,7 @@ class SessionStore:
         Serialisation is the caller's responsibility — ``result_blob`` is
         stored verbatim in the ``result_blob`` BLOB column.  The
         roadmap's msgpack-or-JSON envelope lives one layer up in
-        :mod:`cantrip.agent.durability` so callers picking a different
+        :mod:`cantrip.agent.runtime.durability` so callers picking a different
         encoding aren't forced through an extra decode.
 
         The ``(task_id, step_name, ordinal)`` triple is unique — upsert
@@ -1680,7 +1680,7 @@ class SessionStore:
         """Return the stored row for ``(task_id, step_name, ordinal)`` or ``None``.
 
         Callers match on ``input_hash`` before trusting the blob —
-        :mod:`cantrip.agent.durability` wraps the raw row in a typed
+        :mod:`cantrip.agent.runtime.durability` wraps the raw row in a typed
         record and handles the invalidation path.
         """
         return self._db.execute(

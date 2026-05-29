@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from cantrip.agent.goal_budget import GoalBudget
+from cantrip.agent.runtime.goal_budget import GoalBudget
 from cantrip.agent.state import (
     AgentState,
     Decision,

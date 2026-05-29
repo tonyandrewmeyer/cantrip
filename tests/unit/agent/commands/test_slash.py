@@ -378,7 +378,7 @@ class TestBudget:
     def test_shows_summary_when_budget_set(
         self, memory_manager: MemoryManager, session_store: SessionStore
     ) -> None:
-        from cantrip.agent.goal_budget import GoalBudget
+        from cantrip.agent.runtime.goal_budget import GoalBudget
 
         budget = GoalBudget(max_iterations=10)
         agent = self._make_agent(memory_manager, session_store, budget=budget)
@@ -389,7 +389,7 @@ class TestBudget:
     def test_raise_iteration_cap_in_place(
         self, memory_manager: MemoryManager, session_store: SessionStore
     ) -> None:
-        from cantrip.agent.goal_budget import GoalBudget
+        from cantrip.agent.runtime.goal_budget import GoalBudget
 
         budget = GoalBudget(max_iterations=5)
         agent = self._make_agent(memory_manager, session_store, budget=budget)
@@ -410,7 +410,7 @@ class TestBudget:
     def test_clear_drops_budget(
         self, memory_manager: MemoryManager, session_store: SessionStore
     ) -> None:
-        from cantrip.agent.goal_budget import GoalBudget
+        from cantrip.agent.runtime.goal_budget import GoalBudget
 
         agent = self._make_agent(
             memory_manager, session_store, budget=GoalBudget(max_iterations=5)
@@ -423,8 +423,8 @@ class TestBudget:
         self, memory_manager: MemoryManager, session_store: SessionStore
     ) -> None:
         """Raising the cap moves budget-blocked tasks back to pending."""
-        from cantrip.agent.goal_budget import GoalBudget
         from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+        from cantrip.agent.runtime.goal_budget import GoalBudget
 
         blocked_task = AgentTask(id="t1", title="Build", category=TaskCategory.BUILD)
         other_blocked = AgentTask(id="t2", title="Wait", category=TaskCategory.BUILD)
@@ -487,8 +487,8 @@ class TestBudget:
     def test_summary_without_store_is_usage_unavailable(
         self, memory_manager: MemoryManager
     ) -> None:
-        from cantrip.agent.goal_budget import GoalBudget
         from cantrip.agent.queue import WorkQueue
+        from cantrip.agent.runtime.goal_budget import GoalBudget
 
         agent = SimpleNamespace(
             _memory_manager=memory_manager,

@@ -219,7 +219,7 @@ class TestCantripAgent:
         # disconnect error and the second returns a real reply.  Skip
         # the actual asyncio.sleep so the test stays fast.
         monkeypatch.setattr(
-            "cantrip.agent.retry.asyncio.sleep",
+            "cantrip.agent.policy.retry.asyncio.sleep",
             AsyncMock(return_value=None),
         )
 

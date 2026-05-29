@@ -315,7 +315,7 @@ def goal_budget_exceeded(*, task_id: str, reason: str) -> Event:
     trips so the TUI / Web can surface the hard-stop in the chat
     rather than leaving users to work out why the queue stalled.
     ``reason`` is the human-readable block string from
-    :func:`cantrip.agent.goal_budget.check_budget`.
+    :func:`cantrip.agent.runtime.goal_budget.check_budget`.
     """
     return Event(
         type=EventType.GOAL_BUDGET_EXCEEDED,

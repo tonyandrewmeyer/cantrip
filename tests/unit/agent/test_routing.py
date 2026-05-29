@@ -6,8 +6,7 @@ import itertools
 
 import pytest
 
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
-from cantrip.agent.routing import (
+from cantrip.agent.policy.routing import (
     RouteAction,
     RoutingDecision,
     TaskInfo,
@@ -16,6 +15,7 @@ from cantrip.agent.routing import (
     route,
     snapshot_from_queue,
 )
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 
 # ---------------------------------------------------------------------------
 # Helpers

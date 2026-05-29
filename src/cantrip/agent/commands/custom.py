@@ -38,7 +38,7 @@ from collections.abc import Mapping
 
 import yaml
 
-from cantrip.agent.declarative_retry import (
+from cantrip.agent.policy.declarative_retry import (
     RetryConfig,
     RetryConfigError,
     parse_retry_config,

@@ -329,14 +329,14 @@ class TestSubstratePrompt:
         assert "**Substrate**" not in result
 
     def test_substrate_section_absent_when_summary_is_empty(self):
-        from cantrip.agent.preflight import SubstrateSummary
+        from cantrip.agent.runtime.preflight import SubstrateSummary
 
         empty = SubstrateSummary(controllers=[], active_cloud="", microcloud_detected=False)
         result = build_system_prompt(substrate=empty)
         assert "**Substrate**" not in result
 
     def test_controllers_rendered_when_present(self):
-        from cantrip.agent.preflight import SubstrateSummary
+        from cantrip.agent.runtime.preflight import SubstrateSummary
 
         summary = SubstrateSummary(
             controllers=[
@@ -353,7 +353,7 @@ class TestSubstratePrompt:
         assert "Active cloud: localhost" in result
 
     def test_openstack_target_emits_design_hint(self):
-        from cantrip.agent.preflight import SubstrateSummary
+        from cantrip.agent.runtime.preflight import SubstrateSummary
 
         summary = SubstrateSummary(
             controllers=[
@@ -371,7 +371,7 @@ class TestSubstratePrompt:
         assert "neutron-api" in result
 
     def test_sunbeam_active_cloud_also_emits_openstack_hint(self):
-        from cantrip.agent.preflight import SubstrateSummary
+        from cantrip.agent.runtime.preflight import SubstrateSummary
 
         summary = SubstrateSummary(
             controllers=[], active_cloud="sunbeam", microcloud_detected=False
@@ -380,7 +380,7 @@ class TestSubstratePrompt:
         assert "OpenStack target" in result
 
     def test_microcloud_emits_microceph_hint(self):
-        from cantrip.agent.preflight import SubstrateSummary
+        from cantrip.agent.runtime.preflight import SubstrateSummary
 
         summary = SubstrateSummary(controllers=[], active_cloud="", microcloud_detected=True)
         result = build_system_prompt(substrate=summary)
@@ -390,7 +390,7 @@ class TestSubstratePrompt:
 
     def test_non_openstack_cloud_does_not_emit_openstack_hint(self):
         """A bare LXD controller doesn't trigger the OpenStack callout."""
-        from cantrip.agent.preflight import SubstrateSummary
+        from cantrip.agent.runtime.preflight import SubstrateSummary
 
         summary = SubstrateSummary(
             controllers=[{"name": "lxd", "cloud": "localhost", "is_k8s": False, "models": 0}],

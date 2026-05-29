@@ -9,8 +9,8 @@ flip a label and have the two surfaces drift apart.
 
 from __future__ import annotations
 
-from cantrip.agent.lifecycle import LIFECYCLE_LABELS, lifecycle_label
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.runtime.lifecycle import LIFECYCLE_LABELS, lifecycle_label
 
 
 def _task(

@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-from cantrip.agent.goal_budget import (
+from cantrip.agent.runtime.goal_budget import (
     BudgetUsage,
     GoalBudget,
     check_budget,
@@ -229,14 +229,14 @@ class TestFromCliArgs:
     def test_no_flags_no_env_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CANTRIP_MAX_ITERATIONS", raising=False)
         monkeypatch.delenv("CANTRIP_MAX_TOKENS", raising=False)
-        from cantrip.agent.goal_budget import from_cli_args
+        from cantrip.agent.runtime.goal_budget import from_cli_args
 
         assert from_cli_args() is None
 
     def test_cli_iterations_sets_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CANTRIP_MAX_ITERATIONS", raising=False)
         monkeypatch.delenv("CANTRIP_MAX_TOKENS", raising=False)
-        from cantrip.agent.goal_budget import from_cli_args
+        from cantrip.agent.runtime.goal_budget import from_cli_args
 
         budget = from_cli_args(max_iterations=20)
         assert budget is not None
@@ -245,7 +245,7 @@ class TestFromCliArgs:
     def test_env_iterations_sets_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CANTRIP_MAX_ITERATIONS", "50")
         monkeypatch.delenv("CANTRIP_MAX_TOKENS", raising=False)
-        from cantrip.agent.goal_budget import from_cli_args
+        from cantrip.agent.runtime.goal_budget import from_cli_args
 
         budget = from_cli_args()
         assert budget is not None
@@ -254,7 +254,7 @@ class TestFromCliArgs:
     def test_cli_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CANTRIP_MAX_ITERATIONS", "10")
         monkeypatch.delenv("CANTRIP_MAX_TOKENS", raising=False)
-        from cantrip.agent.goal_budget import from_cli_args
+        from cantrip.agent.runtime.goal_budget import from_cli_args
 
         budget = from_cli_args(max_iterations=100)
         assert budget is not None
@@ -263,7 +263,7 @@ class TestFromCliArgs:
     def test_max_tokens_splits_evenly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CANTRIP_MAX_ITERATIONS", raising=False)
         monkeypatch.delenv("CANTRIP_MAX_TOKENS", raising=False)
-        from cantrip.agent.goal_budget import from_cli_args
+        from cantrip.agent.runtime.goal_budget import from_cli_args
 
         budget = from_cli_args(max_tokens=10_000)
         assert budget is not None
@@ -274,7 +274,7 @@ class TestFromCliArgs:
     def test_non_integer_env_var_is_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CANTRIP_MAX_ITERATIONS", "not-a-number")
         monkeypatch.delenv("CANTRIP_MAX_TOKENS", raising=False)
-        from cantrip.agent.goal_budget import from_cli_args
+        from cantrip.agent.runtime.goal_budget import from_cli_args
 
         # Returns None because the only candidate (env var) was unparseable.
         assert from_cli_args() is None
@@ -282,6 +282,6 @@ class TestFromCliArgs:
     def test_negative_env_var_is_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CANTRIP_MAX_ITERATIONS", "-5")
         monkeypatch.delenv("CANTRIP_MAX_TOKENS", raising=False)
-        from cantrip.agent.goal_budget import from_cli_args
+        from cantrip.agent.runtime.goal_budget import from_cli_args
 
         assert from_cli_args() is None

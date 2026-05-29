@@ -7,7 +7,7 @@ from jubilant import statustypes
 from rich.panel import Panel
 from textual.widgets import OptionList
 
-from cantrip.agent import presets
+from cantrip.agent.runtime import presets
 from cantrip.tui import topology
 from cantrip.tui.screens.graph import (
     GraphScreen,

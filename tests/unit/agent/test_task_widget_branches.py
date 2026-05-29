@@ -22,8 +22,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cantrip.agent.preflight import CheckStatus
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.runtime.preflight import CheckStatus
 from cantrip.tui.widgets import tasks as tasks_widget
 from cantrip.tui.widgets.tasks import (
     TaskChecklistWidget,

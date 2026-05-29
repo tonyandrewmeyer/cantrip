@@ -8,7 +8,7 @@ The layering story lines up with the rest of the defence-in-depth
 stack in ``design/TOOLS.md``:
 
 * Phase 46 hooks run first — they can mutate arguments or veto.
-* Phase 80 :class:`~cantrip.agent.policy.GovernancePolicy` runs next —
+* Phase 80 :class:`~cantrip.agent.policy.policy.GovernancePolicy` runs next —
   coarse, category-scoped allow / deny / review.
 * Phase 68.2 (this module) runs on the *post-hook* arguments — it
   reads the command string the call is actually about to use, so a
@@ -643,7 +643,7 @@ def discover_permissions(
 
     Malformed files log a warning and are skipped rather than
     raising so a typo in one layer doesn't lock the user out — the
-    pattern matches :func:`cantrip.agent.policy.discover_policies`.
+    pattern matches :func:`cantrip.agent.policy.policy.discover_policies`.
     """
     layers: list[PermissionRuleset] = []
     if include_builtin:

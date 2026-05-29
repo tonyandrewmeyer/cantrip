@@ -335,7 +335,7 @@ class RunCommandTool(Tool):
         # subprocess fires.  Pattern match happens on ``parts`` (the
         # shlex-parsed argv) so flag-order and separator variations
         # still trip the regex.
-        from cantrip.agent.policy import (
+        from cantrip.agent.policy.policy import (
             compose_policies,
             destructive_command_check,
             discover_policies,

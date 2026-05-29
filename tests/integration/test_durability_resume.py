@@ -27,9 +27,9 @@ from typing import Any
 import pytest
 
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.durability import CheckpointStore
 from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.runtime.durability import CheckpointStore
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools.base import Tool, ToolResult

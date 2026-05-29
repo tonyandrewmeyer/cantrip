@@ -18,7 +18,7 @@ from cantrip import update
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.context import context_providers
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.preflight import DEFAULT_PRESET, PreflightEvent
+from cantrip.agent.runtime.preflight import DEFAULT_PRESET, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError, Role
 from cantrip.ui import events as ui_events
@@ -1066,7 +1066,7 @@ def run_web(args: argparse.Namespace) -> int:
     )
 
     # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
-    from cantrip.agent.goal_budget import from_cli_args
+    from cantrip.agent.runtime.goal_budget import from_cli_args
 
     agent.state.goal_budget = from_cli_args(
         max_iterations=getattr(args, "max_iterations", None),

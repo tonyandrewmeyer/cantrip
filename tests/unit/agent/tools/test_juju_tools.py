@@ -263,7 +263,7 @@ class TestJujuDestroyModelTool:
         """Phase 80.5: bypass the destructive gate for tests that target the
         underlying juju logic, not the gate itself."""
         with mock.patch(
-            "cantrip.agent.policy.destructive_gate",
+            "cantrip.agent.policy.policy.destructive_gate",
             return_value=(True, ""),
         ) as patched:
             yield patched

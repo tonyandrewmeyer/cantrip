@@ -28,7 +28,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from cantrip.agent.retry import complete_with_retry
+from cantrip.agent.policy.retry import complete_with_retry
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.agent.tools.base import Tool, ToolResult

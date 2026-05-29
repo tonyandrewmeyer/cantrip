@@ -56,7 +56,7 @@ class StatusBar(Widget):
     # (default ``"build"``) keeps the normal theme.
     mode: reactive[str] = reactive("build", init=False)
     # Phase 99.1 / 99.4: lifecycle label projected by
-    # :func:`cantrip.agent.lifecycle.lifecycle_label`.  ``"running"`` is
+    # :func:`cantrip.agent.runtime.lifecycle.lifecycle_label`.  ``"running"`` is
     # the default and renders no badge; the other four
     # (``"paused"``, ``"done"``, ``"blocked"``, ``"budget-limited"``)
     # add a labelled badge plus a per-state CSS tint.
@@ -64,7 +64,7 @@ class StatusBar(Widget):
 
     # Phase 99.4: badge text for each lifecycle label.  Closed mapping
     # so a future label addition has to update both this table and the
-    # ``LIFECYCLE_LABELS`` tuple in ``cantrip.agent.lifecycle``.
+    # ``LIFECYCLE_LABELS`` tuple in ``cantrip.agent.runtime.lifecycle``.
     _LIFECYCLE_BADGES = {
         "running": "",
         "paused": "PAUSED",

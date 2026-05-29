@@ -408,7 +408,7 @@ class TestDegradedEnvironment:
         self, monkeypatch: pytest.MonkeyPatch
     ):
         """With no ``juju`` (and no concierge) on PATH, preflight reports it rather than throwing."""
-        from cantrip.agent import preflight
+        from cantrip.agent.runtime import preflight
 
         monkeypatch.setattr(preflight, "_concierge_available", lambda: False)
         monkeypatch.setattr(preflight.shutil, "which", lambda _name: None)

@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-from cantrip.agent.policy import (
+from cantrip.agent.policy.policy import (
     BUILTIN_POLICIES,
     DESTRUCTIVE_TOOLS,
     ORG_WIDE_POLICY,
@@ -361,7 +361,7 @@ class TestDiscoverPolicies:
         config_dir.mkdir()
         (config_dir / "good.yaml").write_text("name: good\n")
         (config_dir / "bad.yaml").write_text("max_calls_per_request: -1\n")
-        with caplog.at_level(logging.WARNING, logger="cantrip.agent.policy"):
+        with caplog.at_level(logging.WARNING, logger="cantrip.agent.policy.policy"):
             policies = discover_policies(user_config_dir=config_dir)
         assert [p.name for p in policies] == ["good"]
         assert any("bad.yaml" in rec.getMessage() for rec in caplog.records)

@@ -27,7 +27,6 @@ import shutil
 import subprocess
 from collections.abc import Callable
 
-from cantrip.agent import presets
 from cantrip.agent.context import lint_context
 from cantrip.agent.context.context_providers import (
     ArgStyle,
@@ -39,6 +38,7 @@ from cantrip.agent.context.context_providers import (
     chars_for_tokens,
     truncate,
 )
+from cantrip.agent.runtime import presets
 from cantrip.agent.tools import charmhub as charmhub_tools
 from cantrip.agent.tools import web as web_tools
 from cantrip.codeintel import CodeIntelQuery
@@ -613,7 +613,7 @@ class PresetProvider:
     Bare ``@preset`` lists the available shapes; ``@preset cos-lite``
     expands the full layout (apps grouped by semantic layer, then every
     relation edge with its interface name and a one-line description).
-    Reads :mod:`cantrip.agent.presets` directly — no network, no Juju —
+    Reads :mod:`cantrip.agent.runtime.presets` directly — no network, no Juju —
     so the agent can pull the canonical edge list while composing
     relations instead of re-deriving it from web docs.
     """

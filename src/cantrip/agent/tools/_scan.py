@@ -355,7 +355,7 @@ class ScanResult:
     Path B classification (custom application) doesn't require an
     LLM round-trip just to enumerate manifests.  Kept JSON-friendly
     so it slots into the checkpoint envelope (Phase 52.3) if the
-    scan itself gets wrapped by :func:`cantrip.agent.durability.checkpoint`
+    scan itself gets wrapped by :func:`cantrip.agent.runtime.durability.checkpoint`
     in the future.
     """
 

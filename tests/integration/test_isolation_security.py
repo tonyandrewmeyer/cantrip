@@ -31,7 +31,7 @@ from cantrip.agent.git.worktree import (
     _WORKTREES_DIRNAME,
     _DefaultWorktreeAllocator,
 )
-from cantrip.agent.policy import GovernancePolicy
+from cantrip.agent.policy.policy import GovernancePolicy
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.safety.permissions import (
     BUILTIN_PERMISSIONS,
@@ -296,7 +296,7 @@ class TestRunCommandSandboxAndDestructiveGate:
     ) -> None:
         """``rm -rf`` is refused unless a policy opts into destructive commands."""
         # Hermetic: no discovered policy => no destructive approval.
-        monkeypatch.setattr("cantrip.agent.policy.discover_policies", lambda **_kw: [])
+        monkeypatch.setattr("cantrip.agent.policy.policy.discover_policies", lambda **_kw: [])
         sandbox = _RecordingSandbox()
         tool = RunCommandTool(
             allowlist=frozenset({"rm", "make"}),
@@ -317,7 +317,7 @@ class TestRunCommandSandboxAndDestructiveGate:
     ) -> None:
         """A policy with ``approve_destructive`` lets the gated shape through."""
         monkeypatch.setattr(
-            "cantrip.agent.policy.discover_policies",
+            "cantrip.agent.policy.policy.discover_policies",
             lambda **_kw: [GovernancePolicy(name="unattended", approve_destructive=True)],
         )
         sandbox = _RecordingSandbox()

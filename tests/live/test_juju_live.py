@@ -128,7 +128,7 @@ class TestJujuLive:
         destroy path actually destroys, so we approve via monkeypatch
         rather than touching the user's real policy directory.
         """
-        from cantrip.agent import policy
+        from cantrip.agent.policy import policy
 
         monkeypatch.setattr(policy, "destructive_gate", lambda _tool_name, **_kwargs: (True, ""))
 

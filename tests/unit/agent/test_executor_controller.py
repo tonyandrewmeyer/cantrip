@@ -251,7 +251,7 @@ class TestPurgeTaskCheckpoints:
     def test_no_store_skips_purge(self) -> None:
         ctl, _bus, _pti, _ptip = _make_controller()
         _exec, kwargs = _start_with_mock_executor(ctl, store=None)
-        with patch("cantrip.agent.durability.CheckpointStore") as cls:
+        with patch("cantrip.agent.runtime.durability.CheckpointStore") as cls:
             kwargs["on_task_done"](AgentTask(id="t1", title="x", category=TaskCategory.BUILD))
         cls.assert_not_called()
 
@@ -259,7 +259,7 @@ class TestPurgeTaskCheckpoints:
         store = MagicMock()
         ctl, _bus, _pti, _ptip = _make_controller()
         _exec, kwargs = _start_with_mock_executor(ctl, store=store)
-        with patch("cantrip.agent.durability.CheckpointStore") as cls:
+        with patch("cantrip.agent.runtime.durability.CheckpointStore") as cls:
             instance = cls.return_value
             kwargs["on_task_done"](AgentTask(id="abc", title="x", category=TaskCategory.BUILD))
         cls.assert_called_once_with(store)
@@ -269,7 +269,7 @@ class TestPurgeTaskCheckpoints:
         store = MagicMock()
         ctl, _bus, _pti, _ptip = _make_controller()
         _exec, kwargs = _start_with_mock_executor(ctl, store=store)
-        with patch("cantrip.agent.durability.CheckpointStore") as cls:
+        with patch("cantrip.agent.runtime.durability.CheckpointStore") as cls:
             cls.return_value.on_task_done.side_effect = sqlite3.Error("db gone")
             # Must not raise.
             kwargs["on_task_done"](AgentTask(id="abc", title="x", category=TaskCategory.BUILD))

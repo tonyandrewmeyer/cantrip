@@ -13,7 +13,7 @@ import pathlib
 
 import pytest
 
-from cantrip.agent.policy import (
+from cantrip.agent.policy.policy import (
     ORG_WIDE_POLICY,
     GovernancePolicy,
     PolicyAction,

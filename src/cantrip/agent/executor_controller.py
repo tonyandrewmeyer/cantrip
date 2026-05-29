@@ -148,7 +148,7 @@ class ExecutorController:
             # queue draining empty flips it to ``done``.  The Web UI
             # pulls this off the same ``status_bar_changed`` event the
             # TUI already listens to.
-            from cantrip.agent.lifecycle import lifecycle_label
+            from cantrip.agent.runtime.lifecycle import lifecycle_label
 
             label = lifecycle_label(
                 user_paused=self._user_paused,
@@ -167,7 +167,7 @@ class ExecutorController:
         def _purge_task_checkpoints(task: AgentTask) -> None:
             if store is None:
                 return
-            from cantrip.agent.durability import CheckpointStore
+            from cantrip.agent.runtime.durability import CheckpointStore
 
             try:
                 CheckpointStore(store).on_task_done(task.id)

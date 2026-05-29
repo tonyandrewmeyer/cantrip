@@ -511,7 +511,7 @@ def run_print(args: argparse.Namespace) -> int:
 
     # Per-goal budget (Phase 55.3) and snapshot opt-out (Phase 68.1)
     # behave the same in print mode as in the REPL.
-    from cantrip.agent.goal_budget import from_cli_args
+    from cantrip.agent.runtime.goal_budget import from_cli_args
     from cantrip.agent.snapshots import snapshots_enabled
 
     agent.state.goal_budget = from_cli_args(

@@ -10,8 +10,8 @@ from unittest import mock
 import pytest
 
 from cantrip import cli
-from cantrip.agent.preflight import CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.runtime.preflight import CheckStatus, PreflightEvent
 from cantrip.llm.base import (
     ProviderError,
     ProviderOverloadedError,

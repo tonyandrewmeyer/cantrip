@@ -7,7 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from cantrip.agent.durability import (
+from cantrip.agent.runtime.durability import (
     KEEP_CHECKPOINTS_ENV,
     KIND_BYTES,
     KIND_LLM_RESPONSE,
@@ -485,7 +485,7 @@ class TestCheckpointWrapper:
             calls += 1
             return "fresh"
 
-        with caplog.at_level(logging.WARNING, logger="cantrip.agent.durability"):
+        with caplog.at_level(logging.WARNING, logger="cantrip.agent.runtime.durability"):
             result = await checkpoint(ctx, "llm_turn", fn, input_hash="new-hash")
         assert result == "fresh"
         assert calls == 1

@@ -9,14 +9,14 @@ import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from cantrip.agent import durability as durability_mod
     from cantrip.agent import store as store_mod
+    from cantrip.agent.runtime import durability as durability_mod
 
 
 def _checkpoints(args: argparse.Namespace) -> int:
     """Dispatch ``cantrip checkpoints {list,show,delete}`` (Phase 52.5)."""
-    from cantrip.agent import durability as durability_mod
     from cantrip.agent import store as store_mod
+    from cantrip.agent.runtime import durability as durability_mod
 
     db_path: pathlib.Path = args.db
     if not db_path.exists():
@@ -90,7 +90,7 @@ def _checkpoints_show(
     import base64
     import json
 
-    from cantrip.agent.durability import KIND_BYTES
+    from cantrip.agent.runtime.durability import KIND_BYTES
 
     record = cps.get(task_id, step_name, ordinal)
     if record is None:

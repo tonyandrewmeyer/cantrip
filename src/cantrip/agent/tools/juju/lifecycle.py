@@ -634,7 +634,7 @@ class JujuDestroyModelTool(Tool):
 
         # Phase 80.5: destructive-command gate.  Refuses unless a
         # policy layer explicitly sets ``approve_destructive: true``.
-        from cantrip.agent.policy import destructive_gate
+        from cantrip.agent.policy.policy import destructive_gate
 
         approved, reason = destructive_gate("juju_destroy_model")
         if not approved:
@@ -743,7 +743,7 @@ class JujuRemoveApplicationTool(Tool):
 
         # Phase 80.5: destructive-command gate.  Refuses unless a
         # policy layer explicitly sets ``approve_destructive: true``.
-        from cantrip.agent.policy import destructive_gate
+        from cantrip.agent.policy.policy import destructive_gate
 
         approved, reason = destructive_gate("juju_remove_application")
         if not approved:

@@ -175,7 +175,7 @@ class TestPreflightIntegration:
     @pytest.mark.asyncio
     async def test_warm_up_detects_juju(self) -> None:
         """Preflight warm-up finds the juju CLI."""
-        from cantrip.agent.preflight import PreflightRunner
+        from cantrip.agent.runtime.preflight import PreflightRunner
         from cantrip.agent.state import AgentState
 
         state = AgentState()
@@ -186,7 +186,7 @@ class TestPreflightIntegration:
     @pytest.mark.asyncio
     async def test_prepare_finds_controller(self) -> None:
         """Preflight prepare finds a healthy controller."""
-        from cantrip.agent.preflight import PreflightRunner
+        from cantrip.agent.runtime.preflight import PreflightRunner
         from cantrip.agent.state import AgentState
 
         state = AgentState()

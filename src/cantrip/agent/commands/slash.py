@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 
 from cantrip import diagnostics
 from cantrip import update as update_module
-from cantrip.agent import declarative_retry
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.commands import mcp as mcp_commands
 from cantrip.agent.commands.budget import handle_budget
@@ -44,6 +43,7 @@ from cantrip.agent.commands.recipes import handle_recipe
 from cantrip.agent.commands.share import share_to_gist
 from cantrip.agent.commands.transcript import export_transcript
 from cantrip.agent.memory import commands as memory_commands
+from cantrip.agent.policy import declarative_retry
 from cantrip.agent.queue import AgentTask, TaskCategory
 from cantrip.agent.safety import sandbox
 from cantrip.llm.base import Message, ProviderError, Role

@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
-from cantrip.agent.declarative_retry import (
+from cantrip.agent.policy.declarative_retry import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
     FileExistsCheck,

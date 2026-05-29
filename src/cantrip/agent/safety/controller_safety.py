@@ -38,7 +38,7 @@ import logging
 import pathlib
 from typing import Any
 
-from cantrip.agent.preflight import _K8S_CLOUDS, _run_juju_json
+from cantrip.agent.runtime.preflight import _K8S_CLOUDS, _run_juju_json
 
 log = logging.getLogger(__name__)
 

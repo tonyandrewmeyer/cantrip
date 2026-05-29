@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 
 #: Prefix on ``AgentTask.blocked_reason`` written by
-#: :func:`cantrip.agent.goal_budget.check_budget` when a budget cap
+#: :func:`cantrip.agent.runtime.goal_budget.check_budget` when a budget cap
 #: trips.  Used by :func:`lifecycle_label` to distinguish the
 #: actionable "budget-limited" state from a generic "blocked" state
 #: without coupling to the SQLite event log.

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cantrip.agent.preflight import (
+from cantrip.agent.runtime.preflight import (
     DEFAULT_PRESET,
     CheckStatus,
     PreflightCallback,
@@ -119,8 +119,8 @@ class TestWarmUp:
         runner = PreflightRunner(state, callback=events.append)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=False),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.warm_up()
 
@@ -143,13 +143,13 @@ class TestWarmUp:
         runner = PreflightRunner(state, callback=events.append)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.warm_up()
 
@@ -164,13 +164,13 @@ class TestWarmUp:
         runner = PreflightRunner(state)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(1, "", "install error"),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.warm_up()
 
@@ -184,13 +184,13 @@ class TestWarmUp:
         runner = PreflightRunner(state)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 side_effect=TimeoutError,
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.warm_up()
 
@@ -204,8 +204,8 @@ class TestWarmUp:
         runner = PreflightRunner(state, callback=None)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=False),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.warm_up()
 
@@ -225,8 +225,8 @@ class TestWarmUp:
         runner = PreflightRunner(state, callback=_flaky)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=False),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.warm_up()
 
@@ -242,13 +242,13 @@ class TestWarmUp:
         runner = PreflightRunner(state, callback=events.append)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             await runner.warm_up()
 
@@ -274,9 +274,9 @@ class TestWarmUp:
             return await original_run(*args, timeout=timeout)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
-            patch("cantrip.agent.preflight._run_concierge", side_effect=capture_path),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._run_concierge", side_effect=capture_path),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             await runner.warm_up()
 
@@ -308,16 +308,16 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
-            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
-            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.runtime.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -334,12 +334,12 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(1, "", "boom"),
             ),
@@ -357,12 +357,12 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 side_effect=TimeoutError,
             ),
@@ -380,20 +380,20 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
             patch(
-                "cantrip.agent.preflight._juju_controller_healthy",
+                "cantrip.agent.runtime.preflight._juju_controller_healthy",
                 return_value=False,
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.bootstrap("machine")
 
@@ -433,18 +433,18 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
-            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", cli_error),
             patch(
-                "cantrip.agent.preflight.asyncio.to_thread", new_callable=AsyncMock
+                "cantrip.agent.runtime.preflight.asyncio.to_thread", new_callable=AsyncMock
             ) as mock_to_thread,
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             await runner.bootstrap("machine")
 
@@ -476,26 +476,26 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
-            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", Exception),
             patch(
-                "cantrip.agent.preflight.asyncio.to_thread",
+                "cantrip.agent.runtime.preflight.asyncio.to_thread",
                 new_callable=AsyncMock,
                 side_effect=[[], cos_status, None],
             ) as mock_to_thread,
-            patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight._model_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -540,25 +540,25 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
-            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", cli_error),
             patch(
-                "cantrip.agent.preflight.asyncio.to_thread",
+                "cantrip.agent.runtime.preflight.asyncio.to_thread",
                 side_effect=selective_to_thread,
             ),
-            patch("cantrip.agent.preflight._model_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight._model_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -597,24 +597,26 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
-            patch("cantrip.agent.preflight.jubilant.CLIError", cli_error),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", cli_error),
             patch(
-                "cantrip.agent.preflight.asyncio.to_thread",
+                "cantrip.agent.runtime.preflight.asyncio.to_thread",
                 side_effect=selective_to_thread,
             ),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=False
+            ),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
+            patch(
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -643,26 +645,26 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
-            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", Exception),
             patch(
-                "cantrip.agent.preflight.asyncio.to_thread",
+                "cantrip.agent.runtime.preflight.asyncio.to_thread",
                 new_callable=AsyncMock,
                 side_effect=[[], cos_status],
             ),
-            patch("cantrip.agent.preflight._model_is_k8s", return_value=False),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight._model_is_k8s", return_value=False),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -683,15 +685,15 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
-            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -706,13 +708,13 @@ class TestBootstrap:
         runner = PreflightRunner(state)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result1 = await runner.warm_up()
             result2 = await runner.warm_up()
@@ -753,25 +755,27 @@ class TestBootstrap:
 
         with (
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju", side_effect=juju_factory),
-            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", side_effect=juju_factory),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", Exception),
             patch(
-                "cantrip.agent.preflight.asyncio.to_thread",
+                "cantrip.agent.runtime.preflight.asyncio.to_thread",
                 new_callable=AsyncMock,
                 side_effect=[[], "concierge-k8s", cos_status],
             ),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=False
+            ),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
+            patch(
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(True, None),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.bootstrap("machine")
 
@@ -802,18 +806,18 @@ class TestPrepare:
         mock_juju_cls.return_value = mock_juju_instance
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
-            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
-            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
-            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.runtime.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
         ):
             result = await runner.prepare("k8s")
 
@@ -831,8 +835,8 @@ class TestPrepare:
         runner = PreflightRunner(state)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=False),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.prepare()
 
@@ -846,8 +850,8 @@ class TestPrepare:
         runner = PreflightRunner(state, callback=events.append)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=False),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=False),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.prepare("k8s")
 
@@ -866,18 +870,18 @@ class TestPrepare:
         runner = PreflightRunner(state)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(1, "", "boom"),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.prepare("k8s")
 
@@ -892,18 +896,18 @@ class TestPrepare:
         runner = PreflightRunner(state)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 side_effect=TimeoutError,
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.prepare("machine")
 
@@ -917,20 +921,20 @@ class TestPrepare:
         runner = PreflightRunner(state)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
             patch(
-                "cantrip.agent.preflight._juju_controller_healthy",
+                "cantrip.agent.runtime.preflight._juju_controller_healthy",
                 return_value=False,
             ),
         ):
@@ -947,15 +951,17 @@ class TestPrepare:
 
         run_concierge_mock = AsyncMock(return_value=(0, "", ""))
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
-            patch("cantrip.agent.preflight._concierge_already_running", return_value=False),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._concierge_already_running", return_value=False
+            ),
+            patch(
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, "localhost"),
             ),
-            patch("cantrip.agent.preflight._run_concierge", run_concierge_mock),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight._run_concierge", run_concierge_mock),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.prepare("k8s")
 
@@ -973,10 +979,10 @@ class TestPrepare:
 
         run_concierge_mock = AsyncMock(return_value=(0, "", ""))
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
-            patch("cantrip.agent.preflight._concierge_already_running", return_value=True),
-            patch("cantrip.agent.preflight._run_concierge", run_concierge_mock),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_already_running", return_value=True),
+            patch("cantrip.agent.runtime.preflight._run_concierge", run_concierge_mock),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
         ):
             result = await runner.prepare("k8s")
 
@@ -997,16 +1003,16 @@ class TestPrepare:
         mock_juju_cls.return_value.status.return_value = mock_status
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/snap/bin/juju"),
-            patch("cantrip.agent.preflight.jubilant.Juju", mock_juju_cls),
-            patch("cantrip.agent.preflight.jubilant.CLIError", Exception),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/snap/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", mock_juju_cls),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", Exception),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
         ):
             await runner.prepare("k8s")
 

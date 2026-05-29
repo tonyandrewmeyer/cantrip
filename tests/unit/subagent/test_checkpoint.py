@@ -23,14 +23,14 @@ from collections.abc import Iterator
 
 import pytest
 
-from cantrip.agent.durability import (
+from cantrip.agent.queue import AgentTask, TaskCategory
+from cantrip.agent.runtime.durability import (
     KIND_LLM_RESPONSE,
     KIND_TOOL_RESULT,
     CheckpointStore,
     response_from_dict,
     tool_result_from_dict,
 )
-from cantrip.agent.queue import AgentTask, TaskCategory
 from cantrip.agent.store import SessionStore
 from cantrip.agent.subagent import Subagent, SubagentContext
 from cantrip.agent.tools.base import ToolResult
@@ -274,7 +274,7 @@ class TestInputHashInvalidation:
         p2.model_name = "beta"
         sub2 = Subagent(_ctx(), tools=[], provider=p2, store=store)
 
-        with caplog.at_level(logging.WARNING, logger="cantrip.agent.durability"):
+        with caplog.at_level(logging.WARNING, logger="cantrip.agent.runtime.durability"):
             result2 = await sub2.run()
 
         # The stored checkpoint was invalidated — we got the fresh provider's output.
@@ -353,7 +353,7 @@ class TestResumeUX:
     ) -> None:
         """``CANTRIP_NO_RESUME=1`` re-runs live even with a populated store."""
         # Pre-populate a fake LLM turn in the store.
-        from cantrip.agent.durability import KIND_LLM_RESPONSE, CheckpointStore
+        from cantrip.agent.runtime.durability import KIND_LLM_RESPONSE, CheckpointStore
 
         cps = CheckpointStore(store)
         cps.record(
@@ -388,7 +388,7 @@ class TestResumeUX:
     ) -> None:
         for raw in ("1", "true", "TRUE", "yes", "on"):
             monkeypatch.setenv("CANTRIP_NO_RESUME", raw)
-            from cantrip.agent.durability import should_skip_resume
+            from cantrip.agent.runtime.durability import should_skip_resume
 
             assert should_skip_resume(), f"{raw!r} should disable resume"
 
@@ -396,7 +396,7 @@ class TestResumeUX:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from cantrip.agent.durability import should_skip_resume
+        from cantrip.agent.runtime.durability import should_skip_resume
 
         for raw in ("0", "false", "", "no"):
             monkeypatch.setenv("CANTRIP_NO_RESUME", raw)
@@ -410,7 +410,7 @@ class TestResumeUX:
         """A task with pre-existing checkpoints gets a 'resuming from step N' signal."""
         import logging
 
-        from cantrip.agent.durability import KIND_LLM_RESPONSE, CheckpointStore
+        from cantrip.agent.runtime.durability import KIND_LLM_RESPONSE, CheckpointStore
 
         cps = CheckpointStore(store)
         # Prime two prior checkpoints for task-1.

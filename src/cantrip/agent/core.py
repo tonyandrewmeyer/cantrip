@@ -51,12 +51,7 @@ from cantrip.agent.planner import (
     plan_improvement_fixes,
     plan_one_shot_build,
 )
-from cantrip.agent.preflight import (
-    DEFAULT_PRESET,
-    PreflightCallback,
-    PreflightResult,
-    PreflightRunner,
-)
+from cantrip.agent.policy.retry import RetryEvent, complete_with_retry, stream_with_retry
 from cantrip.agent.prompts import agents_md, build_dynamic_context, build_system_prompt
 from cantrip.agent.provider_manager import ProviderManager
 from cantrip.agent.queue import (
@@ -68,7 +63,12 @@ from cantrip.agent.queue import (
 )
 from cantrip.agent.race.arena_controller import ArenaController
 from cantrip.agent.repo_map_service import RepoMapService
-from cantrip.agent.retry import RetryEvent, complete_with_retry, stream_with_retry
+from cantrip.agent.runtime.preflight import (
+    DEFAULT_PRESET,
+    PreflightCallback,
+    PreflightResult,
+    PreflightRunner,
+)
 from cantrip.agent.safety import sandbox
 from cantrip.agent.safety.confirmations import ConfirmationsController
 from cantrip.agent.safety.permissions import (
@@ -708,13 +708,13 @@ class CantripAgent:
         """Phase 99.4: project current state into a Codex-style lifecycle label.
 
         Returns one of ``running`` / ``paused`` / ``done`` / ``blocked`` /
-        ``budget-limited`` per :func:`cantrip.agent.lifecycle.lifecycle_label`.
+        ``budget-limited`` per :func:`cantrip.agent.runtime.lifecycle.lifecycle_label`.
         Read-only — every input lives on existing fields, so callers can
         invoke this on every task / pause / budget event without worrying
         about mutating state.  The TUI status bar and the Web UI status
         indicator both call this so the two surfaces never disagree.
         """
-        from cantrip.agent.lifecycle import lifecycle_label
+        from cantrip.agent.runtime.lifecycle import lifecycle_label
 
         return lifecycle_label(
             user_paused=self._executor_ctl.user_paused,
@@ -1413,7 +1413,7 @@ class CantripAgent:
         if self._substrate_cache is not None:
             return self._substrate_cache or None
         try:
-            from cantrip.agent.preflight import substrate_summary
+            from cantrip.agent.runtime.preflight import substrate_summary
 
             self._substrate_cache = substrate_summary()
         except Exception:  # noqa: BLE001 - never block the prompt on a probe error.

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cantrip.agent.goal_budget import GoalBudget, format_summary, measure_usage
+from cantrip.agent.runtime.goal_budget import GoalBudget, format_summary, measure_usage
 
 if TYPE_CHECKING:
     from cantrip.agent.core import CantripAgent

@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from cantrip.agent.policy import GovernancePolicy
+from cantrip.agent.policy.policy import GovernancePolicy
 from cantrip.agent.tools.environment import (
     ConciergePrepareTool,
     ConciergeRestoreTool,
@@ -497,14 +497,14 @@ class TestConciergeRestoreTool:
     def approve_destructive(self):
         """Make ``discover_policies`` return a layer with destructive opt-in."""
         return mock.patch(
-            "cantrip.agent.policy.discover_policies",
+            "cantrip.agent.policy.policy.discover_policies",
             return_value=[GovernancePolicy(name="approve", approve_destructive=True)],
         )
 
     @pytest.fixture
     def deny_destructive(self):
         """Make ``discover_policies`` return no opt-in layers."""
-        return mock.patch("cantrip.agent.policy.discover_policies", return_value=[])
+        return mock.patch("cantrip.agent.policy.policy.discover_policies", return_value=[])
 
     @pytest.mark.asyncio
     async def test_concierge_not_installed(self, tool):

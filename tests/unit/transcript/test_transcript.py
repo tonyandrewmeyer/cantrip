@@ -125,12 +125,12 @@ class TestLoadTranscript:
 
     def test_load_transcript_populates_checkpoints(self, tmp_path):
         """Phase 52.5: checkpoints for included tasks land in TranscriptData."""
-        from cantrip.agent.durability import (
+        from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+        from cantrip.agent.runtime.durability import (
             KIND_LLM_RESPONSE,
             KIND_TOOL_RESULT,
             CheckpointStore,
         )
-        from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 
         path = tmp_path / ".cantrip"
         store = SessionStore(path)

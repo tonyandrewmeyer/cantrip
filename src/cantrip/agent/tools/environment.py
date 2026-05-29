@@ -409,7 +409,7 @@ class ConciergeRestoreTool(Tool):
         # Gate behind the destructive-policy layer.  Restore tears down
         # the controller and provider snaps — operators must opt in
         # ahead of time on a session-by-session basis.
-        from cantrip.agent.policy import compose_policies, discover_policies
+        from cantrip.agent.policy.policy import compose_policies, discover_policies
 
         composed = compose_policies(*discover_policies())
         if not composed.approve_destructive:

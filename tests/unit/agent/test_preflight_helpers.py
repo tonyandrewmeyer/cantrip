@@ -1,4 +1,4 @@
-"""Coverage backfill for ``cantrip.agent.preflight`` helpers and branches.
+"""Coverage backfill for ``cantrip.agent.runtime.preflight`` helpers and branches.
 
 The existing :mod:`tests.unit.agent.test_preflight` covers the runner's
 happy-paths via heavy ``mock.patch`` blocks but leaves the module-level
@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cantrip.agent.preflight import (
+from cantrip.agent.runtime.preflight import (
     CheckStatus,
     PreflightEvent,
     PreflightResult,
@@ -68,14 +68,14 @@ class TestRunJujuJson:
     """``_run_juju_json`` is the shared envelope for discovery callers."""
 
     def test_returns_none_when_juju_missing(self) -> None:
-        with patch("cantrip.agent.preflight.shutil.which", return_value=None):
+        with patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None):
             assert _run_juju_json(["status"]) is None
 
     def test_returns_none_on_non_zero_rc(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(returncode=1, stdout=""),
             ),
         ):
@@ -83,9 +83,9 @@ class TestRunJujuJson:
 
     def test_returns_none_on_timeout(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="juju", timeout=1),
             ),
         ):
@@ -93,9 +93,9 @@ class TestRunJujuJson:
 
     def test_returns_none_on_oserror(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 side_effect=OSError("boom"),
             ),
         ):
@@ -103,9 +103,9 @@ class TestRunJujuJson:
 
     def test_returns_none_on_invalid_json(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(returncode=0, stdout="not json"),
             ),
         ):
@@ -115,9 +115,9 @@ class TestRunJujuJson:
         # ``juju ... --format=json`` callers all expect dict-shaped output;
         # a list would be a juju-CLI-shape change worth the explicit None.
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(returncode=0, stdout=json.dumps(["a", "b"])),
             ),
         ):
@@ -125,9 +125,9 @@ class TestRunJujuJson:
 
     def test_returns_dict_on_happy_path(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(
                     returncode=0,
                     stdout=json.dumps({"controllers": {"x": {}}}),
@@ -146,24 +146,24 @@ class TestModelIsK8s:
     """Detects whether a model lives on a CAAS (Kubernetes) cloud."""
 
     def test_false_when_juju_returns_nothing(self) -> None:
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=None):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=None):
             assert _model_is_k8s("cos") is False
 
     def test_true_when_first_model_is_caas(self) -> None:
         payload = {"cos": {"model-type": "caas"}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _model_is_k8s("cos") is True
 
     def test_false_when_first_model_is_iaas(self) -> None:
         payload = {"cos": {"model-type": "iaas"}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _model_is_k8s("cos") is False
 
     def test_handles_controller_qualified_name(self) -> None:
         # ``juju show-model controller:cos`` keys the result on the bare
         # model name regardless of the syntax used.
         payload = {"cos": {"model-type": "caas"}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _model_is_k8s("concierge-k8s:cos") is True
 
 
@@ -176,22 +176,22 @@ class TestCurrentControllerIsK8s:
     """Inspects the active controller's cloud field."""
 
     def test_false_when_no_data(self) -> None:
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=None):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=None):
             assert _current_controller_is_k8s() is False
 
     def test_true_for_microk8s(self) -> None:
         payload = {"current": {"details": {"cloud": "microk8s"}}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _current_controller_is_k8s() is True
 
     def test_true_for_k8s(self) -> None:
         payload = {"current": {"details": {"cloud": "k8s"}}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _current_controller_is_k8s() is True
 
     def test_false_for_lxd(self) -> None:
         payload = {"current": {"details": {"cloud": "localhost"}}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _current_controller_is_k8s() is False
 
 
@@ -204,7 +204,7 @@ class TestFindK8sController:
     """Returns the first registered K8s controller (or None)."""
 
     def test_returns_none_when_no_data(self) -> None:
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=None):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=None):
             assert _find_k8s_controller() is None
 
     def test_finds_microk8s_controller(self) -> None:
@@ -214,12 +214,12 @@ class TestFindK8sController:
                 "k8s": {"cloud": "microk8s"},
             }
         }
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _find_k8s_controller() == "k8s"
 
     def test_returns_none_when_only_iaas_controllers(self) -> None:
         payload = {"controllers": {"lxd": {"cloud": "localhost"}}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _find_k8s_controller() is None
 
 
@@ -232,7 +232,7 @@ class TestListControllers:
     """Surface used by the multi-controller preflight summary."""
 
     def test_empty_when_no_data(self) -> None:
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=None):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=None):
             assert list_controllers() == []
 
     def test_normalises_controller_records(self) -> None:
@@ -242,7 +242,7 @@ class TestListControllers:
                 "lxd": {"cloud": "localhost", "model-count": 1},
             }
         }
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             entries = list_controllers()
         assert entries == [
             {"name": "k8s", "cloud": "microk8s", "is_k8s": True, "models": 3},
@@ -259,16 +259,16 @@ class TestCreateModelOnController:
     """``add-model -c controller`` wrapper for cross-controller flows."""
 
     def test_returns_failure_when_juju_missing(self) -> None:
-        with patch("cantrip.agent.preflight.shutil.which", return_value=None):
+        with patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None):
             rc, stderr = _create_model_on_controller("cos", "k8s-ctrl")
         assert rc == 1
         assert "juju CLI not found" in stderr
 
     def test_success_returns_zero(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(returncode=0, stderr=""),
             ),
         ):
@@ -278,9 +278,9 @@ class TestCreateModelOnController:
 
     def test_failure_returns_juju_stderr(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(returncode=2, stderr="permission denied"),
             ),
         ):
@@ -290,9 +290,9 @@ class TestCreateModelOnController:
 
     def test_timeout_is_translated_to_failure(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="juju", timeout=1),
             ),
         ):
@@ -302,9 +302,9 @@ class TestCreateModelOnController:
 
     def test_oserror_is_translated_to_failure(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 side_effect=OSError("permission denied"),
             ),
         ):
@@ -326,7 +326,7 @@ class TestSetupCosCrossModelOffers:
     """Best-effort offer creation for cross-model COS integrations."""
 
     def test_returns_empty_when_juju_missing(self) -> None:
-        with patch("cantrip.agent.preflight.shutil.which", return_value=None):
+        with patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None):
             assert _setup_cos_cross_model_offers("cos") == []
 
     def test_creates_offers_for_present_apps(self) -> None:
@@ -342,9 +342,9 @@ class TestSetupCosCrossModelOffers:
         offer_fail = _completed(returncode=1)
 
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 side_effect=[
                     status,
                     offer_ok,
@@ -367,9 +367,9 @@ class TestSetupCosCrossModelOffers:
 
     def test_skips_app_when_status_fails(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(returncode=1, stdout=""),
             ),
         ):
@@ -377,9 +377,9 @@ class TestSetupCosCrossModelOffers:
 
     def test_skips_app_when_status_raises_subprocess_error(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="juju", timeout=1),
             ),
         ):
@@ -387,9 +387,9 @@ class TestSetupCosCrossModelOffers:
 
     def test_skips_app_when_status_returns_invalid_json(self) -> None:
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=_completed(returncode=0, stdout="not json"),
             ),
         ):
@@ -401,9 +401,9 @@ class TestSetupCosCrossModelOffers:
         # firing an offer.
         status = _completed(returncode=0, stdout=_status_payload("unrelated-app"))
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 return_value=status,
             ),
         ):
@@ -422,8 +422,8 @@ class TestSetupCosCrossModelOffers:
             raise OSError("offer failed")
 
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
-            patch("cantrip.agent.preflight.subprocess.run", side_effect=fake_run),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.subprocess.run", side_effect=fake_run),
         ):
             assert _setup_cos_cross_model_offers("cos") == []
 
@@ -446,9 +446,9 @@ class TestRunnerSkipBranches:
         runner = PreflightRunner(AgentState(), callback=events.append)
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
-            patch("cantrip.agent.preflight._concierge_already_running", return_value=True),
-            patch("cantrip.agent.preflight.shutil.which", return_value=None),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
+            patch("cantrip.agent.runtime.preflight._concierge_already_running", return_value=True),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None),
         ):
             result = await runner.warm_up()
 
@@ -460,7 +460,9 @@ class TestRunnerSkipBranches:
     @pytest.mark.asyncio
     async def test_bootstrap_skips_when_concierge_already_running(self) -> None:
         runner = PreflightRunner(AgentState())
-        with patch("cantrip.agent.preflight._concierge_already_running", return_value=True):
+        with patch(
+            "cantrip.agent.runtime.preflight._concierge_already_running", return_value=True
+        ):
             result = await runner.bootstrap("k8s")
         assert any("already running" in e for e in result.errors)
         assert result.controller_ready is False
@@ -469,9 +471,11 @@ class TestRunnerSkipBranches:
     async def test_bootstrap_mismatched_cloud_aborts(self) -> None:
         runner = PreflightRunner(AgentState())
         with (
-            patch("cantrip.agent.preflight._concierge_already_running", return_value=False),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._concierge_already_running", return_value=False
+            ),
+            patch(
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, "localhost"),
             ),
@@ -484,13 +488,15 @@ class TestRunnerSkipBranches:
     async def test_bootstrap_provisioned_but_controller_unhealthy(self) -> None:
         runner = PreflightRunner(AgentState())
         with (
-            patch("cantrip.agent.preflight._concierge_already_running", return_value=False),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._concierge_already_running", return_value=False
+            ),
+            patch(
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(True, None),
             ),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=False),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=False),
         ):
             result = await runner.bootstrap("k8s")
         assert result.controller_ready is False
@@ -511,24 +517,26 @@ class TestRunnerSkipBranches:
         cos_juju.status.return_value = cos_status
 
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
-            patch("cantrip.agent.preflight._concierge_already_running", return_value=False),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._concierge_already_running", return_value=False
+            ),
+            patch(
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(False, None),
             ),
             patch(
-                "cantrip.agent.preflight._run_concierge",
+                "cantrip.agent.runtime.preflight._run_concierge",
                 new_callable=AsyncMock,
                 return_value=(0, "ok", ""),
             ),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=True),
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True),
-            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
-            patch("cantrip.agent.preflight.jubilant.Juju", return_value=cos_juju),
-            patch("cantrip.agent.preflight.jubilant.CLIError", _CLIError),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=True),
+            patch("cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True),
+            patch("cantrip.agent.runtime.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", return_value=cos_juju),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", _CLIError),
         ):
             result = await runner.prepare("k8s")
 
@@ -540,15 +548,17 @@ class TestRunnerSkipBranches:
     async def test_prepare_provisioned_but_controller_unhealthy(self) -> None:
         runner = PreflightRunner(AgentState())
         with (
-            patch("cantrip.agent.preflight._concierge_available", return_value=True),
-            patch("cantrip.agent.preflight._concierge_already_running", return_value=False),
+            patch("cantrip.agent.runtime.preflight._concierge_available", return_value=True),
             patch(
-                "cantrip.agent.preflight._is_already_provisioned",
+                "cantrip.agent.runtime.preflight._concierge_already_running", return_value=False
+            ),
+            patch(
+                "cantrip.agent.runtime.preflight._is_already_provisioned",
                 new_callable=AsyncMock,
                 return_value=(True, None),
             ),
-            patch("cantrip.agent.preflight._juju_controller_healthy", return_value=False),
-            patch("cantrip.agent.preflight.shutil.which", return_value="/bin/juju"),
+            patch("cantrip.agent.runtime.preflight._juju_controller_healthy", return_value=False),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/bin/juju"),
         ):
             result = await runner.prepare("k8s")
         assert result.controller_ready is False
@@ -568,8 +578,8 @@ class TestEnsureCosCreatePaths:
         default_juju.add_model = MagicMock()
 
         with (
-            patch("cantrip.agent.preflight.jubilant.Juju", return_value=default_juju),
-            patch("cantrip.agent.preflight.jubilant.CLIError", _CLIError),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", return_value=default_juju),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", _CLIError),
         ):
             juju = await runner._create_cos_model("cos", cos_controller=None)
 
@@ -585,8 +595,8 @@ class TestEnsureCosCreatePaths:
         default_juju.add_model = MagicMock(side_effect=_CLIError("boom"))
 
         with (
-            patch("cantrip.agent.preflight.jubilant.Juju", return_value=default_juju),
-            patch("cantrip.agent.preflight.jubilant.CLIError", _CLIError),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju", return_value=default_juju),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", _CLIError),
         ):
             juju = await runner._create_cos_model("cos", cos_controller=None)
 
@@ -599,11 +609,11 @@ class TestEnsureCosCreatePaths:
 
         with (
             patch(
-                "cantrip.agent.preflight._create_model_on_controller",
+                "cantrip.agent.runtime.preflight._create_model_on_controller",
                 return_value=(0, ""),
             ),
-            patch("cantrip.agent.preflight.jubilant.Juju") as juju_cls,
-            patch("cantrip.agent.preflight.jubilant.CLIError", _CLIError),
+            patch("cantrip.agent.runtime.preflight.jubilant.Juju") as juju_cls,
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", _CLIError),
         ):
             juju = await runner._create_cos_model("cos", cos_controller="k8s")
 
@@ -615,7 +625,7 @@ class TestEnsureCosCreatePaths:
         runner = PreflightRunner(AgentState())
 
         with patch(
-            "cantrip.agent.preflight._create_model_on_controller",
+            "cantrip.agent.runtime.preflight._create_model_on_controller",
             return_value=(1, "denied"),
         ):
             juju = await runner._create_cos_model("cos", cos_controller="k8s")
@@ -640,10 +650,10 @@ class TestEnsureCosCreatePaths:
         # by passing ``cos_controller=None``.
         with (
             patch(
-                "cantrip.agent.preflight.jubilant.Juju",
+                "cantrip.agent.runtime.preflight.jubilant.Juju",
                 side_effect=[cos_juju, post_create],
             ),
-            patch("cantrip.agent.preflight.jubilant.CLIError", _CLIError),
+            patch("cantrip.agent.runtime.preflight.jubilant.CLIError", _CLIError),
             patch.object(
                 runner,
                 "_create_cos_model",
@@ -662,9 +672,11 @@ class TestEnsureCosCreatePaths:
         runner.result.cos_controller = "k8s"
 
         with (
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
             patch(
-                "cantrip.agent.preflight._setup_cos_cross_model_offers",
+                "cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=False
+            ),
+            patch(
+                "cantrip.agent.runtime.preflight._setup_cos_cross_model_offers",
                 return_value=["k8s:cos.grafana:dash", "k8s:cos.prometheus:rrw"],
             ),
         ):
@@ -681,9 +693,11 @@ class TestEnsureCosCreatePaths:
         runner.result.cos_controller = "k8s"
 
         with (
-            patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=False),
             patch(
-                "cantrip.agent.preflight._setup_cos_cross_model_offers",
+                "cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=False
+            ),
+            patch(
+                "cantrip.agent.runtime.preflight._setup_cos_cross_model_offers",
                 return_value=[],
             ),
         ):
@@ -698,7 +712,9 @@ class TestEnsureCosCreatePaths:
     async def test_create_cos_offers_skipped_when_current_controller_is_k8s(self) -> None:
         runner = PreflightRunner(AgentState())
         # cos_controller stays None — the early-return guard fires first.
-        with patch("cantrip.agent.preflight._current_controller_is_k8s", return_value=True):
+        with patch(
+            "cantrip.agent.runtime.preflight._current_controller_is_k8s", return_value=True
+        ):
             events: list[PreflightEvent] = []
             runner._callback = events.append
             await runner._create_cos_offers("cos")
@@ -716,51 +732,51 @@ class TestDetectMicroCloud:
     """``detect_microcloud`` checks for the locally-installed snap."""
 
     def test_returns_false_when_snap_missing(self) -> None:
-        from cantrip.agent.preflight import detect_microcloud
+        from cantrip.agent.runtime.preflight import detect_microcloud
 
-        with patch("cantrip.agent.preflight.shutil.which", return_value=None):
+        with patch("cantrip.agent.runtime.preflight.shutil.which", return_value=None):
             assert detect_microcloud() is False
 
     def test_returns_true_when_snap_list_succeeds(self) -> None:
-        from cantrip.agent.preflight import detect_microcloud
+        from cantrip.agent.runtime.preflight import detect_microcloud
 
         fake_proc = MagicMock(returncode=0, stdout="microcloud  1/stable  …\n", stderr="")
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
-            patch("cantrip.agent.preflight.subprocess.run", return_value=fake_proc),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch("cantrip.agent.runtime.preflight.subprocess.run", return_value=fake_proc),
         ):
             assert detect_microcloud() is True
 
     def test_returns_false_when_snap_list_fails(self) -> None:
-        from cantrip.agent.preflight import detect_microcloud
+        from cantrip.agent.runtime.preflight import detect_microcloud
 
         fake_proc = MagicMock(
             returncode=1, stdout="", stderr="error: snap 'microcloud' not installed"
         )
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
-            patch("cantrip.agent.preflight.subprocess.run", return_value=fake_proc),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch("cantrip.agent.runtime.preflight.subprocess.run", return_value=fake_proc),
         ):
             assert detect_microcloud() is False
 
     def test_swallows_timeout(self) -> None:
-        from cantrip.agent.preflight import detect_microcloud
+        from cantrip.agent.runtime.preflight import detect_microcloud
 
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/usr/bin/snap"),
             patch(
-                "cantrip.agent.preflight.subprocess.run",
+                "cantrip.agent.runtime.preflight.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="snap", timeout=5),
             ),
         ):
             assert detect_microcloud() is False
 
     def test_swallows_oserror(self) -> None:
-        from cantrip.agent.preflight import detect_microcloud
+        from cantrip.agent.runtime.preflight import detect_microcloud
 
         with (
-            patch("cantrip.agent.preflight.shutil.which", return_value="/usr/bin/snap"),
-            patch("cantrip.agent.preflight.subprocess.run", side_effect=OSError("boom")),
+            patch("cantrip.agent.runtime.preflight.shutil.which", return_value="/usr/bin/snap"),
+            patch("cantrip.agent.runtime.preflight.subprocess.run", side_effect=OSError("boom")),
         ):
             assert detect_microcloud() is False
 
@@ -769,25 +785,25 @@ class TestCurrentControllerCloud:
     """``_current_controller_cloud`` extracts the cloud-name of the active controller."""
 
     def test_returns_empty_when_juju_returns_nothing(self) -> None:
-        from cantrip.agent.preflight import _current_controller_cloud
+        from cantrip.agent.runtime.preflight import _current_controller_cloud
 
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=None):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=None):
             assert _current_controller_cloud() == ""
 
     def test_returns_cloud_when_present(self) -> None:
-        from cantrip.agent.preflight import _current_controller_cloud
+        from cantrip.agent.runtime.preflight import _current_controller_cloud
 
         payload = {"my-controller": {"details": {"cloud": "openstack"}}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _current_controller_cloud() == "openstack"
 
     def test_returns_empty_when_details_missing(self) -> None:
-        from cantrip.agent.preflight import _current_controller_cloud
+        from cantrip.agent.runtime.preflight import _current_controller_cloud
 
         # No ``details`` key — old controller versions used a different shape;
         # be tolerant rather than crashing on it.
         payload = {"my-controller": {"foo": "bar"}}
-        with patch("cantrip.agent.preflight._run_juju_json", return_value=payload):
+        with patch("cantrip.agent.runtime.preflight._run_juju_json", return_value=payload):
             assert _current_controller_cloud() == ""
 
 
@@ -795,17 +811,20 @@ class TestSubstrateSummary:
     """``substrate_summary`` composes the three substrate probes."""
 
     def test_openstack_target_flag_set_by_active_cloud(self) -> None:
-        from cantrip.agent.preflight import substrate_summary
+        from cantrip.agent.runtime.preflight import substrate_summary
 
         with (
             patch(
-                "cantrip.agent.preflight.list_controllers",
+                "cantrip.agent.runtime.preflight.list_controllers",
                 return_value=[
                     {"name": "openstack", "cloud": "openstack", "is_k8s": False, "models": 1}
                 ],
             ),
-            patch("cantrip.agent.preflight._current_controller_cloud", return_value="openstack"),
-            patch("cantrip.agent.preflight.detect_microcloud", return_value=False),
+            patch(
+                "cantrip.agent.runtime.preflight._current_controller_cloud",
+                return_value="openstack",
+            ),
+            patch("cantrip.agent.runtime.preflight.detect_microcloud", return_value=False),
         ):
             summary = substrate_summary()
         assert summary.active_cloud == "openstack"
@@ -815,26 +834,31 @@ class TestSubstrateSummary:
 
     def test_sunbeam_cloud_also_flags_openstack_target(self) -> None:
         """Sunbeam exposes the same OpenStack tenant API — treat as one."""
-        from cantrip.agent.preflight import substrate_summary
+        from cantrip.agent.runtime.preflight import substrate_summary
 
         with (
-            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
-            patch("cantrip.agent.preflight._current_controller_cloud", return_value="sunbeam"),
-            patch("cantrip.agent.preflight.detect_microcloud", return_value=False),
+            patch("cantrip.agent.runtime.preflight.list_controllers", return_value=[]),
+            patch(
+                "cantrip.agent.runtime.preflight._current_controller_cloud", return_value="sunbeam"
+            ),
+            patch("cantrip.agent.runtime.preflight.detect_microcloud", return_value=False),
         ):
             summary = substrate_summary()
         assert summary.openstack_target is True
 
     def test_lxd_controller_with_microcloud_snap(self) -> None:
-        from cantrip.agent.preflight import substrate_summary
+        from cantrip.agent.runtime.preflight import substrate_summary
 
         with (
             patch(
-                "cantrip.agent.preflight.list_controllers",
+                "cantrip.agent.runtime.preflight.list_controllers",
                 return_value=[{"name": "lxd", "cloud": "localhost", "is_k8s": False, "models": 0}],
             ),
-            patch("cantrip.agent.preflight._current_controller_cloud", return_value="localhost"),
-            patch("cantrip.agent.preflight.detect_microcloud", return_value=True),
+            patch(
+                "cantrip.agent.runtime.preflight._current_controller_cloud",
+                return_value="localhost",
+            ),
+            patch("cantrip.agent.runtime.preflight.detect_microcloud", return_value=True),
         ):
             summary = substrate_summary()
         assert summary.openstack_target is False
@@ -842,12 +866,12 @@ class TestSubstrateSummary:
         assert summary.active_cloud == "localhost"
 
     def test_no_controllers_returns_empty_summary(self) -> None:
-        from cantrip.agent.preflight import substrate_summary
+        from cantrip.agent.runtime.preflight import substrate_summary
 
         with (
-            patch("cantrip.agent.preflight.list_controllers", return_value=[]),
-            patch("cantrip.agent.preflight._current_controller_cloud", return_value=""),
-            patch("cantrip.agent.preflight.detect_microcloud", return_value=False),
+            patch("cantrip.agent.runtime.preflight.list_controllers", return_value=[]),
+            patch("cantrip.agent.runtime.preflight._current_controller_cloud", return_value=""),
+            patch("cantrip.agent.runtime.preflight.detect_microcloud", return_value=False),
         ):
             summary = substrate_summary()
         assert summary.controllers == []

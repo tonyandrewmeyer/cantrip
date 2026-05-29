@@ -15,7 +15,19 @@ from importlib import resources
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.audit import AUDIT_FILENAME, AuditAction, AuditWriter, make_entry
-from cantrip.agent.durability import (
+from cantrip.agent.planner import SPRINT_BUILD_PREFIX
+from cantrip.agent.policy.policy import (
+    ORG_WIDE_POLICY,
+    GovernancePolicy,
+    PolicyAction,
+    PolicyEnforcer,
+    category_policy,
+    compose_policies,
+    discover_policies,
+)
+from cantrip.agent.policy.retry import complete_with_retry
+from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
+from cantrip.agent.runtime.durability import (
     KIND_LLM_RESPONSE,
     KIND_TOOL_RESULT,
     CheckpointCtx,
@@ -28,18 +40,6 @@ from cantrip.agent.durability import (
     tool_result_from_dict,
     tool_result_to_dict,
 )
-from cantrip.agent.planner import SPRINT_BUILD_PREFIX
-from cantrip.agent.policy import (
-    ORG_WIDE_POLICY,
-    GovernancePolicy,
-    PolicyAction,
-    PolicyEnforcer,
-    category_policy,
-    compose_policies,
-    discover_policies,
-)
-from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
-from cantrip.agent.retry import complete_with_retry
 from cantrip.agent.safety.permissions import (
     PermissionDecision,
     PermissionManager,
@@ -614,7 +614,7 @@ def _build_policy_enforcer(
     a layered policy stack — organisation floor + per-category
     allow-list + discovered user / per-charm files.  Every layer uses
     the ``PolicyEnforcer`` primitive from
-    :mod:`cantrip.agent.policy` so the composition semantics stay
+    :mod:`cantrip.agent.policy.policy` so the composition semantics stay
     visible at one module.
 
     Categories that never had an entry in the old ``_CATEGORY_TOOLS``

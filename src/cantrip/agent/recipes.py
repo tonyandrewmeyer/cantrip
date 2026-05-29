@@ -52,7 +52,7 @@ import jinja2
 import jinja2.sandbox
 import yaml
 
-from cantrip.agent.declarative_retry import (
+from cantrip.agent.policy.declarative_retry import (
     RetryConfig,
     RetryConfigError,
     parse_retry_config,
@@ -142,7 +142,7 @@ class RecipeError(ValueError):
 
     Subclass of :class:`ValueError` so existing ``except ValueError``
     handlers still catch it — same posture as
-    :class:`cantrip.agent.declarative_retry.RetryConfigError`.
+    :class:`cantrip.agent.policy.declarative_retry.RetryConfigError`.
     """
 
 

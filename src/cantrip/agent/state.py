@@ -14,7 +14,7 @@ from cantrip.llm.base import Message
 
 if TYPE_CHECKING:
     from cantrip.agent.context.context import LedgerEntry
-    from cantrip.agent.goal_budget import GoalBudget
+    from cantrip.agent.runtime.goal_budget import GoalBudget
 
 log = logging.getLogger(__name__)
 

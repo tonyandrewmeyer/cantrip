@@ -12,12 +12,12 @@ from collections.abc import Iterator
 
 import pytest
 
-from cantrip.agent.durability import (
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.agent.runtime.durability import (
     KIND_LLM_RESPONSE,
     KIND_TOOL_RESULT,
     CheckpointStore,
 )
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.store import SessionStore
 from cantrip.main import (
     _checkpoints_delete,

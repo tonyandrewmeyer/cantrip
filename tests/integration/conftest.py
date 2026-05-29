@@ -189,14 +189,14 @@ def fast_executor(monkeypatch: pytest.MonkeyPatch):
 def fast_retry(monkeypatch: pytest.MonkeyPatch):
     """Collapse the transient-error backoff so retry paths run instantly.
 
-    :func:`cantrip.agent.retry.complete_with_retry` bakes
+    :func:`cantrip.agent.policy.retry.complete_with_retry` bakes
     ``TRANSIENT_RETRIES`` into its default argument, so the retry
     *count* can't be changed after import — but the backoff *delays*
     are read at call time, so zeroing them is enough to keep a
     three-attempt retry loop fast.  ``_PROVIDER_BASE_DELAY`` is emptied
     so per-provider overrides (``claude``) don't reintroduce a wait.
     """
-    from cantrip.agent import retry as retry_mod
+    from cantrip.agent.policy import retry as retry_mod
 
     monkeypatch.setattr(retry_mod, "TRANSIENT_BASE_DELAY", 0)
     monkeypatch.setattr(retry_mod, "_CONNECTION_BASE_DELAY", 0)

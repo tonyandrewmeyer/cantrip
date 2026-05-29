@@ -1,11 +1,11 @@
-"""Tests for the preset bundle catalogue (:mod:`cantrip.agent.presets`)."""
+"""Tests for the preset bundle catalogue (:mod:`cantrip.agent.runtime.presets`)."""
 
 from __future__ import annotations
 
 import pytest
 from jubilant import statustypes
 
-from cantrip.agent import presets
+from cantrip.agent.runtime import presets
 
 # ---------------------------------------------------------------------------
 # Helpers

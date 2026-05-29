@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Backoff between reconnect attempts.  Doubles up to ``_MAX_RECONNECT_BACKOFF``
-# seconds — matches the existing tool-call retry path in ``cantrip.agent.retry``.
+# seconds — matches the existing tool-call retry path in ``cantrip.agent.policy.retry``.
 _INITIAL_RECONNECT_BACKOFF = 1.0
 _MAX_RECONNECT_BACKOFF = 30.0
 # Cap reconnect attempts so a permanently-dead server surfaces a clean

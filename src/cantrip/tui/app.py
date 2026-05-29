@@ -24,9 +24,9 @@ from cantrip.agent.git import git_branch
 from cantrip.agent.git.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
 from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
-from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
+from cantrip.agent.runtime.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
 from cantrip.hooks import HookRunner
 from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError, Role
@@ -381,7 +381,7 @@ class CantripApp(App):
             )
 
             # Phase 55.3: stamp the per-goal budget from CLI flags + env vars.
-            from cantrip.agent.goal_budget import from_cli_args
+            from cantrip.agent.runtime.goal_budget import from_cli_args
 
             self._agent.state.goal_budget = from_cli_args(
                 max_iterations=self._max_iterations,

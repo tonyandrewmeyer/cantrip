@@ -464,7 +464,7 @@ async def _wait_command_exits_zero(
 
     # Late import: keeps the policy module out of import-time graphs
     # for sessions that never call wait_for.
-    from cantrip.agent.policy import (
+    from cantrip.agent.policy.policy import (
         compose_policies,
         destructive_command_check,
         discover_policies,

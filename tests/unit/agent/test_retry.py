@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from cantrip.agent.retry import (
+from cantrip.agent.policy.retry import (
     TRANSIENT_BASE_DELAY,
     TRANSIENT_RETRIES,
     RetryEvent,
@@ -267,7 +267,7 @@ class TestConnectionErrorRetry:
         async def _capture_sleep(delay: float) -> None:
             sleeps.append(delay)
 
-        monkeypatch.setattr("cantrip.agent.retry.asyncio.sleep", _capture_sleep)
+        monkeypatch.setattr("cantrip.agent.policy.retry.asyncio.sleep", _capture_sleep)
 
         provider = _make_provider(
             [

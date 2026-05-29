@@ -7,8 +7,8 @@ import pathlib
 import pytest
 
 from cantrip.agent.executor import BackgroundExecutor
-from cantrip.agent.goal_budget import GoalBudget
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.runtime.goal_budget import GoalBudget
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
 from cantrip.llm.base import Response

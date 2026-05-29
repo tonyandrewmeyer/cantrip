@@ -211,7 +211,7 @@ class TestPreflightBroadcast:
 
         import aiohttp.web as web
 
-        from cantrip.agent.preflight import CheckStatus, PreflightEvent
+        from cantrip.agent.runtime.preflight import CheckStatus, PreflightEvent
         from cantrip.web.server import _broadcast_preflight_event
 
         app = web.Application()
