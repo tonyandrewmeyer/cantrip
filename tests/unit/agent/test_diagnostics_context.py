@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from cantrip.agent import lint_context
+from cantrip.agent.context import lint_context
 from cantrip.agent.tools.post_edit_lint import DiagnosticsReport, FileDiagnostic
 
 

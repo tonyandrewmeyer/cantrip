@@ -15,11 +15,11 @@ Why expansion in the input layer and not as a tool call:
   intent (``@file foo.py``) plus result.
 * **Providers can wrap any read-only operation**, not just an existing
   ``Tool``.  ``@problems`` reuses
-  :func:`cantrip.agent.lint_context.gather_project_diagnostics`
+  :func:`cantrip.agent.context.lint_context.gather_project_diagnostics`
   directly without a ``Tool`` envelope.
 
 Adding a provider: implement :class:`ContextProvider`, register it in
-:func:`cantrip.agent.context_providers_builtin.build_default_registry`,
+:func:`cantrip.agent.context.context_providers_builtin.build_default_registry`,
 and add an entry to ``CONTEXT_PROVIDER_CATALOGUE`` so autocomplete
 surfaces it.
 

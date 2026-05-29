@@ -507,8 +507,8 @@ class TestSlashReview:
     ) -> None:
         from types import SimpleNamespace
 
-        from cantrip.agent import lint_context
         from cantrip.agent.commands import slash as slash_commands
+        from cantrip.agent.context import lint_context
 
         monkeypatch.setattr(
             lint_context,
@@ -612,8 +612,8 @@ class TestSlashReview:
         """``--severity high`` runs only checks whose severity matches."""
         from types import SimpleNamespace
 
-        from cantrip.agent import lint_context
         from cantrip.agent.commands import slash as slash_commands
+        from cantrip.agent.context import lint_context
 
         monkeypatch.setattr(
             lint_context,
@@ -668,8 +668,8 @@ class TestSlashReview:
         """``--name 'cos-*'`` matches via fnmatch."""
         from types import SimpleNamespace
 
-        from cantrip.agent import lint_context
         from cantrip.agent.commands import slash as slash_commands
+        from cantrip.agent.context import lint_context
 
         monkeypatch.setattr(
             lint_context,
@@ -796,7 +796,7 @@ class TestSlashReview:
 
 async def _stub_diagnostics(*_args: Any, **_kwargs: Any):
     """Return an empty diagnostics block — slash test only cares about Checks."""
-    from cantrip.agent.lint_context import DiagnosticsBlock
+    from cantrip.agent.context.lint_context import DiagnosticsBlock
 
     return DiagnosticsBlock()
 

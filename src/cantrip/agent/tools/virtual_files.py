@@ -3,7 +3,7 @@
 import re
 from typing import Any
 
-from cantrip.agent.context import VirtualFileStore
+from cantrip.agent.context.context import VirtualFileStore
 from cantrip.agent.tools.base import Tool, ToolResult
 
 

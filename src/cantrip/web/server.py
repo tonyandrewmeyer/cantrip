@@ -15,8 +15,8 @@ import aiohttp.web as web
 import jinja2
 
 from cantrip import update
-from cantrip.agent import context_providers
 from cantrip.agent.commands import slash as slash_commands
+from cantrip.agent.context import context_providers
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.preflight import DEFAULT_PRESET, PreflightEvent
 from cantrip.llm import create_provider, resolve_light_provider

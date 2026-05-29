@@ -7,11 +7,11 @@ import pathlib
 
 import pytest
 
-from cantrip.agent.context_providers import (
+from cantrip.agent.context.context_providers import (
     ExpansionContext,
     expand_mentions,
 )
-from cantrip.agent.context_providers_builtin import (
+from cantrip.agent.context.context_providers_builtin import (
     DocsProvider,
     build_default_registry,
 )

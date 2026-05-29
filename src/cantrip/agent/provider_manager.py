@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import typing
 
-from cantrip.agent.context import resolve_short_session_mode
+from cantrip.agent.context.context import resolve_short_session_mode
 from cantrip.llm.base import LLMProvider
 from cantrip.ui import events as ui_events
 

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from cantrip.llm.base import Message
 
 if TYPE_CHECKING:
-    from cantrip.agent.context import LedgerEntry
+    from cantrip.agent.context.context import LedgerEntry
     from cantrip.agent.goal_budget import GoalBudget
 
 log = logging.getLogger(__name__)
@@ -444,7 +444,7 @@ class AgentState:
     decisions: list[Decision] = dataclasses.field(default_factory=list)
 
     # Phase 104: short-session "history ledger" — one terse line per past
-    # tool call.  Populated by :class:`~cantrip.agent.context.ContextManager`
+    # tool call.  Populated by :class:`~cantrip.agent.context.context.ContextManager`
     # under the ledger-and-drop compaction strategy and re-rendered into
     # the prompt each turn.  Empty (and unused) for frontier providers.
     # Not persisted: on resume the next turn's ephemeral collapse rebuilds

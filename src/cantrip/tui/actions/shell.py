@@ -175,7 +175,7 @@ def metadata_for_persisted_row(
     naturally invisible to the agent (its ``"shell"`` role is not in
     the ``cantrip.llm.Role`` enum, so the rebuild path skips it).  The
     captured output sits under ``output`` so the
-    :class:`~cantrip.agent.context_providers_builtin.TerminalProvider`
+    :class:`~cantrip.agent.context.context_providers_builtin.TerminalProvider`
     can render the last visible shell-mode block inline as
     ``@terminal`` without re-running the command.
     """

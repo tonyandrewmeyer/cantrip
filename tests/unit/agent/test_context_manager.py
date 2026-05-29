@@ -2,7 +2,7 @@
 
 import pytest
 
-from cantrip.agent.context import ContextManager, VirtualFileStore
+from cantrip.agent.context.context import ContextManager, VirtualFileStore
 from cantrip.llm.base import Message, Role, ToolResult, estimate_tokens
 from tests.conftest import FakeProvider
 
@@ -216,7 +216,7 @@ class TestCompact:
         filler = "conversation content that takes up several tokens " * 40
         msgs = [Message(role=Role.USER, content=f"msg {i} {filler}") for i in range(10)]
 
-        with caplog.at_level(logging.INFO, logger="cantrip.agent.context"):
+        with caplog.at_level(logging.INFO, logger="cantrip.agent.context.context"):
             await cm.compact(msgs, "prompt", FakeProvider())
 
         info_messages = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
@@ -235,7 +235,7 @@ class TestCompact:
         cm = ContextManager(virtual_store=VirtualFileStore(), context_window_tokens=2_000)
         msgs = [Message(role=Role.USER, content=f"msg {i}") for i in range(8)]
 
-        with caplog.at_level(logging.WARNING, logger="cantrip.agent.context"):
+        with caplog.at_level(logging.WARNING, logger="cantrip.agent.context.context"):
             await cm.compact(msgs, "prompt", FakeProvider())
 
         warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]

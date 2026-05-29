@@ -11,7 +11,7 @@ Retrieval surfaces:
 * :class:`~cantrip.agent.tools.docs_search.DocsSearchTool` — an
   agent-invokable tool that returns ``{site, url, excerpt, score}``
   tuples so every citation is traceable.
-* :class:`~cantrip.agent.context_providers_builtin.DocsProvider` —
+* :class:`~cantrip.agent.context.context_providers_builtin.DocsProvider` —
   the ``@docs <site> <query>`` mention surface from Phase 72.2.
 
 The package intentionally does *not* depend on ``sqlite-vec`` or

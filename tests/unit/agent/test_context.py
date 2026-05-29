@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from cantrip.agent.context import ContextManager, VirtualFileStore
+from cantrip.agent.context.context import ContextManager, VirtualFileStore
 from cantrip.llm.base import Image, Message, Response, Role, ToolCall
 from cantrip.llm.base import ToolResult as LLMToolResult
 from tests.conftest import FakeProvider

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import typing
 
-from cantrip.agent.context import SHORT_SESSION_INTURN_FOLD_AFTER, ContextManager
+from cantrip.agent.context.context import SHORT_SESSION_INTURN_FOLD_AFTER, ContextManager
 from cantrip.llm.base import Message, Role
 
 if typing.TYPE_CHECKING:

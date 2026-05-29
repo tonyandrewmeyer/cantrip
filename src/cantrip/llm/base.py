@@ -244,7 +244,7 @@ class LLMProvider(ABC):
         schemas eat 30–40 % of the window before a conversation starts,
         so the agent switches to an aggressive-compaction,
         ledger-and-drop strategy with a per-turn ephemeral conversation
-        (see :class:`cantrip.agent.context.ContextManager`).  Frontier
+        (see :class:`cantrip.agent.context.context.ContextManager`).  Frontier
         APIs inherit the default ``False`` and keep the rich-history
         flow unchanged.  Operators can force the mode on or off with
         ``--short-session`` / ``CANTRIP_SHORT_SESSION``.

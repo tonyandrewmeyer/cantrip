@@ -208,7 +208,7 @@ class TestOnInputSubmitted:
     async def test_expanded_mention_writes_summary_message(self) -> None:
         """When the mention expander reports ``changed=True`` the user
         sees a transient _Expanded mentions: …_ system note."""
-        from cantrip.agent.context_providers import ExpansionResult
+        from cantrip.agent.context.context_providers import ExpansionResult
 
         p1, p2, mock_agent = _patch_app()
         mock_agent.active_arena = None

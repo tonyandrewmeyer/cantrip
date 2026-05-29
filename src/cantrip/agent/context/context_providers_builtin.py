@@ -2,7 +2,7 @@
 
 Each provider here wraps an existing read-only operation (file read,
 ``git diff``, lint sweep, …) into the
-:class:`~cantrip.agent.context_providers.ContextProvider` protocol.
+:class:`~cantrip.agent.context.context_providers.ContextProvider` protocol.
 Heavier providers that depend on external services
 (``@url``/``@charm``/``@juju``) live next to this module so the core
 parser stays import-light.
@@ -27,8 +27,9 @@ import shutil
 import subprocess
 from collections.abc import Callable
 
-from cantrip.agent import lint_context, presets
-from cantrip.agent.context_providers import (
+from cantrip.agent import presets
+from cantrip.agent.context import lint_context
+from cantrip.agent.context.context_providers import (
     ArgStyle,
     ContextBlock,
     ContextProvider,
@@ -489,7 +490,7 @@ def _render_tree(target: pathlib.Path, repo_root: pathlib.Path) -> tuple[str, st
 class ProblemsProvider:
     """``@problems`` — ruff/ty/charmlint diagnostics for the active charm.
 
-    Reuses the Phase 72.4 :class:`~cantrip.agent.lint_context.DiagnosticsCache`
+    Reuses the Phase 72.4 :class:`~cantrip.agent.context.lint_context.DiagnosticsCache`
     so a ``/diagnostics`` immediately followed by an ``@problems``
     mention does not pay for the linters twice.
     """

@@ -18,7 +18,7 @@ from textual.widget import Widget
 from textual.widgets import Input, Static
 
 from cantrip.agent.commands.slash import CommandInfo
-from cantrip.agent.context_providers import ProviderInfo
+from cantrip.agent.context.context_providers import ProviderInfo
 from cantrip.ui import flavour
 
 # Duration below which a tool-block widget does not display the

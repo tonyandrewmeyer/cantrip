@@ -8,8 +8,8 @@ import subprocess
 
 import pytest
 
-from cantrip.agent import context_providers_builtin
-from cantrip.agent.context_providers import (
+from cantrip.agent.context import context_providers_builtin
+from cantrip.agent.context.context_providers import (
     ArgStyle,
     ContextBlock,
     ContextProvider,

@@ -13,8 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 from cantrip.agent import (
     auto_commit,
-    context_providers,
-    context_providers_builtin,
     sandbox,
 )
 from cantrip.agent import flows as flows_module
@@ -22,7 +20,8 @@ from cantrip.agent import recipes as recipes_module
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.confirmations import ConfirmationsController
-from cantrip.agent.context import (
+from cantrip.agent.context import context_providers, context_providers_builtin
+from cantrip.agent.context.context import (
     ContextManager,
     VirtualFileStore,
     resolve_short_session_mode,

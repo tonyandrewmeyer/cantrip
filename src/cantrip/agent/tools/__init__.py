@@ -443,7 +443,7 @@ def build_tools(
 
 
 if TYPE_CHECKING:
-    from cantrip.agent.context import VirtualFileStore
+    from cantrip.agent.context.context import VirtualFileStore
     from cantrip.agent.mcp_controller import MCPController
     from cantrip.agent.memory import MemoryManager
     from cantrip.agent.skills import SkillsIndex

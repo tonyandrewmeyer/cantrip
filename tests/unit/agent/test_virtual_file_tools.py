@@ -2,7 +2,7 @@
 
 import pytest
 
-from cantrip.agent.context import VirtualFileStore
+from cantrip.agent.context.context import VirtualFileStore
 from cantrip.agent.tools.virtual_files import VirtualFileReadTool, VirtualFileSearchTool
 
 

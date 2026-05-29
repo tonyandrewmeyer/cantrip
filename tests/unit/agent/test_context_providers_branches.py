@@ -1,4 +1,4 @@
-"""Branch-coverage backfill for ``cantrip.agent.context_providers_builtin``.
+"""Branch-coverage backfill for ``cantrip.agent.context.context_providers_builtin``.
 
 The base ``test_context_providers.py`` exercises the parser, registry, and
 each provider's happy-path / argument-validation surface.  This file
@@ -24,8 +24,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cantrip.agent import context_providers_builtin as cpb
-from cantrip.agent.context_providers import (
+from cantrip.agent.context import context_providers_builtin as cpb
+from cantrip.agent.context.context_providers import (
     ExpansionContext,
 )
 from cantrip.agent.tools import ToolResult
@@ -93,7 +93,7 @@ class TestRootFor:
         # directory; we only assert it routes through ``Path.cwd``.
         ctx = ExpansionContext()
         with patch(
-            "cantrip.agent.context_providers_builtin.pathlib.Path.cwd",
+            "cantrip.agent.context.context_providers_builtin.pathlib.Path.cwd",
             return_value=pathlib.Path("/tmp/synthetic-cwd"),
         ):
             assert cpb._root_for(ctx) == pathlib.Path("/tmp/synthetic-cwd")
@@ -136,7 +136,9 @@ class TestDiffProviderBranches:
     @pytest.mark.asyncio
     async def test_no_git_on_path(self, tmp_path: pathlib.Path) -> None:
         ctx = ExpansionContext(charm_path=tmp_path)
-        with patch("cantrip.agent.context_providers_builtin.shutil.which", return_value=None):
+        with patch(
+            "cantrip.agent.context.context_providers_builtin.shutil.which", return_value=None
+        ):
             block = await cpb.DiffProvider().expand("", ctx)
         assert "git not installed" in block.rendered
         assert block.ok is False
@@ -145,9 +147,12 @@ class TestDiffProviderBranches:
     async def test_timeout_during_diff(self, tmp_path: pathlib.Path) -> None:
         ctx = ExpansionContext(charm_path=tmp_path)
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="git diff", timeout=1),
             ),
         ):
@@ -159,9 +164,12 @@ class TestDiffProviderBranches:
     async def test_oserror_during_diff(self, tmp_path: pathlib.Path) -> None:
         ctx = ExpansionContext(charm_path=tmp_path)
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 side_effect=OSError("ebadf"),
             ),
         ):
@@ -173,9 +181,12 @@ class TestDiffProviderBranches:
     async def test_non_zero_returncode(self, tmp_path: pathlib.Path) -> None:
         ctx = ExpansionContext(charm_path=tmp_path)
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=128, stderr="not a repository"),
             ),
         ):
@@ -191,9 +202,12 @@ class TestDiffProviderBranches:
         ctx = ExpansionContext(charm_path=tmp_path)
         diff_text = "diff --git a/x b/x\n+hello\n"
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=0, stdout=diff_text),
             ),
         ):
@@ -231,7 +245,7 @@ class TestTreeProviderBranches:
         # Force ``_render_tree`` to return an error string — the provider
         # should pass it through unchanged.
         with patch(
-            "cantrip.agent.context_providers_builtin._render_tree",
+            "cantrip.agent.context.context_providers_builtin._render_tree",
             return_value=("", "synthetic-failure"),
         ):
             block = await cpb.TreeProvider().expand("", ctx)
@@ -249,9 +263,12 @@ class TestRenderTree:
 
     def test_git_timeout_returns_error_string(self, tmp_path: pathlib.Path) -> None:
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="git", timeout=1),
             ),
         ):
@@ -268,9 +285,12 @@ class TestRenderTree:
         repo_root.mkdir()
 
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=0, stdout="a.py\nb.py\n"),
             ),
         ):
@@ -281,9 +301,12 @@ class TestRenderTree:
 
     def test_git_returns_no_files(self, tmp_path: pathlib.Path) -> None:
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=0, stdout=""),
             ),
         ):
@@ -294,12 +317,15 @@ class TestRenderTree:
     def test_elides_when_over_limit(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("cantrip.agent.context_providers_builtin._TREE_MAX_FILES", 3)
+        monkeypatch.setattr("cantrip.agent.context.context_providers_builtin._TREE_MAX_FILES", 3)
         files = "\n".join(f"f{i}.py" for i in range(7))
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/git",
+            ),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=0, stdout=files),
             ),
         ):
@@ -311,21 +337,27 @@ class TestRenderTree:
         (tmp_path / "a.py").write_text("a")
         (tmp_path / "sub").mkdir()
         (tmp_path / "sub" / "b.py").write_text("b")
-        with patch("cantrip.agent.context_providers_builtin.shutil.which", return_value=None):
+        with patch(
+            "cantrip.agent.context.context_providers_builtin.shutil.which", return_value=None
+        ):
             text, error = cpb._render_tree(tmp_path, tmp_path)
         assert error == ""
         assert "a.py" in text
         assert "sub/b.py" in text
 
     def test_fallback_walk_empty_directory(self, tmp_path: pathlib.Path) -> None:
-        with patch("cantrip.agent.context_providers_builtin.shutil.which", return_value=None):
+        with patch(
+            "cantrip.agent.context.context_providers_builtin.shutil.which", return_value=None
+        ):
             text, error = cpb._render_tree(tmp_path, tmp_path)
         assert error == ""
         assert text == "(empty)"
 
     def test_fallback_walk_oserror_returns_error(self, tmp_path: pathlib.Path) -> None:
         with (
-            patch("cantrip.agent.context_providers_builtin.shutil.which", return_value=None),
+            patch(
+                "cantrip.agent.context.context_providers_builtin.shutil.which", return_value=None
+            ),
             patch.object(
                 pathlib.Path,
                 "rglob",
@@ -339,10 +371,12 @@ class TestRenderTree:
     def test_fallback_walk_elides(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("cantrip.agent.context_providers_builtin._TREE_MAX_FILES", 2)
+        monkeypatch.setattr("cantrip.agent.context.context_providers_builtin._TREE_MAX_FILES", 2)
         for i in range(5):
             (tmp_path / f"f{i}.py").write_text("x")
-        with patch("cantrip.agent.context_providers_builtin.shutil.which", return_value=None):
+        with patch(
+            "cantrip.agent.context.context_providers_builtin.shutil.which", return_value=None
+        ):
             text, error = cpb._render_tree(tmp_path, tmp_path)
         assert error == ""
         assert "more files elided" in text
@@ -362,7 +396,7 @@ class TestProblemsProvider:
         block_obj = MagicMock()
         block_obj.to_text.return_value = "RUFF: 1 issue\n"
         with patch(
-            "cantrip.agent.context_providers_builtin.lint_context.gather_project_diagnostics",
+            "cantrip.agent.context.context_providers_builtin.lint_context.gather_project_diagnostics",
             new_callable=AsyncMock,
             return_value=block_obj,
         ):
@@ -374,7 +408,7 @@ class TestProblemsProvider:
     async def test_lint_error_is_inlined(self, tmp_path: pathlib.Path) -> None:
         ctx = ExpansionContext(charm_path=tmp_path)
         with patch(
-            "cantrip.agent.context_providers_builtin.lint_context.gather_project_diagnostics",
+            "cantrip.agent.context.context_providers_builtin.lint_context.gather_project_diagnostics",
             new_callable=AsyncMock,
             side_effect=RuntimeError("lint died"),
         ):
@@ -397,7 +431,9 @@ class TestUrlProviderShell:
 
     @pytest.mark.asyncio
     async def test_success_returns_truncated_body(self) -> None:
-        with patch("cantrip.agent.context_providers_builtin.web_tools.WebFetchTool") as cls:
+        with patch(
+            "cantrip.agent.context.context_providers_builtin.web_tools.WebFetchTool"
+        ) as cls:
             cls.return_value.execute = AsyncMock(return_value=_result(True, "<body>"))
             block = await cpb.UrlProvider().expand(
                 "https://canonical.com",
@@ -408,7 +444,9 @@ class TestUrlProviderShell:
 
     @pytest.mark.asyncio
     async def test_failure_inlined(self) -> None:
-        with patch("cantrip.agent.context_providers_builtin.web_tools.WebFetchTool") as cls:
+        with patch(
+            "cantrip.agent.context.context_providers_builtin.web_tools.WebFetchTool"
+        ) as cls:
             cls.return_value.execute = AsyncMock(
                 return_value=_result(False, "", error="rate limited")
             )
@@ -426,7 +464,7 @@ class TestCharmProviderShell:
     @pytest.mark.asyncio
     async def test_success(self) -> None:
         with patch(
-            "cantrip.agent.context_providers_builtin.charmhub_tools.CharmhubInfoTool"
+            "cantrip.agent.context.context_providers_builtin.charmhub_tools.CharmhubInfoTool"
         ) as cls:
             cls.return_value.execute = AsyncMock(return_value=_result(True, "name: postgresql"))
             block = await cpb.CharmProvider().expand("postgresql", ExpansionContext())
@@ -436,7 +474,7 @@ class TestCharmProviderShell:
     @pytest.mark.asyncio
     async def test_failure(self) -> None:
         with patch(
-            "cantrip.agent.context_providers_builtin.charmhub_tools.CharmhubInfoTool"
+            "cantrip.agent.context.context_providers_builtin.charmhub_tools.CharmhubInfoTool"
         ) as cls:
             cls.return_value.execute = AsyncMock(
                 return_value=_result(False, "", error="not found")
@@ -496,7 +534,9 @@ class TestJujuProviderShell:
 
     @pytest.mark.asyncio
     async def test_no_juju_on_path(self) -> None:
-        with patch("cantrip.agent.context_providers_builtin.shutil.which", return_value=None):
+        with patch(
+            "cantrip.agent.context.context_providers_builtin.shutil.which", return_value=None
+        ):
             block = await cpb.JujuProvider().expand("status", ExpansionContext())
         assert block.ok is False
         assert "juju not installed" in block.rendered
@@ -505,10 +545,11 @@ class TestJujuProviderShell:
     async def test_timeout_is_reported(self) -> None:
         with (
             patch(
-                "cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/juju"
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/juju",
             ),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="juju", timeout=1),
             ),
         ):
@@ -520,10 +561,11 @@ class TestJujuProviderShell:
     async def test_oserror_is_reported(self) -> None:
         with (
             patch(
-                "cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/juju"
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/juju",
             ),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -535,10 +577,11 @@ class TestJujuProviderShell:
     async def test_non_zero_rc_includes_stderr(self) -> None:
         with (
             patch(
-                "cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/juju"
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/juju",
             ),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=1, stderr="model not found"),
             ),
         ):
@@ -550,10 +593,11 @@ class TestJujuProviderShell:
     async def test_non_zero_rc_with_blank_stderr_uses_default_message(self) -> None:
         with (
             patch(
-                "cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/juju"
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/juju",
             ),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=2, stderr=""),
             ),
         ):
@@ -565,10 +609,11 @@ class TestJujuProviderShell:
     async def test_success_returns_stdout(self) -> None:
         with (
             patch(
-                "cantrip.agent.context_providers_builtin.shutil.which", return_value="/bin/juju"
+                "cantrip.agent.context.context_providers_builtin.shutil.which",
+                return_value="/bin/juju",
             ),
             patch(
-                "cantrip.agent.context_providers_builtin.subprocess.run",
+                "cantrip.agent.context.context_providers_builtin.subprocess.run",
                 return_value=_CompletedProcess(returncode=0, stdout="App  Status\nfoo  active"),
             ),
         ):

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from cantrip.agent.context import (
+from cantrip.agent.context.context import (
     CompactionStrategy,
     ContextManager,
     LedgerEntry,
@@ -158,7 +158,7 @@ class TestLedger:
         assert "charmcraft_pack() → error: missing base" in text
 
     def test_extend_ledger_caps_oldest(self) -> None:
-        from cantrip.agent import context as ctx_mod
+        from cantrip.agent.context import context as ctx_mod
 
         ledger: list[LedgerEntry] = []
         for i in range(ctx_mod._MAX_LEDGER_ENTRIES + 5):

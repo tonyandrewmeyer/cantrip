@@ -13,7 +13,7 @@ import pytest
 from textual.app import App, ComposeResult
 
 from cantrip.agent.commands.slash import CommandInfo
-from cantrip.agent.context_providers import ArgStyle, ProviderInfo
+from cantrip.agent.context.context_providers import ArgStyle, ProviderInfo
 from cantrip.tui.widgets.chat import (
     ChatInput,
     MentionSuggestions,

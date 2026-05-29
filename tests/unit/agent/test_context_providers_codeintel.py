@@ -7,8 +7,8 @@ import textwrap
 
 import pytest
 
-from cantrip.agent import context_providers_builtin
-from cantrip.agent.context_providers import (
+from cantrip.agent.context import context_providers_builtin
+from cantrip.agent.context.context_providers import (
     ExpansionContext,
     expand_mentions,
 )

@@ -1606,7 +1606,8 @@ def _handle_review(agent: CantripAgent, args: str) -> SlashResult:
     ``--name`` uses ``fnmatch`` so ``--name 'cos-*'`` matches every
     check whose name starts with ``cos-``.
     """
-    from cantrip.agent import checks, lint_context
+    from cantrip.agent import checks
+    from cantrip.agent.context import lint_context
 
     filters, error = _parse_review_filters(args)
     if filters is None:
@@ -1696,7 +1697,7 @@ def _handle_diagnostics(agent: CantripAgent, args: str) -> SlashResult:
     # Lazy import: keeps slash_commands.py importable in environments
     # where the lint runners' optional binaries aren't on PATH and
     # the import-time cost is paid only when the command is invoked.
-    from cantrip.agent import lint_context
+    from cantrip.agent.context import lint_context
 
     charm_path = getattr(agent.state, "charm_path", None)
     if charm_path is None:
