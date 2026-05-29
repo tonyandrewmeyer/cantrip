@@ -69,6 +69,7 @@ from cantrip.agent.preflight import (
     PreflightRunner,
 )
 from cantrip.agent.prompts import agents_md, build_dynamic_context, build_system_prompt
+from cantrip.agent.provider_manager import ProviderManager
 from cantrip.agent.queue import (
     AgentTask,
     TaskCategory,
@@ -115,8 +116,17 @@ from cantrip.ui import flavour
 
 log = logging.getLogger(__name__)
 
-# Re-export for backwards compatibility.
-__all__ = ["AgentState", "CantripAgent", "Decision"]
+# Re-export for backwards compatibility. ``create_provider`` and
+# ``resolve_light_provider`` are kept on this module as the seam the
+# model-switching tests patch (``cantrip.agent.core.create_provider``);
+# ProviderManager resolves them through this module so the patches take effect.
+__all__ = [
+    "AgentState",
+    "CantripAgent",
+    "Decision",
+    "create_provider",
+    "resolve_light_provider",
+]
 
 # Maximum tool-call rounds before we force the model to respond with text.
 MAX_TOOL_ROUNDS = 20
@@ -665,6 +675,7 @@ class CantripAgent:
         self._tool_builder = ToolBuilder(self)
         self._repo = RepoMapService(self)
         self._messages = MessageHistory(self)
+        self._providers = ProviderManager(self)
 
     @property
     def event_bus(self) -> ui_events.EventBus:
@@ -1218,14 +1229,7 @@ class CantripAgent:
         return self._messages.rebuild_messages_from_active_branch()
 
     def _get_provider(self, purpose: str) -> LLMProvider:
-        """Select the appropriate provider for a given purpose.
-
-        Purposes listed in ``_LIGHT_PURPOSES`` are routed to the light
-        provider when one is available; everything else uses the primary.
-        """
-        if self._light_provider and purpose in _LIGHT_PURPOSES:
-            return self._light_provider
-        return self.provider
+        return self._providers.get_provider(purpose)
 
     def switch_model(
         self,
@@ -1976,58 +1980,10 @@ class CantripAgent:
     )
 
     def _architect_provider(self) -> LLMProvider:
-        """Provider for the architect pass.
-
-        Always the main provider.  ``state.architect_consecutive_failures``
-        beyond the threshold also routes the *editor* pass through the
-        architect — see :meth:`_editor_provider`.
-        """
-        return self.provider
+        return self._providers.architect_provider()
 
     def _editor_provider(self) -> LLMProvider:
-        """Provider for the editor pass.
-
-        Resolution order:
-
-        1. Per-session override (``state.editor_provider`` /
-           ``editor_model``) — set explicitly via ``/architect on
-           provider/model``.  Constructed on-demand via
-           :func:`create_provider`; failures fall through to (2).
-        2. The session's existing light provider (the one used for
-           compaction etc.) when one is configured — same family,
-           cheaper variant.
-        3. Fallback to the main provider when no lighter variant is
-           available.  No cost saving in that case but the dual-pass
-           shape stays so the user sees the architect/editor split
-           in the transcript.
-
-        When the editor has failed too many turns in a row
-        (``architect_consecutive_failures >= architect_failure_threshold``)
-        the architect provider is used for both passes — the
-        documented escape hatch from a weak editor.
-        """
-        if self.state.architect_consecutive_failures >= self.state.architect_failure_threshold:
-            log.info(
-                "Editor escalated to architect provider after %d consecutive failures",
-                self.state.architect_consecutive_failures,
-            )
-            return self.provider
-        if self.state.editor_provider:
-            try:
-                return create_provider(
-                    self.state.editor_provider,
-                    self.state.editor_model,
-                )
-            except (ValueError, RuntimeError, OSError) as exc:
-                log.warning(
-                    "Editor provider override %s/%s failed (%s); falling back to light provider",
-                    self.state.editor_provider,
-                    self.state.editor_model,
-                    exc,
-                )
-        if self._light_provider is not None:
-            return self._light_provider
-        return self.provider
+        return self._providers.editor_provider()
 
     @staticmethod
     def _all_tool_calls_failed(tool_results: list[llm.ToolResult]) -> bool:
