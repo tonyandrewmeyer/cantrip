@@ -82,10 +82,10 @@ from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.snapshots import SnapshotManager
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
+from cantrip.agent.tool_builder import ToolBuilder
 from cantrip.agent.tools import (
     Tool,
     ToolResult,
-    build_tools,
     expand_leaves,
     resolve_subcommand,
 )
@@ -661,6 +661,7 @@ class CantripAgent:
         if charm_path:
             self._ensure_agents_md(charm_path)
         self._usage = UsageTracker(self)
+        self._tool_builder = ToolBuilder(self)
 
     @property
     def event_bus(self) -> ui_events.EventBus:
@@ -783,12 +784,7 @@ class CantripAgent:
 
     @property
     def _tool_map(self) -> dict[str, Tool]:
-        """Tool lookup by name, built lazily alongside _tools."""
-        if self._tool_map_cache is None:
-            # Accessing _tools triggers the build.
-            _ = self._tools
-        assert self._tool_map_cache is not None
-        return self._tool_map_cache
+        return self._tool_builder.tool_map()
 
     @property
     def store(self) -> SessionStore | None:
@@ -1385,36 +1381,10 @@ class CantripAgent:
         self._event_bus.publish(ui_events.status_bar_changed(short_session=chip))
 
     def _invalidate_tools_cache(self) -> None:
-        """Drop the cached tool list and tool map; next access rebuilds."""
-        self._tools_cache = None
-        self._tool_map_cache = None
+        return self._tool_builder.invalidate_tools_cache()
 
     def _build_tools(self) -> list[Tool]:
-        """Build available tools."""
-        return build_tools(
-            base_path=self.state.charm_path,
-            skills_index=self._skills_index,
-            virtual_store=self._virtual_store,
-            provider=self.provider,
-            state=self.state,
-            queue=self._work_queue,
-            memory_manager=self._memory_manager,
-            mcp_registry=self._mcp.registry_if_loaded(),
-            mcp_controller=self._mcp,
-            store_getter=lambda: self._store,
-            role_router=self.role_router if self.role_router.has_embed() else None,
-            # Sprint mode reroots ``state.charm_path`` into a freshly
-            # scaffolded subdirectory inside ``plan_tasks``; the tool
-            # cache captured the old path, so without this invalidator
-            # subsequent ``edit_file("charmcraft.yaml")`` calls 404 until
-            # the model retries with an explicit ``<charm_name>/`` prefix.
-            invalidate_tools_cache=self._invalidate_tools_cache,
-            # Phase 72b: read-only code intelligence.  Lazy — the
-            # property below builds a CodeIntel only on first use, so
-            # sessions without an active charm path skip the parser
-            # cost entirely.
-            code_intel_getter=self._code_intel_or_none,
-        )
+        return self._tool_builder.build_tools()
 
     def _build_system_prompt(self) -> str:
         """Build the current system prompt.
@@ -1712,8 +1682,7 @@ class CantripAgent:
         return WorkflowPhase.from_category(self._active_task_category())
 
     def _curated_tool_names(self) -> set[str]:
-        """Tool-name set for the active workflow phase."""
-        return self._CORE_TOOLS_BY_PHASE[self.workflow_phase]
+        return self._tool_builder.curated_tool_names()
 
     def tool_phase_badge(self) -> str:
         """Short badge text for status surfaces, or ``""`` when uncurated.
@@ -1728,51 +1697,7 @@ class CantripAgent:
         return f"{self.workflow_phase.value} · {offered}" if offered < full else ""
 
     def _tools_for_llm(self) -> list[llm.Tool]:
-        """Convert tools to LLM format, curating for tight-context providers.
-
-        The full toolset is offered unchanged to roomy providers (Claude,
-        Gemini, …).  When the provider runs in short-session mode
-        (tight context window) *or* declares a ``max_tools`` cap that the
-        toolset overshoots (inference-snap's 12, or lots of MCP servers
-        on an OpenAI-compatible API), the slice is narrowed to the
-        :meth:`workflow_phase`'s curated set — that's the ≤11 tools the
-        agent's current activity actually needs.  The curated set is
-        recomputed every turn, so a work-queue task transition (build →
-        debug because a test failed) is picked up on the next LLM call.
-        The trim is logged with the dropped names so operators can see
-        what disappeared.
-        """
-        tools = self._tools
-        limit = self.provider.max_tools
-        short_session = self._context_manager.short_session_mode
-        overshoots = limit is not None and len(tools) > limit
-
-        if short_session or overshoots:
-            keep_names = self._curated_tool_names()
-            kept = [t for t in tools if t.name in keep_names]
-            if limit is not None and len(kept) > limit:
-                kept = kept[:limit]
-            if len(kept) < len(tools):
-                kept_names = {t.name for t in kept}
-                dropped = sorted(t.name for t in tools if t.name not in kept_names)
-                log.info(
-                    "Tool curation (%s phase%s): %d tools → %d; dropped: %s",
-                    self.workflow_phase.value,
-                    ", short-session" if short_session else "",
-                    len(tools),
-                    len(kept),
-                    ", ".join(dropped) if dropped else "(none)",
-                )
-            tools = kept
-
-        return [
-            llm.Tool(
-                name=tool.name,
-                description=tool.description,
-                parameters=tool.parameters,
-            )
-            for tool in tools
-        ]
+        return self._tool_builder.tools_for_llm()
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a tool by name.
