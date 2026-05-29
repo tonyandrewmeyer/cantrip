@@ -18,6 +18,7 @@ from cantrip.agent.executor.policies import (
     _DefaultFollowupPlanner,
 )
 from cantrip.agent.executor.store_adapter import _SessionStoreAdapter
+from cantrip.agent.git.worktree import WorktreeHandle, _DefaultWorktreeAllocator
 from cantrip.agent.goal_budget import check_budget
 from cantrip.agent.permissions import (
     PLAN_MODE_OVERLAY,
@@ -57,7 +58,6 @@ from cantrip.agent.subagent import (
 )
 from cantrip.agent.tools.base import Tool
 from cantrip.agent.tools.git import _gpg_sign_enabled
-from cantrip.agent.worktree import WorktreeHandle, _DefaultWorktreeAllocator
 from cantrip.hooks import HookRunner
 from cantrip.llm import base as llm
 

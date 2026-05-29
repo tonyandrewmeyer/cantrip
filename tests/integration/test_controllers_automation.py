@@ -26,7 +26,9 @@ import unittest.mock as mock
 
 import pytest
 
-from cantrip.agent.auto_commit import (
+from cantrip.agent.executor import BackgroundExecutor
+from cantrip.agent.executor_controller import ExecutorController
+from cantrip.agent.git.auto_commit import (
     _CANTRIP_TRAILER,
     _PRE_CANTRIP_MESSAGE,
     build_commit_message,
@@ -34,9 +36,7 @@ from cantrip.agent.auto_commit import (
     post_turn_commit_agent_edits,
     pre_turn_commit_dirty,
 )
-from cantrip.agent.executor import BackgroundExecutor
-from cantrip.agent.executor_controller import ExecutorController
-from cantrip.agent.git_branch import (
+from cantrip.agent.git.git_branch import (
     build_pr_body,
     create_branch,
     current_branch,

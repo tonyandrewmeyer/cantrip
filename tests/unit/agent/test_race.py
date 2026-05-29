@@ -15,10 +15,10 @@ import subprocess
 
 import pytest
 
+from cantrip.agent.git.worktree import WorktreeHandle
 from cantrip.agent.queue import TaskCategory
 from cantrip.agent.race import race
 from cantrip.agent.subagent import ExitState, SubagentResult
-from cantrip.agent.worktree import WorktreeHandle
 from tests.support.worktrees import FakeAllocator
 
 # ---------------------------------------------------------------------------

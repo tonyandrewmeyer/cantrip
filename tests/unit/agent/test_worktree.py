@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from cantrip.agent.worktree import (
+from cantrip.agent.git.worktree import (
     _BRANCH_PREFIX,
     _WORKTREES_DIRNAME,
     WorktreeHandle,

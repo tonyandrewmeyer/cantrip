@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.git_branch import PrFeedback, PrReviewComment, suggest_repo_name
+from cantrip.agent.git.git_branch import PrFeedback, PrReviewComment, suggest_repo_name
 from cantrip.agent.queue import AgentTask, TaskCategory
 from tests.conftest import FakeProvider
 

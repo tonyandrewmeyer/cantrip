@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
+from cantrip.agent.git.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
 from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus

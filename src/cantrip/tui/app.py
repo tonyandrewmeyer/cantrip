@@ -15,12 +15,13 @@ from textual.widgets import Input
 from textual.worker import Worker, WorkerState
 
 from cantrip import diagnostics, notifications, update
-from cantrip.agent import emotions, git_branch
+from cantrip.agent import emotions
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.context import context_providers
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
-from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
+from cantrip.agent.git import git_branch
+from cantrip.agent.git.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
 from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent

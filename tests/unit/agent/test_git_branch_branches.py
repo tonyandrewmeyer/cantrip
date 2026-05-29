@@ -1,4 +1,4 @@
-"""Branch-coverage backfill for ``cantrip.agent.git_branch``.
+"""Branch-coverage backfill for ``cantrip.agent.git.git_branch``.
 
 The base ``test_git_branch.py`` covers the success paths and several
 common failures.  This file targets the remaining subprocess /
@@ -12,7 +12,7 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from cantrip.agent import git_branch as gb
+from cantrip.agent.git import git_branch as gb
 from tests.support.git_fakes import FakeTask
 
 
@@ -59,14 +59,14 @@ class TestSwitchBranchExceptions:
 
     def test_timeout_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=1),
         ):
             assert gb.switch_branch(".", "feat/x") is False
 
     def test_oserror_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert gb.switch_branch(".", "feat/x") is False
@@ -82,9 +82,9 @@ class TestCreatePullRequestExceptions:
 
     def test_subprocess_oserror(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -129,14 +129,14 @@ class TestBuildPrBodyBranches:
 class TestHasRemoteExceptions:
     def test_timeout_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=1),
         ):
             assert gb.has_remote(".") is False
 
     def test_oserror_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert gb.has_remote(".") is False
@@ -144,14 +144,14 @@ class TestHasRemoteExceptions:
 
 class TestGhAvailableExceptions:
     def test_no_gh_binary(self) -> None:
-        with patch("cantrip.agent.git_branch.shutil.which", return_value=None):
+        with patch("cantrip.agent.git.git_branch.shutil.which", return_value=None):
             assert gb.gh_available() is False
 
     def test_subprocess_error(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -166,9 +166,9 @@ class TestGhAvailableExceptions:
 class TestGitInitExceptions:
     def test_subprocess_error_returns_false(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.has_git_repo", return_value=False),
+            patch("cantrip.agent.git.git_branch.has_git_repo", return_value=False),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -178,14 +178,14 @@ class TestGitInitExceptions:
 class TestGitAddAndCommit:
     def test_add_failure_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             return_value=_proc(returncode=1, stderr="lock"),
         ):
             assert gb.git_add_and_commit(".", "init") is False
 
     def test_subprocess_exception_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert gb.git_add_and_commit(".", "init") is False
@@ -201,8 +201,8 @@ class TestBootstrapGithubRepo:
 
     def test_init_failure(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.has_git_repo", return_value=False),
-            patch("cantrip.agent.git_branch.git_init", return_value=False),
+            patch("cantrip.agent.git.git_branch.has_git_repo", return_value=False),
+            patch("cantrip.agent.git.git_branch.git_init", return_value=False),
         ):
             ok, msg = gb.bootstrap_github_repo(".", "myrepo")
         assert ok is False
@@ -210,9 +210,9 @@ class TestBootstrapGithubRepo:
 
     def test_initial_commit_failure_after_init(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.has_git_repo", return_value=False),
-            patch("cantrip.agent.git_branch.git_init", return_value=True),
-            patch("cantrip.agent.git_branch.git_add_and_commit", return_value=False),
+            patch("cantrip.agent.git.git_branch.has_git_repo", return_value=False),
+            patch("cantrip.agent.git.git_branch.git_init", return_value=True),
+            patch("cantrip.agent.git.git_branch.git_add_and_commit", return_value=False),
         ):
             ok, msg = gb.bootstrap_github_repo(".", "myrepo")
         assert ok is False
@@ -220,9 +220,9 @@ class TestBootstrapGithubRepo:
 
     def test_initial_commit_failure_when_repo_has_no_commits(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.has_git_repo", return_value=True),
-            patch("cantrip.agent.git_branch._has_commits", return_value=False),
-            patch("cantrip.agent.git_branch.git_add_and_commit", return_value=False),
+            patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True),
+            patch("cantrip.agent.git.git_branch._has_commits", return_value=False),
+            patch("cantrip.agent.git.git_branch.git_add_and_commit", return_value=False),
         ):
             ok, msg = gb.bootstrap_github_repo(".", "myrepo")
         assert ok is False
@@ -230,10 +230,10 @@ class TestBootstrapGithubRepo:
 
     def test_gh_subprocess_error(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.has_git_repo", return_value=True),
-            patch("cantrip.agent.git_branch._has_commits", return_value=True),
+            patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True),
+            patch("cantrip.agent.git.git_branch._has_commits", return_value=True),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -249,9 +249,9 @@ class TestBootstrapGithubRepo:
             return _proc(returncode=0, stdout="https://github.com/canon/myrepo")
 
         with (
-            patch("cantrip.agent.git_branch.has_git_repo", return_value=True),
-            patch("cantrip.agent.git_branch._has_commits", return_value=True),
-            patch("cantrip.agent.git_branch.subprocess.run", side_effect=_mock_run),
+            patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True),
+            patch("cantrip.agent.git.git_branch._has_commits", return_value=True),
+            patch("cantrip.agent.git.git_branch.subprocess.run", side_effect=_mock_run),
         ):
             ok, url = gb.bootstrap_github_repo(
                 ".",
@@ -272,9 +272,9 @@ class TestBootstrapGithubRepo:
             return _proc(returncode=0, stdout="https://github.com/x/y")
 
         with (
-            patch("cantrip.agent.git_branch.has_git_repo", return_value=True),
-            patch("cantrip.agent.git_branch._has_commits", return_value=True),
-            patch("cantrip.agent.git_branch.subprocess.run", side_effect=_mock_run),
+            patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True),
+            patch("cantrip.agent.git.git_branch._has_commits", return_value=True),
+            patch("cantrip.agent.git.git_branch.subprocess.run", side_effect=_mock_run),
         ):
             gb.bootstrap_github_repo(".", "myrepo", private=False)
         assert "--public" in captured[0]
@@ -288,14 +288,14 @@ class TestBootstrapGithubRepo:
 class TestHasCommits:
     def test_oserror_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert gb._has_commits(".") is False
 
     def test_returns_true_when_rev_parse_succeeds(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             return_value=_proc(returncode=0),
         ):
             assert gb._has_commits(".") is True
@@ -311,14 +311,14 @@ class TestCheckUpstreamDiverged:
 
     def test_fetch_failure_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=OSError("offline"),
         ):
             assert gb.check_upstream_diverged(".") == (False, 0)
 
     def test_rev_list_failure_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=[
                 _proc(returncode=0),  # fetch
                 OSError("eperm"),  # rev-list
@@ -328,7 +328,7 @@ class TestCheckUpstreamDiverged:
 
     def test_rev_list_non_zero_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=[
                 _proc(returncode=0),  # fetch
                 _proc(returncode=128),  # rev-list
@@ -338,7 +338,7 @@ class TestCheckUpstreamDiverged:
 
     def test_invalid_count_returns_false(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=[
                 _proc(returncode=0),
                 _proc(returncode=0, stdout="not-a-number"),
@@ -348,7 +348,7 @@ class TestCheckUpstreamDiverged:
 
     def test_diverged_count_returned(self) -> None:
         with patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=[
                 _proc(returncode=0),
                 _proc(returncode=0, stdout="3"),
@@ -366,16 +366,16 @@ class TestGhIssueComment:
     """``gh_issue_comment`` failure arms."""
 
     def test_no_gh_binary(self) -> None:
-        with patch("cantrip.agent.git_branch.shutil.which", return_value=None):
+        with patch("cantrip.agent.git.git_branch.shutil.which", return_value=None):
             ok, msg = gb.gh_issue_comment("o/r", 1, "hi")
         assert ok is False
         assert "gh CLI not found" in msg
 
     def test_subprocess_error(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -385,9 +385,9 @@ class TestGhIssueComment:
 
     def test_non_zero_rc_returns_failure(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 return_value=_proc(returncode=1, stderr="rate limited"),
             ),
         ):
@@ -405,14 +405,14 @@ class TestGhPrView:
     """``gh_pr_view`` failure arms and parsing branches."""
 
     def test_no_gh_binary(self) -> None:
-        with patch("cantrip.agent.git_branch.shutil.which", return_value=None):
+        with patch("cantrip.agent.git.git_branch.shutil.which", return_value=None):
             assert gb.gh_pr_view("o/r", 1) is None
 
     def test_subprocess_error(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -420,9 +420,9 @@ class TestGhPrView:
 
     def test_non_zero_returncode(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 return_value=_proc(returncode=1),
             ),
         ):
@@ -430,9 +430,9 @@ class TestGhPrView:
 
     def test_invalid_json(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 return_value=_proc(returncode=0, stdout="not json"),
             ),
         ):
@@ -471,9 +471,9 @@ class TestGhPrView:
             ],
         }
         with (
-            patch("cantrip.agent.git_branch.shutil.which", return_value="/bin/gh"),
+            patch("cantrip.agent.git.git_branch.shutil.which", return_value="/bin/gh"),
             patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 return_value=_proc(returncode=0, stdout=json.dumps(payload)),
             ),
         ):
@@ -499,20 +499,20 @@ class TestCanBootstrap:
         assert gb.can_bootstrap(None) is False
 
     def test_existing_remote_returns_false(self) -> None:
-        with patch("cantrip.agent.git_branch.has_remote", return_value=True):
+        with patch("cantrip.agent.git.git_branch.has_remote", return_value=True):
             assert gb.can_bootstrap(".") is False
 
     def test_no_remote_no_gh_returns_false(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.has_remote", return_value=False),
-            patch("cantrip.agent.git_branch.gh_available", return_value=False),
+            patch("cantrip.agent.git.git_branch.has_remote", return_value=False),
+            patch("cantrip.agent.git.git_branch.gh_available", return_value=False),
         ):
             assert gb.can_bootstrap(".") is False
 
     def test_no_remote_gh_present_returns_true(self) -> None:
         with (
-            patch("cantrip.agent.git_branch.has_remote", return_value=False),
-            patch("cantrip.agent.git_branch.gh_available", return_value=True),
+            patch("cantrip.agent.git.git_branch.has_remote", return_value=False),
+            patch("cantrip.agent.git.git_branch.gh_available", return_value=True),
         ):
             assert gb.can_bootstrap(".") is True
 

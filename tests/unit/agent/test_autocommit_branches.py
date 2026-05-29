@@ -1,4 +1,4 @@
-"""Branch-coverage backfill for ``cantrip.agent.auto_commit``.
+"""Branch-coverage backfill for ``cantrip.agent.git.auto_commit``.
 
 The base ``test_autocommit.py`` covers the happy-path commit shape
 against real git repos.  This file fills the failure / fallback
@@ -23,7 +23,7 @@ import pathlib
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from cantrip.agent import auto_commit as ac
+from cantrip.agent.git import auto_commit as ac
 from cantrip.llm.base import Message, Role, ToolCall
 
 
@@ -45,14 +45,14 @@ class TestIsGitRepo:
 
     def test_subprocess_error_returns_false(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert ac._is_git_repo(tmp_path) is False
 
     def test_timeout_returns_false(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=1),
         ):
             assert ac._is_git_repo(tmp_path) is False
@@ -68,14 +68,14 @@ class TestHasDirtyTree:
 
     def test_subprocess_error_returns_false(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert ac._has_dirty_tree(tmp_path) is False
 
     def test_non_zero_returncode_returns_false(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             return_value=_proc(returncode=128),
         ):
             assert ac._has_dirty_tree(tmp_path) is False
@@ -91,21 +91,21 @@ class TestCommit:
 
     def test_add_all_failure_returns_none(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             return_value=_proc(returncode=1, stderr="lock"),
         ):
             assert ac._commit(tmp_path, "msg", stage_all=True) is None
 
     def test_subprocess_error_returns_none(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert ac._commit(tmp_path, "msg") is None
 
     def test_commit_non_zero_returns_none(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             return_value=_proc(returncode=1, stderr="nothing to commit"),
         ):
             assert ac._commit(tmp_path, "msg") is None
@@ -114,14 +114,14 @@ class TestCommit:
         # First call (commit) succeeds, second (rev-parse) raises.
         results = [_proc(returncode=0)]
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=[*results, OSError("eperm")],
         ):
             assert ac._commit(tmp_path, "msg") is None
 
     def test_rev_parse_non_zero_returns_none(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=[
                 _proc(returncode=0),  # commit
                 _proc(returncode=1),  # rev-parse
@@ -131,7 +131,7 @@ class TestCommit:
 
     def test_rev_parse_empty_stdout_returns_none(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=[
                 _proc(returncode=0),  # commit
                 _proc(returncode=0, stdout=""),  # rev-parse
@@ -151,13 +151,13 @@ class TestAddPaths:
     def test_empty_paths_returns_false_without_calling_subprocess(
         self, tmp_path: pathlib.Path
     ) -> None:
-        with patch("cantrip.agent.auto_commit.subprocess.run") as run:
+        with patch("cantrip.agent.git.auto_commit.subprocess.run") as run:
             assert ac._add_paths(tmp_path, []) is False
         run.assert_not_called()
 
     def test_subprocess_error_returns_false(self, tmp_path: pathlib.Path) -> None:
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert ac._add_paths(tmp_path, ["foo.py"]) is False
@@ -175,7 +175,7 @@ class TestStagedDiffEmpty:
         # Errors return True (treat as "nothing staged") so callers
         # skip rather than crash.
         with patch(
-            "cantrip.agent.auto_commit.subprocess.run",
+            "cantrip.agent.git.auto_commit.subprocess.run",
             side_effect=OSError("eperm"),
         ):
             assert ac._staged_diff_empty(tmp_path) is True
@@ -215,14 +215,14 @@ class TestHumanCoauthorTrailer:
     """``_human_coauthor_trailer`` failure branches."""
 
     def test_no_git_returns_none(self, tmp_path: pathlib.Path) -> None:
-        with patch("cantrip.agent.auto_commit.shutil.which", return_value=None):
+        with patch("cantrip.agent.git.auto_commit.shutil.which", return_value=None):
             assert ac._human_coauthor_trailer(tmp_path) is None
 
     def test_subprocess_error_returns_none(self, tmp_path: pathlib.Path) -> None:
         with (
-            patch("cantrip.agent.auto_commit.shutil.which", return_value="/bin/git"),
+            patch("cantrip.agent.git.auto_commit.shutil.which", return_value="/bin/git"),
             patch(
-                "cantrip.agent.auto_commit.subprocess.run",
+                "cantrip.agent.git.auto_commit.subprocess.run",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -276,7 +276,7 @@ class TestPostTurnCommitBranches:
     """``post_turn_commit_agent_edits`` early-return / skip branches."""
 
     def test_no_git_returns_none(self, tmp_path: pathlib.Path) -> None:
-        with patch("cantrip.agent.auto_commit.shutil.which", return_value=None):
+        with patch("cantrip.agent.git.auto_commit.shutil.which", return_value=None):
             sha = ac.post_turn_commit_agent_edits(
                 tmp_path,
                 [_assistant_with_tool("write_file", {"path": "x.py"})],
@@ -289,14 +289,14 @@ class TestPostTurnCommitBranches:
         # nothing staged → the helper returns None without calling
         # ``_commit``.
         with (
-            patch("cantrip.agent.auto_commit.shutil.which", return_value="/bin/git"),
-            patch("cantrip.agent.auto_commit._is_git_repo", return_value=True),
-            patch("cantrip.agent.auto_commit._add_paths", return_value=True),
+            patch("cantrip.agent.git.auto_commit.shutil.which", return_value="/bin/git"),
+            patch("cantrip.agent.git.auto_commit._is_git_repo", return_value=True),
+            patch("cantrip.agent.git.auto_commit._add_paths", return_value=True),
             patch(
-                "cantrip.agent.auto_commit._staged_diff_empty",
+                "cantrip.agent.git.auto_commit._staged_diff_empty",
                 return_value=True,
             ),
-            patch("cantrip.agent.auto_commit._commit") as commit,
+            patch("cantrip.agent.git.auto_commit._commit") as commit,
         ):
             sha = ac.post_turn_commit_agent_edits(
                 tmp_path,

@@ -16,7 +16,7 @@ import pytest
 from textual.widgets import Input
 from textual.worker import WorkerState
 
-from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
+from cantrip.agent.git.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
 from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
 from cantrip.agent.state import TestResults

@@ -26,6 +26,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from cantrip.agent.executor import BackgroundExecutor
+from cantrip.agent.git.worktree import (
+    _BRANCH_PREFIX,
+    _WORKTREES_DIRNAME,
+    _DefaultWorktreeAllocator,
+)
 from cantrip.agent.permissions import (
     BUILTIN_PERMISSIONS,
     PLAN_MODE_OVERLAY,
@@ -41,7 +46,6 @@ from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import Subagent, SubagentContext
 from cantrip.agent.tools.files import EditFileTool, ListDirectoryTool, ReadFileTool, WriteFileTool
 from cantrip.agent.tools.run_command import RunCommandTool
-from cantrip.agent.worktree import _BRANCH_PREFIX, _WORKTREES_DIRNAME, _DefaultWorktreeAllocator
 from cantrip.llm.base import Response, ToolCall
 from tests.conftest import FakeProvider
 from tests.support.providers import CallbackProvider

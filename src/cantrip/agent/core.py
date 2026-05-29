@@ -11,12 +11,9 @@ import time
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
-from cantrip.agent import (
-    auto_commit,
-    sandbox,
-)
 from cantrip.agent import flows as flows_module
 from cantrip.agent import recipes as recipes_module
+from cantrip.agent import sandbox
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.confirmations import ConfirmationsController
@@ -29,7 +26,8 @@ from cantrip.agent.context.context import (
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
 from cantrip.agent.executor_controller import ExecutorController
-from cantrip.agent.git_branch import (
+from cantrip.agent.git import auto_commit
+from cantrip.agent.git.git_branch import (
     PUSH_CONFIRM_PREFIX,
     PrFeedback,
     create_branch,
@@ -2035,7 +2033,7 @@ class CantripAgent:
         """Commit pre-existing dirty work before the agent runs.
 
         Gated by ``state.git_auto_commit``; the actual git work
-        lives in :mod:`cantrip.agent.auto_commit` so the
+        lives in :mod:`cantrip.agent.git.auto_commit` so the
         conversation loop stays focused on its own concerns.
         Failures inside the helper are non-fatal (logged at
         DEBUG); we never want a broken auto-commit setup to break

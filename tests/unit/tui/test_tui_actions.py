@@ -666,7 +666,7 @@ class TestBootstrapResponse:
     """Every branch of ``_handle_bootstrap_response`` (Phase 64 CONFIRM flow).
 
     The handler now gates on ``_pending_confirm_id`` starting with
-    :data:`cantrip.agent.git_branch.BOOTSTRAP_CONFIRM_PREFIX` — the
+    :data:`cantrip.agent.git.git_branch.BOOTSTRAP_CONFIRM_PREFIX` — the
     task ID suffix carries the default ``<workload>-operator`` repo
     name so bare ``approve`` picks that up without re-parsing the
     charm name.

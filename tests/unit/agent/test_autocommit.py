@@ -2,7 +2,7 @@
 
 Scenarios covered:
 
-* :mod:`cantrip.agent.auto_commit` primitives — touched-file
+* :mod:`cantrip.agent.git.auto_commit` primitives — touched-file
   collection, dirty-tree detection, pre-cantrip and agent commit
   shapes, fallback subject lines, build_commit_message body.
 * ``handle_auto_commit`` slash command (toggle, on/off, error
@@ -24,9 +24,9 @@ import subprocess
 
 import pytest
 
-from cantrip.agent import auto_commit
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
+from cantrip.agent.git import auto_commit
 from cantrip.llm.base import Message, Response, Role, ToolCall
 from tests.conftest import FakeProvider
 

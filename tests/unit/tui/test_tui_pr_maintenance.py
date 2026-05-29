@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cantrip.agent.git_branch import PrFeedback, PrReviewComment
+from cantrip.agent.git.git_branch import PrFeedback, PrReviewComment
 from cantrip.tui.app import CantripApp
 from cantrip.tui.widgets import chat as chat_widget
 from tests.unit.tui.test_tui import _patch_app

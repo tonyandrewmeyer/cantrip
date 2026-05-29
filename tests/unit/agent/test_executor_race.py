@@ -17,11 +17,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from cantrip.agent.executor import BackgroundExecutor, _candidate_id_for
+from cantrip.agent.git.worktree import WorktreeHandle
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.race import race
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import ExitState, SubagentResult
-from cantrip.agent.worktree import WorktreeHandle
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
 from tests.support.tools import make_stub_tool as _make_tool

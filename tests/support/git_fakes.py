@@ -1,6 +1,6 @@
 """Shared doubles for the git-branch / PR-body helpers.
 
-:func:`cantrip.agent.git_branch.build_pr_body` reads a small,
+:func:`cantrip.agent.git.git_branch.build_pr_body` reads a small,
 duck-typed task shape — ``title`` / ``category`` / ``status`` /
 ``result`` — off each task it summarises.  Two test modules used to
 define their own identical ``_FakeTask`` for this; :class:`FakeTask`

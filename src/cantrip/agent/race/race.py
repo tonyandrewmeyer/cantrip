@@ -51,8 +51,8 @@ class RaceGate(enum.StrEnum):
 
 
 if TYPE_CHECKING:
+    from cantrip.agent.git.worktree import WorktreeAllocator, WorktreeHandle
     from cantrip.agent.subagent import Subagent, SubagentResult
-    from cantrip.agent.worktree import WorktreeAllocator, WorktreeHandle
     from cantrip.llm import base as llm
 
 log = logging.getLogger(__name__)

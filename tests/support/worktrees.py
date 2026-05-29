@@ -15,7 +15,7 @@ import dataclasses
 import pathlib
 from collections.abc import Callable
 
-from cantrip.agent.worktree import WorktreeHandle
+from cantrip.agent.git.worktree import WorktreeHandle
 
 HandleFactory = Callable[[str, pathlib.Path], WorktreeHandle | None]
 

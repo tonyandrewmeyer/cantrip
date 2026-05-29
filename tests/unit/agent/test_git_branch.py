@@ -3,7 +3,7 @@
 import subprocess
 from unittest import mock
 
-from cantrip.agent.git_branch import (
+from cantrip.agent.git.git_branch import (
     BRANCH_PREFIX,
     PrFeedback,
     PrReviewComment,
@@ -66,22 +66,22 @@ class TestCurrentBranch:
 
     def test_returns_branch_name(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="main\n")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert current_branch("/path") == "main"
 
     def test_returns_none_on_failure(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=128, stdout="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert current_branch("/path") is None
 
     def test_returns_none_on_detached_head(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="HEAD\n")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert current_branch("/path") is None
 
     def test_returns_none_on_timeout(self) -> None:
         with mock.patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=15),
         ):
             assert current_branch("/path") is None
@@ -97,7 +97,7 @@ class TestCreateBranch:
 
     def test_creates_branch_with_prefix(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result) as m:
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result) as m:
             branch = create_branch("/path", "Add PostgreSQL")
             assert branch == f"{BRANCH_PREFIX}add-postgresql"
             cmd = m.call_args[0][0]
@@ -107,12 +107,12 @@ class TestCreateBranch:
         result = subprocess.CompletedProcess(
             args=[], returncode=128, stdout="", stderr="branch already exists"
         )
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert create_branch("/path", "existing") is None
 
     def test_empty_description_uses_fallback(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result) as m:
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result) as m:
             branch = create_branch("/path", "!@#")
             assert branch == f"{BRANCH_PREFIX}change"
             cmd = m.call_args[0][0]
@@ -120,7 +120,7 @@ class TestCreateBranch:
 
     def test_returns_none_on_timeout(self) -> None:
         with mock.patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=15),
         ):
             assert create_branch("/path", "test") is None
@@ -136,12 +136,12 @@ class TestSwitchBranch:
 
     def test_success(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert switch_branch("/path", "cantrip/fix") is True
 
     def test_failure(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=1, stdout="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert switch_branch("/path", "nonexistent") is False
 
 
@@ -157,7 +157,7 @@ class TestPushBranch:
         result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr="branch set up to track"
         )
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             ok, msg = push_branch("/path", "cantrip/fix")
             assert ok is True
             assert "branch set up to track" in msg
@@ -166,14 +166,14 @@ class TestPushBranch:
         result = subprocess.CompletedProcess(
             args=[], returncode=128, stdout="", stderr="permission denied"
         )
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             ok, msg = push_branch("/path", "cantrip/fix")
             assert ok is False
             assert "permission denied" in msg
 
     def test_uses_set_upstream(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result) as m:
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result) as m:
             push_branch("/path", "cantrip/fix", remote="upstream")
             cmd = m.call_args[0][0]
             assert "-u" in cmd
@@ -182,7 +182,7 @@ class TestPushBranch:
 
     def test_timeout(self) -> None:
         with mock.patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
         ):
             ok, msg = push_branch("/path", "cantrip/fix")
@@ -198,7 +198,7 @@ class TestCreatePullRequest:
     """Tests for create_pull_request()."""
 
     def test_no_gh_binary(self) -> None:
-        with mock.patch("cantrip.agent.git_branch.shutil.which", return_value=None):
+        with mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value=None):
             ok, msg = create_pull_request("/path", "Title", "Body")
             assert ok is False
             assert "not found" in msg
@@ -208,8 +208,8 @@ class TestCreatePullRequest:
             args=[], returncode=0, stdout="https://github.com/owner/repo/pull/1\n", stderr=""
         )
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             ok, url = create_pull_request("/path", "Fix bug", "Description")
             assert ok is True
@@ -220,8 +220,8 @@ class TestCreatePullRequest:
             args=[], returncode=1, stdout="", stderr="no commits between main and branch"
         )
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             ok, msg = create_pull_request("/path", "Title", "Body")
             assert ok is False
@@ -232,8 +232,8 @@ class TestCreatePullRequest:
             args=[], returncode=0, stdout="https://github.com/o/r/pull/2\n", stderr=""
         )
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result) as m,
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result) as m,
         ):
             create_pull_request("/path", "Title", "Body", draft=True)
             cmd = m.call_args[0][0]
@@ -244,8 +244,8 @@ class TestCreatePullRequest:
             args=[], returncode=0, stdout="https://github.com/o/r/pull/3\n", stderr=""
         )
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result) as m,
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result) as m,
         ):
             create_pull_request("/path", "Title", "Body", base="develop")
             cmd = m.call_args[0][0]
@@ -301,17 +301,17 @@ class TestHasGitRepo:
 
     def test_true_when_git_dir_exists(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout=".git\n")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert has_git_repo("/path") is True
 
     def test_false_when_not_a_repo(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=128, stdout="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert has_git_repo("/path") is False
 
     def test_false_on_timeout(self) -> None:
         with mock.patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=15),
         ):
             assert has_git_repo("/path") is False
@@ -324,12 +324,12 @@ class TestHasRemote:
         result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="https://github.com/o/r.git\n"
         )
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert has_remote("/path") is True
 
     def test_false_when_no_origin(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=2, stdout="")
-        with mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result):
+        with mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result):
             assert has_remote("/path") is False
 
 
@@ -339,20 +339,20 @@ class TestGhAvailable:
     def test_true_when_installed_and_authenticated(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             assert gh_available() is True
 
     def test_false_when_not_installed(self) -> None:
-        with mock.patch("cantrip.agent.git_branch.shutil.which", return_value=None):
+        with mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value=None):
             assert gh_available() is False
 
     def test_false_when_not_authenticated(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=1, stdout="")
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             assert gh_available() is False
 
@@ -366,14 +366,14 @@ class TestGitInit:
     """Tests for git_init()."""
 
     def test_skips_if_already_repo(self) -> None:
-        with mock.patch("cantrip.agent.git_branch.has_git_repo", return_value=True):
+        with mock.patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True):
             assert git_init("/path") is True
 
     def test_inits_new_repo(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
         with (
-            mock.patch("cantrip.agent.git_branch.has_git_repo", return_value=False),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.has_git_repo", return_value=False),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             assert git_init("/path") is True
 
@@ -385,20 +385,20 @@ class TestCanBootstrap:
         assert can_bootstrap(None) is False
 
     def test_false_when_remote_exists(self) -> None:
-        with mock.patch("cantrip.agent.git_branch.has_remote", return_value=True):
+        with mock.patch("cantrip.agent.git.git_branch.has_remote", return_value=True):
             assert can_bootstrap("/path") is False
 
     def test_false_when_gh_unavailable(self) -> None:
         with (
-            mock.patch("cantrip.agent.git_branch.has_remote", return_value=False),
-            mock.patch("cantrip.agent.git_branch.gh_available", return_value=False),
+            mock.patch("cantrip.agent.git.git_branch.has_remote", return_value=False),
+            mock.patch("cantrip.agent.git.git_branch.gh_available", return_value=False),
         ):
             assert can_bootstrap("/path") is False
 
     def test_true_when_conditions_met(self) -> None:
         with (
-            mock.patch("cantrip.agent.git_branch.has_remote", return_value=False),
-            mock.patch("cantrip.agent.git_branch.gh_available", return_value=True),
+            mock.patch("cantrip.agent.git.git_branch.has_remote", return_value=False),
+            mock.patch("cantrip.agent.git.git_branch.gh_available", return_value=True),
         ):
             assert can_bootstrap("/path") is True
 
@@ -419,9 +419,9 @@ class TestBootstrapGithubRepo:
             stderr="",
         )
         with (
-            mock.patch("cantrip.agent.git_branch.has_git_repo", return_value=True),
-            mock.patch("cantrip.agent.git_branch._has_commits", return_value=True),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=gh_result),
+            mock.patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True),
+            mock.patch("cantrip.agent.git.git_branch._has_commits", return_value=True),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=gh_result),
         ):
             ok, msg = bootstrap_github_repo("/path", "my-charm")
             assert ok is True
@@ -432,9 +432,9 @@ class TestBootstrapGithubRepo:
             args=[], returncode=1, stdout="", stderr="name already exists"
         )
         with (
-            mock.patch("cantrip.agent.git_branch.has_git_repo", return_value=True),
-            mock.patch("cantrip.agent.git_branch._has_commits", return_value=True),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=gh_result),
+            mock.patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True),
+            mock.patch("cantrip.agent.git.git_branch._has_commits", return_value=True),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=gh_result),
         ):
             ok, msg = bootstrap_github_repo("/path", "my-charm")
             assert ok is False
@@ -448,9 +448,9 @@ class TestBootstrapGithubRepo:
             args=[], returncode=0, stdout="https://github.com/u/r\n", stderr=""
         )
         with (
-            mock.patch("cantrip.agent.git_branch.has_git_repo", return_value=False),
+            mock.patch("cantrip.agent.git.git_branch.has_git_repo", return_value=False),
             mock.patch(
-                "cantrip.agent.git_branch.subprocess.run",
+                "cantrip.agent.git.git_branch.subprocess.run",
                 side_effect=[init_result, add_result, commit_result, gh_result],
             ),
         ):
@@ -462,9 +462,9 @@ class TestBootstrapGithubRepo:
             args=[], returncode=0, stdout="https://github.com/canonical/my-charm\n", stderr=""
         )
         with (
-            mock.patch("cantrip.agent.git_branch.has_git_repo", return_value=True),
-            mock.patch("cantrip.agent.git_branch._has_commits", return_value=True),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=gh_result) as m,
+            mock.patch("cantrip.agent.git.git_branch.has_git_repo", return_value=True),
+            mock.patch("cantrip.agent.git.git_branch._has_commits", return_value=True),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=gh_result) as m,
         ):
             bootstrap_github_repo("/path", "my-charm", org="canonical")
             cmd = m.call_args[0][0]
@@ -483,7 +483,7 @@ class TestCheckUpstreamDiverged:
         fetch_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
         count_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="0\n")
         with mock.patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=[fetch_result, count_result],
         ):
             diverged, behind = check_upstream_diverged("/path")
@@ -494,7 +494,7 @@ class TestCheckUpstreamDiverged:
         fetch_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
         count_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="3\n")
         with mock.patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=[fetch_result, count_result],
         ):
             diverged, behind = check_upstream_diverged("/path")
@@ -503,7 +503,7 @@ class TestCheckUpstreamDiverged:
 
     def test_fetch_fails_gracefully(self) -> None:
         with mock.patch(
-            "cantrip.agent.git_branch.subprocess.run",
+            "cantrip.agent.git.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
         ):
             diverged, behind = check_upstream_diverged("/path")
@@ -521,8 +521,8 @@ class TestGhIssueComment:
     def test_success(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             ok, msg = gh_issue_comment("owner/repo", 42, "Fixed!")
             assert ok is True
@@ -530,23 +530,23 @@ class TestGhIssueComment:
     def test_failure(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found")
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             ok, msg = gh_issue_comment("owner/repo", 42, "Fixed!")
             assert ok is False
             assert "not found" in msg
 
     def test_no_gh(self) -> None:
-        with mock.patch("cantrip.agent.git_branch.shutil.which", return_value=None):
+        with mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value=None):
             ok, msg = gh_issue_comment("owner/repo", 42, "Fixed!")
             assert ok is False
 
     def test_passes_correct_args(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result) as m,
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result) as m,
         ):
             gh_issue_comment("owner/repo", 99, "Done")
             cmd = m.call_args[0][0]
@@ -564,14 +564,14 @@ class TestGhPrView:
     """Tests for gh_pr_view()."""
 
     def test_no_gh(self) -> None:
-        with mock.patch("cantrip.agent.git_branch.shutil.which", return_value=None):
+        with mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value=None):
             assert gh_pr_view("owner/repo", 1) is None
 
     def test_command_failure(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found")
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             assert gh_pr_view("owner/repo", 1) is None
 
@@ -603,8 +603,8 @@ class TestGhPrView:
             args=[], returncode=0, stdout=json.dumps(data), stderr=""
         )
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             feedback = gh_pr_view("owner/repo", 42)
 
@@ -632,8 +632,8 @@ class TestGhPrView:
             args=[], returncode=0, stdout=json.dumps(data), stderr=""
         )
         with (
-            mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
+            mock.patch("cantrip.agent.git.git_branch.shutil.which", return_value="/usr/bin/gh"),
+            mock.patch("cantrip.agent.git.git_branch.subprocess.run", return_value=result),
         ):
             feedback = gh_pr_view("owner/repo", 10)
 

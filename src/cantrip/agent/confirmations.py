@@ -13,7 +13,7 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from cantrip.agent.git_branch import (
+from cantrip.agent.git.git_branch import (
     BOOTSTRAP_CONFIRM_PREFIX,
     PUSH_CONFIRM_PREFIX,
     bootstrap_github_repo,
