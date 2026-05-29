@@ -8,6 +8,7 @@ from collections.abc import Iterator
 import pytest
 
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
+from cantrip.agent.memory import export as memory_export
 from cantrip.agent.memory.commands import (
     handle_forget,
     handle_memory,
@@ -125,6 +126,19 @@ class TestHandleRemember:
         # field-count mismatch.  Either response is an acceptable refusal.
         assert "body" in out or "expected three" in out
 
+    def test_write_scope_error_surfaced(
+        self, manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cantrip.agent.memory.core import MemoryScopeError
+
+        def _raise(**_kwargs: object) -> object:
+            raise MemoryScopeError("charm scope unavailable")
+
+        monkeypatch.setattr(manager, "write", _raise)
+        out = handle_remember(manager, "fact -- t -- b")
+        assert "Error" in out
+        assert "charm scope unavailable" in out
+
 
 # ── /forget ────────────────────────────────────────────────────────────
 
@@ -176,6 +190,13 @@ class TestHandleForget:
     def test_explicit_scope_unknown_title(self, manager: MemoryManager) -> None:
         out = handle_forget(manager, "nope charm")
         assert "Error" in out
+
+    def test_unparseable_quotes_reported(self, manager: MemoryManager) -> None:
+        # An unbalanced quote makes shlex raise; the handler turns it into
+        # a friendly parse-error rather than letting it escape.
+        out = handle_forget(manager, '"unclosed')
+        assert "Error" in out
+        assert "could not parse" in out
 
     def test_help_text_mentions_all_commands(self) -> None:
         text = memory_help_text()
@@ -230,3 +251,78 @@ class TestExportImportSlashCommands:
         out = handle_memory(manager, f"import {tmp_path / 'nope.md'}")
         assert "Error" in out
         assert "import failed" in out
+
+    def test_export_valid_scope_filters(
+        self, manager: MemoryManager, tmp_path: pathlib.Path
+    ) -> None:
+        manager.write(scope="charm", title="t", kind="fact", body="b")
+        out = handle_memory(manager, f"export bundle {tmp_path / 'out'} charm")
+        assert "Exported 1 memories" in out
+
+    def test_export_too_many_args(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
+        out = handle_memory(manager, f"export bundle {tmp_path / 'out'} charm extra")
+        assert "Error" in out
+        assert "too many arguments to export" in out
+
+    def test_export_failure_surfaces_reason(
+        self, manager: MemoryManager, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _boom(*_args: object, **_kwargs: object) -> object:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(memory_export, "export_to_skill", _boom)
+        out = handle_memory(manager, f"export bundle {tmp_path / 'out'}")
+        assert "export failed" in out
+        assert "disk full" in out
+
+    def test_export_md_missing_args(self, manager: MemoryManager) -> None:
+        out = handle_memory(manager, "export-md")
+        assert "Error" in out
+        assert "expected" in out
+
+    def test_export_md_unknown_scope(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
+        out = handle_memory(manager, f"export-md {tmp_path / 'dump'} elsewhere")
+        assert "unknown scope" in out
+
+    def test_export_md_too_many_args(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
+        out = handle_memory(manager, f"export-md {tmp_path / 'dump'} charm extra")
+        assert "too many arguments to export-md" in out
+
+    def test_export_md_failure_surfaces_reason(
+        self, manager: MemoryManager, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _boom(*_args: object, **_kwargs: object) -> object:
+            raise ValueError("bad dir")
+
+        monkeypatch.setattr(memory_export, "export_to_markdown", _boom)
+        out = handle_memory(manager, f"export-md {tmp_path / 'dump'}")
+        assert "export failed" in out
+        assert "bad dir" in out
+
+    def test_import_missing_args(self, manager: MemoryManager) -> None:
+        out = handle_memory(manager, "import")
+        assert "Error" in out
+        assert "expected" in out
+
+    def test_import_unknown_scope(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
+        out = handle_memory(manager, f"import {tmp_path / 'x.md'} elsewhere")
+        assert "unknown scope" in out
+
+    def test_import_too_many_args(self, manager: MemoryManager, tmp_path: pathlib.Path) -> None:
+        out = handle_memory(manager, f"import {tmp_path / 'x.md'} global extra")
+        assert "too many arguments to import" in out
+
+    def test_import_reports_skipped_and_failed(
+        self, manager: MemoryManager, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        result = memory_export.ImportResult(
+            imported=["a"],
+            skipped=["dup1", "dup2"],
+            failed=[("bad", "parse error")],
+        )
+        monkeypatch.setattr(memory_export, "import_from_path", lambda *_a, **_k: result)
+        out = handle_memory(manager, f"import {tmp_path / 'src.md'}")
+        assert "Imported 1 memories" in out
+        assert "Skipped 2 duplicates" in out
+        assert "1 failed" in out
+        assert "parse error" in out

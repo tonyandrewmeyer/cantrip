@@ -419,6 +419,91 @@ class TestTriageController:
         assert 202 in ctl._issue_triage.examined_issues  # noqa: SLF001
         await ctl.stop()
 
+    def test_start_on_issues_found_queues_tasks_and_records_event(self):
+        """The triage callback adds confirm tasks and records a store event."""
+        state = AgentState(github_repo="canonical/test-charm")
+        bus = _make_event_bus()
+        events: list[ui_events.UIEvent] = []
+        bus.subscribe(None, events.append)
+        queue = WorkQueue()
+        recorded: list[tuple[str, dict]] = []
+        store = mock.MagicMock()
+        store.record_event = lambda name, payload: recorded.append((name, payload))
+        ensured: list[bool] = []
+        ctl = TriageController(
+            state=state,
+            event_bus=bus,
+            work_queue=queue,
+            ensure_store=lambda: ensured.append(True),
+            get_store=lambda: store,
+        )
+
+        captured: dict[str, object] = {}
+
+        class _CapturingTriage:
+            def __init__(self, *, repo, on_issues_found):  # noqa: ANN001
+                captured["cb"] = on_issues_found
+                self.running = False
+
+            def start(self) -> None:
+                self.running = True
+
+        with mock.patch("cantrip.agent.triage_controller.IssueTriage", _CapturingTriage):
+            assert ctl.start() is True
+
+        callback = captured["cb"]
+        task = AgentTask(id="issue-1", title="Fix the bug", category=TaskCategory.BUILD)
+        callback([task])  # type: ignore[operator]
+
+        assert queue.get_task("issue-1") is not None
+        assert ensured  # ensure_store was invoked before recording.
+        assert recorded and recorded[0][0] == "issue_triage_complete"
+        assert recorded[0][1]["candidates"] == 1
+        assert any("actionable GitHub issue" in str(e.payload) for e in events)
+
+    def test_retriage_on_issues_found_queues_and_announces_only_when_nonempty(self):
+        """The retriage callback queues tasks; the announcement is gated on a non-empty set."""
+        state = AgentState(github_repo="canonical/test-charm")
+        bus = _make_event_bus()
+        events: list[ui_events.UIEvent] = []
+        bus.subscribe(None, events.append)
+        queue = WorkQueue()
+        ctl = TriageController(
+            state=state,
+            event_bus=bus,
+            work_queue=queue,
+            ensure_store=lambda: None,
+            get_store=lambda: None,
+        )
+
+        captured: dict[str, object] = {}
+
+        class _CapturingTriage:
+            def __init__(self, *, repo, on_issues_found):  # noqa: ANN001
+                captured["cb"] = on_issues_found
+                self.running = False
+                self._examined: set[int] = set()
+
+            @property
+            def examined_issues(self) -> set[int]:
+                return self._examined
+
+            def start(self) -> None:
+                self.running = True
+
+        with mock.patch("cantrip.agent.triage_controller.IssueTriage", _CapturingTriage):
+            assert ctl.retriage() is True
+
+        callback = captured["cb"]
+        # Empty set: task queue untouched, no announcement.
+        callback([])  # type: ignore[operator]
+        assert not events
+        # Non-empty: task queued and a "new actionable issue" message published.
+        task = AgentTask(id="issue-9", title="New bug", category=TaskCategory.BUILD)
+        callback([task])  # type: ignore[operator]
+        assert queue.get_task("issue-9") is not None
+        assert any("new actionable issue" in str(e.payload) for e in events)
+
 
 # ===========================================================================
 # 4. ExecutorController — pause/resume seam, user-pause

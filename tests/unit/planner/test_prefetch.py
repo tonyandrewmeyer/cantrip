@@ -168,6 +168,91 @@ class TestPrefetchSymbolBlock:
             assert "Ingress." not in block.split("\n")[0]
 
 
+class TestPrefetchErrorPaths:
+    """Index failure / empty-result arms of ``prefetch_symbol_block``."""
+
+    @staticmethod
+    def _match(name: str, kind):  # noqa: ANN001, ANN205 — local stub helper
+        from cantrip.codeintel import Symbol, SymbolKind, SymbolMatch
+
+        symbol = Symbol(name=name, kind=SymbolKind.CLASS, file="src/charm.py", line=1)
+        return SymbolMatch(symbol=symbol, match_kind=kind)
+
+    def _make_index(self, *, symbols_fn, definition_fn):  # noqa: ANN001, ANN202
+        class _StubIndex:
+            def build(self, *, force: bool = False) -> None:
+                del force
+
+            def workspace_symbols(self, query, **kwargs):  # noqa: ANN001
+                return symbols_fn(query)
+
+            def go_to_definition(self, symbol, **kwargs):  # noqa: ANN001
+                return definition_fn(symbol)
+
+        return _StubIndex()
+
+    def test_untrusted_top_match_is_skipped(self) -> None:
+        from cantrip.codeintel import SymbolMatchKind
+
+        index = self._make_index(
+            symbols_fn=lambda _q: ([self._match("FooBar", SymbolMatchKind.PREFIX)], 0),
+            definition_fn=lambda _s: None,
+        )
+        assert prefetch_symbol_block("Refactor FooBar now.", index) is None
+
+    def test_workspace_lookup_error_is_swallowed(self) -> None:
+        def _raise(_q):  # noqa: ANN001, ANN202
+            raise OSError("index mid-build")
+
+        index = self._make_index(symbols_fn=_raise, definition_fn=lambda _s: None)
+        assert prefetch_symbol_block("Refactor FooBar now.", index) is None
+
+    def test_definition_lookup_error_returns_none(self) -> None:
+        from cantrip.codeintel import SymbolMatchKind
+
+        def _raise_def(_s):  # noqa: ANN001, ANN202
+            raise RuntimeError("definition I/O failed")
+
+        index = self._make_index(
+            symbols_fn=lambda _q: ([self._match("FooBar", SymbolMatchKind.EXACT)], 0),
+            definition_fn=_raise_def,
+        )
+        assert prefetch_symbol_block("Refactor FooBar now.", index) is None
+
+    def test_definition_without_matches_returns_none(self) -> None:
+        from cantrip.codeintel import DefinitionResult, SymbolMatchKind
+
+        index = self._make_index(
+            symbols_fn=lambda _q: ([self._match("FooBar", SymbolMatchKind.EXACT)], 0),
+            definition_fn=lambda s: DefinitionResult(
+                query=s, matches=(), semantic=False, note="none"
+            ),
+        )
+        assert prefetch_symbol_block("Refactor FooBar now.", index) is None
+
+    def test_empty_render_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cantrip.agent.planner import prefetch as prefetch_mod
+        from cantrip.codeintel import (
+            Definition,
+            DefinitionResult,
+            Symbol,
+            SymbolKind,
+            SymbolMatchKind,
+        )
+
+        symbol = Symbol(name="FooBar", kind=SymbolKind.CLASS, file="src/charm.py", line=1)
+        definition = Definition(symbol=symbol, snippet="class FooBar:", snippet_start_line=1)
+        index = self._make_index(
+            symbols_fn=lambda _q: ([self._match("FooBar", SymbolMatchKind.EXACT)], 0),
+            definition_fn=lambda s: DefinitionResult(
+                query=s, matches=(definition,), semantic=True, note=""
+            ),
+        )
+        # A non-empty match set that renders to nothing still yields None.
+        monkeypatch.setattr(prefetch_mod, "render_definitions", lambda _r: "")
+        assert prefetch_symbol_block("Refactor FooBar now.", index) is None
+
+
 # ---------------------------------------------------------------------------
 # TaskPlanner integration
 # ---------------------------------------------------------------------------

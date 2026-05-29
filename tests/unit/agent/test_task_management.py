@@ -60,6 +60,18 @@ class TestListAction:
         assert "b1" in result.output
 
     @pytest.mark.asyncio
+    async def test_list_shows_blocked_reason(self) -> None:
+        task = _make_task("Stuck", task_id="s1")
+        queue = _make_queue(task)
+        queue.set_blocked("s1", "Goal budget exceeded")
+        tool = ManageTasksTool(queue=queue)
+
+        result = await tool.execute(action="list")
+
+        assert result.success
+        assert "blocked: Goal budget exceeded" in result.output
+
+    @pytest.mark.asyncio
     async def test_list_shows_status_counts(self) -> None:
         queue = _make_queue(
             _make_task("Done", status=TaskStatus.DONE),
@@ -181,6 +193,68 @@ class TestReprioritiseAction:
         assert not result.success
         assert result.error is not None and "required" in result.error
 
+    @pytest.mark.asyncio
+    async def test_reprioritise_missing_task_fails(self) -> None:
+        tool = ManageTasksTool(queue=WorkQueue())
+        result = await tool.execute(action="reprioritise", task_id="ghost")
+        assert not result.success
+        assert result.error is not None and "not found" in result.error
+
+
+# ===================================================================
+# TestApproveAction
+# ===================================================================
+
+
+class TestApproveAction:
+    """Tests for the 'approve' action — pending or blocked CONFIRM tasks."""
+
+    @pytest.mark.asyncio
+    async def test_approve_blocked_task_marks_done(self) -> None:
+        task = _make_task("Confirm plan", task_id="c1", category=TaskCategory.CONFIRM)
+        queue = _make_queue(task)
+        queue.set_blocked("c1", "Waiting for user confirmation")
+        tool = ManageTasksTool(queue=queue)
+
+        result = await tool.execute(action="approve", task_id="c1")
+
+        assert result.success
+        assert "Approved" in result.output
+        assert queue.get_task("c1").status is TaskStatus.DONE
+
+    @pytest.mark.asyncio
+    async def test_approve_pending_task_marks_done(self) -> None:
+        task = _make_task("Confirm plan", task_id="c2", category=TaskCategory.CONFIRM)
+        queue = _make_queue(task)
+        tool = ManageTasksTool(queue=queue)
+
+        result = await tool.execute(action="approve", task_id="c2")
+
+        assert result.success
+        assert queue.get_task("c2").status is TaskStatus.DONE
+
+    @pytest.mark.asyncio
+    async def test_approve_active_task_fails(self) -> None:
+        task = _make_task("Working", task_id="a1", status=TaskStatus.ACTIVE)
+        tool = ManageTasksTool(queue=_make_queue(task))
+        result = await tool.execute(action="approve", task_id="a1")
+        assert not result.success
+        assert result.error is not None and "Cannot approve" in result.error
+
+    @pytest.mark.asyncio
+    async def test_approve_missing_task_fails(self) -> None:
+        tool = ManageTasksTool(queue=WorkQueue())
+        result = await tool.execute(action="approve", task_id="ghost")
+        assert not result.success
+        assert result.error is not None and "not found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_approve_requires_task_id(self) -> None:
+        tool = ManageTasksTool(queue=WorkQueue())
+        result = await tool.execute(action="approve")
+        assert not result.success
+        assert result.error is not None and "required" in result.error
+
 
 # ===================================================================
 # TestDetailAction
@@ -211,6 +285,24 @@ class TestDetailAction:
         assert "done" in result.output
         assert "Scaffold the charm" in result.output
         assert "Charm built successfully" in result.output
+
+    @pytest.mark.asyncio
+    async def test_detail_shows_dependencies_and_blocked_reason(self) -> None:
+        task = AgentTask(
+            id="d1",
+            title="Dependent task",
+            category=TaskCategory.BUILD,
+            dependencies=["upstream-a", "upstream-b"],
+        )
+        queue = _make_queue(task)
+        queue.set_blocked("d1", "Upstream not done")
+        tool = ManageTasksTool(queue=queue)
+
+        result = await tool.execute(action="detail", task_id="d1")
+
+        assert result.success
+        assert "Dependencies: upstream-a, upstream-b" in result.output
+        assert "Blocked: Upstream not done" in result.output
 
     @pytest.mark.asyncio
     async def test_detail_missing_task(self) -> None:
