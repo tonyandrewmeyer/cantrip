@@ -899,6 +899,15 @@ remembers.
 
 ## Phase 113: Source-Tree Restructure — Tame the Growth
 
+> **⚠️ Session handoff — read before continuing this phase:**
+> [`design/research/PHASE_113_HANDOFF.md`](design/research/PHASE_113_HANDOFF.md)
+> records exactly what has landed (113.1/113.2/113.3 done; 113.4 partial; 113.8 done
+> plus two bug fixes), what is mid-flight (**113.6** — a `ConfirmationCoordinator` draft
+> sits untracked at `src/cantrip/tui/confirmations.py`, app.py not yet wired), the
+> step-by-step plan to finish 113.6, what remains open (113.4 finish, 113.5, 113.7, 113.9,
+> 113.10), and the process lessons that caused churn (run `make check` before every commit;
+> the pre-commit hook does not run tests; prefer sequential edits). Start there.
+
 **Goal:** The codebase has accumulated significant local entropy as
 features have shipped.  Six call-out areas are now disproportionately
 costly to navigate: a 3,843-line `CantripAgent` god-class in
