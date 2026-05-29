@@ -14,7 +14,7 @@ import pytest
 
 from cantrip.agent.design import DesignQuestion
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.agent.race import RACE_CONFIRM_PREFIX
+from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
 from cantrip.tui.app import CantripApp
 from cantrip.tui.screens import questions as questions_screen
 from cantrip.tui.widgets import chat as chat_widget

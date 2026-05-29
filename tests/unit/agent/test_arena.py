@@ -8,8 +8,8 @@ import random
 
 import pytest
 
-from cantrip.agent import arena
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
+from cantrip.agent.race import arena
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
 

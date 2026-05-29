@@ -7,7 +7,7 @@ subsystem as a global-scope ``fact`` so future turns can consult the
 user's recorded preferences across charms.
 
 Arena mode is deliberately separate from the race coordinator in
-:mod:`cantrip.agent.race`: the race coordinator runs full subagent
+:mod:`cantrip.agent.race.race`: the race coordinator runs full subagent
 loops with tools and objective scoring, whereas arena runs a single
 provider completion per candidate and defers to the user for the
 verdict.  The two mechanisms share a name and a goal but not an

@@ -16,9 +16,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from cantrip.agent import race
 from cantrip.agent.executor import BackgroundExecutor, _candidate_id_for
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.race import race
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import ExitState, SubagentResult
 from cantrip.agent.worktree import WorktreeHandle

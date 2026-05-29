@@ -10,7 +10,7 @@ import subprocess
 import time
 from collections.abc import Callable
 
-from cantrip.agent import lint_context, race, routing
+from cantrip.agent import lint_context, routing
 from cantrip.agent.executor.git_service import _DefaultGitService
 from cantrip.agent.executor.policies import (
     _DefaultEnvironmentChecker,
@@ -33,6 +33,7 @@ from cantrip.agent.policy import (
     discover_policies,
 )
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.race import race
 from cantrip.agent.routing import RouteAction, route, snapshot_from_queue
 from cantrip.agent.services import (
     EnvironmentChecker,

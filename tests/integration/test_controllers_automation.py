@@ -26,7 +26,6 @@ import unittest.mock as mock
 
 import pytest
 
-from cantrip.agent.arena_controller import ArenaController
 from cantrip.agent.auto_commit import (
     _CANTRIP_TRAILER,
     _PRE_CANTRIP_MESSAGE,
@@ -46,6 +45,7 @@ from cantrip.agent.git_branch import (
 )
 from cantrip.agent.mcp_controller import MCPController
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.race.arena_controller import ArenaController
 from cantrip.agent.state import AgentState
 from cantrip.agent.triage_controller import TriageController
 from cantrip.agent.watcher_controller import WatcherController
@@ -294,7 +294,7 @@ class TestArenaController:
 
     def test_handle_pick_returns_none_on_unrecognised(self):
         """A random message while an arena is active doesn't consume it."""
-        from cantrip.agent import arena
+        from cantrip.agent.race import arena
         from tests.conftest import FakeProvider as _FakeProvider
 
         primary = _FakeProvider([Response(content="Answer A")])
@@ -318,7 +318,7 @@ class TestArenaController:
         assert ctl.active is not None
 
     def test_handle_pick_skip_clears_session(self):
-        from cantrip.agent import arena
+        from cantrip.agent.race import arena
 
         ctl = self._make_controller()
         ctl._session = arena.ArenaSession(  # noqa: SLF001

@@ -11,7 +11,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from cantrip.agent import arena
+from cantrip.agent.race import arena
 
 if TYPE_CHECKING:
     from cantrip.agent.memory import MemoryManager

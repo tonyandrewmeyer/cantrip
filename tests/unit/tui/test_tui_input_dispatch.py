@@ -18,7 +18,7 @@ from textual.worker import WorkerState
 
 from cantrip.agent.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
 from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
-from cantrip.agent.race import RACE_CONFIRM_PREFIX
+from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
 from cantrip.agent.state import TestResults
 from cantrip.llm.base import ProviderRateLimitError
 from cantrip.tui.app import CantripApp

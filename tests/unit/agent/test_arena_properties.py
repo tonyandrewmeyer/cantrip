@@ -12,7 +12,7 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
-from cantrip.agent.arena import ArenaOutcome, parse_pick
+from cantrip.agent.race.arena import ArenaOutcome, parse_pick
 
 _EXPECTED_BY_ALIAS = {
     "a": ArenaOutcome.PICKED_A,

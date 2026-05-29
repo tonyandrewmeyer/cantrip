@@ -19,7 +19,6 @@ from cantrip.agent import (
 )
 from cantrip.agent import flows as flows_module
 from cantrip.agent import recipes as recipes_module
-from cantrip.agent.arena_controller import ArenaController
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.confirmations import ConfirmationsController
@@ -77,6 +76,7 @@ from cantrip.agent.queue import (
     WorkflowPhase,
     WorkQueue,
 )
+from cantrip.agent.race.arena_controller import ArenaController
 from cantrip.agent.repo_map_service import RepoMapService
 from cantrip.agent.retry import RetryEvent, complete_with_retry, stream_with_retry
 from cantrip.agent.session_preview import SessionPreview

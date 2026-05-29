@@ -28,7 +28,7 @@ from cantrip.agent.github_issues import (
     build_issue_work_tasks,
 )
 from cantrip.agent.queue import AgentTask, TaskCategory
-from cantrip.agent.race import RACE_CONFIRM_PREFIX
+from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
 
 if TYPE_CHECKING:
     from cantrip.agent.queue import WorkQueue

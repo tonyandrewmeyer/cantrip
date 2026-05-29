@@ -9,7 +9,7 @@ import pathlib
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.agent.race import RACE_CONFIRM_PREFIX
+from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
 from tests.conftest import FakeProvider
 
 
