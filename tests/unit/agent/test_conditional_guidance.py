@@ -25,7 +25,7 @@ import pathlib
 import pytest
 
 from cantrip.agent.core import CantripAgent, _extract_user_mentioned_files
-from cantrip.agent.skills import (
+from cantrip.agent.skills_runtime.skills import (
     SkillsIndex,
     _any_glob_matches,
     _glob_matches,

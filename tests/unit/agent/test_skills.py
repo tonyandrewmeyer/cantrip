@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from cantrip.agent.skills import SkillMetadata, SkillsIndex
+from cantrip.agent.skills_runtime.skills import SkillMetadata, SkillsIndex
 from cantrip.agent.tools.skills import LoadSkillTool
 
 
@@ -447,7 +447,7 @@ class TestSkillsIndexExternalDirs:
         )
 
         index = SkillsIndex(bundled, extra_dirs=[external])
-        with caplog.at_level("INFO", logger="cantrip.agent.skills"):
+        with caplog.at_level("INFO", logger="cantrip.agent.skills_runtime.skills"):
             index.discover()
 
         [metadata] = index.list_skills()
@@ -548,7 +548,7 @@ class TestSkillsIndexExternalDirs:
         is shared with Claude Code.  ``~/.config/cantrip/skills/`` is
         Cantrip-only and wins the insertion-order contest against both.
         """
-        from cantrip.agent.skills import _default_external_skill_dirs
+        from cantrip.agent.skills_runtime.skills import _default_external_skill_dirs
 
         dirs = _default_external_skill_dirs()
         paths = [str(d) for d in dirs]
@@ -565,7 +565,7 @@ class TestSkillsIndexExternalDirs:
 
     def test_project_root_adds_gh_skill_project_scope_dirs(self, tmp_path: pathlib.Path) -> None:
         """``project_root=`` unlocks the project-scope ``gh skill install`` paths."""
-        from cantrip.agent.skills import _default_project_skill_dirs
+        from cantrip.agent.skills_runtime.skills import _default_project_skill_dirs
 
         project = tmp_path / "charm-repo"
         project.mkdir()
@@ -849,7 +849,7 @@ class TestMCPAwareSkills:
 
     def test_export_round_trips_mcp_servers(self, tmp_path: pathlib.Path) -> None:
         """``cantrip skill export`` emits ``mcp_servers`` when present."""
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         index = self._build_index(
             tmp_path,
@@ -872,7 +872,7 @@ class TestMCPAwareSkills:
 
     def test_export_omits_mcp_servers_when_empty(self, tmp_path: pathlib.Path) -> None:
         """A skill without ``mcp_servers`` exports clean frontmatter."""
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         index = self._build_index(tmp_path, "name: deployer\ndescription: d")
         target = tmp_path / "out.md"
@@ -885,7 +885,7 @@ class TestExportSkill:
 
     def test_export_to_directory_writes_under_name_subdir(self, tmp_path: pathlib.Path) -> None:
         """A directory target expands to ``<dir>/<name>/SKILL.md``."""
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -909,7 +909,7 @@ class TestExportSkill:
 
     def test_export_to_explicit_md_path_is_verbatim(self, tmp_path: pathlib.Path) -> None:
         """An explicit ``.md`` path is written exactly where the caller asked."""
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -928,7 +928,7 @@ class TestExportSkill:
 
     def test_refuses_to_overwrite_without_force(self, tmp_path: pathlib.Path) -> None:
         """Refuses to clobber an existing target; pointing at --force flag in the message."""
-        from cantrip.agent.skill_export import SkillExportError, export_skill
+        from cantrip.agent.skills_runtime.skill_export import SkillExportError, export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -949,7 +949,7 @@ class TestExportSkill:
         assert target.read_text() == "pre-existing\n"
 
     def test_force_overwrites_existing_target(self, tmp_path: pathlib.Path) -> None:
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -968,7 +968,7 @@ class TestExportSkill:
         assert "Body." in target.read_text()
 
     def test_unknown_skill_raises_with_known_names(self, tmp_path: pathlib.Path) -> None:
-        from cantrip.agent.skill_export import SkillExportError, export_skill
+        from cantrip.agent.skills_runtime.skill_export import SkillExportError, export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -994,7 +994,7 @@ class TestExportSkill:
         ``parent.mkdir(parents=True)`` raised ``NotADirectoryError`` —
         leaking a Python traceback to the CLI.
         """
-        from cantrip.agent.skill_export import SkillExportError, export_skill
+        from cantrip.agent.skills_runtime.skill_export import SkillExportError, export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -1023,7 +1023,7 @@ class TestExportSkill:
         ``except (NotADirectoryError, FileExistsError)`` catch.  The
         export now wraps ``OSError`` more broadly.
         """
-        from cantrip.agent.skill_export import SkillExportError, export_skill
+        from cantrip.agent.skills_runtime.skill_export import SkillExportError, export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -1047,7 +1047,7 @@ class TestExportSkill:
     def test_charm_path_scrubbed_to_placeholder(self, tmp_path: pathlib.Path) -> None:
         """The current charm path becomes ``<CHARM_PATH>`` in the exported body."""
         from cantrip.agent.memory.export import CHARM_PATH_PLACEHOLDER
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -1070,7 +1070,7 @@ class TestExportSkill:
         assert result.redactions == 0  # Path replacement is not a "secret redaction".
 
     def test_secrets_redacted_and_counted(self, tmp_path: pathlib.Path) -> None:
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -1092,7 +1092,7 @@ class TestExportSkill:
 
     def test_tools_preserved_on_export(self, tmp_path: pathlib.Path) -> None:
         """Frontmatter ``tools`` round-trips verbatim on export."""
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -1119,7 +1119,7 @@ class TestExportSkill:
 
     def test_tools_omitted_when_source_has_none(self, tmp_path: pathlib.Path) -> None:
         """A skill without ``tools`` exports clean frontmatter (no empty list)."""
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -1139,7 +1139,7 @@ class TestExportSkill:
         self, tmp_path: pathlib.Path
     ) -> None:
         """Export → clear → re-import via a fresh SkillsIndex preserves all fields."""
-        from cantrip.agent.skill_export import export_skill
+        from cantrip.agent.skills_runtime.skill_export import export_skill
 
         source = tmp_path / "source"
         source.mkdir()
@@ -1193,7 +1193,7 @@ class TestSkillExportCLI:
         up the user's real ``~/.claude/skills/``.  Tests swap this subclass
         into the module for deterministic discovery on the CI box.
         """
-        from cantrip.agent.skills import SkillsIndex as _SkillsIndexCls
+        from cantrip.agent.skills_runtime.skills import SkillsIndex as _SkillsIndexCls
 
         class _IsolatedIndex(_SkillsIndexCls):
             def __init__(self, *a: object, **kw: object) -> None:  # noqa: D401
@@ -1210,7 +1210,7 @@ class TestSkillExportCLI:
         """Exports a skill, writes the file, and prints the destination."""
         import argparse
 
-        from cantrip.agent import skills as skills_module
+        from cantrip.agent.skills_runtime import skills as skills_module
         from cantrip.main import _skill_export
 
         source = tmp_path / "source"
@@ -1240,7 +1240,7 @@ class TestSkillExportCLI:
         """An unknown skill name exits with code 2 and an informative message."""
         import argparse
 
-        from cantrip.agent import skills as skills_module
+        from cantrip.agent.skills_runtime import skills as skills_module
         from cantrip.main import _skill_export
 
         empty_source = tmp_path / "empty"

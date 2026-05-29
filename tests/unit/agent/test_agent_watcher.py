@@ -3,7 +3,7 @@
 import pytest
 
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.watcher import WatcherEvent
+from cantrip.agent.watcher.watcher import WatcherEvent
 from tests.conftest import FakeProvider
 
 
@@ -19,7 +19,7 @@ class TestWatcherIntegration:
         provider = FakeProvider()
         agent = CantripAgent(provider=provider)
         monkeypatch.setattr(
-            "cantrip.agent.watcher_controller.detect_current_juju_model",
+            "cantrip.agent.watcher.watcher_controller.detect_current_juju_model",
             lambda **_kwargs: None,
         )
 
@@ -33,7 +33,7 @@ class TestWatcherIntegration:
         provider = FakeProvider()
         agent = CantripAgent(provider=provider)
         monkeypatch.setattr(
-            "cantrip.agent.watcher_controller.detect_current_juju_model",
+            "cantrip.agent.watcher.watcher_controller.detect_current_juju_model",
             lambda **_kwargs: "detected-model",
         )
 
@@ -52,7 +52,7 @@ class TestWatcherIntegration:
         agent = CantripAgent(provider=provider)
         agent.state.dev_model = "dev"
         monkeypatch.setattr(
-            "cantrip.agent.watcher_controller.detect_cos_juju_model", lambda: "cos"
+            "cantrip.agent.watcher.watcher_controller.detect_cos_juju_model", lambda: "cos"
         )
 
         assert agent.start_watcher() is True
@@ -73,7 +73,7 @@ class TestWatcherIntegration:
             called["count"] += 1
             return "cos"
 
-        monkeypatch.setattr("cantrip.agent.watcher_controller.detect_cos_juju_model", _spy)
+        monkeypatch.setattr("cantrip.agent.watcher.watcher_controller.detect_cos_juju_model", _spy)
         agent.start_watcher()
         assert agent.state.cos_model == "preset-cos"
         assert called["count"] == 0
@@ -108,7 +108,9 @@ class TestWatcherIntegration:
             seen["prefer_substrate"] = prefer_substrate
             return "auto-k8s"
 
-        monkeypatch.setattr("cantrip.agent.watcher_controller.detect_current_juju_model", _detect)
+        monkeypatch.setattr(
+            "cantrip.agent.watcher.watcher_controller.detect_current_juju_model", _detect
+        )
 
         assert agent.start_watcher() is True
         assert seen["prefer_substrate"] == "k8s"
@@ -125,11 +127,11 @@ class TestWatcherIntegration:
         agent.state.charm_type = "k8s"
 
         monkeypatch.setattr(
-            "cantrip.agent.watcher_controller.juju_model_substrate",
+            "cantrip.agent.watcher.watcher_controller.juju_model_substrate",
             lambda name: "machine" if name == "stale-lxd" else None,
         )
         monkeypatch.setattr(
-            "cantrip.agent.watcher_controller.detect_current_juju_model",
+            "cantrip.agent.watcher.watcher_controller.detect_current_juju_model",
             lambda **_kwargs: "fresh-k8s",
         )
 
@@ -152,7 +154,9 @@ class TestWatcherIntegration:
             called["detect"] += 1
             return "should-not-be-used"
 
-        monkeypatch.setattr("cantrip.agent.watcher_controller.detect_current_juju_model", _detect)
+        monkeypatch.setattr(
+            "cantrip.agent.watcher.watcher_controller.detect_current_juju_model", _detect
+        )
 
         assert agent.start_watcher() is True
         assert agent.state.dev_model == "user-chosen"

@@ -8,7 +8,7 @@ from unittest import mock
 import jubilant
 import pytest
 
-from cantrip.agent.watcher import (
+from cantrip.agent.watcher.watcher import (
     AppSnapshot,
     DatabagSnapshot,
     EventWatcher,
@@ -359,7 +359,7 @@ class TestDatabagDiffing:
 
     def test_new_keys_detected(self):
         """New keys appearing in a databag are detected."""
-        from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
+        from cantrip.agent.watcher.watcher import DatabagSnapshot, diff_databag_snapshots
 
         old = DatabagSnapshot(entries=(("myapp/0", "db", "postgresql", frozenset({"host"})),))
         new = DatabagSnapshot(
@@ -373,7 +373,7 @@ class TestDatabagDiffing:
 
     def test_removed_keys_detected(self):
         """Removed keys are detected."""
-        from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
+        from cantrip.agent.watcher.watcher import DatabagSnapshot, diff_databag_snapshots
 
         old = DatabagSnapshot(
             entries=(("myapp/0", "db", "postgresql", frozenset({"host", "port"})),)
@@ -386,7 +386,7 @@ class TestDatabagDiffing:
 
     def test_no_change_produces_no_events(self):
         """Identical databag snapshots produce no events."""
-        from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
+        from cantrip.agent.watcher.watcher import DatabagSnapshot, diff_databag_snapshots
 
         snap = DatabagSnapshot(
             entries=(("myapp/0", "db", "postgresql", frozenset({"host", "port"})),)
@@ -395,7 +395,7 @@ class TestDatabagDiffing:
 
     def test_old_none_produces_no_events(self):
         """First snapshot (old is None) produces no events."""
-        from cantrip.agent.watcher import DatabagSnapshot, diff_databag_snapshots
+        from cantrip.agent.watcher.watcher import DatabagSnapshot, diff_databag_snapshots
 
         new = DatabagSnapshot(entries=(("myapp/0", "db", "postgresql", frozenset({"host"})),))
         assert diff_databag_snapshots(None, new) == []
@@ -702,7 +702,7 @@ class TestStatusPolling:
 
         watcher = EventWatcher(dev_model="dev")
 
-        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+        with mock.patch("cantrip.agent.watcher.watcher.jubilant.Juju", return_value=mock_juju):
             await watcher._poll_status_once()
 
         # First poll sets the baseline — no events expected.
@@ -747,7 +747,7 @@ class TestStatusPolling:
 
         watcher = EventWatcher(dev_model="dev")
 
-        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+        with mock.patch("cantrip.agent.watcher.watcher.jubilant.Juju", return_value=mock_juju):
             await watcher._poll_status_once()
             await watcher._poll_status_once()
 
@@ -776,7 +776,7 @@ class TestCosStatusPolling:
 
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
 
-        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+        with mock.patch("cantrip.agent.watcher.watcher.jubilant.Juju", return_value=mock_juju):
             await watcher._poll_cos_status_once()
 
         assert watcher.latest_cos_status is mock_status
@@ -804,7 +804,7 @@ class TestStatusPollCallback:
         calls: list[str] = []
         watcher = EventWatcher(dev_model="dev", on_status_poll=calls.append)
 
-        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+        with mock.patch("cantrip.agent.watcher.watcher.jubilant.Juju", return_value=mock_juju):
             await watcher._poll_status_once()
 
         assert calls == ["dev"]
@@ -821,7 +821,7 @@ class TestStatusPollCallback:
         calls: list[str] = []
         watcher = EventWatcher(dev_model="dev", cos_model="cos", on_status_poll=calls.append)
 
-        with mock.patch("cantrip.agent.watcher.jubilant.Juju", return_value=mock_juju):
+        with mock.patch("cantrip.agent.watcher.watcher.jubilant.Juju", return_value=mock_juju):
             await watcher._poll_cos_status_once()
 
         assert calls == ["cos"]
@@ -856,7 +856,7 @@ class TestLokiPolling:
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
 
         with mock.patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(mock_juju, "loki-k8s/0"),
         ):
             await watcher._poll_loki_once()
@@ -883,7 +883,7 @@ class TestLokiPolling:
 
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
         with mock.patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(mock_juju, "loki-k8s/0"),
         ):
             await watcher._poll_loki_once()
@@ -914,7 +914,7 @@ class TestLokiPolling:
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
 
         with mock.patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(mock_juju, "loki-k8s/0"),
         ):
             # Should not raise.
@@ -928,7 +928,7 @@ class TestLokiPolling:
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
 
         with mock.patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             side_effect=ValueError("No app containing 'loki'"),
         ):
             await watcher._poll_loki_once()
@@ -956,7 +956,7 @@ class TestLokiPolling:
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
 
         with mock.patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(mock_juju, "loki-k8s/0"),
         ):
             await watcher._poll_loki_once()
@@ -986,7 +986,7 @@ class TestLokiPolling:
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
 
         with mock.patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(mock_juju, "loki-k8s/0"),
         ):
             await watcher._poll_loki_once()
@@ -1004,7 +1004,7 @@ class TestLokiPolling:
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
 
         with mock.patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(mock_juju, "loki-k8s/0"),
         ):
             await watcher._poll_loki_once()

@@ -37,7 +37,7 @@ class TestCheckUpstream:
     def test_returns_none_when_not_diverged(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.triage_controller.check_upstream_diverged",
+            "cantrip.agent.watcher.triage_controller.check_upstream_diverged",
             return_value=(False, 0),
         ):
             assert agent.check_upstream() is None
@@ -45,7 +45,7 @@ class TestCheckUpstream:
     def test_returns_warning_when_behind(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.triage_controller.check_upstream_diverged",
+            "cantrip.agent.watcher.triage_controller.check_upstream_diverged",
             return_value=(True, 3),
         ):
             msg = agent.check_upstream()
@@ -165,7 +165,7 @@ class TestCommentOnIssue:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         with patch(
-            "cantrip.agent.triage_controller.gh_issue_comment",
+            "cantrip.agent.watcher.triage_controller.gh_issue_comment",
             return_value=(True, "ok"),
         ) as gh:
             result = agent.comment_on_issue(7, "https://github.com/o/r/pull/8")
@@ -176,7 +176,7 @@ class TestCommentOnIssue:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         with patch(
-            "cantrip.agent.triage_controller.gh_issue_comment",
+            "cantrip.agent.watcher.triage_controller.gh_issue_comment",
             return_value=(False, "rate limited"),
         ):
             result = agent.comment_on_issue(7, "pr-url")
@@ -533,7 +533,9 @@ class TestIssueTriageWorker:
         agent = _agent(tmp_path)
         agent.state.github_repo = "o/r"
         fake = MagicMock()
-        with patch("cantrip.agent.triage_controller.IssueTriage", return_value=fake) as cls:
+        with patch(
+            "cantrip.agent.watcher.triage_controller.IssueTriage", return_value=fake
+        ) as cls:
             assert agent.start_issue_triage() is True
         cls.assert_called_once()
         fake.start.assert_called_once()
@@ -588,7 +590,7 @@ class TestIssueTriageWorker:
         agent._triage_ctl._issue_triage = prev
 
         new_worker = MagicMock()
-        with patch("cantrip.agent.triage_controller.IssueTriage", return_value=new_worker):
+        with patch("cantrip.agent.watcher.triage_controller.IssueTriage", return_value=new_worker):
             assert agent.retriage_issues() is True
         assert new_worker._examined == {1, 2, 3}
         new_worker.start.assert_called_once()

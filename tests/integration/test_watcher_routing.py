@@ -11,7 +11,7 @@ import pytest
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.executor import BackgroundExecutor
 from cantrip.agent.queue import TaskCategory, TaskStatus
-from cantrip.agent.watcher import WatcherEvent
+from cantrip.agent.watcher.watcher import WatcherEvent
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
 from tests.integration.conftest import wait_for_queue_state

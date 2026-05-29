@@ -42,7 +42,7 @@ import string
 from hypothesis import given
 from hypothesis import strategies as st
 
-from cantrip.agent.watcher import (
+from cantrip.agent.watcher.watcher import (
     AppSnapshot,
     OfferSnapshot,
     StatusSnapshot,

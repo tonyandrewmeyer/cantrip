@@ -77,7 +77,7 @@ from cantrip.agent.safety.permissions import (
     plan_mode_message,
 )
 from cantrip.agent.session_preview import SessionPreview
-from cantrip.agent.skills import SkillsIndex
+from cantrip.agent.skills_runtime.skills import SkillsIndex
 from cantrip.agent.snapshots import SnapshotManager
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
@@ -88,10 +88,10 @@ from cantrip.agent.tools import (
     expand_leaves,
     resolve_subcommand,
 )
-from cantrip.agent.triage_controller import TriageController
 from cantrip.agent.usage_tracker import UsageTracker
-from cantrip.agent.watcher import WatcherConfig, WatcherEvent
-from cantrip.agent.watcher_controller import WatcherController
+from cantrip.agent.watcher.triage_controller import TriageController
+from cantrip.agent.watcher.watcher import WatcherConfig, WatcherEvent
+from cantrip.agent.watcher.watcher_controller import WatcherController
 from cantrip.codeintel import CodeIntel
 from cantrip.hooks import (
     HookEvent,

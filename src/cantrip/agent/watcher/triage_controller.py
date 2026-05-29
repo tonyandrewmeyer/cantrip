@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cantrip.agent.git.git_branch import check_upstream_diverged, gh_issue_comment
-from cantrip.agent.github_issues import IssueTriage
+from cantrip.agent.watcher.github_issues import IssueTriage
 
 if TYPE_CHECKING:
     from cantrip.agent.queue import AgentTask, WorkQueue

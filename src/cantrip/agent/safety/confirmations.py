@@ -23,12 +23,12 @@ from cantrip.agent.git.git_branch import (
     push_branch,
     suggest_repo_name,
 )
-from cantrip.agent.github_issues import (
+from cantrip.agent.queue import AgentTask, TaskCategory
+from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
+from cantrip.agent.watcher.github_issues import (
     TRIAGE_CONFIRM_PREFIX,
     build_issue_work_tasks,
 )
-from cantrip.agent.queue import AgentTask, TaskCategory
-from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
 
 if TYPE_CHECKING:
     from cantrip.agent.queue import WorkQueue
@@ -323,7 +323,7 @@ class ConfirmationsController:
             return []
 
         # Build a minimal GitHubIssue from the confirm task description.
-        from cantrip.agent.github_issues import GitHubIssue
+        from cantrip.agent.watcher.github_issues import GitHubIssue
 
         issue = GitHubIssue(
             number=issue_number,

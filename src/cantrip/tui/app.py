@@ -22,11 +22,11 @@ from cantrip.agent.core import CantripAgent
 from cantrip.agent.design import DesignQuestion, parse_design_from_result
 from cantrip.agent.git import git_branch
 from cantrip.agent.git.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
-from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
 from cantrip.agent.runtime.preflight import DEFAULT_PRESET, CheckStatus, PreflightEvent
+from cantrip.agent.watcher.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.hooks import HookRunner
 from cantrip.llm import LLMProvider, create_provider, pricing, resolve_light_provider
 from cantrip.llm.base import ProviderError, ProviderOverloadedError, ProviderRateLimitError, Role

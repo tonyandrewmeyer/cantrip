@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from cantrip.agent.skill_scanner import (
+from cantrip.agent.skills_runtime.skill_scanner import (
     SEVERITY_HIGH,
     SEVERITY_LOW,
     SEVERITY_MEDIUM,

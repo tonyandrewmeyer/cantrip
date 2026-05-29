@@ -42,7 +42,7 @@ from typing import Any
 
 import yaml
 
-from cantrip.agent import skills
+from cantrip.agent.skills_runtime import skills
 from cantrip.llm import schemas
 from cantrip.llm.base import LLMProvider, Message, Role
 from cantrip.llm.structured import StructuredOutputError, complete_structured
@@ -347,7 +347,7 @@ def _matches_globs(path: pathlib.Path, globs: Sequence[str], charm_root: pathlib
     Patterns containing ``/`` match the path relative to *charm_root*
     (with ``**`` for any number of segments); bare patterns like
     ``README.md`` or ``*.py`` match the basename only.  Same
-    semantics as :func:`cantrip.agent.skills._any_glob_matches` so an
+    semantics as :func:`cantrip.agent.skills_runtime.skills._any_glob_matches` so an
     author writing both kinds of files learns one rule.
     """
     try:

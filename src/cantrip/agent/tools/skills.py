@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cantrip.agent.skills import SkillsIndex
+from cantrip.agent.skills_runtime.skills import SkillsIndex
 from cantrip.agent.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:

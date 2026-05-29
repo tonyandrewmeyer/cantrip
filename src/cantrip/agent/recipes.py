@@ -9,7 +9,7 @@ prompt with declared parameters, optional schema-validated output
 
 Distinct from neighbouring shapes:
 
-* :mod:`cantrip.agent.skills` — knowledge bundles the agent reads.
+* :mod:`cantrip.agent.skills_runtime.skills` — knowledge bundles the agent reads.
 * :mod:`cantrip.agent.flows` (Phase 69.4) — visual decision diagrams.
 * :class:`cantrip.agent.commands.custom.CustomCommand` — single-shot
   prompt template with positional / file / shell expansions.

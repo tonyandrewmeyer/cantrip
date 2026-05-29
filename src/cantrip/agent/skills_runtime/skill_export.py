@@ -1,6 +1,6 @@
 """Skill export to the standard SKILL.md format (Phase 50.2).
 
-Companion to :mod:`cantrip.agent.skills` (discovery / import, Phase 50.1).
+Companion to :mod:`cantrip.agent.skills_runtime.skills` (discovery / import, Phase 50.1).
 The exporter re-emits a Cantrip skill as the same YAML-frontmatter + Markdown
 shape the vendor-neutral Skills ecosystem uses, so an exported bundle drops
 straight into ``~/.claude/skills/`` or a teammate's
@@ -25,7 +25,7 @@ import yaml
 from cantrip.agent.memory.export import sanitise_body
 
 if TYPE_CHECKING:
-    from cantrip.agent.skills import SkillsIndex
+    from cantrip.agent.skills_runtime.skills import SkillsIndex
 
 log = logging.getLogger(__name__)
 

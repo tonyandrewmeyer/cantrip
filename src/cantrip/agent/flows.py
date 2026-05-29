@@ -9,7 +9,7 @@ can follow its reasoning.
 
 Distinct from neighbouring shapes:
 
-* :mod:`cantrip.agent.skills` — knowledge bundles loaded into context.
+* :mod:`cantrip.agent.skills_runtime.skills` — knowledge bundles loaded into context.
 * :mod:`cantrip.agent.recipes` — parameterised, retryable execution.
 * :class:`Flow` — a *visual decision tree* the agent walks step by
   step.  Branches are selected by the agent; the runtime validates

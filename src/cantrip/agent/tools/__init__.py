@@ -446,7 +446,7 @@ if TYPE_CHECKING:
     from cantrip.agent.context.context import VirtualFileStore
     from cantrip.agent.mcp_controller import MCPController
     from cantrip.agent.memory import MemoryManager
-    from cantrip.agent.skills import SkillsIndex
+    from cantrip.agent.skills_runtime.skills import SkillsIndex
     from cantrip.mcp import MCPRegistry
 
 

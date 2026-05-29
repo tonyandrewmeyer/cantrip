@@ -10,8 +10,10 @@ import yaml
 
 log = logging.getLogger(__name__)
 
-# Default location of bundled skill definitions.
-_DEFAULT_SKILLS_DIR = pathlib.Path(__file__).resolve().parent.parent / "skills"
+# Default location of bundled skill definitions.  This module lives at
+# ``src/cantrip/agent/skills_runtime/skills.py``; the bundled skills ship at
+# ``src/cantrip/skills/``, three parents up.
+_DEFAULT_SKILLS_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "skills"
 
 # Separator between YAML frontmatter and Markdown body in SKILL.md files.
 _FRONTMATTER_DELIMITER = "---"

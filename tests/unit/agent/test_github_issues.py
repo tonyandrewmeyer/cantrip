@@ -7,7 +7,8 @@ from unittest import mock
 
 import pytest
 
-from cantrip.agent.github_issues import (
+from cantrip.agent.queue import AgentTask, TaskCategory
+from cantrip.agent.watcher.github_issues import (
     TRIAGE_CONFIRM_PREFIX,
     GitHubIssue,
     IssueTriage,
@@ -16,7 +17,6 @@ from cantrip.agent.github_issues import (
     fetch_issues,
     rank_issues,
 )
-from cantrip.agent.queue import AgentTask, TaskCategory
 
 # ---------------------------------------------------------------------------
 # fetch_issues
@@ -27,7 +27,7 @@ class TestFetchIssues:
     """Tests for fetch_issues()."""
 
     def test_no_gh_binary(self) -> None:
-        with mock.patch("cantrip.agent.github_issues.shutil.which", return_value=None):
+        with mock.patch("cantrip.agent.watcher.github_issues.shutil.which", return_value=None):
             assert fetch_issues("owner/repo") == []
 
     def test_gh_command_failure(self) -> None:
@@ -35,16 +35,20 @@ class TestFetchIssues:
             args=[], returncode=1, stdout="", stderr="not authenticated"
         )
         with (
-            mock.patch("cantrip.agent.github_issues.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.github_issues.subprocess.run", return_value=result),
+            mock.patch(
+                "cantrip.agent.watcher.github_issues.shutil.which", return_value="/usr/bin/gh"
+            ),
+            mock.patch("cantrip.agent.watcher.github_issues.subprocess.run", return_value=result),
         ):
             assert fetch_issues("owner/repo") == []
 
     def test_timeout(self) -> None:
         with (
-            mock.patch("cantrip.agent.github_issues.shutil.which", return_value="/usr/bin/gh"),
             mock.patch(
-                "cantrip.agent.github_issues.subprocess.run",
+                "cantrip.agent.watcher.github_issues.shutil.which", return_value="/usr/bin/gh"
+            ),
+            mock.patch(
+                "cantrip.agent.watcher.github_issues.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=30),
             ),
         ):
@@ -53,8 +57,10 @@ class TestFetchIssues:
     def test_invalid_json(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="not json")
         with (
-            mock.patch("cantrip.agent.github_issues.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.github_issues.subprocess.run", return_value=result),
+            mock.patch(
+                "cantrip.agent.watcher.github_issues.shutil.which", return_value="/usr/bin/gh"
+            ),
+            mock.patch("cantrip.agent.watcher.github_issues.subprocess.run", return_value=result),
         ):
             assert fetch_issues("owner/repo") == []
 
@@ -79,8 +85,10 @@ class TestFetchIssues:
         ]
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(raw))
         with (
-            mock.patch("cantrip.agent.github_issues.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.github_issues.subprocess.run", return_value=result),
+            mock.patch(
+                "cantrip.agent.watcher.github_issues.shutil.which", return_value="/usr/bin/gh"
+            ),
+            mock.patch("cantrip.agent.watcher.github_issues.subprocess.run", return_value=result),
         ):
             issues = fetch_issues("owner/repo")
 
@@ -95,8 +103,12 @@ class TestFetchIssues:
     def test_passes_repo_arg(self) -> None:
         result = subprocess.CompletedProcess(args=[], returncode=0, stdout="[]")
         with (
-            mock.patch("cantrip.agent.github_issues.shutil.which", return_value="/usr/bin/gh"),
-            mock.patch("cantrip.agent.github_issues.subprocess.run", return_value=result) as m,
+            mock.patch(
+                "cantrip.agent.watcher.github_issues.shutil.which", return_value="/usr/bin/gh"
+            ),
+            mock.patch(
+                "cantrip.agent.watcher.github_issues.subprocess.run", return_value=result
+            ) as m,
         ):
             fetch_issues("canonical/grafana-k8s")
             cmd = m.call_args[0][0]
@@ -224,7 +236,7 @@ class TestIssueTriage:
         assert not triage.running
 
     def test_start_sets_running(self) -> None:
-        with mock.patch("cantrip.agent.github_issues.fetch_issues", return_value=[]):
+        with mock.patch("cantrip.agent.watcher.github_issues.fetch_issues", return_value=[]):
             triage = IssueTriage(repo="owner/repo")
             # We cannot easily test async start without an event loop,
             # but we can check the flag is set.
@@ -241,7 +253,7 @@ class TestIssueTriage:
         # background task completes (no issues), ``_running`` flips back
         # to False via the ``finally`` block.
         captured: list[list[AgentTask]] = []
-        with mock.patch("cantrip.agent.github_issues.fetch_issues", return_value=[]):
+        with mock.patch("cantrip.agent.watcher.github_issues.fetch_issues", return_value=[]):
             triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
             triage.start()
             assert triage.running is True
@@ -289,7 +301,7 @@ class TestIssueTriage:
         )
         captured: list[list[AgentTask]] = []
         with mock.patch(
-            "cantrip.agent.github_issues.fetch_issues",
+            "cantrip.agent.watcher.github_issues.fetch_issues",
             return_value=[actionable],
         ):
             triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
@@ -311,7 +323,7 @@ class TestIssueTriage:
         )
         captured: list[list[AgentTask]] = []
         with mock.patch(
-            "cantrip.agent.github_issues.fetch_issues",
+            "cantrip.agent.watcher.github_issues.fetch_issues",
             return_value=[actionable],
         ):
             triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
@@ -333,7 +345,7 @@ class TestIssueTriage:
         )
         captured: list[list[AgentTask]] = []
         with mock.patch(
-            "cantrip.agent.github_issues.fetch_issues",
+            "cantrip.agent.watcher.github_issues.fetch_issues",
             return_value=[skip_issue],
         ):
             triage = IssueTriage(repo="owner/repo", on_issues_found=captured.append)
@@ -348,7 +360,7 @@ class TestIssueTriage:
         triage = IssueTriage(repo="owner/repo")
         triage._running = True
         with mock.patch(
-            "cantrip.agent.github_issues.fetch_issues",
+            "cantrip.agent.watcher.github_issues.fetch_issues",
             side_effect=RuntimeError("synthetic failure"),
         ):
             await triage._run()
@@ -365,7 +377,7 @@ class TestIssueTriage:
         triage = IssueTriage(repo="owner/repo")
         with (
             mock.patch(
-                "cantrip.agent.github_issues.asyncio.to_thread",
+                "cantrip.agent.watcher.github_issues.asyncio.to_thread",
                 side_effect=_cancel_in_to_thread,
             ),
             pytest.raises(asyncio.CancelledError),

@@ -24,7 +24,7 @@ from cantrip.agent.planner import OPERABILITY_PREFIX, SPRINT_BUILD_PREFIX
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory, TaskStatus
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import _ACCEPTANCE_PREFIX
-from cantrip.agent.watcher import WatcherEvent, format_event_for_agent
+from cantrip.agent.watcher.watcher import WatcherEvent, format_event_for_agent
 
 # ===================================================================
 # TestTasksAfterBuild

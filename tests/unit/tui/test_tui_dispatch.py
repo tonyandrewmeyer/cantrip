@@ -15,10 +15,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cantrip.agent.git.git_branch import BOOTSTRAP_CONFIRM_PREFIX, PUSH_CONFIRM_PREFIX
-from cantrip.agent.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.agent.planner import IMPROVEMENT_CONFIRM_BASE
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.race.race import RACE_CONFIRM_PREFIX
+from cantrip.agent.watcher.github_issues import TRIAGE_CONFIRM_PREFIX
 from cantrip.tui.app import CantripApp
 from cantrip.tui.widgets import chat as chat_widget
 from cantrip.tui.widgets import modelbar as modelbar_widget

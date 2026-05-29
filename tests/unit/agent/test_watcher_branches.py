@@ -1,4 +1,4 @@
-"""Branch-coverage backfill for ``cantrip.agent.watcher``.
+"""Branch-coverage backfill for ``cantrip.agent.watcher.watcher``.
 
 The base ``test_watcher.py`` covers the diff helpers, dedup, and queue
 mechanics.  This file fills the remaining branches:
@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import jubilant
 import pytest
 
-from cantrip.agent.watcher import (
+from cantrip.agent.watcher.watcher import (
     DatabagSnapshot,
     EventWatcher,
     WatcherConfig,
@@ -226,9 +226,9 @@ class TestPollStatusOnce:
         fake_status.offers = {}
 
         with (
-            patch("cantrip.agent.watcher.jubilant.Juju") as juju_cls,
+            patch("cantrip.agent.watcher.watcher.jubilant.Juju") as juju_cls,
             patch(
-                "cantrip.agent.watcher.diff_snapshots",
+                "cantrip.agent.watcher.watcher.diff_snapshots",
                 return_value=[],
             ),
         ):
@@ -248,14 +248,14 @@ class TestPollStatusOnce:
         fake_status.offers = {}
 
         with (
-            patch("cantrip.agent.watcher.jubilant.Juju") as juju_cls,
-            patch("cantrip.agent.watcher.diff_snapshots", return_value=[]),
+            patch("cantrip.agent.watcher.watcher.jubilant.Juju") as juju_cls,
+            patch("cantrip.agent.watcher.watcher.diff_snapshots", return_value=[]),
             patch(
-                "cantrip.agent.watcher.capture_databag_snapshot",
+                "cantrip.agent.watcher.watcher.capture_databag_snapshot",
                 return_value=DatabagSnapshot(),
             ),
             patch(
-                "cantrip.agent.watcher.diff_databag_snapshots",
+                "cantrip.agent.watcher.watcher.diff_databag_snapshots",
                 return_value=[],
             ),
         ):
@@ -273,10 +273,10 @@ class TestPollStatusOnce:
         fake_status.offers = {}
 
         with (
-            patch("cantrip.agent.watcher.jubilant.Juju") as juju_cls,
-            patch("cantrip.agent.watcher.diff_snapshots", return_value=[]),
+            patch("cantrip.agent.watcher.watcher.jubilant.Juju") as juju_cls,
+            patch("cantrip.agent.watcher.watcher.diff_snapshots", return_value=[]),
             patch(
-                "cantrip.agent.watcher.capture_databag_snapshot",
+                "cantrip.agent.watcher.watcher.capture_databag_snapshot",
                 side_effect=OSError("eperm"),
             ),
         ):
@@ -289,7 +289,7 @@ class TestStatusOnceDatabagEnqueue:
 
     @pytest.mark.asyncio
     async def test_databag_event_is_enqueued(self) -> None:
-        from cantrip.agent.watcher import WatcherEvent
+        from cantrip.agent.watcher.watcher import WatcherEvent
 
         config = WatcherConfig(snapshot_databags=True)
         watcher = EventWatcher(dev_model="dev", config=config)
@@ -306,14 +306,14 @@ class TestStatusOnceDatabagEnqueue:
         )
 
         with (
-            patch("cantrip.agent.watcher.jubilant.Juju") as juju_cls,
-            patch("cantrip.agent.watcher.diff_snapshots", return_value=[]),
+            patch("cantrip.agent.watcher.watcher.jubilant.Juju") as juju_cls,
+            patch("cantrip.agent.watcher.watcher.diff_snapshots", return_value=[]),
             patch(
-                "cantrip.agent.watcher.capture_databag_snapshot",
+                "cantrip.agent.watcher.watcher.capture_databag_snapshot",
                 return_value=DatabagSnapshot(),
             ),
             patch(
-                "cantrip.agent.watcher.diff_databag_snapshots",
+                "cantrip.agent.watcher.watcher.diff_databag_snapshots",
                 return_value=[databag_event],
             ),
         ):
@@ -391,7 +391,7 @@ class TestPollStatusLoopExceptions:
         with (
             patch.object(watcher, "_poll_status_once", side_effect=_raise_then_stop),
             patch(
-                "cantrip.agent.watcher.asyncio.sleep",
+                "cantrip.agent.watcher.watcher.asyncio.sleep",
                 new_callable=AsyncMock,
             ),
         ):
@@ -409,7 +409,7 @@ class TestPollCosStatusOnce:
         called: list[str] = []
         watcher = EventWatcher(dev_model="dev", cos_model="cos", on_status_poll=called.append)
         fake_status = MagicMock()
-        with patch("cantrip.agent.watcher.jubilant.Juju") as juju_cls:
+        with patch("cantrip.agent.watcher.watcher.jubilant.Juju") as juju_cls:
             juju_cls.return_value.status.return_value = fake_status
             await watcher._poll_cos_status_once()
         assert called == ["cos"]
@@ -430,7 +430,7 @@ class TestPollCosStatusLoopExceptions:
 
         with (
             patch.object(watcher, "_poll_cos_status_once", side_effect=_raise_then_stop),
-            patch("cantrip.agent.watcher.asyncio.sleep", new_callable=AsyncMock),
+            patch("cantrip.agent.watcher.watcher.asyncio.sleep", new_callable=AsyncMock),
         ):
             await watcher._poll_cos_status_loop()
 
@@ -449,7 +449,7 @@ class TestPollLokiLoopExceptions:
 
         with (
             patch.object(watcher, "_poll_loki_once", side_effect=_raise_then_stop),
-            patch("cantrip.agent.watcher.asyncio.sleep", new_callable=AsyncMock),
+            patch("cantrip.agent.watcher.watcher.asyncio.sleep", new_callable=AsyncMock),
         ):
             await watcher._poll_loki_loop()
 
@@ -461,7 +461,7 @@ class TestPollLokiOnce:
     async def test_no_cos_model_returns_immediately(self) -> None:
         watcher = EventWatcher(dev_model="dev", cos_model=None)
         # Should not call _find_cos_unit because cos_model is None.
-        with patch("cantrip.agent.watcher._find_cos_unit") as find:
+        with patch("cantrip.agent.watcher.watcher._find_cos_unit") as find:
             await watcher._poll_loki_once()
         find.assert_not_called()
 
@@ -471,7 +471,7 @@ class TestPollLokiOnce:
         juju = MagicMock()
         juju.ssh.return_value = "not json"
         with patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(juju, "loki/0"),
         ):
             await watcher._poll_loki_once()
@@ -501,7 +501,7 @@ class TestPollLokiOnce:
             }
         )
         with patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(juju, "loki/0"),
         ):
             await watcher._poll_loki_once()
@@ -512,7 +512,7 @@ class TestPollLokiOnce:
     async def test_loki_unit_not_found(self) -> None:
         watcher = EventWatcher(dev_model="dev", cos_model="cos")
         with patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             side_effect=ValueError("not found"),
         ):
             await watcher._poll_loki_once()
@@ -526,7 +526,7 @@ class TestPollLokiOnce:
             returncode=1, cmd="ssh", output="", stderr="ssh died"
         )
         with patch(
-            "cantrip.agent.watcher._find_cos_unit",
+            "cantrip.agent.watcher.watcher._find_cos_unit",
             return_value=(juju, "loki/0"),
         ):
             await watcher._poll_loki_once()

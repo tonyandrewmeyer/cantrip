@@ -252,7 +252,7 @@ class TestWatcherEvent:
     """Tests for WatcherEvent dedup key generation."""
 
     def test_dedup_key_auto_generated(self):
-        from cantrip.agent.watcher import WatcherEvent
+        from cantrip.agent.watcher.watcher import WatcherEvent
 
         event = WatcherEvent(
             source="status",
@@ -266,7 +266,7 @@ class TestWatcherEvent:
         assert len(event.dedup_key) == 32  # MD5 hex digest.
 
     def test_dedup_key_deterministic(self):
-        from cantrip.agent.watcher import WatcherEvent
+        from cantrip.agent.watcher.watcher import WatcherEvent
 
         kwargs = {
             "source": "status",
@@ -280,14 +280,14 @@ class TestWatcherEvent:
         assert e1.dedup_key == e2.dedup_key
 
     def test_different_events_different_keys(self):
-        from cantrip.agent.watcher import WatcherEvent
+        from cantrip.agent.watcher.watcher import WatcherEvent
 
         e1 = WatcherEvent(source="status", category="hook_failure", summary="a", detail="")
         e2 = WatcherEvent(source="status", category="status_change", summary="b", detail="")
         assert e1.dedup_key != e2.dedup_key
 
     def test_explicit_dedup_key_preserved(self):
-        from cantrip.agent.watcher import WatcherEvent
+        from cantrip.agent.watcher.watcher import WatcherEvent
 
         event = WatcherEvent(
             source="status",
@@ -303,7 +303,7 @@ class TestWatcherConfig:
     """Tests for WatcherConfig defaults."""
 
     def test_default_values(self):
-        from cantrip.agent.watcher import WatcherConfig
+        from cantrip.agent.watcher.watcher import WatcherConfig
 
         config = WatcherConfig()
         assert config.status_interval == 10.0
@@ -313,7 +313,7 @@ class TestWatcherConfig:
         assert config.snapshot_databags is False
 
     def test_custom_values(self):
-        from cantrip.agent.watcher import WatcherConfig
+        from cantrip.agent.watcher.watcher import WatcherConfig
 
         config = WatcherConfig(status_interval=5.0, max_queue=100)
         assert config.status_interval == 5.0

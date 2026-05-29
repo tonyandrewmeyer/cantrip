@@ -18,7 +18,7 @@ from cantrip.agent.tools.planning import (
     detect_current_juju_model,
     juju_model_substrate,
 )
-from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
+from cantrip.agent.watcher.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.ui import events as ui_events
 
 if TYPE_CHECKING:

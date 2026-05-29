@@ -14,8 +14,8 @@ def _skill_export(args: argparse.Namespace) -> int:
     skill through the export step to, say, paste a sanitised copy into a
     gist or PR.
     """
-    from cantrip.agent import skill_export
-    from cantrip.agent.skills import SkillsIndex
+    from cantrip.agent.skills_runtime import skill_export
+    from cantrip.agent.skills_runtime.skills import SkillsIndex
 
     index = SkillsIndex()
     index.discover()
