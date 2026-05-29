@@ -922,7 +922,7 @@ package level — not aesthetic uniformity.
 
 ### 113.1 High — Split `agent/core.py`
 
-- [ ] Decompose `CantripAgent` (3,843 lines, 135 methods) by
+- [x] Decompose `CantripAgent` (3,843 lines, 135 methods) by
   composition.  `CantripAgent` retains the public API; the concerns
   below move to dedicated services held as attributes.
   - `ProviderManager` — `_get_provider`, `switch_model`,
@@ -940,13 +940,27 @@ package level — not aesthetic uniformity.
     failure-streak tracking (`_track_tool_failure_streak`,
     `_maybe_warn_before_failure_cap`,
     `_consecutive_failure_cap_exceeded`).
-- [ ] Land each extraction as an independent commit (one service per
+- [x] Land each extraction as an independent commit (one service per
   commit) so the diff is reviewable.  Tests touched per extraction
   stay green throughout; `make check` passes after every commit.
+- [x] **Done.**  Five services extracted — `UsageTracker`,
+  `ToolBuilder`, `RepoMapService`, `MessageHistory`, `ProviderManager`
+  — each a class holding a back-reference to the agent.  Every method
+  stays on `CantripAgent` as a thin delegating wrapper, so the public
+  API and all instance state are unchanged and no test or external
+  call site needed editing; `repo_map` / `code_intel` keep their
+  property getter *and* setter on the agent.  `_resolve_light_provider`
+  was *not* moved — it is a `CantripApp` (TUI) method, not on
+  `CantripAgent` — so `ProviderManager` carries the four agent methods
+  (`_get_provider`, `switch_model`, `_architect_provider`,
+  `_editor_provider`).  One commit per service; `core.py` 3,924 →
+  3,511 lines (services 154–396 lines each).  Driving `core.py` under
+  the ~1,500-line exit bar remains follow-on work beyond these five
+  extractions.
 
 ### 113.2 High — Split `agent/tools/juju.py` by sub-domain
 
-- [ ] Move into `src/cantrip/agent/tools/juju/`.  Grouping (27 tool
+- [x] Move into `src/cantrip/agent/tools/juju/`.  Grouping (27 tool
   classes → one file each, or grouped where naturally cohesive):
   - `juju/lifecycle.py` — deploy, refresh, remove, destroy-model,
     add-model, bundle-deploy.
@@ -957,15 +971,24 @@ package level — not aesthetic uniformity.
   - `juju/secrets.py` — list-secrets, show-secret.
   - `juju/charm_sync.py` — `CharmSyncTool` (distinct concern).
   - `juju/cli_passthrough.py` — `JujuCliTool`, `JujuTrustTool`.
-- [ ] Keep `agent/tools/juju.py` as a thin re-export shim only if a
+- [x] Keep `agent/tools/juju.py` as a thin re-export shim only if a
   caller outside the tools registry imports the classes by full path;
   otherwise delete it.  (Per the pre-1.0-no-backcompat memory: update
   call sites in the same change.)
-- [ ] `tests/unit/agent/tools/test_juju*` stays green.
+- [x] `tests/unit/agent/tools/test_juju*` stays green.
+- [x] **Done.**  `juju.py` (2,720 lines) → `juju/` subpackage:
+  `_common` (shared helpers + the patchable imports), `lifecycle`,
+  `relations`, `runtime`, `secrets`, `charm_sync`, `cli_passthrough`.
+  All 24 tool classes are re-exported from `juju/__init__.py`, so
+  `tools/__init__.py` is unchanged; the old module was deleted (no
+  shim needed).  Submodules reach the patchable helpers through the
+  `_common` module object, and the test patch strings were repointed
+  from `cantrip.agent.tools.juju.<name>` to `…juju._common.<name>`.
+  `make check` green.
 
 ### 113.3 High — Split `agent/tools/publishing.py` by surface
 
-- [ ] Move into `src/cantrip/agent/tools/publishing/`.  The 2,242-line
+- [x] Move into `src/cantrip/agent/tools/publishing/`.  The 2,242-line
   module mixes seven concerns; one module each:
   - `publishing/charmcraft.py` — `CharmcraftUploadTool`,
     `CharmcraftReleaseTool`.
@@ -978,7 +1001,18 @@ package level — not aesthetic uniformity.
     decision-log readers/formatters.
   - `publishing/troubleshooting.py` — `TroubleshootingEntry`,
     transcript-pair extraction, `format_troubleshooting_page`.
-- [ ] Same shim-or-delete policy as 113.2.  Tests stay green.
+- [x] Same shim-or-delete policy as 113.2.  Tests stay green.
+- [x] **Done.**  `publishing.py` (2,242 lines) → `publishing/`
+  subpackage: `_common` (shared metadata reader + diagram renderer),
+  `icon`, `diagram`, `readme`, `charmcraft`, `docs_scaffold`,
+  `design_decisions`, `troubleshooting`.  Eight tool classes plus the
+  public helpers (`generate_placeholder_svg`,
+  `format_troubleshooting_page`, …) are re-exported from
+  `publishing/__init__.py`, so `tools/__init__.py` and the
+  `web_research` / `maintenance` call sites are unchanged; the old
+  module was deleted.  The only namespace patch targets (charmcraft's
+  `subprocess` / `shutil`) were repointed to
+  `…publishing.charmcraft.<name>`.  `make check` green.
 - [ ] Apply the same lens (no formal split obligation) to
   `acceptance.py` (1,520), `charm.py` (1,440), `rockcraft.py` (1,298),
   `observability.py` (1,676) and split only when a clear sub-domain
