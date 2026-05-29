@@ -58,7 +58,9 @@ class TestCharmcraftUploadTool:
         charm_file = temp_dir / "my-charm.charm"
         charm_file.write_bytes(b"fake")
 
-        with mock.patch("cantrip.agent.tools.publishing.shutil.which", return_value=None):
+        with mock.patch(
+            "cantrip.agent.tools.publishing.charmcraft.shutil.which", return_value=None
+        ):
             result = await tool.execute(charm_file=str(charm_file), confirmed=True)
 
         assert not result.success
@@ -72,10 +74,11 @@ class TestCharmcraftUploadTool:
 
         with (
             mock.patch(
-                "cantrip.agent.tools.publishing.shutil.which", return_value="/usr/bin/charmcraft"
+                "cantrip.agent.tools.publishing.charmcraft.shutil.which",
+                return_value="/usr/bin/charmcraft",
             ),
             mock.patch(
-                "cantrip.agent.tools.publishing.subprocess.run",
+                "cantrip.agent.tools.publishing.charmcraft.subprocess.run",
                 return_value=mock.Mock(
                     returncode=0,
                     stdout="Revision 42 of 'my-charm' created",
@@ -97,10 +100,11 @@ class TestCharmcraftUploadTool:
 
         with (
             mock.patch(
-                "cantrip.agent.tools.publishing.shutil.which", return_value="/usr/bin/charmcraft"
+                "cantrip.agent.tools.publishing.charmcraft.shutil.which",
+                return_value="/usr/bin/charmcraft",
             ),
             mock.patch(
-                "cantrip.agent.tools.publishing.subprocess.run",
+                "cantrip.agent.tools.publishing.charmcraft.subprocess.run",
                 return_value=mock.Mock(
                     returncode=1,
                     stdout="",
@@ -121,10 +125,11 @@ class TestCharmcraftUploadTool:
 
         with (
             mock.patch(
-                "cantrip.agent.tools.publishing.shutil.which", return_value="/usr/bin/charmcraft"
+                "cantrip.agent.tools.publishing.charmcraft.shutil.which",
+                return_value="/usr/bin/charmcraft",
             ),
             mock.patch(
-                "cantrip.agent.tools.publishing.subprocess.run",
+                "cantrip.agent.tools.publishing.charmcraft.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="charmcraft", timeout=120),
             ),
         ):
@@ -152,7 +157,9 @@ class TestCharmcraftReleaseTool:
     @pytest.mark.asyncio
     async def test_charmcraft_not_installed(self, tool):
         """Error when charmcraft is not on PATH."""
-        with mock.patch("cantrip.agent.tools.publishing.shutil.which", return_value=None):
+        with mock.patch(
+            "cantrip.agent.tools.publishing.charmcraft.shutil.which", return_value=None
+        ):
             result = await tool.execute(name="my-charm", revision=1, confirmed=True)
 
         assert not result.success
@@ -163,10 +170,11 @@ class TestCharmcraftReleaseTool:
         """Successful release returns data."""
         with (
             mock.patch(
-                "cantrip.agent.tools.publishing.shutil.which", return_value="/usr/bin/charmcraft"
+                "cantrip.agent.tools.publishing.charmcraft.shutil.which",
+                return_value="/usr/bin/charmcraft",
             ),
             mock.patch(
-                "cantrip.agent.tools.publishing.subprocess.run",
+                "cantrip.agent.tools.publishing.charmcraft.subprocess.run",
                 return_value=mock.Mock(
                     returncode=0,
                     stdout="Released.",
@@ -188,10 +196,11 @@ class TestCharmcraftReleaseTool:
         """Release passes resource flags."""
         with (
             mock.patch(
-                "cantrip.agent.tools.publishing.shutil.which", return_value="/usr/bin/charmcraft"
+                "cantrip.agent.tools.publishing.charmcraft.shutil.which",
+                return_value="/usr/bin/charmcraft",
             ),
             mock.patch(
-                "cantrip.agent.tools.publishing.subprocess.run",
+                "cantrip.agent.tools.publishing.charmcraft.subprocess.run",
                 return_value=mock.Mock(returncode=0, stdout="Released.", stderr=""),
             ) as mock_run,
         ):
@@ -212,10 +221,11 @@ class TestCharmcraftReleaseTool:
         """Failed release returns error."""
         with (
             mock.patch(
-                "cantrip.agent.tools.publishing.shutil.which", return_value="/usr/bin/charmcraft"
+                "cantrip.agent.tools.publishing.charmcraft.shutil.which",
+                return_value="/usr/bin/charmcraft",
             ),
             mock.patch(
-                "cantrip.agent.tools.publishing.subprocess.run",
+                "cantrip.agent.tools.publishing.charmcraft.subprocess.run",
                 return_value=mock.Mock(
                     returncode=1,
                     stdout="",
@@ -233,10 +243,11 @@ class TestCharmcraftReleaseTool:
         """Timeout returns an error."""
         with (
             mock.patch(
-                "cantrip.agent.tools.publishing.shutil.which", return_value="/usr/bin/charmcraft"
+                "cantrip.agent.tools.publishing.charmcraft.shutil.which",
+                return_value="/usr/bin/charmcraft",
             ),
             mock.patch(
-                "cantrip.agent.tools.publishing.subprocess.run",
+                "cantrip.agent.tools.publishing.charmcraft.subprocess.run",
                 side_effect=subprocess.TimeoutExpired(cmd="charmcraft", timeout=120),
             ),
         ):
