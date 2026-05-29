@@ -3,8 +3,8 @@
 import json
 from unittest import mock
 
-from cantrip.agent import controller_safety
-from cantrip.agent.controller_safety import (
+from cantrip.agent.safety import controller_safety
+from cantrip.agent.safety.controller_safety import (
     ControllerKind,
     ControllerSafety,
     classify_controller,

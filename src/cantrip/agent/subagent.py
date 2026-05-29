@@ -28,15 +28,6 @@ from cantrip.agent.durability import (
     tool_result_from_dict,
     tool_result_to_dict,
 )
-from cantrip.agent.permissions import (
-    PermissionDecision,
-    PermissionManager,
-    PermissionOutcome,
-    PermissionRuleset,
-)
-from cantrip.agent.permissions import (
-    evaluate as evaluate_permissions,
-)
 from cantrip.agent.planner import SPRINT_BUILD_PREFIX
 from cantrip.agent.policy import (
     ORG_WIDE_POLICY,
@@ -49,6 +40,15 @@ from cantrip.agent.policy import (
 )
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
 from cantrip.agent.retry import complete_with_retry
+from cantrip.agent.safety.permissions import (
+    PermissionDecision,
+    PermissionManager,
+    PermissionOutcome,
+    PermissionRuleset,
+)
+from cantrip.agent.safety.permissions import (
+    evaluate as evaluate_permissions,
+)
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool
 from cantrip.agent.tools.subcommand import resolve_subcommand
 from cantrip.hooks import HookEvent, HookRunner, final_arguments, first_veto

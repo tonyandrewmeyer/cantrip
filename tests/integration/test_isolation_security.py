@@ -31,7 +31,9 @@ from cantrip.agent.git.worktree import (
     _WORKTREES_DIRNAME,
     _DefaultWorktreeAllocator,
 )
-from cantrip.agent.permissions import (
+from cantrip.agent.policy import GovernancePolicy
+from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
+from cantrip.agent.safety.permissions import (
     BUILTIN_PERMISSIONS,
     PLAN_MODE_OVERLAY,
     PermissionOutcome,
@@ -39,9 +41,7 @@ from cantrip.agent.permissions import (
     PermissionRuleset,
     compose_rulesets,
 )
-from cantrip.agent.policy import GovernancePolicy
-from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
-from cantrip.agent.sandbox import SandboxPolicy
+from cantrip.agent.safety.sandbox import SandboxPolicy
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import Subagent, SubagentContext
 from cantrip.agent.tools.files import EditFileTool, ListDirectoryTool, ReadFileTool, WriteFileTool

@@ -15,7 +15,7 @@ from cantrip.agent.commands.custom import (
     expand,
     load_command_file,
 )
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PermissionManager,
     PermissionOutcome,
     PermissionRule,

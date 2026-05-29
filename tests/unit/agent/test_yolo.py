@@ -8,7 +8,7 @@ import pytest
 
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
-from cantrip.agent.permissions import PermissionAskRequest, PermissionManager
+from cantrip.agent.safety.permissions import PermissionAskRequest, PermissionManager
 from cantrip.ui import events
 from tests.conftest import FakeProvider
 

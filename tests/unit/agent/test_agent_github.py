@@ -125,7 +125,7 @@ class TestShouldOfferBootstrap:
     def test_passes_charm_path_to_can_bootstrap(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         agent.state.github_repo = None
-        with patch("cantrip.agent.confirmations.can_bootstrap", return_value=True) as cb:
+        with patch("cantrip.agent.safety.confirmations.can_bootstrap", return_value=True) as cb:
             assert agent.should_offer_bootstrap() is True
         cb.assert_called_once_with(str(tmp_path))
 
@@ -143,7 +143,7 @@ class TestShouldOfferBootstrap:
                 description="…",
             )
         )
-        with patch("cantrip.agent.confirmations.can_bootstrap", return_value=True):
+        with patch("cantrip.agent.safety.confirmations.can_bootstrap", return_value=True):
             assert agent.should_offer_bootstrap() is False
 
 
@@ -200,7 +200,7 @@ class TestHandlePushConfirmation:
     def test_approved_push_success(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.confirmations.push_branch",
+            "cantrip.agent.safety.confirmations.push_branch",
             return_value=(True, "pushed"),
         ):
             result = agent.handle_push_confirmation("push-branch-feat", approved=True)
@@ -210,7 +210,7 @@ class TestHandlePushConfirmation:
     def test_approved_push_failure(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.confirmations.push_branch",
+            "cantrip.agent.safety.confirmations.push_branch",
             return_value=(False, "permission denied"),
         ):
             result = agent.handle_push_confirmation("push-branch-feat", approved=True)
@@ -232,10 +232,10 @@ class TestHandlePrCreation:
 
         with (
             patch(
-                "cantrip.agent.confirmations.create_pull_request",
+                "cantrip.agent.safety.confirmations.create_pull_request",
                 return_value=(True, "https://github.com/o/r/pull/9"),
             ) as cpr,
-            patch("cantrip.agent.confirmations.build_pr_body", return_value="body"),
+            patch("cantrip.agent.safety.confirmations.build_pr_body", return_value="body"),
         ):
             result = agent.handle_pr_creation("cantrip/issue-7-fix-login", draft=True)
 
@@ -250,10 +250,10 @@ class TestHandlePrCreation:
         agent = _agent(tmp_path)
         with (
             patch(
-                "cantrip.agent.confirmations.create_pull_request",
+                "cantrip.agent.safety.confirmations.create_pull_request",
                 return_value=(True, "https://x/pull/1"),
             ) as cpr,
-            patch("cantrip.agent.confirmations.build_pr_body", return_value=""),
+            patch("cantrip.agent.safety.confirmations.build_pr_body", return_value=""),
         ):
             agent.handle_pr_creation("cantrip/improve-README", draft=False)
         assert cpr.call_args.args[1] == "Improve readme"
@@ -262,10 +262,10 @@ class TestHandlePrCreation:
         agent = _agent(tmp_path)
         with (
             patch(
-                "cantrip.agent.confirmations.create_pull_request",
+                "cantrip.agent.safety.confirmations.create_pull_request",
                 return_value=(False, "gh failed"),
             ),
-            patch("cantrip.agent.confirmations.build_pr_body", return_value=""),
+            patch("cantrip.agent.safety.confirmations.build_pr_body", return_value=""),
         ):
             result = agent.handle_pr_creation("cantrip/feat")
         assert "PR creation failed" in result
@@ -317,7 +317,7 @@ class TestHandleRepoBootstrap:
         agent = _agent(tmp_path)
         with (
             patch(
-                "cantrip.agent.confirmations.bootstrap_github_repo",
+                "cantrip.agent.safety.confirmations.bootstrap_github_repo",
                 return_value=(True, "https://github.com/u/n"),
             ),
             patch("cantrip.agent.core.detect_github_repo", return_value="u/n"),
@@ -330,7 +330,7 @@ class TestHandleRepoBootstrap:
         agent = _agent(tmp_path)
         with (
             patch(
-                "cantrip.agent.confirmations.bootstrap_github_repo",
+                "cantrip.agent.safety.confirmations.bootstrap_github_repo",
                 return_value=(True, "https://github.com/u/n"),
             ),
             patch("cantrip.agent.core.detect_github_repo", return_value="u/n"),
@@ -341,7 +341,7 @@ class TestHandleRepoBootstrap:
     def test_failure_returns_error(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.confirmations.bootstrap_github_repo",
+            "cantrip.agent.safety.confirmations.bootstrap_github_repo",
             return_value=(False, "gh not auth"),
         ):
             result = agent.handle_repo_bootstrap("n")
@@ -469,7 +469,7 @@ class TestHandleTriageConfirmation:
 
         with (
             patch(
-                "cantrip.agent.confirmations.build_issue_work_tasks",
+                "cantrip.agent.safety.confirmations.build_issue_work_tasks",
                 return_value=[work_task],
             ),
             patch(
@@ -500,7 +500,7 @@ class TestHandleTriageConfirmation:
             category=TaskCategory.RESEARCH,
         )
         with patch(
-            "cantrip.agent.confirmations.build_issue_work_tasks",
+            "cantrip.agent.safety.confirmations.build_issue_work_tasks",
             return_value=[work_task],
         ):
             tasks = agent.handle_triage_confirmation("triage-issue-9")

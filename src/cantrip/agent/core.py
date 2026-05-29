@@ -13,10 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from cantrip.agent import flows as flows_module
 from cantrip.agent import recipes as recipes_module
-from cantrip.agent import sandbox
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
-from cantrip.agent.confirmations import ConfirmationsController
 from cantrip.agent.context import context_providers, context_providers_builtin
 from cantrip.agent.context.context import (
     ContextManager,
@@ -43,11 +41,6 @@ from cantrip.agent.memory import (
     collect_file_citations,
 )
 from cantrip.agent.message_history import MessageHistory
-from cantrip.agent.permissions import (
-    PLAN_MODE_ALLOWED_TOOLS,
-    PermissionDecision,
-    plan_mode_message,
-)
 from cantrip.agent.persistence import PersistenceController
 from cantrip.agent.planner import (
     PlanningContext,
@@ -76,6 +69,13 @@ from cantrip.agent.queue import (
 from cantrip.agent.race.arena_controller import ArenaController
 from cantrip.agent.repo_map_service import RepoMapService
 from cantrip.agent.retry import RetryEvent, complete_with_retry, stream_with_retry
+from cantrip.agent.safety import sandbox
+from cantrip.agent.safety.confirmations import ConfirmationsController
+from cantrip.agent.safety.permissions import (
+    PLAN_MODE_ALLOWED_TOOLS,
+    PermissionDecision,
+    plan_mode_message,
+)
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
 from cantrip.agent.snapshots import SnapshotManager
@@ -3319,7 +3319,7 @@ class CantripAgent:
         appends to.
         """
         from cantrip.agent.audit import AUDIT_FILENAME, AuditWriter
-        from cantrip.agent.permissions import evaluate as evaluate_permissions
+        from cantrip.agent.safety.permissions import evaluate as evaluate_permissions
         from cantrip.agent.tools.base import execute_tool as base_execute_tool
 
         executor = self._executor

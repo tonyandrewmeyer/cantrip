@@ -48,7 +48,7 @@ import copy
 from hypothesis import given
 from hypothesis import strategies as st
 
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PermissionOutcome,
     PermissionRule,
     PermissionRuleset,

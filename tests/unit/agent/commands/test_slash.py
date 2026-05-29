@@ -1306,7 +1306,7 @@ class TestSandbox:
     def test_sandbox_without_tool_returns_none_mechanism(
         self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cantrip.agent import sandbox
+        from cantrip.agent.safety import sandbox
 
         monkeypatch.setattr(sandbox, "sandbox_available", lambda: "none")
         monkeypatch.setattr(sandbox, "get_event_sink", lambda: None)
@@ -1320,7 +1320,7 @@ class TestSandbox:
     def test_sandbox_with_bwrap_mentions_full_isolation(
         self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cantrip.agent import sandbox
+        from cantrip.agent.safety import sandbox
 
         monkeypatch.setattr(sandbox, "sandbox_available", lambda: "bwrap")
         monkeypatch.setattr(sandbox, "get_event_sink", lambda: None)
@@ -1333,7 +1333,7 @@ class TestSandbox:
     def test_sandbox_with_unshare_mentions_bubblewrap_upgrade_path(
         self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cantrip.agent import sandbox
+        from cantrip.agent.safety import sandbox
 
         monkeypatch.setattr(sandbox, "sandbox_available", lambda: "unshare")
         monkeypatch.setattr(sandbox, "get_event_sink", lambda: None)
@@ -1346,7 +1346,7 @@ class TestSandbox:
     def test_sandbox_with_sink_registered_shows_on(
         self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cantrip.agent import sandbox
+        from cantrip.agent.safety import sandbox
 
         monkeypatch.setattr(sandbox, "sandbox_available", lambda: "bwrap")
         monkeypatch.setattr(sandbox, "get_event_sink", lambda: lambda *_a: None)

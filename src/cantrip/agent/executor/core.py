@@ -20,14 +20,6 @@ from cantrip.agent.executor.policies import (
 from cantrip.agent.executor.store_adapter import _SessionStoreAdapter
 from cantrip.agent.git.worktree import WorktreeHandle, _DefaultWorktreeAllocator
 from cantrip.agent.goal_budget import check_budget
-from cantrip.agent.permissions import (
-    PLAN_MODE_OVERLAY,
-    PermissionDecision,
-    PermissionManager,
-    PermissionRuleset,
-    compose_rulesets,
-    discover_permissions,
-)
 from cantrip.agent.policy import (
     MCP_TOOL_PREFIX,
     ORG_WIDE_POLICY,
@@ -37,6 +29,14 @@ from cantrip.agent.policy import (
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
 from cantrip.agent.race import race
 from cantrip.agent.routing import RouteAction, route, snapshot_from_queue
+from cantrip.agent.safety.permissions import (
+    PLAN_MODE_OVERLAY,
+    PermissionDecision,
+    PermissionManager,
+    PermissionRuleset,
+    compose_rulesets,
+    discover_permissions,
+)
 from cantrip.agent.services import (
     EnvironmentChecker,
     FollowupPlanner,

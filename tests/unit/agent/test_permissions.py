@@ -8,7 +8,7 @@ import textwrap
 
 import pytest
 
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     BUILTIN_PERMISSIONS,
     DEFAULT_BASH_TOOLS,
     PERMISSION_CONFIRM_PREFIX,

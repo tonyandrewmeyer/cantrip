@@ -22,7 +22,7 @@ import shlex
 import subprocess
 from collections.abc import Sequence
 
-from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
+from cantrip.agent.safety.sandbox import SandboxedRunner, SandboxPolicy
 
 log = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
+from cantrip.agent.safety.sandbox import SandboxedRunner, SandboxPolicy
 from cantrip.agent.tools.run_command import (
     _DEFAULT_TIMEOUT,
     _MAX_OUTPUT_CHARS,

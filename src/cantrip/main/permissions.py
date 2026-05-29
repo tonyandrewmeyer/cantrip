@@ -9,14 +9,14 @@ import pathlib
 def _permissions_test(args: argparse.Namespace) -> int:
     """Evaluate one hypothetical tool call against the active ruleset.
 
-    Mirrors the runtime gate (:func:`cantrip.agent.permissions.evaluate`)
+    Mirrors the runtime gate (:func:`cantrip.agent.safety.permissions.evaluate`)
     so the verdict the user sees here is the one the agent will see at
     call time.  Useful while authoring ``permissions.yaml``: try
     ``cantrip permissions test run_command --command 'rm -rf /tmp/x'``
     and see whether the built-in ``rm -rf *`` deny still fires after
     your local override.
     """
-    from cantrip.agent import permissions as perms
+    from cantrip.agent.safety import permissions as perms
 
     ruleset = _load_permissions_for_cli(args)
 
@@ -67,7 +67,7 @@ def _load_permissions_for_cli(args: argparse.Namespace) -> object:
     Honours ``--charm-path`` / ``--user-config`` / ``--no-builtin`` so
     the CLI can probe a config without standing up the full agent.
     """
-    from cantrip.agent import permissions as perms
+    from cantrip.agent.safety import permissions as perms
 
     charm_path: pathlib.Path | None = args.charm_path or pathlib.Path.cwd()
     return perms.discover_permissions(
@@ -79,7 +79,7 @@ def _load_permissions_for_cli(args: argparse.Namespace) -> object:
 
 def _print_ruleset(ruleset: object) -> None:
     """Render a :class:`PermissionRuleset` as a grouped, source-attributed list."""
-    from cantrip.agent import permissions as perms
+    from cantrip.agent.safety import permissions as perms
 
     assert isinstance(ruleset, perms.PermissionRuleset)
     sections: tuple[tuple[str, tuple[perms.PermissionRule, ...]], ...] = (

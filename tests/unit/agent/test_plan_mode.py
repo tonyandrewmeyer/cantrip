@@ -10,7 +10,7 @@ from cantrip.agent.core import (
     _extract_proposed_changes,
     _plan_mode_refusal,
 )
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PLAN_MODE_ALLOWED_TOOLS,
     PLAN_MODE_OVERLAY,
     PermissionOutcome,

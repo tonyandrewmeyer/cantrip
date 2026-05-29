@@ -20,7 +20,7 @@ from typing import Any
 import jubilant
 
 from cantrip import diagnostics
-from cantrip.agent.controller_safety import controller_confirm_required
+from cantrip.agent.safety.controller_safety import controller_confirm_required
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.agent.tools.juju_subprocess import (
     juju_available as _juju_available,

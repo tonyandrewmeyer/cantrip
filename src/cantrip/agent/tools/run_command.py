@@ -6,7 +6,7 @@ import shlex
 import subprocess
 from typing import Any
 
-from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
+from cantrip.agent.safety.sandbox import SandboxedRunner, SandboxPolicy
 from cantrip.agent.tools.base import Tool, ToolResult
 
 # Default commands the agent is allowed to run.

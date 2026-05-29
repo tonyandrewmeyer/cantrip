@@ -35,12 +35,12 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PermissionManager,
     PermissionOutcome,
     PermissionRuleset,
 )
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     evaluate as evaluate_permissions,
 )
 from cantrip.llm.structured import StructuredOutputError, validate_against_schema

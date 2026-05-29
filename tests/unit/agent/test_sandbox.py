@@ -1,4 +1,4 @@
-"""Tests for :mod:`cantrip.agent.sandbox` (Phase 49.1)."""
+"""Tests for :mod:`cantrip.agent.safety.sandbox` (Phase 49.1)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest import mock
 
 import pytest
 
-from cantrip.agent.sandbox import (
+from cantrip.agent.safety.sandbox import (
     SandboxedRunner,
     SandboxPolicy,
     get_event_sink,
@@ -23,9 +23,9 @@ class TestSandboxAvailable:
 
     def test_prefers_bwrap_when_present(self):
         with (
-            mock.patch("cantrip.agent.sandbox.sys.platform", "linux"),
+            mock.patch("cantrip.agent.safety.sandbox.sys.platform", "linux"),
             mock.patch(
-                "cantrip.agent.sandbox.shutil.which",
+                "cantrip.agent.safety.sandbox.shutil.which",
                 side_effect=lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
             ),
         ):
@@ -36,15 +36,15 @@ class TestSandboxAvailable:
             return "/usr/bin/unshare" if name == "unshare" else None
 
         with (
-            mock.patch("cantrip.agent.sandbox.sys.platform", "linux"),
-            mock.patch("cantrip.agent.sandbox.shutil.which", side_effect=which),
+            mock.patch("cantrip.agent.safety.sandbox.sys.platform", "linux"),
+            mock.patch("cantrip.agent.safety.sandbox.shutil.which", side_effect=which),
         ):
             assert sandbox_available() == "unshare"
 
     def test_none_when_neither_present(self):
         with (
-            mock.patch("cantrip.agent.sandbox.sys.platform", "linux"),
-            mock.patch("cantrip.agent.sandbox.shutil.which", return_value=None),
+            mock.patch("cantrip.agent.safety.sandbox.sys.platform", "linux"),
+            mock.patch("cantrip.agent.safety.sandbox.shutil.which", return_value=None),
         ):
             assert sandbox_available() == "none"
 
@@ -53,20 +53,20 @@ class TestSandboxAvailable:
             return "/usr/bin/sandbox-exec" if name == "sandbox-exec" else None
 
         with (
-            mock.patch("cantrip.agent.sandbox.sys.platform", "darwin"),
-            mock.patch("cantrip.agent.sandbox.shutil.which", side_effect=which),
+            mock.patch("cantrip.agent.safety.sandbox.sys.platform", "darwin"),
+            mock.patch("cantrip.agent.safety.sandbox.shutil.which", side_effect=which),
         ):
             assert sandbox_available() == "sandbox-exec"
 
     def test_none_on_macos_without_sandbox_exec(self):
         with (
-            mock.patch("cantrip.agent.sandbox.sys.platform", "darwin"),
-            mock.patch("cantrip.agent.sandbox.shutil.which", return_value=None),
+            mock.patch("cantrip.agent.safety.sandbox.sys.platform", "darwin"),
+            mock.patch("cantrip.agent.safety.sandbox.shutil.which", return_value=None),
         ):
             assert sandbox_available() == "none"
 
     def test_none_on_unknown_platform(self):
-        with mock.patch("cantrip.agent.sandbox.sys.platform", "freebsd13"):
+        with mock.patch("cantrip.agent.safety.sandbox.sys.platform", "freebsd13"):
             assert sandbox_available() == "none"
 
 
@@ -272,7 +272,7 @@ class TestNoSandboxFallback:
         # Reset the class-level guard so the warning fires in this test.
         SandboxedRunner._warned_about_fallback = False
         runner = SandboxedRunner(mechanism="none")
-        with caplog.at_level("WARNING", logger="cantrip.agent.sandbox"):
+        with caplog.at_level("WARNING", logger="cantrip.agent.safety.sandbox"):
             runner.wrap(["echo", "x"], cwd=tmp_path, policy=SandboxPolicy())
             runner.wrap(["echo", "y"], cwd=tmp_path, policy=SandboxPolicy())
         warning_lines = [r for r in caplog.records if "unsandboxed" in r.message]
@@ -305,7 +305,7 @@ class TestEventSink:
 
         runner = SandboxedRunner(mechanism="none")
         with mock.patch(
-            "cantrip.agent.sandbox.subprocess.run",
+            "cantrip.agent.safety.sandbox.subprocess.run",
             return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
         ):
             runner.run(["echo", "hi"], cwd=tmp_path, policy=SandboxPolicy())
@@ -328,7 +328,7 @@ class TestEventSink:
         runner = SandboxedRunner(mechanism="none")
         expected = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
         with mock.patch(
-            "cantrip.agent.sandbox.subprocess.run",
+            "cantrip.agent.safety.sandbox.subprocess.run",
             return_value=expected,
         ):
             result = runner.run(["echo", "x"], cwd=tmp_path)
@@ -345,7 +345,7 @@ class TestRunDelegation:
             args=[], returncode=0, stdout="ok", stderr=""
         )
         with mock.patch(
-            "cantrip.agent.sandbox.subprocess.run",
+            "cantrip.agent.safety.sandbox.subprocess.run",
             return_value=expected_result,
         ) as mock_run:
             result = runner.run(["echo", "hello"], cwd=tmp_path, timeout=10)

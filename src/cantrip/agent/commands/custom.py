@@ -43,12 +43,12 @@ from cantrip.agent.declarative_retry import (
     RetryConfigError,
     parse_retry_config,
 )
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PermissionManager,
     PermissionOutcome,
     PermissionRuleset,
 )
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     evaluate as evaluate_permissions,
 )
 

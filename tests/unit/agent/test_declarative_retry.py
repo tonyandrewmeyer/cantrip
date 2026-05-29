@@ -19,7 +19,7 @@ from cantrip.agent.declarative_retry import (
     parse_retry_config,
     run_with_retry,
 )
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PermissionManager,
     PermissionOutcome,
     PermissionRule,

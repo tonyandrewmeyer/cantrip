@@ -415,7 +415,7 @@ class TestPermissionCallbackErrorSwallowing:
     """
 
     def _decision(self):
-        from cantrip.agent.permissions import PermissionDecision, PermissionOutcome
+        from cantrip.agent.safety.permissions import PermissionDecision, PermissionOutcome
 
         return PermissionDecision(outcome=PermissionOutcome.ALLOW, reason="test")
 

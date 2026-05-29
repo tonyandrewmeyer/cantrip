@@ -21,7 +21,7 @@ import pytest
 
 from cantrip.agent.audit import AUDIT_FILENAME, AuditAction, AuditWriter, read_entries
 from cantrip.agent.mcp_controller import MCPController
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PermissionDecision,
     PermissionManager,
     PermissionOutcome,

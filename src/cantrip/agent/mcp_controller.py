@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.audit import AuditAction, AuditWriter, make_entry
-from cantrip.agent.permissions import (
+from cantrip.agent.safety.permissions import (
     PermissionDecision,
     PermissionManager,
     PermissionOutcome,

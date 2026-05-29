@@ -203,7 +203,7 @@ class TestToolExecutionFailures:
 
     @staticmethod
     def _run_command_tool(base_path: pathlib.Path, allowlist: frozenset[str] | None = None):
-        from cantrip.agent.sandbox import SandboxedRunner
+        from cantrip.agent.safety.sandbox import SandboxedRunner
         from cantrip.agent.tools.run_command import RunCommandTool
 
         # Force the no-op sandbox so the test is deterministic regardless of
