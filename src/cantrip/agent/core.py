@@ -1,7 +1,6 @@
 """Core agent logic."""
 
 import asyncio
-import json
 import logging
 import os
 import pathlib
@@ -91,6 +90,7 @@ from cantrip.agent.tools import (
     resolve_subcommand,
 )
 from cantrip.agent.triage_controller import TriageController
+from cantrip.agent.usage_tracker import UsageTracker
 from cantrip.agent.watcher import WatcherConfig, WatcherEvent
 from cantrip.agent.watcher_controller import WatcherController
 from cantrip.codeintel import CodeIntel
@@ -660,6 +660,7 @@ class CantripAgent:
 
         if charm_path:
             self._ensure_agents_md(charm_path)
+        self._usage = UsageTracker(self)
 
     @property
     def event_bus(self) -> ui_events.EventBus:
@@ -1075,44 +1076,7 @@ class CantripAgent:
         response: Response,
         provider: LLMProvider | None = None,
     ) -> int | None:
-        """Record token usage from a provider response if a store is active.
-
-        ``provider`` defaults to ``self.provider`` so existing call
-        sites stay unchanged; Phase 71.2 architect/editor passes pass
-        the specific pass's provider so ``/cost`` can break costs out
-        per-model.
-        """
-        attribution = provider or self.provider
-        if response.usage:
-            created = response.usage.get("cache_creation_input_tokens", 0) or 0
-            read = response.usage.get("cache_read_input_tokens", 0) or 0
-            self.cache_creation_tokens += created
-            self.cache_read_tokens += read
-            self._check_cache_cascade(response.usage)
-            # Phase 78.2: publish on every turn where the provider
-            # reports cache fields so the Web status element and the
-            # TUI modelbar stay in lockstep off a single signal.
-            if (
-                "cache_creation_input_tokens" in response.usage
-                or "cache_read_input_tokens" in response.usage
-            ):
-                self._event_bus.publish(
-                    ui_events.cache_metrics_updated(
-                        cache_creation_tokens=self.cache_creation_tokens,
-                        cache_read_tokens=self.cache_read_tokens,
-                    )
-                )
-        self._ensure_store()
-        if self._store and response.usage:
-            return self._store.record_usage(
-                provider=attribution.name,
-                model=attribution.model_name,
-                prompt_tokens=response.usage.get("prompt_tokens", 0),
-                completion_tokens=response.usage.get("completion_tokens", 0),
-                cache_read_tokens=response.usage.get("cache_read_input_tokens", 0) or 0,
-                cache_creation_tokens=response.usage.get("cache_creation_input_tokens", 0) or 0,
-            )
-        return None
+        return self._usage.record_usage(response, provider)
 
     def _restore_cache_tokens(self, cache_creation_tokens: int, cache_read_tokens: int) -> None:
         """Seed the in-memory prompt-cache accumulators from persisted totals.
@@ -1152,19 +1116,7 @@ class CantripAgent:
         )
 
     def _check_cache_cascade(self, usage: dict[str, int]) -> None:
-        """Feed per-turn usage into the cache cascade detector.
-
-        Surfaces the warning as a WARNING log, a SYSTEM conversation
-        message (so it rides along with the transcript), and a UI
-        chat event so the TUI and Web chat show it in-band — the
-        April 23 lesson is that passive metrics aren't enough.
-        """
-        warning = self._cache_monitor.observe(usage)
-        if warning is None:
-            return
-        log.warning("Cache cascade detected: %s", warning)
-        self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
-        self._event_bus.publish(ui_events.chat_message(role="system", content=warning))
+        return self._usage.check_cache_cascade(usage)
 
     async def _run_compaction(self, *, tokens_before: int, source: str) -> None:
         """Run compaction (with emergency-truncate fallback), bracketed by UI events.
@@ -2225,89 +2177,13 @@ class CantripAgent:
     def _track_tool_failure_streak(
         self, tool_name: str, arguments: dict[str, Any], success: bool
     ) -> None:
-        """Update the consecutive same-(tool, args) failure counter.
-
-        Resets to zero on a successful call.  The streak only compounds
-        when the *same* ``(tool name, serialised arguments)`` signature
-        fails again; any different signature resets it to one — so a
-        model can legitimately retry one ``edit_file`` after fixing its
-        ``old_string`` without tripping the cap.  Once the streak hits
-        two it also publishes a "tool retrying (n/cap)" status update.
-        """
-        if success:
-            self.state.consecutive_tool_failures = 0
-            self.state.last_failed_tool_signature = None
-            self.state.last_failed_tool_name = None
-            return
-        try:
-            args_repr = json.dumps(arguments, sort_keys=True, default=str)[:200]
-        except (TypeError, ValueError):
-            args_repr = "<unserialisable>"
-        signature = f"{tool_name}:{args_repr}"
-        if signature == self.state.last_failed_tool_signature:
-            self.state.consecutive_tool_failures += 1
-        else:
-            self.state.consecutive_tool_failures = 1
-            self.state.last_failed_tool_signature = signature
-        self.state.last_failed_tool_name = tool_name
-        n = self.state.consecutive_tool_failures
-        if n >= 3:
-            log.warning(
-                "Tool %s has now failed %d consecutive times "
-                "(cap is %d; tune via CANTRIP_TOOL_FAILURE_CAP)",
-                signature,
-                n,
-                self.state.tool_failure_cap,
-            )
-        if n >= 2:
-            # Phase 107.4: surface the streak on the status bar so the
-            # TUI/Web show a "tool retrying (3/5)" badge while the loop
-            # is grinding, not just afterwards in the logs.
-            self._publish_activity(f"⟳ tool retrying ({n}/{self.state.tool_failure_cap})")
+        return self._usage.track_tool_failure_streak(tool_name, arguments, success)
 
     def _maybe_warn_before_failure_cap(self) -> None:
-        """One turn before the cap fires, tell the model to change tack.
-
-        Phase 107.3: a model that keeps re-emitting the same failing
-        tool call gets one explicit, in-conversation chance to split a
-        large payload, switch tools, fix the arguments, or bail — before
-        cantrip force-blocks the task.  Fires only on the exact turn the
-        streak reaches ``cap - 1`` so the warning lands while there is
-        still a round left to act on it; a cap below 2 leaves no room
-        for the warning and is silently skipped.
-        """
-        cap = self.state.tool_failure_cap
-        n = self.state.consecutive_tool_failures
-        if cap < 2 or n != cap - 1:
-            return
-        tool = self.state.last_failed_tool_name or "that tool"
-        warning = (
-            f"You have called {tool} {n} times in a row with the same arguments "
-            "and it has failed every time. One more identical failure and this "
-            "task will be marked BLOCKED and the run will stop. Do something "
-            "different now: split a large payload into smaller writes, use a "
-            "different tool, correct the arguments — or, if you genuinely cannot "
-            "make progress, say so plainly instead of retrying."
-        )
-        self.state.messages.append(Message(role=Role.SYSTEM, content=warning))
-        self._event_bus.publish(ui_events.chat_message(role="system", content=warning))
-        log.warning(
-            "Phase 107: injected pre-cap warning after %d consecutive %s failures",
-            n,
-            tool,
-        )
+        return self._usage.maybe_warn_before_failure_cap()
 
     def _consecutive_failure_cap_exceeded(self) -> str | None:
-        """Return a blocked-reason string when the cap has been hit.
-
-        ``None`` means "still within tolerance, keep looping".  The
-        reason string is operator-facing — it goes into the
-        ``blocked_reason`` on the work-queue task and into stderr.
-        """
-        if self.state.consecutive_tool_failures < self.state.tool_failure_cap:
-            return None
-        sig = self.state.last_failed_tool_signature or "<unknown>"
-        return f"Tool {sig} failed {self.state.consecutive_tool_failures} consecutive times"
+        return self._usage.consecutive_failure_cap_exceeded()
 
     def _mark_active_task_blocked(self, reason: str) -> None:
         """Flip the currently-active work-queue task to ``BLOCKED``.
