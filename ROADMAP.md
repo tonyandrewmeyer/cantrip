@@ -1020,7 +1020,7 @@ package level — not aesthetic uniformity.
 
 ### 113.4 High — Group flat modules under `src/cantrip/agent/`
 
-- [ ] Move 49 of the 59 flat modules into themed subpackages
+- [~] Move 49 of the 59 flat modules into themed subpackages
   (suggested groupings; rename freely if a better cut presents):
   - `agent/race/` — `arena.py`, `arena_controller.py`, `race.py`.
   - `agent/context/` — `context.py`, `context_providers.py`,
@@ -1042,8 +1042,33 @@ package level — not aesthetic uniformity.
   convention in CLAUDE.md, or (b) collapse controllers into a
   shared `controllers/` subdir, or (c) merge each controller into
   its sibling.  Pick one and apply uniformly.
-- [ ] Update all call sites and `__init__.py` re-exports in the same
+- [x] Update all call sites and `__init__.py` re-exports in the same
   commit.  No back-compat aliases.
+- [~] **Partial.**  All eight named groupings landed across six
+  commits (the `runtime` move is bundled into the `policy` commit and
+  the `watcher` move into the `skills_runtime` commit — each is still a
+  complete, internally consistent move), every import and patch string
+  rewritten in place (no shims), with `make check` green at the tip:
+  `agent/race/` (arena, arena_controller,
+  race), `agent/context/` (context, context_providers,
+  context_providers_builtin, lint_context), `agent/git/` (auto_commit,
+  git_branch, worktree), `agent/safety/` (permissions, sandbox,
+  controller_safety, confirmations), `agent/runtime/` (lifecycle,
+  preflight, presets, goal_budget, durability), `agent/policy/` (policy,
+  routing, retry, declarative_retry), `agent/watcher/` (watcher,
+  watcher_controller, github_issues, triage_controller), and
+  `agent/skills_runtime/` (skills, skill_export, skill_scanner) — 30
+  modules in all.  Flat top-level modules under `agent/` dropped from 56
+  to 26.  **Still open:** the controller-pattern decision above
+  (executor/watcher/arena/triage/mcp `X_controller`), and further
+  grouping to reach exit-criterion (b)'s ~15 — candidate clusters among
+  the remaining flat modules: the five Phase 113.1 service modules
+  (`provider_manager`, `message_history`, `repo_map_service`,
+  `tool_builder`, `usage_tracker`), a session/persistence cluster
+  (`store`, `persistence`, `snapshots`, `session_preview`, `audit`,
+  `cache_monitor`), and a workflow cluster (`checks`, `flows`,
+  `recipes`, `ralph`).  Deferred to a follow-on so the named,
+  low-ambiguity groups could land first.
 
 ### 113.5 Medium — `slash.py` registry refactor
 
