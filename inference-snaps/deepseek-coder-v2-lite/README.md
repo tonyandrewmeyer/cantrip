@@ -7,7 +7,7 @@ replacement (or co-default) alongside Qwen3-14B.
 
 ## Why DeepSeek-Coder-V2-Lite?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.7
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.7
 for the full reasoning. Short version:
 
 - **MoE shape**: 16 B total parameters, only ~2.4 B active per

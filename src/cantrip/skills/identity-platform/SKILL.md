@@ -68,7 +68,7 @@ Decision shortcut:
 
 ## Charm Libraries — Fetch-Libs Route
 
-The five libraries above are **not on PyPI** today (per `design/UPSTREAM_AUDIT.md`, audit cutoff 2026-04-22).  Fetch them via charmcraft.  In `charmcraft.yaml`:
+The five libraries above are **not on PyPI** today (per `design/research/UPSTREAM_AUDIT.md`, audit cutoff 2026-04-22).  Fetch them via charmcraft.  In `charmcraft.yaml`:
 
 ```yaml
 charm-libs:
@@ -79,7 +79,7 @@ charm-libs:
 
 Then run `charmcraft fetch-libs` once.  The libraries land under `lib/charms/hydra/v0/oauth.py` (etc.) and import as `from charms.hydra.v0.oauth import OAuthRequirer`.
 
-**Revisit:** When the libs land on PyPI under the `charmlibs-*` namespace, the LIB001 mapping (`design/UPSTREAM_AUDIT.md`) will be updated and this skill should switch to `uv add charmlibs-hydra-oauth` (or whatever the published name is).  Until then, the fetch-libs instruction is correct.
+**Revisit:** When the libs land on PyPI under the `charmlibs-*` namespace, the LIB001 mapping (`design/research/UPSTREAM_AUDIT.md`) will be updated and this skill should switch to `uv add charmlibs-hydra-oauth` (or whatever the published name is).  Until then, the fetch-libs instruction is correct.
 
 ## Secret-Relation Wiring for Client Credentials
 
@@ -250,7 +250,7 @@ In practice users will ask in prose — "use my existing Hydra at auth.example.c
 3. **Logging client credentials.**  Charm logs are accessible to anyone with `juju debug-log`; secrets in logs are leaked secrets.  Status messages are the same.
 4. **Choosing `oauth-cli` for a human-driven web app.**  `oauth-cli` is the device-code / client-credentials path; for browser-based login flows the right interface is `oauth`.
 5. **Mixing topology layers.**  Do not deploy `hydra` directly *and* `canonical-identity-platform` in the same model — pick one.  The bundle owns its own Hydra; a second copy will fight for the same relations.
-6. **Assuming PyPI availability.**  `charms.hydra.v0.*` and `charms.kratos.v0.*` are not on PyPI as of April 2026 — use `charmcraft fetch-libs`.  Re-check `design/UPSTREAM_AUDIT.md` if a future change is suspected.
+6. **Assuming PyPI availability.**  `charms.hydra.v0.*` and `charms.kratos.v0.*` are not on PyPI as of April 2026 — use `charmcraft fetch-libs`.  Re-check `design/research/UPSTREAM_AUDIT.md` if a future change is suspected.
 7. **Forgetting the bundle's database.**  `canonical-identity-platform` deploys its own backing database for Kratos; do not relate Kratos to the user's PostgreSQL unless explicitly asked.
 
 ## Cross-References

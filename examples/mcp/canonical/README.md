@@ -9,7 +9,7 @@ scratch.
 The MCP servers themselves (`launchpad-mcp`, `snapcraft-mcp`,
 `charmcraft-mcp`, `maas-mcp`) live in their own repositories — Cantrip
 ships an MCP *client*, not the servers.  See
-[`design/MCP_SERVERS.md`](../../../design/MCP_SERVERS.md) for the
+[`design/MCP_SERVERS.md`](../../../design/research/MCP_SERVERS.md) for the
 authoring guide.
 
 `maas-mcp` is not yet published on PyPI; the descriptor ships as a

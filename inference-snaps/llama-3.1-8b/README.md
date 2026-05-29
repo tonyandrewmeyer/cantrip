@@ -12,7 +12,7 @@ have to parse manually.
 
 ## Why Llama 3.1-8B?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.11
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.11
 for the smoke-test results. Short version:
 
 - **Function-calling reference model.**  Meta's docs treat tool

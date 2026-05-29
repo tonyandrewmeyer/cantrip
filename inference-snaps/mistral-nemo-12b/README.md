@@ -7,7 +7,7 @@ or co-default alongside Qwen3-14B.
 
 ## Why Mistral Nemo 12B?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.2
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.2
 for the full reasoning. Short version:
 
 - **Native function calling** — Mistral's tool-call format is a

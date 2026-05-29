@@ -10,7 +10,7 @@ of any cantrip adoption decision.
 
 ## Why Phi-4-mini?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.10
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.10
 for the smoke-test results. Short version:
 
 - **Function-calling reference model.**  Microsoft's docs treat

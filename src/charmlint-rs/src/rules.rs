@@ -648,7 +648,7 @@ fn check_libraries(ctx: &CharmContext) -> Vec<Diagnostic> {
     // has been lifted into the `canonical/charmlibs` monorepo and published
     // to PyPI under the `charmlibs-*` namespace; the import path also
     // changes (`charms.foo.vN.bar` → `charmlibs.bar`).  See
-    // `design/UPSTREAM_AUDIT.md` for the audit log.  Values are
+    // `design/research/UPSTREAM_AUDIT.md` for the audit log.  Values are
     // (PyPI package, import hint shown to the user).
     let pypi_map: &[(&str, &str, &str)] = &[
         (

@@ -300,9 +300,9 @@ match what users will see.
 
 ## Related design docs
 
-- [`design/TOOLS.md`](TOOLS.md) — Cantrip's built-in tool abstraction
+- [`design/TOOLS.md`](../TOOLS.md) — Cantrip's built-in tool abstraction
   that MCP tools coexist with.
-- [`design/SKILLS.md`](SKILLS.md) — On-demand instruction loading,
+- [`design/SKILLS.md`](../SKILLS.md) — On-demand instruction loading,
   often a complement to MCP tool exposure.
-- [`design/PLAN.md`](PLAN.md) — Overall architecture and where MCP
+- [`design/PLAN.md`](../PLAN.md) — Overall architecture and where MCP
   fits.

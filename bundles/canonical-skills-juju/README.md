@@ -8,7 +8,7 @@ re-run `make juju-skills-bundle` to refresh the bundle.
 The bundle is intended for publication to
 [`canonical/skills`](https://github.com/canonical/skills) under
 `skills/products/juju/<skill-name>/SKILL.md`. See
-[`design/JUJU_SKILLS_BUNDLE.md`](../../design/JUJU_SKILLS_BUNDLE.md) for the
+[`design/JUJU_SKILLS_BUNDLE.md`](../../design/research/JUJU_SKILLS_BUNDLE.md) for the
 scope decision, frontmatter contract, and deferred items.
 
 ## Contents

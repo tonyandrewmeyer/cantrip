@@ -23,9 +23,9 @@ This directory exists to:
 
 ## Why Granite 4.1-3B?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.9.2
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.9.2
 for the smoke-test results and the
-[`design/LOCAL_MODELS_SURVEY_2026-05.md`](../../design/LOCAL_MODELS_SURVEY_2026-05.md)
+[`design/LOCAL_MODELS_SURVEY_2026-05.md`](../../design/research/LOCAL_MODELS_SURVEY_2026-05.md)
 survey for the candidate-selection reasoning. Short version:
 
 - **Not a charm-build candidate.**  3 B coding accuracy is

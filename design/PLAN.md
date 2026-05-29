@@ -20,7 +20,7 @@ Subsystem-level contracts live in dedicated docs:
   where to add a new prompt.
 - [UI.md](UI.md) — the shared TUI + Web UI event bus, layout, and
   keyboard shortcuts.
-- [TERRAFORM.md](TERRAFORM.md) — Terraform module generation design.
+- [TERRAFORM.md](research/TERRAFORM.md) — Terraform module generation design.
 
 ## Project Conventions
 

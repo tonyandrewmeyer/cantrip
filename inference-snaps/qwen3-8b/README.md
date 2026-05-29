@@ -16,7 +16,7 @@ This directory exists to:
 
 ## Why Qwen3-8B?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) for the
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) for the
 full comparison and ROADMAP Phase 105 for the work breakdown. Short
 version: 5 GB Q4_K_M weights + 2.5 GB KV cache at 32 K context fits
 in ~7.5 GB of VRAM with full GPU offload, which clears the ~10–11

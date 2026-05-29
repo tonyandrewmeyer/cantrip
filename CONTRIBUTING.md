@@ -99,7 +99,7 @@ inspect the diff, and commit the regenerated output.
 Authoring conventions (curly quotes, entity handling, raw-HTML
 escape hatches for callouts / prompt-styled code blocks / the
 landing-page doc-cards grid) are documented in
-[`design/DOCS_REBUILD.md`](design/DOCS_REBUILD.md).
+[`design/DOCS_REBUILD.md`](design/research/DOCS_REBUILD.md).
 
 ### Cookbook recipes
 

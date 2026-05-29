@@ -19,9 +19,9 @@ This directory exists to:
 
 ## Why Granite 4.1-8B?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.8
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.8
 for the smoke-test results and the
-[`design/LOCAL_MODELS_SURVEY_2026-05.md`](../../design/LOCAL_MODELS_SURVEY_2026-05.md)
+[`design/LOCAL_MODELS_SURVEY_2026-05.md`](../../design/research/LOCAL_MODELS_SURVEY_2026-05.md)
 survey for the candidate-selection reasoning. Short version:
 
 - **BFCL v3 = 68.27 as a post-training objective**, not a

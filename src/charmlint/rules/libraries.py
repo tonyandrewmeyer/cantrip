@@ -4,7 +4,7 @@ As of Apr 2026, most charm libraries still live in their host charm repos
 and require ``charmcraft fetch-libs``.  A growing subset has been lifted
 into the ``canonical/charmlibs`` monorepo and published to PyPI under the
 ``charmlibs-*`` namespace; the import path also changes (``charms.foo.vN.bar``
-→ ``charmlibs.bar``).  See ``design/UPSTREAM_AUDIT.md`` for the audit log
+→ ``charmlibs.bar``).  See ``design/research/UPSTREAM_AUDIT.md`` for the audit log
 and cutoff.
 """
 

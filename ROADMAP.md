@@ -58,7 +58,7 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
 
 - [x] Cloned the repo and reviewed all twelve skills (2026-05-24
   sweep).  Findings logged in
-  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/CHARMING_WITH_CLAUDE_REVIEW.md)
+  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/research/CHARMING_WITH_CLAUDE_REVIEW.md)
   with a verdict per skill (adopt / adapt / dev-plugin / reject) and
   a per-skill summary.
 - [x] Per-skill evaluation against cantrip's bundled set (33 skills at
@@ -72,7 +72,7 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
   user's `~/.claude/skills/` if useful for developing cantrip itself.
   Cantrip does not modify the user's Claude Code config without an
   explicit request; the recipe lives in
-  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/CHARMING_WITH_CLAUDE_REVIEW.md).
+  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/research/CHARMING_WITH_CLAUDE_REVIEW.md).
 - [x] Four skills adopted directly into cantrip's bundle with
   CC BY 4.0 attribution banners and converted to cantrip's
   frontmatter shape: `src/cantrip/skills/charm-logging/SKILL.md`
@@ -87,7 +87,7 @@ Cantrip's own agent (system prompts, subagent guidance, skills).
   all four up cleanly; cantrip's total bundled skill count goes
   from 33 to 37.
 - [x] Findings document landed at
-  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/CHARMING_WITH_CLAUDE_REVIEW.md):
+  [`design/CHARMING_WITH_CLAUDE_REVIEW.md`](design/research/CHARMING_WITH_CLAUDE_REVIEW.md):
   TL;DR verdict table, per-skill summary with reasoning, plus a
   follow-up section recording the adapt-bucket deferrals and the
   periodic re-sweep recommendation.
@@ -123,7 +123,7 @@ on upstream review cycles.
   design, Harness→Scenario migration, plus the starter operational
   pair adding-actions / adding-config).  Per-skill verdict (ship /
   defer to v2 / skip-deduplicate / skip-cantrip-internal) lives in
-  [`design/JUJU_SKILLS_BUNDLE.md`](../design/JUJU_SKILLS_BUNDLE.md).
+  [`design/JUJU_SKILLS_BUNDLE.md`](design/research/JUJU_SKILLS_BUNDLE.md).
 - [x] Decision: every published asset is a skill folder
   (`skills/products/juju/<name>/SKILL.md`), not an
   `.instructions.md`.  Reason: the actual `canonical/skills`
@@ -1098,7 +1098,7 @@ package level — not aesthetic uniformity.
 
 ### 113.8 Medium — Split `design/` into active vs research/audit
 
-- [ ] CLAUDE.md already names two classes of `design/*.md`: active
+- [x] CLAUDE.md already names two classes of `design/*.md`: active
   contracts ("always relevant to ongoing work") and "point-in-time
   research and audits".  Realise the split as a directory:
   - `design/` — active contracts only.  PLAN, AGENT, UI, TOOLS,
@@ -1115,10 +1115,23 @@ package level — not aesthetic uniformity.
     `CHARMING_WITH_CLAUDE_REVIEW.md`, `CANONICAL_SHOWCASE.md`,
     plus any `*_REVIEW.md` / `*_AUDIT.md` /
     `*_SURVEY*.md` that landed since.
-- [ ] Update intra-doc links and CLAUDE.md's "Reference Documents"
+- [x] Update intra-doc links and CLAUDE.md's "Reference Documents"
   section to reflect the new paths.
-- [ ] Keep the rule in CLAUDE.md so newly-written research lands in
+- [x] Keep the rule in CLAUDE.md so newly-written research lands in
   the right place from day one.
+- [x] **Done.**  `design/` now holds only the ten active-contract docs
+  (PLAN, AGENT, UI, TOOLS, SKILLS, PROMPTS, CONTEXT_PROVIDERS,
+  PROVIDER_ROLES, DOCS_INDEX, RECIPES); the other 36 point-in-time
+  research/audit/survey notes moved to `design/research/`.  All
+  cross-directory links were repointed and verified with a
+  link-resolution check (the one remaining broken link,
+  `design/SKILLS.md` → `assets/templates/STACK.md`, is pre-existing and
+  unrelated); source-code references to `design/UPSTREAM_AUDIT.md`
+  (charmlint rules, identity skill) were updated to the new path.
+  Per the scope decision, historical records (`CHANGELOG.md`,
+  `ROADMAP_ARCHIVE.md`) were left as-is.  CLAUDE.md records the rule so
+  new research lands in `design/research/` from day one.  `make check`
+  green.
 
 ### 113.9 Low — Decide on `cookbook/` / `demos/` / `examples/` / `bundles/`
 

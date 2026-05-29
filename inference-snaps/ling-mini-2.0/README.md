@@ -6,9 +6,9 @@ the bailing_moe architecture-support check on llama.cpp `b9050`.
 
 ## Why Ling-mini-2.0?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.12
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.12
 for the smoke-test results and
-[`design/LOCAL_MODELS_SURVEY_2026-05.md`](../../design/LOCAL_MODELS_SURVEY_2026-05.md)
+[`design/LOCAL_MODELS_SURVEY_2026-05.md`](../../design/research/LOCAL_MODELS_SURVEY_2026-05.md)
 for the candidate-selection reasoning.  Short version:
 
 - **Only `bailing_moe` MoE in the survey shortlist.**  16.26 B

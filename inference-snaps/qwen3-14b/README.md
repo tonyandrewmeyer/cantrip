@@ -32,7 +32,7 @@ This directory carries both surfaces:
 
 ## Why Qwen3-14B?
 
-See [`design/LOCAL_MODELS.md`](../../design/LOCAL_MODELS.md) §5.6
+See [`design/LOCAL_MODELS.md`](../../design/research/LOCAL_MODELS.md) §5.6
 for the full reasoning and ROADMAP Phase 105.1.5 for the work
 breakdown. Short version: same Qwen3 family as the failed
 [`qwen3-8b/`](../qwen3-8b/) smoke (so we know the `--jinja`

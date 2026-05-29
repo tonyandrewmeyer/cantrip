@@ -1,6 +1,6 @@
 # Juju Skills Bundle for `canonical/skills`
 
-Phase 56 (see [`ROADMAP.md`](../ROADMAP.md)) ships a Juju-focused subset of
+Phase 56 (see [`ROADMAP.md`](../../ROADMAP.md)) ships a Juju-focused subset of
 Cantrip's own skill content to the public [`canonical/skills`][cs-repo] catalogue
 so charm authors using *any* agentskills.io-compatible client (Claude Code,
 GitHub Copilot CLI, Cursor, Codex, Gemini CLI, Windsurf, …) get the same
