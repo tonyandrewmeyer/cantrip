@@ -44,7 +44,7 @@ class TestJujuReadRelationDataTool:
 
     @pytest.mark.asyncio()
     async def test_no_juju(self, relation_tool: JujuReadRelationDataTool) -> None:
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await relation_tool.execute(unit="myapp/0")
         assert result.success is False
 
@@ -74,8 +74,10 @@ class TestJujuReadRelationDataTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=show_unit_output),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.juju._common._run_juju", return_value=show_unit_output
+            ),
         ):
             result = await relation_tool.execute(unit="myapp/0")
 
@@ -98,8 +100,10 @@ class TestJujuReadRelationDataTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=show_unit_output),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.juju._common._run_juju", return_value=show_unit_output
+            ),
         ):
             result = await relation_tool.execute(unit="myapp/0", endpoint="database")
 
@@ -112,8 +116,10 @@ class TestJujuReadRelationDataTool:
         show_unit_output = json.dumps({"myapp/0": {"relation-info": []}})
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=show_unit_output),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.juju._common._run_juju", return_value=show_unit_output
+            ),
         ):
             result = await relation_tool.execute(unit="myapp/0")
 
@@ -123,8 +129,8 @@ class TestJujuReadRelationDataTool:
     @pytest.mark.asyncio()
     async def test_timeout(self, relation_tool: JujuReadRelationDataTool) -> None:
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", side_effect=TimeoutError),
         ):
             result = await relation_tool.execute(unit="myapp/0")
         assert result.success is False
@@ -135,9 +141,9 @@ class TestJujuReadRelationDataTool:
         import jubilant
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
             mock.patch(
-                "cantrip.agent.tools.juju._run_juju",
+                "cantrip.agent.tools.juju._common._run_juju",
                 side_effect=jubilant.CLIError(1, ["juju", "show-unit"], stderr="unit not found"),
             ),
         ):
@@ -160,7 +166,7 @@ class TestJujuGetAppConfigTool:
 
     @pytest.mark.asyncio()
     async def test_no_juju(self, config_tool: JujuGetAppConfigTool) -> None:
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await config_tool.execute(app="myapp")
         assert result.success is False
 
@@ -186,8 +192,8 @@ class TestJujuGetAppConfigTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=config_output),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=config_output),
         ):
             result = await config_tool.execute(app="myapp")
 
@@ -201,8 +207,8 @@ class TestJujuGetAppConfigTool:
     @pytest.mark.asyncio()
     async def test_timeout(self, config_tool: JujuGetAppConfigTool) -> None:
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", side_effect=TimeoutError),
         ):
             result = await config_tool.execute(app="myapp")
         assert result.success is False
@@ -222,7 +228,7 @@ class TestJujuListOffersTool:
 
     @pytest.mark.asyncio()
     async def test_no_juju(self, offers_tool: JujuListOffersTool) -> None:
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await offers_tool.execute()
         assert result.success is False
 
@@ -232,8 +238,8 @@ class TestJujuListOffersTool:
         mock_status.offers = {}
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=mock_status),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=mock_status),
         ):
             result = await offers_tool.execute()
 
@@ -256,8 +262,8 @@ class TestJujuListOffersTool:
         mock_status.offers = {"postgresql-db": offer}
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=mock_status),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=mock_status),
         ):
             result = await offers_tool.execute()
 
@@ -270,8 +276,8 @@ class TestJujuListOffersTool:
     @pytest.mark.asyncio()
     async def test_timeout(self, offers_tool: JujuListOffersTool) -> None:
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", side_effect=TimeoutError),
         ):
             result = await offers_tool.execute()
         assert result.success is False
@@ -364,8 +370,8 @@ class TestGetAppConfigWithValidation:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=config_output),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=config_output),
         ):
             result = await tool.execute(app="myapp", charm_path=str(tmp_path))
 
@@ -385,8 +391,8 @@ class TestGetAppConfigWithValidation:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=config_output),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=config_output),
         ):
             result = await tool.execute(app="myapp")
 

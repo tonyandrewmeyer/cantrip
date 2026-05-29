@@ -34,7 +34,7 @@ def _local_controller(monkeypatch):
     the destructive gate, not the controller-safety layer that fires
     first inside the same tools."""
     monkeypatch.setattr(
-        "cantrip.agent.tools.juju.controller_confirm_required",
+        "cantrip.agent.tools.juju._common.controller_confirm_required",
         lambda *_args, **_kwargs: (False, ""),
     )
 
@@ -59,7 +59,7 @@ class TestJujuDestroyModelGate:
         tool = JujuDestroyModelTool()
         # Gate is through — the juju "not installed" path now fires.
         with mock.patch(
-            "cantrip.agent.tools.juju._juju_available",
+            "cantrip.agent.tools.juju._common._juju_available",
             return_value=False,
         ):
             result = await tool.execute(model="dev")
@@ -93,7 +93,7 @@ class TestJujuRemoveApplicationGate:
 
         tool = JujuRemoveApplicationTool()
         with mock.patch(
-            "cantrip.agent.tools.juju._juju_available",
+            "cantrip.agent.tools.juju._common._juju_available",
             return_value=False,
         ):
             result = await tool.execute(app_name="postgres")

@@ -384,15 +384,15 @@ class TestJujuCaptions:
         """Phase 10b: bypass the controller-safety gate so caption tests
         target the underlying tool output rather than the gate."""
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(False, ""),
         ) as patched:
             yield patched
 
     @pytest.mark.asyncio
     async def test_status_caption_pluralisation(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuStatusTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         fake_status = mock.MagicMock()
         fake_status.model.name = "dev-model"
@@ -425,8 +425,8 @@ class TestJujuCaptions:
 
     @pytest.mark.asyncio
     async def test_status_caption_singular_no_blocked(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuStatusTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         fake_status = mock.MagicMock()
         fake_status.model.name = "dev-model"
@@ -449,8 +449,8 @@ class TestJujuCaptions:
 
     @pytest.mark.asyncio
     async def test_deploy_caption_with_app_name_and_model(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuDeployTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         with (
             mock.patch.object(juju_mod, "_juju_available", return_value=True),
@@ -470,8 +470,8 @@ class TestJujuCaptions:
 
     @pytest.mark.asyncio
     async def test_deploy_caption_falls_back_to_charm_stem(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuDeployTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         with (
             mock.patch.object(juju_mod, "_juju_available", return_value=True),
@@ -487,8 +487,8 @@ class TestJujuCaptions:
 
     @pytest.mark.asyncio
     async def test_relate_caption(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuRelateTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         with (
             mock.patch.object(juju_mod, "_juju_available", return_value=True),
@@ -504,8 +504,8 @@ class TestJujuCaptions:
 
     @pytest.mark.asyncio
     async def test_config_set_single_value_caption(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuConfigTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         with (
             mock.patch.object(juju_mod, "_juju_available", return_value=True),
@@ -524,8 +524,8 @@ class TestJujuCaptions:
 
     @pytest.mark.asyncio
     async def test_config_set_multiple_values_caption(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuConfigTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         with (
             mock.patch.object(juju_mod, "_juju_available", return_value=True),
@@ -544,8 +544,8 @@ class TestJujuCaptions:
 
     @pytest.mark.asyncio
     async def test_config_get_caption(self) -> None:
-        from cantrip.agent.tools import juju as juju_mod
         from cantrip.agent.tools.juju import JujuConfigTool
+        from cantrip.agent.tools.juju import _common as juju_mod
 
         with (
             mock.patch.object(juju_mod, "_juju_available", return_value=True),

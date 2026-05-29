@@ -56,7 +56,7 @@ class TestJujuListSecretsTool:
 
     @pytest.mark.asyncio()
     async def test_no_juju(self, list_tool: JujuListSecretsTool) -> None:
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await list_tool.execute()
         assert result.success is False
         assert "not found" in result.error.lower()
@@ -64,8 +64,8 @@ class TestJujuListSecretsTool:
     @pytest.mark.asyncio()
     async def test_no_secrets(self, list_tool: JujuListSecretsTool) -> None:
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=[]),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=[]),
         ):
             result = await list_tool.execute()
         assert result.success is True
@@ -79,8 +79,8 @@ class TestJujuListSecretsTool:
             _make_secret(name="api-key", owner="myapp/0", rotation="hourly"),
         ]
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secrets),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=secrets),
         ):
             result = await list_tool.execute()
 
@@ -95,8 +95,8 @@ class TestJujuListSecretsTool:
     @pytest.mark.asyncio()
     async def test_passes_owner_filter(self, list_tool: JujuListSecretsTool) -> None:
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=[]) as mock_run,
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=[]) as mock_run,
         ):
             await list_tool.execute(owner="postgresql")
         mock_run.assert_called_once()
@@ -106,8 +106,8 @@ class TestJujuListSecretsTool:
     @pytest.mark.asyncio()
     async def test_timeout(self, list_tool: JujuListSecretsTool) -> None:
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", side_effect=TimeoutError),
         ):
             result = await list_tool.execute()
         assert result.success is False
@@ -120,8 +120,8 @@ class TestJujuListSecretsTool:
         access_entry.role = "consumer"
         secrets = [_make_secret(access=[access_entry])]
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secrets),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=secrets),
         ):
             result = await list_tool.execute()
         assert "myapp:consumer" in result.output
@@ -142,7 +142,7 @@ class TestJujuShowSecretTool:
 
     @pytest.mark.asyncio()
     async def test_no_juju(self, show_tool: JujuShowSecretTool) -> None:
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await show_tool.execute(identifier="db-creds")
         assert result.success is False
 
@@ -150,8 +150,8 @@ class TestJujuShowSecretTool:
     async def test_shows_secret_metadata(self, show_tool: JujuShowSecretTool) -> None:
         secret = _make_secret(name="db-creds", description="Database credentials")
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secret),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=secret),
         ):
             result = await show_tool.execute(identifier="db-creds")
 
@@ -167,8 +167,10 @@ class TestJujuShowSecretTool:
         secret = _make_secret()
         secret.content = {"password": "s3cret", "username": "admin"}
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secret) as run_mock,
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch(
+                "cantrip.agent.tools.juju._common._run_juju", return_value=secret
+            ) as run_mock,
         ):
             result = await show_tool.execute(identifier="db-creds")
 
@@ -183,8 +185,8 @@ class TestJujuShowSecretTool:
     @pytest.mark.asyncio()
     async def test_timeout(self, show_tool: JujuShowSecretTool) -> None:
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", side_effect=TimeoutError),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", side_effect=TimeoutError),
         ):
             result = await show_tool.execute(identifier="db-creds")
         assert result.success is False
@@ -197,8 +199,8 @@ class TestJujuShowSecretTool:
         access_entry.role = "consumer"
         secret = _make_secret(access=[access_entry])
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju._run_juju", return_value=secret),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=secret),
         ):
             result = await show_tool.execute(identifier="db-creds")
         assert "myapp: consumer" in result.output

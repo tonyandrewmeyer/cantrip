@@ -69,7 +69,7 @@ class TestJujuStatusTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute()
 
         assert not result.success
@@ -92,8 +92,8 @@ class TestJujuStatusTool:
         fake_status.apps = {"mysql": mysql_app}
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant") as fake_jubilant,
         ):
             fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
             fake_jubilant.CLIError = jubilant.CLIError
@@ -116,8 +116,8 @@ class TestJujuStatusTool:
         fake_status.apps = {"booklore": app}
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant") as fake_jubilant,
         ):
             fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
             fake_jubilant.CLIError = jubilant.CLIError
@@ -136,8 +136,8 @@ class TestJujuStatusTool:
         fake_status.apps = {"redis": app}
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant") as fake_jubilant,
         ):
             fake_jubilant.Juju.return_value.status = mock.MagicMock(return_value=fake_status)
             fake_jubilant.CLIError = jubilant.CLIError
@@ -160,7 +160,7 @@ class TestJujuStatusTool:
         """
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         monkeypatch.setattr(
-            "cantrip.agent.tools.juju._juju_version",
+            "cantrip.agent.tools.juju._common._juju_version",
             lambda: "juju 3.6.0",
         )
 
@@ -172,8 +172,8 @@ class TestJujuStatusTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant") as fake_jubilant,
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant") as fake_jubilant,
         ):
             fake_jubilant.Juju.return_value.status = mock.MagicMock(side_effect=crash)
             fake_jubilant.CLIError = jubilant.CLIError
@@ -200,7 +200,7 @@ class TestJujuAddModelTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(model="dev")
 
         assert not result.success
@@ -212,8 +212,8 @@ class TestJujuAddModelTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(model="dev")
 
@@ -232,8 +232,8 @@ class TestJujuAddModelTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(model="dev")
 
@@ -249,7 +249,7 @@ class TestJujuDestroyModelTool:
         """Phase 10b: bypass the controller-safety gate for tests that target
         the underlying juju logic, not the gate itself."""
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(False, ""),
         ) as patched:
             yield patched
@@ -288,7 +288,7 @@ class TestJujuDestroyModelTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool, _approve_destructive):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(model="dev")
 
         assert not result.success
@@ -300,8 +300,8 @@ class TestJujuDestroyModelTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(model="dev")
 
@@ -320,8 +320,8 @@ class TestJujuDestroyModelTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(model="dev", force=True)
 
@@ -344,8 +344,8 @@ class TestJujuDestroyModelTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(model="nonexistent")
 
@@ -363,7 +363,7 @@ class TestJujuOfferTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(app="grafana", endpoint="grafana-dashboard")
 
         assert not result.success
@@ -375,8 +375,8 @@ class TestJujuOfferTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app="grafana", endpoint="grafana-dashboard", model="cos")
 
@@ -395,8 +395,8 @@ class TestJujuOfferTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app="grafana", endpoint="bad-endpoint")
 
@@ -414,7 +414,7 @@ class TestJujuConsumeTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(model_and_app="cos.grafana")
 
         assert not result.success
@@ -426,8 +426,8 @@ class TestJujuConsumeTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(model_and_app="cos.grafana")
 
@@ -441,8 +441,8 @@ class TestJujuConsumeTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(
                 model_and_app="cos.grafana",
@@ -465,8 +465,8 @@ class TestJujuConsumeTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(model_and_app="cos.nonexistent")
 
@@ -482,7 +482,7 @@ class TestJujuDeployTool:
         """Phase 10b: bypass the controller-safety gate so these tests target
         the underlying deploy logic rather than the gate."""
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(False, ""),
         ) as patched:
             yield patched
@@ -497,8 +497,8 @@ class TestJujuDeployTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(
                 charm="./my-app.charm",
@@ -516,8 +516,8 @@ class TestJujuDeployTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(charm="traefik-k8s", trust=True)
 
@@ -532,8 +532,8 @@ class TestJujuDeployTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(charm="my-charm")
 
@@ -555,7 +555,7 @@ class TestBundleDeployTool:
     async def test_juju_not_installed(self, tool, tmp_path):
         bundle = tmp_path / "bundle.yaml"
         bundle.write_text("bundle: kubernetes\napplications: {}\n")
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(path=str(bundle))
         assert not result.success
         assert "Juju CLI not found" in result.error
@@ -564,7 +564,7 @@ class TestBundleDeployTool:
     async def test_missing_bundle_fails_fast(self, tool, tmp_path):
         """The tool refuses to dispatch if the bundle path does not exist."""
         missing = tmp_path / "does-not-exist.yaml"
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True):
             result = await tool.execute(path=str(missing))
         assert not result.success
         assert "Bundle file not found" in result.error
@@ -577,8 +577,8 @@ class TestBundleDeployTool:
         missing_overlay = tmp_path / "overlays" / "missing.yaml"
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(path=str(bundle), overlays=[str(missing_overlay)])
         assert not result.success
@@ -592,8 +592,8 @@ class TestBundleDeployTool:
         bundle.write_text("bundle: kubernetes\napplications: {}\n")
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(path=str(bundle))
         assert result.success
@@ -614,8 +614,8 @@ class TestBundleDeployTool:
         overlay_b.write_text("applications: {}\n")
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(
                 path=str(bundle),
@@ -642,8 +642,8 @@ class TestBundleDeployTool:
             returncode=1, cmd=["juju", "deploy"], stderr="bundle syntax error"
         )
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(path=str(bundle))
         assert not result.success
@@ -658,7 +658,7 @@ class TestJujuDeploySnapConfinement:
         """Phase 10b: bypass the controller-safety gate so these tests target
         the snap-confinement logic rather than the gate."""
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(False, ""),
         ) as patched:
             yield patched
@@ -679,9 +679,9 @@ class TestJujuDeploySnapConfinement:
         home.mkdir()
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=home),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common.pathlib.Path.home", return_value=home),
         ):
             result = await tool.execute(charm=str(charm_file))
 
@@ -700,9 +700,11 @@ class TestJujuDeploySnapConfinement:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=tmp_path),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
+            mock.patch(
+                "cantrip.agent.tools.juju._common.pathlib.Path.home", return_value=tmp_path
+            ),
         ):
             result = await tool.execute(charm=str(charm_file))
 
@@ -722,9 +724,9 @@ class TestJujuDeploySnapConfinement:
         home.mkdir()
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=home),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common.pathlib.Path.home", return_value=home),
         ):
             await tool.execute(charm=str(charm_file))
 
@@ -743,9 +745,9 @@ class TestJujuDeploySnapConfinement:
         home.mkdir()
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
-            mock.patch("cantrip.agent.tools.juju.pathlib.Path.home", return_value=home),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common.pathlib.Path.home", return_value=home),
         ):
             result = await tool.execute(charm=str(charm_file))
 
@@ -762,7 +764,7 @@ class TestJujuRefreshTool:
         """Phase 10b: bypass the controller-safety gate so these tests target
         the underlying refresh logic rather than the gate."""
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(False, ""),
         ) as patched:
             yield patched
@@ -774,7 +776,7 @@ class TestJujuRefreshTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(app_name="my-app")
 
         assert not result.success
@@ -786,8 +788,8 @@ class TestJujuRefreshTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app", path="./my-app.charm")
 
@@ -801,8 +803,8 @@ class TestJujuRefreshTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(
                 app_name="my-app",
@@ -823,8 +825,8 @@ class TestJujuRefreshTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app")
 
@@ -842,8 +844,8 @@ class TestJujuRefreshTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app")
 
@@ -874,8 +876,8 @@ class TestJujuRefreshTool:
 
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app", path="./mycharm.charm")
 
@@ -895,7 +897,7 @@ class TestControllerSafetyGate:
     async def test_deploy_blocks_on_non_local_controller(self):
         """juju_deploy refuses without confirmed=true when the gate fires."""
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(True, "REFUSE: non-local controller 'prod' (cloud='aws')."),
         ):
             result = await JujuDeployTool().execute(charm="my-charm")
@@ -910,11 +912,11 @@ class TestControllerSafetyGate:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         with (
             mock.patch(
-                "cantrip.agent.tools.juju.controller_confirm_required",
+                "cantrip.agent.tools.juju._common.controller_confirm_required",
                 gate_called,
             ),
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await JujuDeployTool().execute(charm="my-charm", confirmed=True)
         assert result.success
@@ -927,7 +929,7 @@ class TestControllerSafetyGate:
         from cantrip.agent.tools.juju import JujuRefreshTool
 
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(True, "REFUSE: production controller 'prod'"),
         ):
             result = await JujuRefreshTool().execute(app_name="my-app")
@@ -939,7 +941,7 @@ class TestControllerSafetyGate:
         from cantrip.agent.tools.juju import JujuRelateTool
 
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(True, "REFUSE: non-local"),
         ):
             result = await JujuRelateTool().execute(app1="redis", app2="traefik")
@@ -951,7 +953,7 @@ class TestControllerSafetyGate:
         """The controller gate fires *before* the destructive policy gate so
         the operator sees the controller name in the refusal."""
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(True, "REFUSE: production controller 'prod-aws'"),
         ):
             result = await JujuDestroyModelTool().execute(model="dev")
@@ -966,7 +968,7 @@ class TestControllerSafetyGate:
         from cantrip.agent.tools.juju import JujuRemoveApplicationTool
 
         with mock.patch(
-            "cantrip.agent.tools.juju.controller_confirm_required",
+            "cantrip.agent.tools.juju._common.controller_confirm_required",
             return_value=(True, "REFUSE: non-local controller 'remote'"),
         ):
             result = await JujuRemoveApplicationTool().execute(app_name="redis")
@@ -985,7 +987,7 @@ class TestJujuTrustTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(app_name="mongodb")
 
         assert not result.success
@@ -997,8 +999,8 @@ class TestJujuTrustTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="mongodb", scope="cluster")
 
@@ -1013,8 +1015,8 @@ class TestJujuTrustTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app")
 
@@ -1027,8 +1029,8 @@ class TestJujuTrustTool:
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app", remove=True)
 
@@ -1047,8 +1049,8 @@ class TestJujuTrustTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app", scope="cluster")
 
@@ -1066,7 +1068,7 @@ class TestJujuConfigTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(app_name="my-app")
 
         assert not result.success
@@ -1079,8 +1081,8 @@ class TestJujuConfigTool:
         mock_juju.config.return_value = {"port": "8080", "debug": "false"}
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app")
 
@@ -1095,8 +1097,8 @@ class TestJujuConfigTool:
         mock_juju.config.return_value = None
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(
                 app_name="my-app",
@@ -1118,8 +1120,8 @@ class TestJujuConfigTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="nonexistent")
 
@@ -1137,7 +1139,7 @@ class TestJujuWaitTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(app_name="my-app")
 
         assert not result.success
@@ -1161,8 +1163,8 @@ class TestJujuWaitTool:
         mock_juju.wait.return_value = mock_status
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app")
 
@@ -1178,8 +1180,8 @@ class TestJujuWaitTool:
         mock_juju.wait.side_effect = TimeoutError()
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app", timeout=60)
 
@@ -1198,8 +1200,8 @@ class TestJujuWaitTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(app_name="my-app")
 
@@ -1229,7 +1231,7 @@ class TestIsK8sModel:
         mock_info = mock.MagicMock()
         mock_info.model_type = "caas"
 
-        with mock.patch("cantrip.agent.tools.juju._run_juju", return_value=mock_info):
+        with mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=mock_info):
             assert await _is_k8s_model(mock_juju) is True
 
     @pytest.mark.asyncio
@@ -1239,7 +1241,7 @@ class TestIsK8sModel:
         mock_info = mock.MagicMock()
         mock_info.model_type = "iaas"
 
-        with mock.patch("cantrip.agent.tools.juju._run_juju", return_value=mock_info):
+        with mock.patch("cantrip.agent.tools.juju._common._run_juju", return_value=mock_info):
             assert await _is_k8s_model(mock_juju) is False
 
 
@@ -1253,7 +1255,7 @@ class TestCharmSyncTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(unit="my-app/0")
 
         assert not result.success
@@ -1274,8 +1276,8 @@ class TestCharmSyncTool:
         mock_juju.show_model.return_value = mock_info
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
 
@@ -1307,8 +1309,8 @@ class TestCharmSyncTool:
         mock_juju.show_model.return_value = mock_info
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
 
@@ -1339,8 +1341,8 @@ class TestCharmSyncTool:
         mock_juju.show_model.return_value = mock_info
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
 
@@ -1360,8 +1362,8 @@ class TestCharmSyncTool:
         mock_juju.show_model.return_value = mock_info
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
 
@@ -1388,8 +1390,8 @@ class TestCharmSyncTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", charm_dir=str(tmp_path))
 
@@ -1409,8 +1411,8 @@ class TestCharmSyncTool:
         mock_juju.show_model.return_value = mock_info
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(
                 unit="my-app/0",
@@ -1433,7 +1435,7 @@ class TestJujuDispatchTool:
     @pytest.mark.asyncio
     async def test_juju_not_installed(self, tool):
         """Error when juju CLI is missing."""
-        with mock.patch("cantrip.agent.tools.juju._juju_available", return_value=False):
+        with mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=False):
             result = await tool.execute(unit="my-app/0", event="update-status")
 
         assert not result.success
@@ -1449,8 +1451,8 @@ class TestJujuDispatchTool:
         mock_juju.ssh.return_value = "hook output"
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", event="update-status")
 
@@ -1474,8 +1476,8 @@ class TestJujuDispatchTool:
         mock_juju.ssh.return_value = "machine output"
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", event="config-changed")
 
@@ -1502,8 +1504,8 @@ class TestJujuDispatchTool:
         )
 
         with (
-            mock.patch("cantrip.agent.tools.juju._juju_available", return_value=True),
-            mock.patch("cantrip.agent.tools.juju.jubilant.Juju", return_value=mock_juju),
+            mock.patch("cantrip.agent.tools.juju._common._juju_available", return_value=True),
+            mock.patch("cantrip.agent.tools.juju._common.jubilant.Juju", return_value=mock_juju),
         ):
             result = await tool.execute(unit="my-app/0", event="update-status")
 
