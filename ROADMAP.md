@@ -1290,17 +1290,23 @@ not a higher overall coverage number — the current 88% gate stays.
 
 ### 114.6 Nice-to-have — Error-path pass on 85–92% modules
 
-- [ ] Many `src/cantrip/agent/**` files sit between 85% and 92% line
+- [x] Many `src/cantrip/agent/**` files sit between 85% and 92% line
   coverage with the gaps clustered on error / edge branches
   (timeouts, parse failures, fallback paths).  Run
   `make coverage` and walk the report from lowest to highest in this
   band, adding focused tests where the missing branch represents a
   real failure mode (skip cosmetic branches like unreachable
-  `else: pass`).
+  `else: pass`).  First pass landed on the four lowest modules:
+  `memory/commands.py` (82→97%), `triage_controller.py` (86→91%),
+  `tools/task_management.py` (86→97%), `planner/prefetch.py` (87→98%).
 - [ ] Target: project line coverage ≥ 95% without raising the gate.
   This is an upper bound — stop sooner if remaining misses are
-  defensive-only.
-- [ ] **Not:** a mechanical race-to-100%.  Each test added must
+  defensive-only.  Currently at 92.9% (up from 92.78%); the four
+  modules above are exhausted of real failure modes, so further gains
+  need the next band (`tools/post_edit_lint.py`, `tools/juju.py`,
+  `core.py`).  Left open as a continuing sweep rather than forced to
+  95% with defensive-only tests.
+- [x] **Not:** a mechanical race-to-100%.  Each test added must
   exercise a real failure mode.  Pin implementation, don't pin
   irrelevance.
 
