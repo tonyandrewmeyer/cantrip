@@ -76,6 +76,7 @@ from cantrip.agent.queue import (
     WorkflowPhase,
     WorkQueue,
 )
+from cantrip.agent.repo_map_service import RepoMapService
 from cantrip.agent.retry import RetryEvent, complete_with_retry, stream_with_retry
 from cantrip.agent.session_preview import SessionPreview
 from cantrip.agent.skills import SkillsIndex
@@ -662,6 +663,7 @@ class CantripAgent:
             self._ensure_agents_md(charm_path)
         self._usage = UsageTracker(self)
         self._tool_builder = ToolBuilder(self)
+        self._repo = RepoMapService(self)
 
     @property
     def event_bus(self) -> ui_events.EventBus:
@@ -1495,13 +1497,7 @@ class CantripAgent:
         exist on disk — slash commands and tests rely on this to skip
         the section gracefully.
         """
-        if self.state.charm_path is None:
-            return None
-        if not self.state.charm_path.exists():
-            return None
-        if self._repo_map_cache is None:
-            self._repo_map_cache = RepoMap(self.state.charm_path)
-        return self._repo_map_cache
+        return self._repo.get_repo_map()
 
     def refresh_repo_map(self) -> str:
         """Force a full rebuild of the repo-map.
@@ -1510,11 +1506,7 @@ class CantripAgent:
         full configured budget, or the empty string when no charm is
         active.
         """
-        rm = self.repo_map
-        if rm is None:
-            return ""
-        rm.build(force=True)
-        return rm.render_full()
+        return self._repo.refresh_repo_map()
 
     @property
     def code_intel(self) -> CodeIntel | None:
@@ -1525,13 +1517,7 @@ class CantripAgent:
         on disk; tools handle ``None`` by returning a clear error
         rather than failing silently.
         """
-        if self.state.charm_path is None:
-            return None
-        if not self.state.charm_path.exists():
-            return None
-        if self._code_intel_cache is None:
-            self._code_intel_cache = CodeIntel(self.state.charm_path)
-        return self._code_intel_cache
+        return self._repo.get_code_intel()
 
     def _code_intel_or_none(self) -> CodeIntel | None:
         """Bound getter handed to the codeintel tools.
@@ -1541,7 +1527,7 @@ class CantripAgent:
         tests and a tidier ``repr`` if a tool ever logs its
         provenance.
         """
-        return self.code_intel
+        return self._repo.code_intel_or_none()
 
     def _render_repo_map(self) -> str | None:
         """Build (incremental) and render the repo-map for prompt injection.
@@ -1554,17 +1540,7 @@ class CantripAgent:
         regression where a new error type slips through and kills
         every turn.
         """
-        rm = self.repo_map
-        if rm is None:
-            return None
-        try:
-            rm.build()
-            pressure = self._context_manager.context_pressure(self.state.messages)
-            rendered = rm.render_for_prompt(context_pressure=pressure)
-        except Exception as exc:  # noqa: BLE001 — best-effort; never block a turn.
-            log.warning("repomap: render skipped (%s: %s)", type(exc).__name__, exc)
-            return None
-        return rendered or None
+        return self._repo.render_repo_map()
 
     # Phase 110: phase-aware tool curation.  Each :class:`WorkflowPhase`
     # gets a hand-curated ≤11-name set so an inference-snap provider's
