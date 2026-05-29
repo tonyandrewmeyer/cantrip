@@ -175,17 +175,28 @@ def parse_design_from_result(text: str) -> DesignProposal:
 
 
 def _extract_heading_sections(text: str) -> dict[str, str]:
-    """Split Markdown text into a map of lowercase heading → body content."""
+    """Split Markdown text into a map of lowercase heading → body content.
+
+    Only ``##``/``###`` content sections are recorded.  The H1 heading is
+    the document title (the workload name) — keeping it out of the map
+    stops a title such as ``# myconfig-app`` from shadowing the real
+    ``## Config`` section, since :func:`_get_field` matches by substring.
+    """
     sections: dict[str, str] = {}
     current_heading = ""
     current_lines: list[str] = []
 
     for line in text.split("\n"):
-        heading_match = re.match(r"^#{1,3}\s+(.+)", line)
+        heading_match = re.match(r"^(#{1,3})\s+(.+)", line)
         if heading_match:
             if current_heading:
                 sections[current_heading] = "\n".join(current_lines).strip()
-            current_heading = heading_match.group(1).strip().lower()
+            # An H1 is the title, not a content section: treat it as a
+            # boundary that discards any preamble but is not retrievable.
+            if len(heading_match.group(1)) == 1:
+                current_heading = ""
+            else:
+                current_heading = heading_match.group(2).strip().lower()
             current_lines = []
         else:
             current_lines.append(line)
