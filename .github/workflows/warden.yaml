@@ -23,7 +23,9 @@ jobs:
           && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: getsentry/warden@v0.32.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: getsentry/warden@d501479561f5ec2ba4a8f83d7786ef7b275d4efa  # v0.32.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
