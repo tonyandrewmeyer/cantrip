@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from cantrip.agent.commands import charms as charm_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.queue import TaskCategory
 from cantrip.agent.subagent import _CATEGORY_GUIDANCE, _CATEGORY_TOOLS, _LIGHT_CATEGORIES
@@ -578,12 +579,12 @@ class TestSearchCharmsSlash:
     """The /search-charms verb wires both backends and renders the combined view."""
 
     def test_empty_args_returns_usage(self) -> None:
-        result = slash_commands._handle_search_charms(_agent_without_mcp(), "")
+        result = charm_commands._handle_search_charms(_agent_without_mcp(), "")
         assert result.followup is None
         assert "Usage" in result.text
 
     def test_with_query_returns_followup(self) -> None:
-        result = slash_commands._handle_search_charms(_agent_without_mcp(), "kafka operator")
+        result = charm_commands._handle_search_charms(_agent_without_mcp(), "kafka operator")
         assert result.followup is not None
         assert "Searching" in result.text
         assert result.markdown is True
@@ -641,7 +642,7 @@ class TestSearchCharmsSlash:
 
         calls: list[None] = []
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(_agent_without_mcp(), "redis")
+            text = await charm_commands._run_search_charms(_agent_without_mcp(), "redis")
 
         assert "## Charmhub" in text
         assert "redis-k8s" in text
@@ -665,7 +666,7 @@ class TestSearchCharmsSlash:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(_agent_without_mcp(), "anything")
+            text = await charm_commands._run_search_charms(_agent_without_mcp(), "anything")
 
         assert "Launchpad search failed" in text
         assert "## Charmhub" in text
@@ -714,7 +715,7 @@ class TestLaunchpadMCPInSearchCharms:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(_agent_without_mcp(), "redis")
+            text = await charm_commands._run_search_charms(_agent_without_mcp(), "redis")
 
         assert "## Charmhub" in text
         assert "## Launchpad" in text
@@ -731,7 +732,7 @@ class TestLaunchpadMCPInSearchCharms:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(agent, "redis")
+            text = await charm_commands._run_search_charms(agent, "redis")
 
         assert "mcp__launchpad" not in text
 
@@ -753,7 +754,7 @@ class TestLaunchpadMCPInSearchCharms:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(agent, "redis")
+            text = await charm_commands._run_search_charms(agent, "redis")
 
         assert "## Launchpad (mcp__launchpad)" in text
         assert "### project_lookup" in text
@@ -781,7 +782,7 @@ class TestLaunchpadMCPInSearchCharms:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(agent, "redis")
+            text = await charm_commands._run_search_charms(agent, "redis")
 
         assert "### project_lookup" in text
         assert "### bug_search" not in text
@@ -800,7 +801,7 @@ class TestLaunchpadMCPInSearchCharms:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(agent, "redis")
+            text = await charm_commands._run_search_charms(agent, "redis")
 
         assert "mcp__launchpad" not in text
         assert client.calls == []
@@ -823,7 +824,7 @@ class TestLaunchpadMCPInSearchCharms:
             return charm_client if len(calls) == 1 else lp_client
 
         with patch("httpx.AsyncClient", side_effect=_factory):
-            text = await slash_commands._run_search_charms(agent, "redis")
+            text = await charm_commands._run_search_charms(agent, "redis")
 
         assert "[project_lookup] failed: forbidden" in text
         assert "### bug_search" in text

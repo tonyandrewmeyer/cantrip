@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from cantrip.agent.commands import charms as charm_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools.icon import (
@@ -371,23 +372,23 @@ class TestIconSlash:
     """The /icon dispatcher must short-circuit cleanly on every edge case."""
 
     def test_empty_args_returns_usage(self) -> None:
-        result = slash_commands._handle_icon(_FakeAgent(pathlib.Path("/tmp")), "")
+        result = charm_commands._handle_icon(_FakeAgent(pathlib.Path("/tmp")), "")
         assert result.followup is None
         assert "Usage" in result.text
 
     def test_missing_charm_path_short_circuits(self) -> None:
-        result = slash_commands._handle_icon(_FakeAgent(None), "redis")
+        result = charm_commands._handle_icon(_FakeAgent(None), "redis")
         assert result.followup is None
         assert "no charm path" in result.text.lower()
 
     def test_charm_path_does_not_exist_short_circuits(self, tmp_path: pathlib.Path) -> None:
         bogus = tmp_path / "nope"
-        result = slash_commands._handle_icon(_FakeAgent(bogus), "redis")
+        result = charm_commands._handle_icon(_FakeAgent(bogus), "redis")
         assert result.followup is None
         assert "does not exist" in result.text.lower()
 
     def test_with_description_returns_followup(self, charm_dir: pathlib.Path) -> None:
-        result = slash_commands._handle_icon(_FakeAgent(charm_dir), "redis db")
+        result = charm_commands._handle_icon(_FakeAgent(charm_dir), "redis db")
         assert result.followup is not None
         assert "Painting" in result.text
         assert result.markdown is True
@@ -412,8 +413,8 @@ class TestIconSlash:
             return result.output if result.success else f"_failed: {result.error}_"
 
         # Replace the slash module's runner with our stubbed version.
-        monkeypatch.setattr(slash_commands, "_run_icon", _patched_run)
-        result = slash_commands._handle_icon(_FakeAgent(charm_dir), "redis cache")
+        monkeypatch.setattr(charm_commands, "_run_icon", _patched_run)
+        result = charm_commands._handle_icon(_FakeAgent(charm_dir), "redis cache")
         assert result.followup is not None
         text = await result.followup
         assert "Generated icon.svg" in text
