@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from cantrip.agent import checks
+from cantrip.agent.workflows import checks
 from cantrip.llm.base import LLMProvider, Message, Response, Role
 
 # ---------------------------------------------------------------------------
@@ -751,8 +751,8 @@ class TestSlashReview:
 
     def test_review_severities_match_checks_module(self) -> None:
         """``review._REVIEW_SEVERITIES`` must stay in sync with ``checks._SEVERITIES``."""
-        from cantrip.agent import checks
         from cantrip.agent.commands import review as review_commands
+        from cantrip.agent.workflows import checks
 
         assert frozenset(checks._SEVERITIES) == review_commands._REVIEW_SEVERITIES
 

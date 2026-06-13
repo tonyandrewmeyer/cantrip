@@ -55,7 +55,7 @@ SOURCE_USER = "user"
 SOURCE_REPO = "repo"
 
 # Default location of bundled checks (sibling of ``cantrip/skills/``).
-_DEFAULT_BUNDLED_DIR = pathlib.Path(__file__).resolve().parent.parent / "checks"
+_DEFAULT_BUNDLED_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / "checks"
 
 # Allowed severities, in priority order (used for sort + display).
 _SEVERITIES: tuple[str, ...] = ("critical", "high", "error", "medium", "warning", "low", "info")

@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from cantrip.agent import flows
+from cantrip.agent.workflows import flows
 
 log = logging.getLogger(__name__)
 

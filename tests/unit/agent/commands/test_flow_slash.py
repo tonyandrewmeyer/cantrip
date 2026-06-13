@@ -6,10 +6,10 @@ import asyncio
 from collections.abc import Awaitable
 from types import SimpleNamespace
 
-from cantrip.agent import flows
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.flows import handle_flow
 from cantrip.agent.commands.slash import SlashResult, dispatch
+from cantrip.agent.workflows import flows
 
 
 async def _drain(awaitable: Awaitable[str]) -> str:

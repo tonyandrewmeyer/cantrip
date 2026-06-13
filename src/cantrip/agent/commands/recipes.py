@@ -25,8 +25,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from cantrip.agent import recipes
 from cantrip.agent.policy import declarative_retry
+from cantrip.agent.workflows import recipes
 from cantrip.llm import structured
 
 log = logging.getLogger(__name__)

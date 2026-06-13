@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import TaskCategory, TaskStatus
-from cantrip.agent.ralph import RalphConfig, RalphOutcome, run_ralph
+from cantrip.agent.workflows.ralph import RalphConfig, RalphOutcome, run_ralph
 from cantrip.hooks import HookRunner
 from cantrip.llm import create_provider, resolve_light_provider
 from cantrip.llm.base import (

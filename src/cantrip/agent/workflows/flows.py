@@ -58,7 +58,7 @@ REPO_FLOWS_DIR = pathlib.Path(".cantrip-flows")
 #: Bundled flows ship inside the wheel at ``cantrip/flows/`` (sibling of
 #: ``cantrip/recipes/`` and ``cantrip/skills/``).  The directory has no
 #: ``__init__.py`` — it's content, not a Python package.
-BUNDLED_FLOWS_DIR = pathlib.Path(__file__).resolve().parents[1] / "flows"
+BUNDLED_FLOWS_DIR = pathlib.Path(__file__).resolve().parents[2] / "flows"
 
 
 _VALID_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")

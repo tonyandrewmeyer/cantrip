@@ -1066,16 +1066,26 @@ package level — not aesthetic uniformity.
   watcher_controller, github_issues, triage_controller), and
   `agent/skills_runtime/` (skills, skill_export, skill_scanner) — 30
   modules in all.  Flat top-level modules under `agent/` dropped from 56
-  to 26.  **Still open:** the controller-pattern decision above
-  (executor/watcher/arena/triage/mcp `X_controller`), and further
-  grouping to reach exit-criterion (b)'s ~15 — candidate clusters among
-  the remaining flat modules: the five Phase 113.1 service modules
-  (`provider_manager`, `message_history`, `repo_map_service`,
-  `tool_builder`, `usage_tracker`), a session/persistence cluster
-  (`store`, `persistence`, `snapshots`, `session_preview`, `audit`,
-  `cache_monitor`), and a workflow cluster (`checks`, `flows`,
-  `recipes`, `ralph`).  Deferred to a follow-on so the named,
-  low-ambiguity groups could land first.
+  to 26.
+- [x] Two further groups landed to reach exit-criterion (b):
+  - `agent/core_services/` — the six modules that exist only to compose
+    `CantripAgent` (`usage_tracker`, `tool_builder`, `repo_map_service`,
+    `message_history`, `provider_manager` from Phase 113.1, plus
+    `persistence`); each was imported only by `core.py`.
+  - `agent/workflows/` — the workflow engines `checks`, `flows`,
+    `recipes`, `ralph` (the `/review`, `/flow`, `/recipe`, `/ralph`
+    command glue stays in `agent/commands/`).  The bundled-resource
+    dirs resolve to `cantrip/{checks,flows,recipes}`; the `__file__`
+    offsets were bumped one level for the deeper module path.
+  Flat top-level `agent/*.py` is now **17** (16 modules + `__init__`),
+  meeting exit-criterion (b)'s "~15".
+- **Still open:** only the controller-pattern decision above
+  (executor/watcher/arena/triage/mcp `X_controller`).  The remaining
+  flat modules (`store`, `state`, `queue`, `subagent`, `core`,
+  `autodeploy`, `design`, `emotions`, `audit`, `snapshots`,
+  `cos_endpoints`, `services`, `session_preview`, `cache_monitor`,
+  `executor_controller`, `mcp_controller`) are either genuinely
+  top-level surfaces or the controllers covered by that decision.
 
 ### 113.5 Medium — `slash.py` registry refactor
 

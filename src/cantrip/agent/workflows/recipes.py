@@ -113,7 +113,7 @@ REPO_RECIPES_DIR = pathlib.Path(".cantrip-recipes")
 #: not a Python package — there is no ``__init__.py``.  Built-ins are
 #: walked first, so user and repo recipes can override a built-in by
 #: naming a YAML file the same.
-BUNDLED_RECIPES_DIR = pathlib.Path(__file__).resolve().parents[1] / "recipes"
+BUNDLED_RECIPES_DIR = pathlib.Path(__file__).resolve().parents[2] / "recipes"
 
 
 _VALID_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")

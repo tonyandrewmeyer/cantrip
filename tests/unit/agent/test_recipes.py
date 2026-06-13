@@ -9,7 +9,7 @@ import textwrap
 
 import pytest
 
-from cantrip.agent import recipes
+from cantrip.agent.workflows import recipes
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -11,8 +11,6 @@ import time
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
-from cantrip.agent import flows as flows_module
-from cantrip.agent import recipes as recipes_module
 from cantrip.agent.cache_monitor import CacheCascadeDetector
 from cantrip.agent.commands import custom as custom_commands
 from cantrip.agent.context import context_providers, context_providers_builtin
@@ -92,6 +90,8 @@ from cantrip.agent.tools import (
 from cantrip.agent.watcher.triage_controller import TriageController
 from cantrip.agent.watcher.watcher import WatcherConfig, WatcherEvent
 from cantrip.agent.watcher.watcher_controller import WatcherController
+from cantrip.agent.workflows import flows as flows_module
+from cantrip.agent.workflows import recipes as recipes_module
 from cantrip.codeintel import CodeIntel
 from cantrip.hooks import (
     HookEvent,

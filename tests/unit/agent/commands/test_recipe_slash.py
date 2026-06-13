@@ -7,11 +7,11 @@ import pathlib
 from collections.abc import Awaitable
 from types import SimpleNamespace
 
-from cantrip.agent import recipes
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.recipes import handle_recipe
 from cantrip.agent.commands.slash import SlashResult, dispatch
 from cantrip.agent.policy import declarative_retry
+from cantrip.agent.workflows import recipes
 
 
 async def _drain(awaitable: Awaitable[str]) -> str:

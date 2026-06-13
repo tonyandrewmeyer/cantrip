@@ -7,7 +7,7 @@ import textwrap
 
 import pytest
 
-from cantrip.agent import flows
+from cantrip.agent.workflows import flows
 
 # ---------------------------------------------------------------------------
 # Helpers

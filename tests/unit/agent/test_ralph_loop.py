@@ -7,8 +7,8 @@ import subprocess
 
 import pytest
 
-from cantrip.agent import ralph
-from cantrip.agent.ralph import (
+from cantrip.agent.workflows import ralph
+from cantrip.agent.workflows.ralph import (
     RalphConfig,
     RalphOutcome,
     has_converged,

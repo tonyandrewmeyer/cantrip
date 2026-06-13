@@ -148,9 +148,9 @@ def _handle_review(agent: CantripAgent, args: str) -> SlashResult:
     ``--name`` uses ``fnmatch`` so ``--name 'cos-*'`` matches every
     check whose name starts with ``cos-``.
     """
-    from cantrip.agent import checks
     from cantrip.agent.commands.slash import SlashResult
     from cantrip.agent.context import lint_context
+    from cantrip.agent.workflows import checks
 
     filters, error = _parse_review_filters(args)
     if filters is None:
