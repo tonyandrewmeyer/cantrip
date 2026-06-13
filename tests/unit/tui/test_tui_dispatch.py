@@ -79,7 +79,9 @@ class TestBusConfirmDispatch:
         mock_agent.work_queue.get_task = MagicMock(return_value=None)
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                with patch.object(pilot.app, "_present_push_confirmation") as presenter:
+                with patch.object(
+                    pilot.app._confirmations, "_present_push_confirmation"
+                ) as presenter:
                     pilot.app._on_bus_task_updated(
                         self._confirm_event(f"{PUSH_CONFIRM_PREFIX}feat")
                     )
@@ -114,7 +116,7 @@ class TestBusConfirmDispatch:
         mock_agent.work_queue.get_task = MagicMock(return_value=task)
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                with patch.object(pilot.app, presenter_name) as presenter:
+                with patch.object(pilot.app._confirmations, presenter_name) as presenter:
                     pilot.app._on_bus_task_updated(self._confirm_event(task_id))
                     await pilot.pause()
                     presenter.assert_called_once_with(task)
@@ -137,7 +139,9 @@ class TestBusConfirmDispatch:
         mock_agent.work_queue.get_task = MagicMock(return_value=task)
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                with patch.object(pilot.app, "_present_design_questions") as presenter:
+                with patch.object(
+                    pilot.app._confirmations, "_present_design_questions"
+                ) as presenter:
                     pilot.app._on_bus_task_updated(self._confirm_event(task_id))
                     await pilot.pause()
                     presenter.assert_called_once_with(task)
@@ -350,7 +354,7 @@ class TestPresentBootstrapConfirmation:
             async with CantripApp().run_test() as pilot:
                 task = MagicMock()
                 task.description = "Create my-charm-operator on GitHub?"
-                pilot.app._present_bootstrap_confirmation(task)
+                pilot.app._confirmations._present_bootstrap_confirmation(task)
                 msgs = _system_messages(pilot)
                 assert "Repo bootstrap" in msgs
                 assert "Create my-charm-operator on GitHub?" in msgs
@@ -378,7 +382,7 @@ class TestBootstrapResponseGithubRepoUpdate:
                     patch.object(pilot.app, "_update_header_subtitle") as upd_subtitle,
                     patch.object(pilot.app, "_update_model_info") as upd_model,
                 ):
-                    handled = pilot.app._handle_bootstrap_response("approve")
+                    handled = pilot.app._confirmations._handle_bootstrap_response("approve")
                     assert handled is True
                     upd_subtitle.assert_called_once()
                     upd_model.assert_called_once()

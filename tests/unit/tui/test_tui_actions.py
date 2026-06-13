@@ -636,7 +636,7 @@ class TestOfferRepoBootstrap:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._bootstrap_offered = False
-                pilot.app._offer_repo_bootstrap()
+                pilot.app._confirmations._offer_repo_bootstrap()
                 mock_agent.build_repo_bootstrap_confirm_task.assert_called_once()
                 mock_agent.work_queue.add_task.assert_called_once_with(fake_task)
                 assert pilot.app._bootstrap_offered is True
@@ -647,7 +647,7 @@ class TestOfferRepoBootstrap:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._bootstrap_offered = True
-                pilot.app._offer_repo_bootstrap()
+                pilot.app._confirmations._offer_repo_bootstrap()
                 mock_agent.work_queue.add_task.assert_not_called()
 
     @pytest.mark.asyncio
@@ -657,7 +657,7 @@ class TestOfferRepoBootstrap:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._bootstrap_offered = False
-                pilot.app._offer_repo_bootstrap()
+                pilot.app._confirmations._offer_repo_bootstrap()
                 mock_agent.work_queue.add_task.assert_not_called()
                 assert pilot.app._bootstrap_offered is False
 
@@ -681,7 +681,7 @@ class TestBootstrapResponse:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
                 pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
-                assert pilot.app._handle_bootstrap_response("yes") is False
+                assert pilot.app._confirmations._handle_bootstrap_response("yes") is False
 
     @pytest.mark.asyncio
     async def test_wrong_confirm_id_prefix_returns_false(self):
@@ -690,7 +690,7 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "push-branch-foo"
-                assert pilot.app._handle_bootstrap_response("yes") is False
+                assert pilot.app._confirmations._handle_bootstrap_response("yes") is False
 
     @pytest.mark.asyncio
     async def test_skip_branch(self):
@@ -698,7 +698,7 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
-                assert pilot.app._handle_bootstrap_response("skip") is True
+                assert pilot.app._confirmations._handle_bootstrap_response("skip") is True
                 assert pilot.app._pending_confirm_id is None
                 assert "Repository creation skipped." in _system_messages(pilot)
                 mock_agent.work_queue.set_done.assert_called_with(
@@ -715,7 +715,7 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
-                ok = pilot.app._handle_bootstrap_response("approve")
+                ok = pilot.app._confirmations._handle_bootstrap_response("approve")
                 assert ok is True
                 mock_agent.handle_repo_bootstrap.assert_called_once()
                 args, kwargs = mock_agent.handle_repo_bootstrap.call_args
@@ -732,7 +732,9 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
-                ok = pilot.app._handle_bootstrap_response("yes org=canonical desc=Nice")
+                ok = pilot.app._confirmations._handle_bootstrap_response(
+                    "yes org=canonical desc=Nice"
+                )
                 assert ok is True
                 call_kwargs = mock_agent.handle_repo_bootstrap.call_args.kwargs
                 assert call_kwargs["private"] is True
@@ -749,7 +751,7 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
-                pilot.app._handle_bootstrap_response("approve name=my-custom-repo")
+                pilot.app._confirmations._handle_bootstrap_response("approve name=my-custom-repo")
                 args, _ = mock_agent.handle_repo_bootstrap.call_args
                 assert args[0] == "my-custom-repo"
 
@@ -762,7 +764,7 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
-                pilot.app._handle_bootstrap_response("public")
+                pilot.app._confirmations._handle_bootstrap_response("public")
                 assert mock_agent.handle_repo_bootstrap.call_args.kwargs["private"] is False
 
     @pytest.mark.asyncio
@@ -771,7 +773,7 @@ class TestBootstrapResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._DEFAULT_CONFIRM_ID
-                assert pilot.app._handle_bootstrap_response("maybe later") is False
+                assert pilot.app._confirmations._handle_bootstrap_response("maybe later") is False
 
 
 class TestPushResponse:
@@ -783,7 +785,7 @@ class TestPushResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = None
-                assert pilot.app._handle_push_response("push") is False
+                assert pilot.app._confirmations._handle_push_response("push") is False
 
     @pytest.mark.asyncio
     async def test_approve_branch(self):
@@ -795,7 +797,7 @@ class TestPushResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "push-branch-feat"
-                ok = pilot.app._handle_push_response("push")
+                ok = pilot.app._confirmations._handle_push_response("push")
                 assert ok is True
                 assert pilot.app._pending_pr_branch == "feat"
                 assert pilot.app._pending_confirm_id is None
@@ -808,7 +810,7 @@ class TestPushResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "push-branch-feat"
-                assert pilot.app._handle_push_response("skip") is True
+                assert pilot.app._confirmations._handle_push_response("skip") is True
                 assert pilot.app._pending_confirm_id is None
                 assert pilot.app._pending_pr_branch is None
 
@@ -818,7 +820,7 @@ class TestPushResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "push-branch-feat"
-                assert pilot.app._handle_push_response("nonsense") is False
+                assert pilot.app._confirmations._handle_push_response("nonsense") is False
 
 
 class TestTriageResponse:
@@ -830,7 +832,7 @@ class TestTriageResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = None
-                assert pilot.app._handle_triage_response("approve") is False
+                assert pilot.app._confirmations._handle_triage_response("approve") is False
 
     @pytest.mark.asyncio
     async def test_approve_with_work_tasks(self):
@@ -842,7 +844,7 @@ class TestTriageResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "triage-issue-42"
-                assert pilot.app._handle_triage_response("approve") is True
+                assert pilot.app._confirmations._handle_triage_response("approve") is True
                 assert "Working on the issue" in _system_messages(pilot)
 
     @pytest.mark.asyncio
@@ -853,7 +855,7 @@ class TestTriageResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "triage-issue-42"
-                assert pilot.app._handle_triage_response("approve") is True
+                assert pilot.app._confirmations._handle_triage_response("approve") is True
                 assert "Could not generate work tasks" in _system_messages(pilot)
 
     @pytest.mark.asyncio
@@ -863,7 +865,7 @@ class TestTriageResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "triage-issue-42"
-                assert pilot.app._handle_triage_response("skip") is True
+                assert pilot.app._confirmations._handle_triage_response("skip") is True
                 assert "Issue skipped." in _system_messages(pilot)
 
     @pytest.mark.asyncio
@@ -891,7 +893,7 @@ class TestTriageResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "triage-issue-42"
-                assert pilot.app._handle_triage_response("skip") is True
+                assert pilot.app._confirmations._handle_triage_response("skip") is True
                 msgs = _system_messages(pilot)
                 assert "Issue skipped." in msgs
                 # The follow-up CONFIRM is now the pending one, and the
@@ -905,7 +907,7 @@ class TestTriageResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "triage-issue-42"
-                assert pilot.app._handle_triage_response("later") is False
+                assert pilot.app._confirmations._handle_triage_response("later") is False
 
 
 class TestPresentConfirmations:
@@ -918,7 +920,7 @@ class TestPresentConfirmations:
             async with CantripApp().run_test() as pilot:
                 task = MagicMock()
                 task.description = "Push branch 'feat' to origin?"
-                pilot.app._present_push_confirmation(task)
+                pilot.app._confirmations._present_push_confirmation(task)
                 await pilot.pause()
                 assert "Reply **push**" in _system_messages(pilot)
 
@@ -929,7 +931,7 @@ class TestPresentConfirmations:
             async with CantripApp().run_test() as pilot:
                 task = MagicMock()
                 task.description = "## Issue #7\n\n- Login broken\n- 500 on /auth"
-                pilot.app._present_triage_confirmation(task)
+                pilot.app._confirmations._present_triage_confirmation(task)
                 await pilot.pause()
                 assert "Issue triage" in _system_messages(pilot)
                 # The triage description carries GitHub-issue markup
@@ -954,7 +956,7 @@ class TestPresentConfirmations:
                     "No GitHub remote detected.  Create a repository?\n\n"
                     "Reply **approve** to create **my-charm-operator**."
                 )
-                pilot.app._present_bootstrap_confirmation(task)
+                pilot.app._confirmations._present_bootstrap_confirmation(task)
                 await pilot.pause()
                 # The bootstrap prompt is full of ``**bold**`` tokens; the
                 # system message must be flagged ``markdown=True`` so the

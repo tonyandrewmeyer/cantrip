@@ -73,7 +73,7 @@ class TestPresentDesignQuestions:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
                 # Must not raise even though dependencies are missing.
-                pilot.app._present_design_questions(self._confirm_task())
+                pilot.app._confirmations._present_design_questions(self._confirm_task())
 
     @pytest.mark.asyncio
     async def test_no_design_text_clears_pending_confirm(self) -> None:
@@ -85,7 +85,7 @@ class TestPresentDesignQuestions:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "confirm-design"
-                pilot.app._present_design_questions(self._confirm_task())
+                pilot.app._confirmations._present_design_questions(self._confirm_task())
                 assert pilot.app._pending_confirm_id is None
 
     @pytest.mark.asyncio
@@ -104,7 +104,7 @@ class TestPresentDesignQuestions:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "confirm-design"
-                pilot.app._present_design_questions(self._confirm_task())
+                pilot.app._confirmations._present_design_questions(self._confirm_task())
                 assert pilot.app._pending_confirm_id is None
 
     @pytest.mark.asyncio
@@ -134,7 +134,7 @@ class TestPresentDesignQuestions:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "confirm-design"
-                pilot.app._present_design_questions(self._confirm_task())
+                pilot.app._confirmations._present_design_questions(self._confirm_task())
                 # Pending stays set until the modal callback resolves it.
                 assert pilot.app._pending_confirm_id == "confirm-design"
                 # Modal needs a pause to finish mounting after push_screen.
@@ -160,7 +160,9 @@ class TestOnQuestionsAnswered:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
                 pilot.app._pending_confirm_id = "confirm-design"
-                pilot.app._on_questions_answered([DesignQuestion(key="k", text="t", answer="a")])
+                pilot.app._confirmations._on_questions_answered(
+                    [DesignQuestion(key="k", text="t", answer="a")]
+                )
                 # Nothing crashes; the no-agent branch clears pending too.
                 assert pilot.app._pending_confirm_id is None
 
@@ -171,7 +173,7 @@ class TestOnQuestionsAnswered:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = None
-                pilot.app._on_questions_answered([])
+                pilot.app._confirmations._on_questions_answered([])
                 # No worker is launched without a pending confirm.
                 mock_agent.handle_design_confirmation.assert_not_called()
 
@@ -190,7 +192,7 @@ class TestOnQuestionsAnswered:
                     # Unanswered question is filtered out.
                     DesignQuestion(key="other", text="?", answer=None),
                 ]
-                pilot.app._on_questions_answered(answered)
+                pilot.app._confirmations._on_questions_answered(answered)
                 # Worker is launched in the background — wait for it.
                 await _wait_for_named_worker(pilot, "design_confirmation")
                 # The answers and the system follow-up both made it to chat.
@@ -215,7 +217,7 @@ class TestOnQuestionsAnswered:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "confirm-design"
-                pilot.app._on_questions_answered(None)
+                pilot.app._confirmations._on_questions_answered(None)
                 await _wait_for_named_worker(pilot, "design_confirmation")
                 _, kwargs = mock_agent.handle_design_confirmation.call_args
                 assert kwargs["overrides"] is None
@@ -232,7 +234,9 @@ class TestCompleteDesignConfirmation:
                 pilot.app._agent = None
                 # Direct ``await`` keeps this off the worker thread so the
                 # no-agent branch is exercised deterministically.
-                await pilot.app._complete_design_confirmation("confirm-design", None)
+                await pilot.app._confirmations._complete_design_confirmation(
+                    "confirm-design", None
+                )
 
     @pytest.mark.asyncio
     async def test_build_tasks_render_titles_in_chat(self) -> None:
@@ -252,7 +256,7 @@ class TestCompleteDesignConfirmation:
         mock_agent.handle_design_confirmation = AsyncMock(return_value=build_tasks)
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                await pilot.app._complete_design_confirmation("confirm-design", "x")
+                await pilot.app._confirmations._complete_design_confirmation("confirm-design", "x")
                 msgs = _system_messages(pilot)
                 assert "Build plan created" in msgs
                 assert "Scaffold charm skeleton" in msgs
@@ -267,7 +271,9 @@ class TestCompleteDesignConfirmation:
         mock_agent.handle_design_confirmation = AsyncMock(return_value=[])
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                await pilot.app._complete_design_confirmation("confirm-design", None)
+                await pilot.app._confirmations._complete_design_confirmation(
+                    "confirm-design", None
+                )
                 assert "No build tasks generated" in _system_messages(pilot)
 
 
@@ -288,7 +294,7 @@ class TestPresentRaceConfirmation:
                 task = MagicMock()
                 task.description = "Run a 3-way race for $0.42?"
                 # Must not raise even with no agent attached.
-                pilot.app._present_race_confirmation(task)
+                pilot.app._confirmations._present_race_confirmation(task)
                 assert "Run a 3-way race" not in _system_messages(pilot)
 
     @pytest.mark.asyncio
@@ -298,7 +304,7 @@ class TestPresentRaceConfirmation:
             async with CantripApp().run_test() as pilot:
                 task = MagicMock()
                 task.description = "Run a 3-way race for $0.42?"
-                pilot.app._present_race_confirmation(task)
+                pilot.app._confirmations._present_race_confirmation(task)
                 assert "Run a 3-way race for $0.42?" in _system_messages(pilot)
 
 
@@ -313,7 +319,7 @@ class TestHandleRaceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = None
-                assert pilot.app._handle_race_response("yes") is False
+                assert pilot.app._confirmations._handle_race_response("yes") is False
 
     @pytest.mark.asyncio
     async def test_wrong_prefix_returns_false(self) -> None:
@@ -322,7 +328,7 @@ class TestHandleRaceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "push-branch-foo"
-                assert pilot.app._handle_race_response("yes") is False
+                assert pilot.app._confirmations._handle_race_response("yes") is False
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("token", ["yes", "y", "approve", "race", "ok", "  YES  "])
@@ -332,7 +338,7 @@ class TestHandleRaceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._RACE_ID
-                assert pilot.app._handle_race_response(token) is True
+                assert pilot.app._confirmations._handle_race_response(token) is True
                 mock_agent.handle_race_confirmation.assert_called_once_with(
                     self._RACE_ID, approved=True
                 )
@@ -347,7 +353,7 @@ class TestHandleRaceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._RACE_ID
-                assert pilot.app._handle_race_response(token) is True
+                assert pilot.app._confirmations._handle_race_response(token) is True
                 mock_agent.handle_race_confirmation.assert_called_once_with(
                     self._RACE_ID, approved=False
                 )
@@ -363,7 +369,10 @@ class TestHandleRaceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = self._RACE_ID
-                assert pilot.app._handle_race_response("how much will it cost") is False
+                assert (
+                    pilot.app._confirmations._handle_race_response("how much will it cost")
+                    is False
+                )
                 mock_agent.handle_race_confirmation.assert_not_called()
                 assert pilot.app._pending_confirm_id == self._RACE_ID
 
@@ -393,7 +402,7 @@ class TestPresentImprovementConfirmation:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
-                pilot.app._present_improvement_confirmation(self._confirm_task())
+                pilot.app._confirmations._present_improvement_confirmation(self._confirm_task())
                 assert _system_messages(pilot).strip() == ""
 
     @pytest.mark.asyncio
@@ -411,7 +420,7 @@ class TestPresentImprovementConfirmation:
         mock_agent.handle_improvement_confirmation = AsyncMock(return_value=[])
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._present_improvement_confirmation(self._confirm_task())
+                pilot.app._confirmations._present_improvement_confirmation(self._confirm_task())
                 await _wait_for_named_worker(pilot, "improvement_confirmation")
                 msgs = _system_messages(pilot)
                 assert "Audit complete" in msgs
@@ -436,7 +445,7 @@ class TestPresentImprovementConfirmation:
         mock_agent.handle_improvement_confirmation = AsyncMock(return_value=[])
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._present_improvement_confirmation(self._confirm_task())
+                pilot.app._confirmations._present_improvement_confirmation(self._confirm_task())
                 await _wait_for_named_worker(pilot, "improvement_confirmation")
                 msgs = _system_messages(pilot)
                 assert "truncated" in msgs
@@ -450,7 +459,7 @@ class TestPresentImprovementConfirmation:
         mock_agent.handle_improvement_confirmation = AsyncMock(return_value=[])
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._present_improvement_confirmation(self._confirm_task())
+                pilot.app._confirmations._present_improvement_confirmation(self._confirm_task())
                 await _wait_for_named_worker(pilot, "improvement_confirmation")
                 msgs = _system_messages(pilot)
                 assert "Audit complete" not in msgs
@@ -475,7 +484,7 @@ class TestPresentNoAgentBranches:
                 pilot.app._agent = None
                 task = MagicMock()
                 task.description = "Push branch?"
-                pilot.app._present_push_confirmation(task)
+                pilot.app._confirmations._present_push_confirmation(task)
                 assert "Push branch?" not in _system_messages(pilot)
 
     @pytest.mark.asyncio
@@ -486,7 +495,7 @@ class TestPresentNoAgentBranches:
                 pilot.app._agent = None
                 task = MagicMock()
                 task.description = "Issue body"
-                pilot.app._present_triage_confirmation(task)
+                pilot.app._confirmations._present_triage_confirmation(task)
                 assert "Issue triage" not in _system_messages(pilot)
 
     @pytest.mark.asyncio
@@ -496,7 +505,7 @@ class TestPresentNoAgentBranches:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
                 # Must not raise even though the queue is unreachable.
-                pilot.app._present_next_pending_triage()
+                pilot.app._confirmations._present_next_pending_triage()
 
 
 class TestCompleteImprovementConfirmation:
@@ -508,7 +517,9 @@ class TestCompleteImprovementConfirmation:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
-                await pilot.app._complete_improvement_confirmation("confirm-improvements")
+                await pilot.app._confirmations._complete_improvement_confirmation(
+                    "confirm-improvements"
+                )
 
     @pytest.mark.asyncio
     async def test_fix_tasks_render_titles_in_chat(self) -> None:
@@ -529,7 +540,9 @@ class TestCompleteImprovementConfirmation:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "confirm-improvements"
-                await pilot.app._complete_improvement_confirmation("confirm-improvements")
+                await pilot.app._confirmations._complete_improvement_confirmation(
+                    "confirm-improvements"
+                )
                 msgs = _system_messages(pilot)
                 assert "Improvement plan created" in msgs
                 assert "Add ops-tracing endpoint" in msgs
@@ -546,5 +559,7 @@ class TestCompleteImprovementConfirmation:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = "confirm-improvements"
-                await pilot.app._complete_improvement_confirmation("confirm-improvements")
+                await pilot.app._confirmations._complete_improvement_confirmation(
+                    "confirm-improvements"
+                )
                 assert "may already be up to standard" in _system_messages(pilot)

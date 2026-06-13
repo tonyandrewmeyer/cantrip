@@ -901,12 +901,10 @@ remembers.
 
 > **⚠️ Session handoff — read before continuing this phase:**
 > [`design/research/PHASE_113_HANDOFF.md`](design/research/PHASE_113_HANDOFF.md)
-> records exactly what has landed (113.1/113.2/113.3 done; 113.4 partial; 113.8 done
-> plus two bug fixes), what is mid-flight (**113.6** — a `ConfirmationCoordinator` draft
-> sits untracked at `src/cantrip/tui/confirmations.py`, app.py not yet wired), the
-> step-by-step plan to finish 113.6, what remains open (113.4 finish, 113.5, 113.7, 113.9,
-> 113.10), and the process lessons that caused churn (run `make check` before every commit;
-> the pre-commit hook does not run tests; prefer sequential edits). Start there.
+> records exactly what has landed (113.1/113.2/113.3/113.6 done; 113.4 partial; 113.8 done
+> plus two bug fixes), what remains open (113.4 finish, 113.5, 113.7, 113.9, 113.10), and
+> the process lessons that caused churn (run `make check` before every commit; the
+> pre-commit hook does not run tests; prefer sequential edits). Start there.
 
 **Goal:** The codebase has accumulated significant local entropy as
 features have shipped.  Six call-out areas are now disproportionately
@@ -1100,16 +1098,25 @@ package level — not aesthetic uniformity.
 
 ### 113.6 Medium — Extract TUI confirmation orchestration
 
-- [ ] `src/cantrip/tui/app.py` is 2,141 lines with ~14
-  `_present_X_confirmation` + `_handle_X_response` pairs (bootstrap,
-  push, race, triage, maintenance, improvement, PR, …).  Move the
-  pairings behind a `ConfirmationCoordinator` that holds the
-  registry of presenters and response handlers, leaving `CantripApp`
-  with widget composition, event-bus subscriptions, and the
-  bind/action surface.
-- [ ] Each confirmation flow becomes a small dataclass
-  (`ConfirmationFlow(present, handle)`); the coordinator keeps the
-  active flow and routes the next user message accordingly.
+- [x] `src/cantrip/tui/app.py` had ~19 `_present_X_confirmation` +
+  `_handle_X_response` methods (bootstrap, push, race, triage,
+  maintenance, improvement, PR, design-questions).  Moved them all
+  behind a `ConfirmationCoordinator` in
+  `src/cantrip/tui/confirmations.py`, leaving `CantripApp` with
+  widget composition, event-bus subscriptions, and the bind/action
+  surface.
+- [x] The coordinator owns the active-flow state
+  (`pending_confirm_id` / `pending_pr_branch` / `pending_maintenance`);
+  the bus handler routes a blocked CONFIRM through
+  `present_for_blocked_task` (prefix → presenter table) and input
+  dispatch routes the next reply through `handle_pending_response`
+  (ordered prefix → handler table), replacing the former if/elif
+  chains.
+- [x] **Done.**  `app.py` keeps `_pending_*` property bridges so the
+  ~109 state references and the test suite reach the same names
+  unchanged; method call sites in the five `tests/unit/tui/` files
+  were repointed to `app._confirmations._<method>`.  `app.py` dropped
+  by ~600 lines.
 
 ### 113.7 Medium — Decide on top-level flat modules in `src/cantrip/`
 

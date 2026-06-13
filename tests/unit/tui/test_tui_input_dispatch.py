@@ -91,9 +91,9 @@ class TestOnInputSubmitted:
                 pilot.app._pending_maintenance = {"branch": "feat", "pr_number": 1}
                 with (
                     patch.object(
-                        pilot.app, "_handle_maintenance_response", return_value=True
+                        pilot.app._confirmations, "_handle_maintenance_response", return_value=True
                     ) as maint,
-                    patch.object(pilot.app, "_handle_pr_response") as pr,
+                    patch.object(pilot.app._confirmations, "_handle_pr_response") as pr,
                 ):
                     await pilot.app.on_input_submitted(_submit(pilot.app, "comment"))
                     maint.assert_called_once_with("comment")
@@ -107,8 +107,10 @@ class TestOnInputSubmitted:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_pr_branch = "feat"
                 with (
-                    patch.object(pilot.app, "_handle_pr_response", return_value=True) as pr,
-                    patch.object(pilot.app, "_handle_push_response") as push,
+                    patch.object(
+                        pilot.app._confirmations, "_handle_pr_response", return_value=True
+                    ) as pr,
+                    patch.object(pilot.app._confirmations, "_handle_push_response") as push,
                 ):
                     await pilot.app.on_input_submitted(_submit(pilot.app, "yes"))
                     pr.assert_called_once_with("yes")
@@ -132,7 +134,9 @@ class TestOnInputSubmitted:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_confirm_id = f"{prefix}foo"
-                with patch.object(pilot.app, handler_name, return_value=True) as handler:
+                with patch.object(
+                    pilot.app._confirmations, handler_name, return_value=True
+                ) as handler:
                     await pilot.app.on_input_submitted(_submit(pilot.app, "approve"))
                     handler.assert_called_once_with("approve")
 

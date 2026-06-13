@@ -58,7 +58,7 @@ class TestPrResponse:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
                 pilot.app._pending_pr_branch = "feat"
-                assert pilot.app._handle_pr_response("pr") is False
+                assert pilot.app._confirmations._handle_pr_response("pr") is False
 
     @pytest.mark.asyncio
     async def test_no_pending_branch_returns_false(self) -> None:
@@ -66,7 +66,7 @@ class TestPrResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_pr_branch = None
-                assert pilot.app._handle_pr_response("pr") is False
+                assert pilot.app._confirmations._handle_pr_response("pr") is False
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("token", ["pr", "yes", "y", "ok", "PR", " Yes "])
@@ -77,7 +77,7 @@ class TestPrResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_pr_branch = "feat"
-                ok = pilot.app._handle_pr_response(token)
+                ok = pilot.app._confirmations._handle_pr_response(token)
                 assert ok is True
                 mock_agent.handle_pr_creation.assert_called_once_with("feat", draft=False)
                 assert pilot.app._pending_pr_branch is None
@@ -90,7 +90,7 @@ class TestPrResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_pr_branch = "feat"
-                pilot.app._handle_pr_response("draft")
+                pilot.app._confirmations._handle_pr_response("draft")
                 mock_agent.handle_pr_creation.assert_called_once_with("feat", draft=True)
 
     @pytest.mark.asyncio
@@ -102,7 +102,7 @@ class TestPrResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_pr_branch = "feat"
-                ok = pilot.app._handle_pr_response(token)
+                ok = pilot.app._confirmations._handle_pr_response(token)
                 assert ok is True
                 assert pilot.app._pending_pr_branch is None
                 mock_agent.handle_pr_creation.assert_not_called()
@@ -115,7 +115,7 @@ class TestPrResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_pr_branch = "feat"
-                assert pilot.app._handle_pr_response("nonsense") is False
+                assert pilot.app._confirmations._handle_pr_response("nonsense") is False
                 # Branch is sticky on an unrelated message.
                 assert pilot.app._pending_pr_branch == "feat"
                 mock_agent.handle_pr_creation.assert_not_called()
@@ -130,7 +130,7 @@ class TestOfferMaintenanceContinuation:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
-                pilot.app._offer_maintenance_continuation("feat", "anything")
+                pilot.app._confirmations._offer_maintenance_continuation("feat", "anything")
                 assert pilot.app._pending_maintenance is None
 
     @pytest.mark.asyncio
@@ -139,7 +139,7 @@ class TestOfferMaintenanceContinuation:
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._offer_maintenance_continuation(
+                pilot.app._confirmations._offer_maintenance_continuation(
                     "issue-7-fix",
                     "Pushed: https://github.com/o/r/pull/42",
                 )
@@ -162,7 +162,7 @@ class TestOfferMaintenanceContinuation:
         p1, p2, _ = _patch_app()
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._offer_maintenance_continuation(
+                pilot.app._confirmations._offer_maintenance_continuation(
                     "feat",
                     "Pushed: https://github.com/o/r/pull/9",
                 )
@@ -185,7 +185,7 @@ class TestOfferMaintenanceContinuation:
         mock_agent.check_upstream = MagicMock(return_value="")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._offer_maintenance_continuation(
+                pilot.app._confirmations._offer_maintenance_continuation(
                     "issue-7-fix",
                     "Pushed but PR step skipped.",
                 )
@@ -201,7 +201,7 @@ class TestOfferRetriage:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
-                pilot.app._offer_retriage()
+                pilot.app._confirmations._offer_retriage()
                 assert pilot.app._pending_maintenance is None
 
     @pytest.mark.asyncio
@@ -210,7 +210,7 @@ class TestOfferRetriage:
         mock_agent.state.github_repo = None
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._offer_retriage()
+                pilot.app._confirmations._offer_retriage()
                 assert pilot.app._pending_maintenance is None
                 assert "next" not in _system_messages(pilot).lower()
 
@@ -221,7 +221,7 @@ class TestOfferRetriage:
         mock_agent.check_upstream = MagicMock(return_value="")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._offer_retriage()
+                pilot.app._confirmations._offer_retriage()
                 msgs = _system_messages(pilot)
                 assert "**next**" in msgs
                 assert "**done**" in msgs
@@ -234,7 +234,7 @@ class TestOfferRetriage:
         mock_agent.check_upstream = MagicMock(return_value="Upstream has moved on.")
         with p1, p2:
             async with CantripApp().run_test() as pilot:
-                pilot.app._offer_retriage()
+                pilot.app._confirmations._offer_retriage()
                 msgs = _system_messages(pilot)
                 assert "Upstream has moved on." in msgs
                 assert "**next**" in msgs
@@ -251,7 +251,7 @@ class TestMaintenanceResponse:
             async with CantripApp().run_test() as pilot:
                 pilot.app._agent = None
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                assert pilot.app._handle_maintenance_response("next") is False
+                assert pilot.app._confirmations._handle_maintenance_response("next") is False
 
     @pytest.mark.asyncio
     async def test_no_pending_state_returns_false(self) -> None:
@@ -259,7 +259,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = None
-                assert pilot.app._handle_maintenance_response("next") is False
+                assert pilot.app._confirmations._handle_maintenance_response("next") is False
 
     # --- "comment" -----------------------------------------------------------
 
@@ -276,7 +276,7 @@ class TestMaintenanceResponse:
                     "pr_number": 42,
                     "branch": "issue-7-fix",
                 }
-                ok = pilot.app._handle_maintenance_response("comment")
+                ok = pilot.app._confirmations._handle_maintenance_response("comment")
                 assert ok is True
                 mock_agent.comment_on_issue.assert_called_once_with(
                     7, "https://github.com/o/r/pull/42"
@@ -301,7 +301,7 @@ class TestMaintenanceResponse:
                     "issue_number": 7,
                     "branch": "issue-7-fix",
                 }
-                pilot.app._handle_maintenance_response("comment")
+                pilot.app._confirmations._handle_maintenance_response("comment")
                 assert pilot.app._pending_maintenance == {"retriage_only": True}
                 # Default pr_url falls back to the empty string when missing.
                 mock_agent.comment_on_issue.assert_called_once_with(7, "")
@@ -314,7 +314,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                assert pilot.app._handle_maintenance_response("comment") is False
+                assert pilot.app._confirmations._handle_maintenance_response("comment") is False
                 mock_agent.comment_on_issue.assert_not_called()
 
     # --- "review" ------------------------------------------------------------
@@ -326,7 +326,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"pr_number": 42, "branch": "feat"}
-                pilot.app._handle_maintenance_response("review")
+                pilot.app._confirmations._handle_maintenance_response("review")
                 assert "Could not fetch feedback for PR #42." in _system_messages(pilot)
 
     @pytest.mark.asyncio
@@ -338,7 +338,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"pr_number": 42, "branch": "feat"}
-                pilot.app._handle_maintenance_response("review")
+                pilot.app._confirmations._handle_maintenance_response("review")
                 assert "**approved**" in _system_messages(pilot)
                 assert pilot.app._pending_maintenance == {"retriage_only": True}
 
@@ -353,7 +353,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"pr_number": 42, "branch": "feat"}
-                pilot.app._handle_maintenance_response("review")
+                pilot.app._confirmations._handle_maintenance_response("review")
                 assert pilot.app._pending_maintenance == {
                     "awaiting_fix": True,
                     "pr_number": 42,
@@ -375,7 +375,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"pr_number": 42, "branch": "feat"}
-                pilot.app._handle_maintenance_response("review")
+                pilot.app._confirmations._handle_maintenance_response("review")
                 assert pilot.app._pending_maintenance == {"retriage_only": True}
                 # The formatted feedback summary is rendered to chat.
                 assert "PR #42" in _system_messages(pilot)
@@ -388,7 +388,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"pr_number": 42, "branch": "feat"}
-                pilot.app._handle_maintenance_response("review")
+                pilot.app._confirmations._handle_maintenance_response("review")
                 assert "no review comments yet" in _system_messages(pilot)
                 assert pilot.app._pending_maintenance == {"retriage_only": True}
 
@@ -399,7 +399,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                assert pilot.app._handle_maintenance_response("review") is False
+                assert pilot.app._confirmations._handle_maintenance_response("review") is False
                 mock_agent.check_pr_feedback.assert_not_called()
 
     # --- "fix" ---------------------------------------------------------------
@@ -419,7 +419,7 @@ class TestMaintenanceResponse:
                     "branch": "feat",
                     "feedback": feedback,
                 }
-                pilot.app._handle_maintenance_response("fix")
+                pilot.app._confirmations._handle_maintenance_response("fix")
                 mock_agent.create_pr_fix_tasks.assert_called_once_with(feedback, "feat")
                 assert pilot.app._pending_maintenance is None
                 assert "Address review nit" in _system_messages(pilot)
@@ -437,7 +437,7 @@ class TestMaintenanceResponse:
                     "branch": "feat",
                     "feedback": feedback,
                 }
-                pilot.app._handle_maintenance_response("fix")
+                pilot.app._confirmations._handle_maintenance_response("fix")
                 assert "Could not create fix tasks." in _system_messages(pilot)
                 assert pilot.app._pending_maintenance is None
 
@@ -455,7 +455,7 @@ class TestMaintenanceResponse:
                     "pr_number": 42,
                     "branch": "feat",
                 }
-                ok = pilot.app._handle_maintenance_response("fix")
+                ok = pilot.app._confirmations._handle_maintenance_response("fix")
                 assert ok is True
                 mock_agent.create_pr_fix_tasks.assert_not_called()
                 assert pilot.app._pending_maintenance is None
@@ -467,7 +467,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                assert pilot.app._handle_maintenance_response("fix") is False
+                assert pilot.app._confirmations._handle_maintenance_response("fix") is False
 
     # --- "next" / "more" / terminators / unrelated ---------------------------
 
@@ -479,7 +479,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                pilot.app._handle_maintenance_response(token)
+                pilot.app._confirmations._handle_maintenance_response(token)
                 mock_agent.retriage_issues.assert_called_once()
                 assert pilot.app._pending_maintenance is None
                 assert "Checking for new issues" in _system_messages(pilot)
@@ -491,7 +491,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                pilot.app._handle_maintenance_response("next")
+                pilot.app._confirmations._handle_maintenance_response("next")
                 assert "No new issues to check." in _system_messages(pilot)
                 assert pilot.app._pending_maintenance is None
 
@@ -502,7 +502,7 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                ok = pilot.app._handle_maintenance_response(token)
+                ok = pilot.app._confirmations._handle_maintenance_response(token)
                 assert ok is True
                 assert pilot.app._pending_maintenance is None
                 assert "Maintenance loop stopped." in _system_messages(pilot)
@@ -513,6 +513,8 @@ class TestMaintenanceResponse:
         with p1, p2:
             async with CantripApp().run_test() as pilot:
                 pilot.app._pending_maintenance = {"retriage_only": True}
-                assert pilot.app._handle_maintenance_response("hello there") is False
+                assert (
+                    pilot.app._confirmations._handle_maintenance_response("hello there") is False
+                )
                 # State is sticky on an unrelated reply.
                 assert pilot.app._pending_maintenance == {"retriage_only": True}
