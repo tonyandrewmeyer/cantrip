@@ -1102,16 +1102,20 @@ package level — not aesthetic uniformity.
   - [x] `commands/charms.py` — charm discovery: `/search-charms`
     (`_handle_search_charms`, `_run_search_charms`, the launchpad-MCP
     section helpers) and `/icon` (`_handle_icon`, `_run_icon`).
+  - [x] session-export glue (`/copy`, `/share`) folded into the
+    existing `commands/transcript.py` (joins `/export`); the worker
+    `commands/share.py` stays `SlashResult`-free by design.
 - [ ] Dispatcher becomes a `{verb: handler}` mapping rather than a
   long if/elif chain.  **Still open** — the if/elif chain remains, now
   slimmer and delegating to the family modules.
-- Progress: `slash.py` is down from 2,047 to ~868 lines.  Remaining
-  inline handlers: `_handle_diagnostics`, and the clipboard/share
-  (`_handle_copy`, `_handle_share`) family.  `help_text` and
-  `format_sandbox_status` / `format_hooks_status` stay in `slash.py`
-  by design (per this item's target), alongside the dispatcher and the
-  custom-command plumbing (`_handle_custom_command`,
-  `_run_primary_with_retry`, `_coerce_task_category`).
+- Progress: `slash.py` is down from 2,047 to ~752 lines.  The only
+  inline handler left is `_handle_diagnostics` (no clean existing
+  family home — linting sits between `codeintel` and `review`; left in
+  place rather than forced).  `help_text` and `format_sandbox_status` /
+  `format_hooks_status` stay in `slash.py` by design (per this item's
+  target), alongside the dispatcher and the custom-command plumbing
+  (`_handle_custom_command`, `_run_primary_with_retry`,
+  `_coerce_task_category`).
 
 ### 113.6 Medium — Extract TUI confirmation orchestration
 
