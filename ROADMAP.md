@@ -1085,8 +1085,10 @@ package level — not aesthetic uniformity.
   `codeintel`, `transcript`).  Pull the remaining handlers into
   per-family modules and reduce `slash.py` to a dispatch table +
   `help_text` + `format_*_status`:
-  - [ ] `commands/session.py` — `handle_undo`, `handle_redo`,
-    `handle_branch`, `handle_tree`, `_handle_update`.  **Still open.**
+  - [x] `commands/session.py` — `handle_undo`, `handle_redo`,
+    `handle_branch`, `handle_tree` (with the shared `TreeNode` /
+    `build_tree_nodes` the TUI tree picker reuses) and `/update`
+    (`_handle_update`, `_run_update_slash_check`, `_SETTINGS_LABEL`).
   - [x] `commands/modes.py` — `handle_plan`, `handle_build`,
     `handle_architect`, `_describe_editor`, `handle_auto_commit`,
     `handle_yolo`, `handle_pause`, `handle_resume`, `handle_ralph`,
@@ -1100,12 +1102,13 @@ package level — not aesthetic uniformity.
 - [ ] Dispatcher becomes a `{verb: handler}` mapping rather than a
   long if/elif chain.  **Still open** — the if/elif chain remains, now
   slimmer and delegating to the family modules.
-- Progress: `slash.py` is down to ~1,411 lines; the remaining inline
-  handlers are the `session.py` candidates above plus the
-  charm-authoring (`_handle_search_charms`, `_handle_icon`),
-  status (`format_sandbox_status`, `format_hooks_status`,
+- Progress: `slash.py` is down from 2,047 to ~1,065 lines; the
+  remaining inline handlers are the charm-authoring
+  (`_handle_search_charms`, `_handle_icon`), status
+  (`format_sandbox_status`, `format_hooks_status`,
   `_handle_diagnostics`), and clipboard/share (`_handle_copy`,
-  `_handle_share`) families.
+  `_handle_share`) families, plus `help_text` and the custom-command
+  plumbing.
 
 ### 113.6 Medium — Extract TUI confirmation orchestration
 

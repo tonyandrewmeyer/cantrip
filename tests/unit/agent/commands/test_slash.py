@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from cantrip.agent.commands import session as session_commands
 from cantrip.agent.commands import share as share_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.slash import SlashResult, dispatch
@@ -1249,7 +1250,7 @@ class TestUpdateFollowup:
 
         monkeypatch.setattr(update, "check_for_update", AsyncMock(return_value=None))
         monkeypatch.setattr(update, "update_check_disabled", lambda: False)
-        text = await slash_commands._run_update_slash_check()
+        text = await session_commands._run_update_slash_check()
         assert "latest" in text
 
     @pytest.mark.asyncio
@@ -1269,7 +1270,7 @@ class TestUpdateFollowup:
         monkeypatch.setattr(update, "check_for_update", AsyncMock(return_value=info))
         monkeypatch.setattr(update, "update_check_disabled", lambda: False)
         monkeypatch.setattr(update, "detect_install_method", lambda: update.InstallMethod.UV_TOOL)
-        text = await slash_commands._run_update_slash_check()
+        text = await session_commands._run_update_slash_check()
         assert "0.2.0" in text
         assert "uv tool upgrade juju-cantrip" in text
         # The running process still executes the old code — the notice
@@ -1281,7 +1282,7 @@ class TestUpdateFollowup:
         from cantrip import update
 
         monkeypatch.setattr(update, "update_check_disabled", lambda: True)
-        text = await slash_commands._run_update_slash_check()
+        text = await session_commands._run_update_slash_check()
         assert "disabled" in text
         assert "--check" in text
 
@@ -1295,7 +1296,7 @@ class TestUpdateFollowup:
         monkeypatch.setattr(
             update, "check_for_update", AsyncMock(side_effect=OSError("no network"))
         )
-        text = await slash_commands._run_update_slash_check()
+        text = await session_commands._run_update_slash_check()
         assert "Could not reach PyPI" in text
         assert "no network" in text
 

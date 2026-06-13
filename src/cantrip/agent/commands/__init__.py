@@ -14,11 +14,11 @@ the memory subpackage so the four memory files live together, and
 the :mod:`slash` dispatcher imports it directly.
 """
 
+from cantrip.agent.commands.session import TreeNode
 from cantrip.agent.commands.slash import (
     COMMAND_CATALOGUE,
     CommandInfo,
     SlashResult,
-    TreeNode,
     catalogue_for,
     dispatch,
     help_text,

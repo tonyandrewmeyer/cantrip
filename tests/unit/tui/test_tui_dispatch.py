@@ -233,7 +233,7 @@ class TestHandleTreeCommand:
                 with patch.object(pilot.app, "push_screen") as pushed:
                     pilot.app._handle_tree_command(chat)
                 _, callback = pushed.call_args.args
-                with patch("cantrip.tui.app.slash_commands.handle_branch") as branched:
+                with patch("cantrip.tui.app.session_commands.handle_branch") as branched:
                     callback(None)
                     branched.assert_not_called()
                 # Cancel must not write a system message.
@@ -256,7 +256,7 @@ class TestHandleTreeCommand:
                     pilot.app._handle_tree_command(chat)
                 _, callback = pushed.call_args.args
                 with patch(
-                    "cantrip.tui.app.slash_commands.handle_branch",
+                    "cantrip.tui.app.session_commands.handle_branch",
                     return_value="Switched to turn 2.",
                 ) as branched:
                     callback(2)

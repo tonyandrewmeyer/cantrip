@@ -15,7 +15,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from cantrip.agent.commands.slash import build_tree_nodes, handle_branch, handle_tree
+from cantrip.agent.commands.session import build_tree_nodes, handle_branch, handle_tree
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.store import SCHEMA_VERSION, SessionStore
 from cantrip.llm.base import Role
@@ -296,7 +296,7 @@ class TestTreePickerScreen:
     """Smoke-check the TUI modal renders nodes with stable option ids."""
 
     def test_option_ids_match_turn_ids(self) -> None:
-        from cantrip.agent.commands.slash import TreeNode
+        from cantrip.agent.commands.session import TreeNode
         from cantrip.tui.screens.tree import TreePickerScreen
 
         nodes = [

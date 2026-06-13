@@ -16,6 +16,7 @@ from textual.worker import Worker, WorkerState
 
 from cantrip import diagnostics, notifications, update
 from cantrip.agent import emotions
+from cantrip.agent.commands import session as session_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.context import context_providers
 from cantrip.agent.core import CantripAgent
@@ -1251,12 +1252,12 @@ class CantripApp(App):
             )
             return
         active_ids = {m["id"] for m in store.load_active_branch()}
-        nodes = slash_commands.build_tree_nodes(messages, active_ids)
+        nodes = session_commands.build_tree_nodes(messages, active_ids)
 
         def _on_picked(turn_id: int | None) -> None:
             if turn_id is None:
                 return
-            text = slash_commands.handle_branch(self._agent, str(turn_id))
+            text = session_commands.handle_branch(self._agent, str(turn_id))
             chat.add_system_message(text)
 
         self.push_screen(TreePickerScreen(nodes), _on_picked)

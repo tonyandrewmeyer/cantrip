@@ -16,7 +16,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-from cantrip.agent.commands.slash import TreeNode
+from cantrip.agent.commands.session import TreeNode
 from cantrip.tui.screens.tree import TreePickerScreen
 
 pytestmark = pytest.mark.tui

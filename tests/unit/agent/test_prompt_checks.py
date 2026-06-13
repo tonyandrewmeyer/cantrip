@@ -750,7 +750,7 @@ class TestSlashReview:
         assert error is not None and "Bad" in error
 
     def test_review_severities_match_checks_module(self) -> None:
-        """``slash._REVIEW_SEVERITIES`` must stay in sync with ``checks._SEVERITIES``."""
+        """``review._REVIEW_SEVERITIES`` must stay in sync with ``checks._SEVERITIES``."""
         from cantrip.agent import checks
         from cantrip.agent.commands import review as review_commands
 
