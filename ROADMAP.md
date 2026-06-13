@@ -1079,22 +1079,33 @@ package level — not aesthetic uniformity.
 
 ### 113.5 Medium — `slash.py` registry refactor
 
-- [ ] `src/cantrip/agent/commands/slash.py` is 2,047 lines and already
-  delegates to per-family modules for several command groups
+- [~] `src/cantrip/agent/commands/slash.py` was 2,047 lines and already
+  delegated to per-family modules for several command groups
   (`custom`, `mcp`, `recipes`, `flows`, `cost`, `map`, `share`,
   `codeintel`, `transcript`).  Pull the remaining handlers into
   per-family modules and reduce `slash.py` to a dispatch table +
   `help_text` + `format_*_status`:
-  - `commands/session.py` — `handle_undo`, `handle_redo`,
-    `handle_branch`, `handle_tree`, `handle_pause`, `handle_resume`,
-    `_handle_update`, `_handle_model`.
-  - `commands/agent_modes.py` — `handle_plan`, `handle_build`,
-    `handle_architect`, `handle_auto_commit`, `handle_yolo`,
-    `handle_ralph`.
-  - `commands/review.py` — `_ReviewFilters`, `_parse_review_filters`,
-    `_apply_review_filters`, and the review-side handlers.
+  - [ ] `commands/session.py` — `handle_undo`, `handle_redo`,
+    `handle_branch`, `handle_tree`, `_handle_update`.  **Still open.**
+  - [x] `commands/modes.py` — `handle_plan`, `handle_build`,
+    `handle_architect`, `_describe_editor`, `handle_auto_commit`,
+    `handle_yolo`, `handle_pause`, `handle_resume`, `handle_ralph`,
+    plus the `/model` switch (`_handle_model` + `_MODEL_SWITCH_PROVIDERS`)
+    it sits with.  (The original plan named this `agent_modes.py` and
+    split pause/resume/model into `session.py`; grouped here instead as
+    the loop/mode-control family.)
+  - [x] `commands/review.py` — `_REVIEW_SEVERITIES`, `_ReviewFilters`,
+    `_parse_review_filters`, `_apply_review_filters`, `_handle_review`,
+    `_render_filter_miss`.
 - [ ] Dispatcher becomes a `{verb: handler}` mapping rather than a
-  long if/elif chain.
+  long if/elif chain.  **Still open** — the if/elif chain remains, now
+  slimmer and delegating to the family modules.
+- Progress: `slash.py` is down to ~1,411 lines; the remaining inline
+  handlers are the `session.py` candidates above plus the
+  charm-authoring (`_handle_search_charms`, `_handle_icon`),
+  status (`format_sandbox_status`, `format_hooks_status`,
+  `_handle_diagnostics`), and clipboard/share (`_handle_copy`,
+  `_handle_share`) families.
 
 ### 113.6 Medium — Extract TUI confirmation orchestration
 

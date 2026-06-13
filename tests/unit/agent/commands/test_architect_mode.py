@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from cantrip.agent.commands import slash as slash_commands
+from cantrip.agent.commands import modes as mode_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm.base import Message, Response, Role, ToolCall, ToolResult
 from cantrip.ui import events
@@ -43,23 +43,23 @@ def _named(model_name: str, **kwargs: object) -> FakeProvider:
 class TestArchitectSlash:
     def test_bare_toggles_on_then_off(self):
         agent = CantripAgent(provider=_named("opus"))
-        result = slash_commands.handle_architect(agent, "")
+        result = mode_commands.handle_architect(agent, "")
         assert agent.state.architect_mode is True
         assert "Architect mode on" in result
-        result = slash_commands.handle_architect(agent, "")
+        result = mode_commands.handle_architect(agent, "")
         assert agent.state.architect_mode is False
         assert "Architect mode off" in result
 
     def test_explicit_on_off(self):
         agent = CantripAgent(provider=_named("opus"))
-        slash_commands.handle_architect(agent, "on")
+        mode_commands.handle_architect(agent, "on")
         assert agent.state.architect_mode is True
-        slash_commands.handle_architect(agent, "off")
+        mode_commands.handle_architect(agent, "off")
         assert agent.state.architect_mode is False
 
     def test_editor_override_parses_provider_only(self):
         agent = CantripAgent(provider=_named("opus"))
-        result = slash_commands.handle_architect(agent, "on claude")
+        result = mode_commands.handle_architect(agent, "on claude")
         assert agent.state.architect_mode is True
         assert agent.state.editor_provider == "claude"
         assert agent.state.editor_model is None
@@ -67,39 +67,39 @@ class TestArchitectSlash:
 
     def test_editor_override_parses_provider_and_model(self):
         agent = CantripAgent(provider=_named("opus"))
-        slash_commands.handle_architect(agent, "on claude/claude-haiku-4-5-20251001")
+        mode_commands.handle_architect(agent, "on claude/claude-haiku-4-5-20251001")
         assert agent.state.editor_provider == "claude"
         assert agent.state.editor_model == "claude-haiku-4-5-20251001"
 
     def test_unknown_editor_provider_rejected(self):
         agent = CantripAgent(provider=_named("opus"))
-        result = slash_commands.handle_architect(agent, "on bogus")
+        result = mode_commands.handle_architect(agent, "on bogus")
         assert "Unknown editor provider" in result
         assert agent.state.architect_mode is False
 
     def test_off_drops_editor_override(self):
         agent = CantripAgent(provider=_named("opus"))
-        slash_commands.handle_architect(agent, "on claude/x")
+        mode_commands.handle_architect(agent, "on claude/x")
         assert agent.state.editor_provider == "claude"
-        slash_commands.handle_architect(agent, "off")
+        mode_commands.handle_architect(agent, "off")
         assert agent.state.editor_provider is None
         assert agent.state.editor_model is None
 
     def test_no_op_when_already_in_target_state(self):
         agent = CantripAgent(provider=_named("opus"))
-        slash_commands.handle_architect(agent, "on")
-        result = slash_commands.handle_architect(agent, "on")
+        mode_commands.handle_architect(agent, "on")
+        result = mode_commands.handle_architect(agent, "on")
         assert "already on" in result.lower()
 
     def test_bad_argument_returns_usage(self):
         agent = CantripAgent(provider=_named("opus"))
-        result = slash_commands.handle_architect(agent, "yes please")
+        result = mode_commands.handle_architect(agent, "yes please")
         assert result.startswith("Usage:")
         assert agent.state.architect_mode is False
 
     def test_editor_spec_with_off_rejected(self):
         agent = CantripAgent(provider=_named("opus"))
-        result = slash_commands.handle_architect(agent, "off claude")
+        result = mode_commands.handle_architect(agent, "off claude")
         assert "Editor override only makes sense" in result
 
     def test_status_bar_event_published(self):
@@ -111,8 +111,8 @@ class TestArchitectSlash:
                 seen.append(str(event.payload.get("mode", "")))
 
         agent.event_bus.subscribe(events.EventType.STATUS_BAR_CHANGED, listener)
-        slash_commands.handle_architect(agent, "on")
-        slash_commands.handle_architect(agent, "off")
+        mode_commands.handle_architect(agent, "on")
+        mode_commands.handle_architect(agent, "off")
         assert "architect" in seen
         assert "build" in seen
 
@@ -127,7 +127,7 @@ class TestEditorProviderResolution:
         agent = CantripAgent(provider=_named("opus"))
         agent.state.editor_provider = "claude"
         agent.state.editor_model = "claude-haiku"
-        assert slash_commands._describe_editor(agent) == "claude/claude-haiku"
+        assert mode_commands._describe_editor(agent) == "claude/claude-haiku"
 
     def test_describe_editor_uses_light_provider(self):
         agent = CantripAgent(
@@ -135,12 +135,12 @@ class TestEditorProviderResolution:
             light_provider=_named("haiku"),
         )
         # Light provider name comes from FakeProvider.name == "fake".
-        assert slash_commands._describe_editor(agent) == "fake/haiku"
+        assert mode_commands._describe_editor(agent) == "fake/haiku"
 
     def test_describe_editor_falls_back_to_main(self):
         agent = CantripAgent(provider=_named("opus"))
         # No light provider, no override.
-        assert slash_commands._describe_editor(agent) == "fake/opus"
+        assert mode_commands._describe_editor(agent) == "fake/opus"
 
     def test_editor_provider_helper_picks_light_when_no_override(self):
         light = _named("haiku")

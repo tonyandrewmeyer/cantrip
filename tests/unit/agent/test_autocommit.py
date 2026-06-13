@@ -24,7 +24,7 @@ import subprocess
 
 import pytest
 
-from cantrip.agent.commands import slash as slash_commands
+from cantrip.agent.commands import modes as mode_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.git import auto_commit
 from cantrip.llm.base import Message, Response, Role, ToolCall
@@ -510,29 +510,29 @@ class TestAutoCommitSlash:
 
     def test_bare_toggles(self):
         agent = CantripAgent(provider=FakeProvider())
-        result = slash_commands.handle_auto_commit(agent, "")
+        result = mode_commands.handle_auto_commit(agent, "")
         assert agent.state.git_auto_commit is False
         assert "off" in result.lower()
-        result = slash_commands.handle_auto_commit(agent, "")
+        result = mode_commands.handle_auto_commit(agent, "")
         assert agent.state.git_auto_commit is True
         assert "on" in result.lower()
 
     def test_explicit_on_off(self):
         agent = CantripAgent(provider=FakeProvider())
-        slash_commands.handle_auto_commit(agent, "off")
+        mode_commands.handle_auto_commit(agent, "off")
         assert agent.state.git_auto_commit is False
-        slash_commands.handle_auto_commit(agent, "on")
+        mode_commands.handle_auto_commit(agent, "on")
         assert agent.state.git_auto_commit is True
 
     def test_already_state_no_op(self):
         agent = CantripAgent(provider=FakeProvider())
         # Default is on → "on" again is a no-op.
-        result = slash_commands.handle_auto_commit(agent, "on")
+        result = mode_commands.handle_auto_commit(agent, "on")
         assert "already on" in result.lower()
 
     def test_bad_argument(self):
         agent = CantripAgent(provider=FakeProvider())
-        result = slash_commands.handle_auto_commit(agent, "yeah nah")
+        result = mode_commands.handle_auto_commit(agent, "yeah nah")
         assert result.startswith("Usage:")
 
 
