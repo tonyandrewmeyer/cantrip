@@ -21,6 +21,12 @@ from cantrip.agent.context.context import (
     VirtualFileStore,
     resolve_short_session_mode,
 )
+from cantrip.agent.core_services.message_history import MessageHistory
+from cantrip.agent.core_services.persistence import PersistenceController
+from cantrip.agent.core_services.provider_manager import ProviderManager
+from cantrip.agent.core_services.repo_map_service import RepoMapService
+from cantrip.agent.core_services.tool_builder import ToolBuilder
+from cantrip.agent.core_services.usage_tracker import UsageTracker
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
 from cantrip.agent.executor_controller import ExecutorController
@@ -40,8 +46,6 @@ from cantrip.agent.memory import (
     WriteMemoryContext,
     collect_file_citations,
 )
-from cantrip.agent.message_history import MessageHistory
-from cantrip.agent.persistence import PersistenceController
 from cantrip.agent.planner import (
     PlanningContext,
     TaskPlanner,
@@ -53,7 +57,6 @@ from cantrip.agent.planner import (
 )
 from cantrip.agent.policy.retry import RetryEvent, complete_with_retry, stream_with_retry
 from cantrip.agent.prompts import agents_md, build_dynamic_context, build_system_prompt
-from cantrip.agent.provider_manager import ProviderManager
 from cantrip.agent.queue import (
     AgentTask,
     TaskCategory,
@@ -62,7 +65,6 @@ from cantrip.agent.queue import (
     WorkQueue,
 )
 from cantrip.agent.race.arena_controller import ArenaController
-from cantrip.agent.repo_map_service import RepoMapService
 from cantrip.agent.runtime.preflight import (
     DEFAULT_PRESET,
     PreflightCallback,
@@ -81,14 +83,12 @@ from cantrip.agent.skills_runtime.skills import SkillsIndex
 from cantrip.agent.snapshots import SnapshotManager
 from cantrip.agent.state import AgentState, Decision, TestResults
 from cantrip.agent.store import SessionStore
-from cantrip.agent.tool_builder import ToolBuilder
 from cantrip.agent.tools import (
     Tool,
     ToolResult,
     expand_leaves,
     resolve_subcommand,
 )
-from cantrip.agent.usage_tracker import UsageTracker
 from cantrip.agent.watcher.triage_controller import TriageController
 from cantrip.agent.watcher.watcher import WatcherConfig, WatcherEvent
 from cantrip.agent.watcher.watcher_controller import WatcherController
