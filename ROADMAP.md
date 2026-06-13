@@ -901,8 +901,8 @@ remembers.
 
 > **⚠️ Session handoff — read before continuing this phase:**
 > [`design/research/PHASE_113_HANDOFF.md`](design/research/PHASE_113_HANDOFF.md)
-> records exactly what has landed (113.1/113.2/113.3/113.6 done; 113.4 partial; 113.8 done
-> plus two bug fixes), what remains open (113.4 finish, 113.5, 113.7, 113.9, 113.10), and
+> records exactly what has landed (113.1/113.2/113.3/113.5/113.6 done; 113.4 partial; 113.8
+> done plus two bug fixes), what remains open (113.4 finish, 113.7, 113.9, 113.10), and
 > the process lessons that caused churn (run `make check` before every commit; the
 > pre-commit hook does not run tests; prefer sequential edits). Start there.
 
@@ -1079,7 +1079,7 @@ package level — not aesthetic uniformity.
 
 ### 113.5 Medium — `slash.py` registry refactor
 
-- [~] `src/cantrip/agent/commands/slash.py` was 2,047 lines and already
+- [x] **Done.** `src/cantrip/agent/commands/slash.py` was 2,047 lines and already
   delegated to per-family modules for several command groups
   (`custom`, `mcp`, `recipes`, `flows`, `cost`, `map`, `share`,
   `codeintel`, `transcript`).  Pull the remaining handlers into
@@ -1105,17 +1105,19 @@ package level — not aesthetic uniformity.
   - [x] session-export glue (`/copy`, `/share`) folded into the
     existing `commands/transcript.py` (joins `/export`); the worker
     `commands/share.py` stays `SlashResult`-free by design.
-- [ ] Dispatcher becomes a `{verb: handler}` mapping rather than a
-  long if/elif chain.  **Still open** — the if/elif chain remains, now
-  slimmer and delegating to the family modules.
-- Progress: `slash.py` is down from 2,047 to ~752 lines.  The only
-  inline handler left is `_handle_diagnostics` (no clean existing
-  family home — linting sits between `codeintel` and `review`; left in
-  place rather than forced).  `help_text` and `format_sandbox_status` /
-  `format_hooks_status` stay in `slash.py` by design (per this item's
-  target), alongside the dispatcher and the custom-command plumbing
-  (`_handle_custom_command`, `_run_primary_with_retry`,
-  `_coerce_task_category`).
+- [x] Dispatcher is now a `{verb: handler}` table (`_DISPATCH`) keyed
+  by verb, replacing the long if/elif chain.  Hybrid by design: the
+  ~36 simple one-to-one verbs live in the table; the two verbs that
+  branch internally (`/mcp`, `/arena`) route through small named
+  helpers; and the genuinely special shapes — the `/flow:<name>`
+  prefix match and the user-defined-command fallthrough — stay explicit
+  in `_dispatch_inner`.
+- Result: `slash.py` is down from 2,047 to ~750 lines.  What remains by
+  design is the dispatcher, the `_DISPATCH` table, `help_text`,
+  `format_sandbox_status` / `format_hooks_status`, the lone
+  `_handle_diagnostics` handler (no clean existing family home), and the
+  custom-command plumbing (`_handle_custom_command`,
+  `_run_primary_with_retry`, `_coerce_task_category`).
 
 ### 113.6 Medium — Extract TUI confirmation orchestration
 

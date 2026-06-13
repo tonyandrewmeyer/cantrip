@@ -21,7 +21,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import pathlib
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from cantrip import diagnostics
@@ -210,122 +210,123 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
 _FLOW_VERB = "/flow"
 
 
+def _dispatch_mcp(agent: CantripAgent, args: str) -> SlashResult:
+    """``/mcp``: status/registry inline, marketplace fetch as a followup."""
+    if mcp_commands.is_marketplace_subcommand(args):
+        followup = mcp_commands.handle_mcp_async(
+            agent.mcp_registry,
+            agent.mcp_marketplace_sources,
+            agent.mcp_marketplace_loader,
+            args,
+        )
+        return SlashResult(text="Loading MCP marketplaces...", followup=followup)
+    return SlashResult(text=mcp_commands.handle_mcp(agent.mcp_registry, args))
+
+
+def _dispatch_arena(agent: CantripAgent, args: str) -> SlashResult:
+    """``/arena <prompt>``: blind A/B run as a followup, or a usage line."""
+    if not args.strip():
+        return SlashResult(
+            text=(
+                "Usage: ``/arena <prompt>`` — runs two models blind on "
+                "*prompt* and asks you to pick a winner.  Reply **A**, "
+                "**B**, **tie**, or **skip** when the responses arrive."
+            )
+        )
+    return SlashResult(
+        text="Arena: running A and B side by side…",
+        followup=agent.begin_arena(args),
+    )
+
+
+# Verb → handler for the simple one-to-one commands.  Each entry takes
+# ``(agent, args)`` and returns a :class:`SlashResult`; an ``_``-prefixed
+# parameter marks the half of the signature a given handler doesn't need.
+# Verbs that branch internally (``/mcp``, ``/arena``) route through the
+# helpers above, and the genuinely special shapes — the ``/flow:<name>``
+# prefix and the user-defined-command fallthrough — stay explicit in
+# :func:`_dispatch_inner`.
+_DISPATCH: dict[str, Callable[[CantripAgent, str], SlashResult]] = {
+    "/help": lambda agent, _args: SlashResult(text=help_text(agent)),
+    "?": lambda agent, _args: SlashResult(text=help_text(agent)),
+    "/memory": lambda agent, args: SlashResult(
+        text=memory_commands.handle_memory(
+            agent._memory_manager, args, charm_path=agent.state.charm_path
+        )
+    ),
+    "/remember": lambda agent, args: SlashResult(
+        text=memory_commands.handle_remember(agent._memory_manager, args)
+    ),
+    "/forget": lambda agent, args: SlashResult(
+        text=memory_commands.handle_forget(agent._memory_manager, args)
+    ),
+    "/mcp": _dispatch_mcp,
+    "/cost": lambda agent, _args: SlashResult(text=format_cost(agent), markdown=True),
+    "/budget": lambda agent, args: SlashResult(text=handle_budget(agent, args)),
+    "/goal": lambda agent, args: SlashResult(text=handle_goal(agent, args)),
+    "/arena": _dispatch_arena,
+    "/model": lambda agent, args: modes._handle_model(agent, args),
+    "/export": lambda agent, args: SlashResult(text=export_transcript(agent, args)),
+    "/share": lambda agent, _args: _handle_share(agent),
+    "/copy": lambda agent, args: _handle_copy(agent, args),
+    "/update": lambda _agent, args: session._handle_update(args),
+    "/sandbox": lambda _agent, _args: SlashResult(text=format_sandbox_status()),
+    "/hooks": lambda agent, _args: SlashResult(text=format_hooks_status(agent)),
+    "/undo": lambda agent, _args: SlashResult(text=session.handle_undo(agent)),
+    "/redo": lambda agent, _args: SlashResult(text=session.handle_redo(agent)),
+    "/branch": lambda agent, args: SlashResult(text=session.handle_branch(agent, args)),
+    "/tree": lambda agent, args: SlashResult(text=session.handle_tree(agent, args), markdown=True),
+    "/plan": lambda agent, _args: SlashResult(text=modes.handle_plan(agent)),
+    "/build": lambda agent, _args: SlashResult(text=modes.handle_build(agent)),
+    "/architect": lambda agent, args: SlashResult(text=modes.handle_architect(agent, args)),
+    "/auto-commit": lambda agent, args: SlashResult(text=modes.handle_auto_commit(agent, args)),
+    "/yolo": lambda agent, args: SlashResult(text=modes.handle_yolo(agent, args)),
+    "/pause": lambda agent, args: SlashResult(text=modes.handle_pause(agent, args)),
+    "/resume": lambda agent, args: SlashResult(text=modes.handle_resume(agent, args)),
+    "/ralph": lambda agent, args: SlashResult(text=modes.handle_ralph(agent, args)),
+    "/recipe": lambda agent, args: handle_recipe(agent, args),
+    "/map": lambda agent, args: SlashResult(text=handle_map(agent, args), markdown=True),
+    "/map-refresh": lambda agent, args: SlashResult(
+        text=handle_map_refresh(agent, args), markdown=True
+    ),
+    "/symbols": lambda agent, args: SlashResult(text=handle_symbols(agent, args), markdown=True),
+    "/definition": lambda agent, args: SlashResult(
+        text=handle_definition(agent, args), markdown=True
+    ),
+    "/references": lambda agent, args: SlashResult(
+        text=handle_references(agent, args), markdown=True
+    ),
+    "/diagnostics": lambda agent, args: _handle_diagnostics(agent, args),
+    "/review": lambda agent, args: review._handle_review(agent, args),
+    "/search-charms": lambda agent, args: charms._handle_search_charms(agent, args),
+    "/icon": lambda agent, args: charms._handle_icon(agent, args),
+    "/quit": lambda _agent, _args: SlashResult(text="Goodbye!", quit=True),
+    "/exit": lambda _agent, _args: SlashResult(text="Goodbye!", quit=True),
+}
+
+
 def _dispatch_inner(agent: CantripAgent, message: str) -> SlashResult | None:
     """Route *message* to the matching slash handler — see :func:`dispatch`."""
     verb, _, args = message.partition(" ")
     verb = verb.lower()
-    if verb in {"/help", "?"}:
-        return SlashResult(text=help_text(agent))
-    if verb == "/memory":
-        text = memory_commands.handle_memory(
-            agent._memory_manager, args, charm_path=agent.state.charm_path
-        )
-        return SlashResult(text=text)
-    if verb == "/remember":
-        return SlashResult(text=memory_commands.handle_remember(agent._memory_manager, args))
-    if verb == "/forget":
-        return SlashResult(text=memory_commands.handle_forget(agent._memory_manager, args))
-    if verb == "/mcp":
-        if mcp_commands.is_marketplace_subcommand(args):
-            followup = mcp_commands.handle_mcp_async(
-                agent.mcp_registry,
-                agent.mcp_marketplace_sources,
-                agent.mcp_marketplace_loader,
-                args,
-            )
-            return SlashResult(text="Loading MCP marketplaces...", followup=followup)
-        return SlashResult(text=mcp_commands.handle_mcp(agent.mcp_registry, args))
-    if verb == "/cost":
-        return SlashResult(text=format_cost(agent), markdown=True)
-    if verb == "/budget":
-        return SlashResult(text=handle_budget(agent, args))
-    if verb == "/goal":
-        return SlashResult(text=handle_goal(agent, args))
-    if verb == "/arena":
-        if not args.strip():
-            return SlashResult(
-                text=(
-                    "Usage: ``/arena <prompt>`` — runs two models blind on "
-                    "*prompt* and asks you to pick a winner.  Reply **A**, "
-                    "**B**, **tie**, or **skip** when the responses arrive."
-                )
-            )
-        return SlashResult(
-            text="Arena: running A and B side by side…",
-            followup=agent.begin_arena(args),
-        )
-    if verb == "/model":
-        return modes._handle_model(agent, args)
-    if verb == "/export":
-        return SlashResult(text=export_transcript(agent, args))
-    if verb == "/share":
-        return _handle_share(agent)
-    if verb == "/copy":
-        return _handle_copy(agent, args)
-    if verb == "/update":
-        return session._handle_update(args)
-    if verb == "/sandbox":
-        return SlashResult(text=format_sandbox_status())
-    if verb == "/hooks":
-        return SlashResult(text=format_hooks_status(agent))
-    if verb == "/undo":
-        return SlashResult(text=session.handle_undo(agent))
-    if verb == "/redo":
-        return SlashResult(text=session.handle_redo(agent))
-    if verb == "/branch":
-        return SlashResult(text=session.handle_branch(agent, args))
-    if verb == "/tree":
-        return SlashResult(text=session.handle_tree(agent, args), markdown=True)
-    if verb == "/plan":
-        return SlashResult(text=modes.handle_plan(agent))
-    if verb == "/build":
-        return SlashResult(text=modes.handle_build(agent))
-    if verb == "/architect":
-        return SlashResult(text=modes.handle_architect(agent, args))
-    if verb == "/auto-commit":
-        return SlashResult(text=modes.handle_auto_commit(agent, args))
-    if verb == "/yolo":
-        return SlashResult(text=modes.handle_yolo(agent, args))
-    if verb == "/pause":
-        return SlashResult(text=modes.handle_pause(agent, args))
-    if verb == "/resume":
-        return SlashResult(text=modes.handle_resume(agent, args))
-    if verb == "/ralph":
-        return SlashResult(text=modes.handle_ralph(agent, args))
-    if verb == "/recipe":
-        return handle_recipe(agent, args)
-    # ``/flow`` and ``/flow:<name>`` both route to the flow dispatcher;
-    # the colon-suffix carries the flow name when authors prefer that
-    # shape.  Building the prefix string from the bare verb keeps the
+
+    # ``/flow`` and ``/flow:<name>`` share the flow dispatcher; the colon
+    # suffix carries the flow name and isn't a fixed verb, so it can't be
+    # a table key.  Building the prefix from the bare verb keeps the
     # catalogue drift test happy (only ``/flow`` is a literal here).
     if verb == _FLOW_VERB or verb.startswith(_FLOW_VERB + ":"):
         return handle_flow(agent, verb, args)
-    if verb == "/map":
-        return SlashResult(text=handle_map(agent, args), markdown=True)
-    if verb == "/map-refresh":
-        return SlashResult(text=handle_map_refresh(agent, args), markdown=True)
-    if verb == "/symbols":
-        return SlashResult(text=handle_symbols(agent, args), markdown=True)
-    if verb == "/definition":
-        return SlashResult(text=handle_definition(agent, args), markdown=True)
-    if verb == "/references":
-        return SlashResult(text=handle_references(agent, args), markdown=True)
-    if verb == "/diagnostics":
-        return _handle_diagnostics(agent, args)
-    if verb == "/review":
-        return review._handle_review(agent, args)
-    if verb == "/search-charms":
-        return charms._handle_search_charms(agent, args)
-    if verb == "/icon":
-        return charms._handle_icon(agent, args)
-    if verb in {"/quit", "/exit"}:
-        return SlashResult(text="Goodbye!", quit=True)
-    # Phase 68.3: fall through to user-defined commands discovered
-    # from ``.cantrip/commands/*.md`` + ``~/.config/cantrip/commands/*.md``.
-    # ``isinstance`` guards against the ``MagicMock``-backed agents
-    # used in TUI / Web tests: without it, ``getattr`` would return a
-    # Mock that answers affirmatively to ``.get(verb)`` and send the
-    # dispatch loop down the wrong path.
+
+    handler = _DISPATCH.get(verb)
+    if handler is not None:
+        return handler(agent, args)
+
+    # Phase 68.3: fall through to user-defined commands discovered from
+    # ``.cantrip/commands/*.md`` + ``~/.config/cantrip/commands/*.md``.
+    # ``isinstance`` guards against the ``MagicMock``-backed agents used
+    # in TUI / Web tests: without it, ``getattr`` would return a Mock
+    # that answers affirmatively to ``.get(verb)`` and send the dispatch
+    # loop down the wrong path.
     custom = getattr(agent, "custom_commands", None)
     if isinstance(custom, custom_commands.CustomCommandRegistry):
         match = custom.get(verb)

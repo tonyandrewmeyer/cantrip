@@ -1361,36 +1361,23 @@ class TestCommandCatalogue:
     """The shared catalogue drives UI autocomplete and must stay in sync."""
 
     def test_every_dispatched_verb_is_catalogued(self) -> None:
-        """Scan ``dispatch()`` for ``/<verb>`` literals; all must be in the catalogue.
+        """Every verb the dispatcher routes must be in the catalogue.
 
-        Guards against drift when a new verb lands in the dispatcher but
-        the catalogue (and therefore the TUI slash-autocomplete popup)
-        is not updated.
+        Guards against drift when a new verb lands in the dispatch table
+        but the catalogue (and therefore the TUI slash-autocomplete
+        popup) is not updated.
         """
-        import ast
-
-        # The dispatch entry point is a thin try/except wrapper around
-        # ``_dispatch_inner`` (Phase 7 hardening), which is where the
-        # ``if verb == "/foo":`` literals actually live.  Read both so
-        # the drift test stays accurate if someone moves a verb back.
-        source = (
-            inspect.getsource(slash_commands.dispatch)
-            + "\n"
-            + inspect.getsource(slash_commands._dispatch_inner)
-        )
-        tree = ast.parse(source)
-        dispatched: set[str] = {
-            node.value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and node.value.startswith("/")
-        }
-        assert dispatched, "Expected at least one /-verb literal in dispatcher source."
+        # Fixed verbs route through the ``_DISPATCH`` table; ``/flow`` is
+        # handled by the explicit prefix branch in ``_dispatch_inner``.
+        # ``?`` is a deliberate ``/help`` alias kept out of the catalogue,
+        # so restrict to ``/``-prefixed verbs.
+        dispatched: set[str] = {verb for verb in slash_commands._DISPATCH if verb.startswith("/")}
+        dispatched.add(slash_commands._FLOW_VERB)
+        assert dispatched, "Expected at least one /-verb in the dispatch table."
         catalogue_verbs = {cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE}
         missing = dispatched - catalogue_verbs
         assert not missing, (
-            f"dispatch() handles verbs missing from COMMAND_CATALOGUE: {sorted(missing)}"
+            f"dispatcher handles verbs missing from COMMAND_CATALOGUE: {sorted(missing)}"
         )
 
     def test_catalogue_verbs_are_shared_verbs(self) -> None:
