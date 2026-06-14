@@ -1311,6 +1311,13 @@ package level — not aesthetic uniformity.
   `juju.py`, `publishing.py`, `slash.py`, `app.py` are the named
   targets; `acceptance.py`, `observability.py`, `rockcraft.py`,
   `charm.py` are loose follow-ons).
+  - **Progress:** `acceptance.py` (→ `acceptance/`), `observability.py`
+    (→ `observability/`), and `subagent.py` (→ `subagent/`:
+    `core` + `allowlists`) are split and under the bar.  **Still over
+    1,500:** `core.py` (3,508, deferred — needs more 113.1-style service
+    extraction), `store.py` (1,794, single `SessionStore` class —
+    mixin-extraction candidate), `executor/core.py` (1,632, single
+    `BackgroundExecutor` class).
 - (b) `src/cantrip/agent/` has no more than ~15 top-level Python
   files; the rest live in themed subpackages.
 - (c) `design/` contains only files listed under "active-contract
