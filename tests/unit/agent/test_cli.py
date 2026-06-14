@@ -9,9 +9,9 @@ from unittest import mock
 
 import pytest
 
-from cantrip import cli
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.agent.runtime.preflight import CheckStatus, PreflightEvent
+from cantrip.cli import cli
 from cantrip.llm.base import (
     ProviderError,
     ProviderOverloadedError,
@@ -430,7 +430,7 @@ class TestDrainExecutor:
             return [done]
 
         agent = SimpleNamespace(work_queue=SimpleNamespace(all_tasks=_all_tasks))
-        with mock.patch("cantrip.cli.asyncio.sleep", new=mock.AsyncMock(return_value=None)):
+        with mock.patch("cantrip.cli.cli.asyncio.sleep", new=mock.AsyncMock(return_value=None)):
             await cli._drain_executor(agent)
 
         out = capsys.readouterr().out
@@ -542,13 +542,15 @@ class TestSpinner:
 
 class TestRunCli:
     def test_provider_error_exits_non_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        with mock.patch("cantrip.cli.create_provider", side_effect=ProviderError("bad key")):
+        with mock.patch("cantrip.cli.cli.create_provider", side_effect=ProviderError("bad key")):
             rc = cli.run_cli(_make_args())
         assert rc == 1
         assert "bad key" in capsys.readouterr().out
 
     def test_provider_value_error_exits_non_zero(self) -> None:
-        with mock.patch("cantrip.cli.create_provider", side_effect=ValueError("unknown provider")):
+        with mock.patch(
+            "cantrip.cli.cli.create_provider", side_effect=ValueError("unknown provider")
+        ):
             rc = cli.run_cli(_make_args())
         assert rc == 1
 
@@ -561,13 +563,13 @@ class TestRunCli:
         fake_agent.state.mode = "design"
 
         with (
-            mock.patch("cantrip.cli.create_provider", return_value=fake_provider),
+            mock.patch("cantrip.cli.cli.create_provider", return_value=fake_provider),
             mock.patch(
-                "cantrip.cli.resolve_light_provider",
+                "cantrip.cli.cli.resolve_light_provider",
                 return_value=(fake_light, "light-model"),
             ),
-            mock.patch("cantrip.cli.CantripAgent", return_value=fake_agent) as agent_cls,
-            mock.patch("cantrip.cli.asyncio.run", side_effect=_consume_coro) as asyncio_run,
+            mock.patch("cantrip.cli.cli.CantripAgent", return_value=fake_agent) as agent_cls,
+            mock.patch("cantrip.cli.cli.asyncio.run", side_effect=_consume_coro) as asyncio_run,
         ):
             rc = cli.run_cli(_make_args())
 
@@ -584,13 +586,13 @@ class TestRunCli:
         charm.mkdir()
 
         with (
-            mock.patch("cantrip.cli.create_provider", return_value=fake_provider),
+            mock.patch("cantrip.cli.cli.create_provider", return_value=fake_provider),
             mock.patch(
-                "cantrip.cli.resolve_light_provider",
+                "cantrip.cli.cli.resolve_light_provider",
                 return_value=(None, None),
             ),
-            mock.patch("cantrip.cli.CantripAgent", return_value=fake_agent),
-            mock.patch("cantrip.cli.asyncio.run", side_effect=_consume_coro),
+            mock.patch("cantrip.cli.cli.CantripAgent", return_value=fake_agent),
+            mock.patch("cantrip.cli.cli.asyncio.run", side_effect=_consume_coro),
         ):
             cli.run_cli(_make_args(improve=charm))
 
@@ -609,10 +611,10 @@ class TestRunCli:
             raise KeyboardInterrupt
 
         with (
-            mock.patch("cantrip.cli.create_provider", return_value=fake_provider),
-            mock.patch("cantrip.cli.resolve_light_provider", return_value=(None, None)),
-            mock.patch("cantrip.cli.CantripAgent", return_value=fake_agent),
-            mock.patch("cantrip.cli.asyncio.run", side_effect=_raise_interrupt),
+            mock.patch("cantrip.cli.cli.create_provider", return_value=fake_provider),
+            mock.patch("cantrip.cli.cli.resolve_light_provider", return_value=(None, None)),
+            mock.patch("cantrip.cli.cli.CantripAgent", return_value=fake_agent),
+            mock.patch("cantrip.cli.cli.asyncio.run", side_effect=_raise_interrupt),
         ):
             rc = cli.run_cli(_make_args())
 
@@ -690,7 +692,7 @@ class TestRepl:
     async def test_help_command(self, capsys: pytest.CaptureFixture[str]) -> None:
         agent = _make_repl_agent()
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["/help", EOFError]),
         ):
             await cli._repl(agent)
@@ -709,7 +711,7 @@ class TestRepl:
         preview.summary.return_value = "Prior session: c"
         agent.preview_session = mock.MagicMock(return_value=preview)
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl([EOFError]),
         ):
             await cli._repl(agent)
@@ -725,7 +727,7 @@ class TestRepl:
         preview.exists = False
         agent.preview_session = mock.MagicMock(return_value=preview)
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl([EOFError]),
         ):
             await cli._repl(agent)
@@ -742,7 +744,7 @@ class TestRepl:
         preview.summary.return_value = "Prior session: c"
         agent.preview_session = mock.MagicMock(return_value=preview)
         with (
-            mock.patch("cantrip.cli.sys.stdin.isatty", return_value=True),
+            mock.patch("cantrip.cli.cli.sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["r"]),
         ):
             cli._prompt_session_resume(agent)
@@ -760,7 +762,7 @@ class TestRepl:
         agent.preview_session = mock.MagicMock(return_value=preview)
         agent.archive_session = mock.MagicMock(return_value=pathlib.Path("/tmp/.cantrip.bak-X"))
         with (
-            mock.patch("cantrip.cli.sys.stdin.isatty", return_value=True),
+            mock.patch("cantrip.cli.cli.sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["f"]),
         ):
             cli._prompt_session_resume(agent)
@@ -783,7 +785,7 @@ class TestRepl:
             return_value=[Message(role=Role.USER, content="hello")]
         )
         with (
-            mock.patch("cantrip.cli.sys.stdin.isatty", return_value=True),
+            mock.patch("cantrip.cli.cli.sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["t", "r"]),
         ):
             cli._prompt_session_resume(agent)
@@ -795,14 +797,14 @@ class TestRepl:
     @pytest.mark.asyncio
     async def test_exit_command(self) -> None:
         agent = _make_repl_agent()
-        with mock.patch("cantrip.cli.asyncio.to_thread", new=_drive_repl(["exit"])):
+        with mock.patch("cantrip.cli.cli.asyncio.to_thread", new=_drive_repl(["exit"])):
             await cli._repl(agent)
         agent.stop_executor.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_blank_input_is_skipped(self) -> None:
         agent = _make_repl_agent()
-        with mock.patch("cantrip.cli.asyncio.to_thread", new=_drive_repl(["", "   ", "exit"])):
+        with mock.patch("cantrip.cli.cli.asyncio.to_thread", new=_drive_repl(["", "   ", "exit"])):
             await cli._repl(agent)
         agent.process_message.assert_not_awaited()
 
@@ -811,7 +813,7 @@ class TestRepl:
         task = AgentTask(id="t1", title="Build", category=TaskCategory.BUILD)
         agent = _make_repl_agent(tasks=[task])
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["/tasks", "exit"]),
         ):
             await cli._repl(agent)
@@ -821,7 +823,7 @@ class TestRepl:
     async def test_status_command(self, capsys: pytest.CaptureFixture[str]) -> None:
         agent = _make_repl_agent()
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["/status", "exit"]),
         ):
             await cli._repl(agent)
@@ -831,7 +833,7 @@ class TestRepl:
     async def test_cost_command(self, capsys: pytest.CaptureFixture[str]) -> None:
         agent = _make_repl_agent()
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["/cost", "exit"]),
         ):
             await cli._repl(agent)
@@ -841,7 +843,7 @@ class TestRepl:
     async def test_process_message_normal_turn(self, capsys: pytest.CaptureFixture[str]) -> None:
         agent = _make_repl_agent(process_message=mock.AsyncMock(return_value="assistant response"))
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["Hello", "exit"]),
         ):
             await cli._repl(agent)
@@ -857,7 +859,7 @@ class TestRepl:
             process_message=mock.AsyncMock(side_effect=ProviderRateLimitError("slow"))
         )
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["Hello", "exit"]),
         ):
             await cli._repl(agent)
@@ -871,7 +873,7 @@ class TestRepl:
             process_message=mock.AsyncMock(side_effect=ProviderOverloadedError("busy"))
         )
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["Hello", "exit"]),
         ):
             await cli._repl(agent)
@@ -883,7 +885,7 @@ class TestRepl:
     ) -> None:
         agent = _make_repl_agent(process_message=mock.AsyncMock(side_effect=ProviderError("boom")))
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["Hello", "exit"]),
         ):
             await cli._repl(agent)
@@ -896,7 +898,7 @@ class TestRepl:
     ) -> None:
         agent = _make_repl_agent(process_message=mock.AsyncMock(side_effect=ValueError("oops")))
         with mock.patch(
-            "cantrip.cli.asyncio.to_thread",
+            "cantrip.cli.cli.asyncio.to_thread",
             new=_drive_repl(["Hello", "exit"]),
         ):
             await cli._repl(agent)
@@ -909,10 +911,10 @@ class TestRepl:
         agent = _make_repl_agent(process_message=mock.AsyncMock(side_effect=KeyboardInterrupt))
         with (
             mock.patch(
-                "cantrip.cli.asyncio.to_thread",
+                "cantrip.cli.cli.asyncio.to_thread",
                 new=_drive_repl(["Hello", "exit"]),
             ),
-            mock.patch("cantrip.cli._drain_executor", new=mock.AsyncMock()) as drain,
+            mock.patch("cantrip.cli.cli._drain_executor", new=mock.AsyncMock()) as drain,
         ):
             await cli._repl(agent)
         drain.assert_awaited()
@@ -926,15 +928,15 @@ class TestRepl:
 
         with (
             mock.patch(
-                "cantrip.cli.asyncio.to_thread",
+                "cantrip.cli.cli.asyncio.to_thread",
                 new=_drive_repl(["Hello", "exit"]),
             ),
             mock.patch(
                 "cantrip.agent.tools.environment._juju_controller_healthy",
                 return_value=False,
             ),
-            mock.patch("cantrip.cli._bootstrap_cli", new=mock.AsyncMock()) as boot,
-            mock.patch("cantrip.cli._prepare_cli", new=mock.AsyncMock()),
+            mock.patch("cantrip.cli.cli._bootstrap_cli", new=mock.AsyncMock()) as boot,
+            mock.patch("cantrip.cli.cli._prepare_cli", new=mock.AsyncMock()),
         ):
             await cli._repl(agent)
 
@@ -998,7 +1000,7 @@ class TestPrintUpdateNotice:
 
         task = asyncio.create_task(_slow())
         # Tight timeout so the test completes quickly.
-        with mock.patch("cantrip.cli.asyncio.wait_for", side_effect=TimeoutError):
+        with mock.patch("cantrip.cli.cli.asyncio.wait_for", side_effect=TimeoutError):
             await cli._print_update_notice(task)
         # Drain the cancellation so pytest's unawaited-coroutine warning
         # doesn't fire — ``Task.cancel()`` requests cancellation but the

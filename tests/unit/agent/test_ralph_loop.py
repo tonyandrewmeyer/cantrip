@@ -549,7 +549,7 @@ class TestOnIterationCallback:
     @pytest.mark.asyncio
     async def test_callback_can_abort_via_exception(self):
         """A raise inside the callback propagates and short-circuits the loop."""
-        from cantrip.print_mode import _RalphAbortError
+        from cantrip.cli.print_mode import _RalphAbortError
 
         async def callback(_iteration: int, _response: str) -> None:
             raise _RalphAbortError()
@@ -754,8 +754,8 @@ class TestPrintModeRalph:
     @pytest.mark.asyncio
     async def test_ralph_enabled_drives_loop_through_print_mode(self, tmp_path: pathlib.Path):
         """``--ralph`` triggers the wrapper and drives multiple iterations."""
-        from cantrip import print_mode
         from cantrip.agent.core import CantripAgent
+        from cantrip.cli import print_mode
         from tests.conftest import FakeProvider
 
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
@@ -789,8 +789,8 @@ class TestPrintModeRalph:
 
     @pytest.mark.asyncio
     async def test_ralph_exhausted_returns_one(self, tmp_path: pathlib.Path):
-        from cantrip import print_mode
         from cantrip.agent.core import CantripAgent
+        from cantrip.cli import print_mode
         from tests.conftest import FakeProvider
 
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)
@@ -824,8 +824,8 @@ class TestPrintModeRalph:
 
     @pytest.mark.asyncio
     async def test_ralph_stalled_returns_one(self, tmp_path: pathlib.Path):
-        from cantrip import print_mode
         from cantrip.agent.core import CantripAgent
+        from cantrip.cli import print_mode
         from tests.conftest import FakeProvider
 
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)

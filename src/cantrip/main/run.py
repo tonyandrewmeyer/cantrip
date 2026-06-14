@@ -138,7 +138,7 @@ def _run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        from cantrip.print_mode import run_print
+        from cantrip.cli.print_mode import run_print
 
         return run_print(args)
 
@@ -160,7 +160,7 @@ def _run(args: argparse.Namespace) -> int:
         return run_web(args)
 
     if args.no_tui:
-        from cantrip.cli import run_cli
+        from cantrip.cli.cli import run_cli
 
         return run_cli(args)
     else:

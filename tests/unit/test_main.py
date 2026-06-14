@@ -328,7 +328,7 @@ class TestRun:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         with (
-            mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
+            mock.patch("cantrip.cli.cli.run_cli", return_value=0) as run_cli,
             mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, provider="inference-snap", no_tui=True))
@@ -375,7 +375,7 @@ class TestRun:
     ) -> None:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         with (
-            mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
+            mock.patch("cantrip.cli.cli.run_cli", return_value=0) as run_cli,
             mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, no_tui=True))
@@ -396,8 +396,8 @@ class TestRun:
         """
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         with (
-            mock.patch("cantrip.print_mode.run_print", return_value=2) as run_print,
-            mock.patch("cantrip.cli.run_cli", return_value=0) as run_cli,
+            mock.patch("cantrip.cli.print_mode.run_print", return_value=2) as run_print,
+            mock.patch("cantrip.cli.cli.run_cli", return_value=0) as run_cli,
             mock.patch("cantrip.main.run._install_unraisable_hook"),
         ):
             rc = cantrip_main._run(_run_args(tmp_path, no_tui=True, print_goal=""))

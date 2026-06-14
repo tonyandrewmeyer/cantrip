@@ -67,6 +67,14 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
   (`executor_controller`, `mcp_controller`, `watcher_controller`,
   `triage_controller`, `arena_controller`), not co-located with the
   domain module it drives. New controllers go here.
+- **CLI entrypoints live in `src/cantrip/cli/`.** The command-line entry
+  surfaces (`cli.py` — interactive no-TUI mode; `print_mode.py` —
+  non-interactive one-shot) sit in the `cli/` package, driven by
+  `cantrip.main` (the arg-parsing layer). Small single-file utility
+  modules (`clipboard.py`, `compare.py`, `diagnostics.py`,
+  `notifications.py`, `workspace.py`) stay flat at the top of
+  `src/cantrip/`; promote a top-level module to a package only when it
+  grows a cohesive multi-file surface.
 
 ## Workflow
 

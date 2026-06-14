@@ -1159,7 +1159,7 @@ package level — not aesthetic uniformity.
 
 ### 113.7 Medium — Decide on top-level flat modules in `src/cantrip/`
 
-- [ ] Seven flat modules currently sit beside the subpackages:
+- [x] Seven flat modules currently sit beside the subpackages:
   `cli.py` (777 lines), `clipboard.py`, `compare.py`,
   `diagnostics.py`, `notifications.py`, `print_mode.py` (577 lines),
   `workspace.py`.  No rule for what gets promoted.  Pick one and
@@ -1173,8 +1173,15 @@ package level — not aesthetic uniformity.
     level, document in CLAUDE.md that single-file utilities live
     here.  Then `cli.py` / `print_mode.py` are non-issues at size,
     just at-the-line.
-- [ ] Whichever wins, write the convention into CLAUDE.md so the
-  next "should this be a package?" question has an answer.
+- [x] **Done.**  Chose **Option A**: `cli.py` → `cli/cli.py` and
+  `print_mode.py` → `cli/print_mode.py` in a new `cantrip.cli` package;
+  the five small utilities stay flat.  All import sites and test
+  attribute-patch strings (`cantrip.cli.cli.*`, `cantrip.cli.print_mode.*`)
+  repointed, no shims.  The console entrypoint is `cantrip.main:main`,
+  unaffected.
+- [x] Whichever wins, write the convention into CLAUDE.md so the
+  next "should this be a package?" question has an answer.  (CLAUDE.md
+  now records the CLI-entrypoint / flat-utility rule.)
 
 ### 113.8 Medium — Split `design/` into active vs research/audit
 

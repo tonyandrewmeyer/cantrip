@@ -9,9 +9,9 @@ from unittest import mock
 
 import pytest
 
-from cantrip import print_mode
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
+from cantrip.cli import print_mode
 from cantrip.llm.base import ProviderError
 from cantrip.ui import events as ui_events
 from tests.conftest import FakeProvider
@@ -323,7 +323,7 @@ class TestRunPrint:
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         with mock.patch(
-            "cantrip.print_mode.create_provider",
+            "cantrip.cli.print_mode.create_provider",
             side_effect=ProviderError("bad key"),
         ):
             rc = print_mode.run_print(_make_args(tmp_path))
@@ -343,9 +343,9 @@ class TestRunPrint:
         ]
 
         with (
-            mock.patch("cantrip.print_mode.create_provider", return_value=mock.MagicMock()),
-            mock.patch("cantrip.print_mode.resolve_light_provider", return_value=(None, None)),
-            mock.patch("cantrip.print_mode.CantripAgent", return_value=fake_agent),
+            mock.patch("cantrip.cli.print_mode.create_provider", return_value=mock.MagicMock()),
+            mock.patch("cantrip.cli.print_mode.resolve_light_provider", return_value=(None, None)),
+            mock.patch("cantrip.cli.print_mode.CantripAgent", return_value=fake_agent),
         ):
             rc = print_mode.run_print(_make_args(tmp_path))
 
@@ -370,10 +370,10 @@ class TestRunPrint:
             return 0
 
         with (
-            mock.patch("cantrip.print_mode.create_provider", return_value=mock.MagicMock()),
-            mock.patch("cantrip.print_mode.resolve_light_provider", return_value=(None, None)),
-            mock.patch("cantrip.print_mode.CantripAgent", return_value=fake_agent),
-            mock.patch("cantrip.print_mode._run_async", side_effect=_fake_run) as run_async,
+            mock.patch("cantrip.cli.print_mode.create_provider", return_value=mock.MagicMock()),
+            mock.patch("cantrip.cli.print_mode.resolve_light_provider", return_value=(None, None)),
+            mock.patch("cantrip.cli.print_mode.CantripAgent", return_value=fake_agent),
+            mock.patch("cantrip.cli.print_mode._run_async", side_effect=_fake_run) as run_async,
         ):
             rc = print_mode.run_print(_make_args(tmp_path, yolo=True))
 
@@ -396,10 +396,10 @@ class TestRunPrint:
             raise KeyboardInterrupt
 
         with (
-            mock.patch("cantrip.print_mode.create_provider", return_value=mock.MagicMock()),
-            mock.patch("cantrip.print_mode.resolve_light_provider", return_value=(None, None)),
-            mock.patch("cantrip.print_mode.CantripAgent", return_value=fake_agent),
-            mock.patch("cantrip.print_mode.asyncio.run", side_effect=_interrupt),
+            mock.patch("cantrip.cli.print_mode.create_provider", return_value=mock.MagicMock()),
+            mock.patch("cantrip.cli.print_mode.resolve_light_provider", return_value=(None, None)),
+            mock.patch("cantrip.cli.print_mode.CantripAgent", return_value=fake_agent),
+            mock.patch("cantrip.cli.print_mode.asyncio.run", side_effect=_interrupt),
         ):
             rc = print_mode.run_print(_make_args(tmp_path))
 
@@ -422,12 +422,12 @@ class TestRunPrint:
             return 0
 
         with (
-            mock.patch("cantrip.print_mode.create_provider", return_value=FakeProvider()),
+            mock.patch("cantrip.cli.print_mode.create_provider", return_value=FakeProvider()),
             mock.patch(
-                "cantrip.print_mode.resolve_light_provider",
+                "cantrip.cli.print_mode.resolve_light_provider",
                 return_value=(None, None),
             ),
-            mock.patch("cantrip.print_mode._run_async", side_effect=_capture_run),
+            mock.patch("cantrip.cli.print_mode._run_async", side_effect=_capture_run),
         ):
             rc = print_mode.run_print(
                 _make_args(tmp_path, yolo=True, json_output=True, print_goal="charm me")
