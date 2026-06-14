@@ -22,4 +22,4 @@ components:
   - model-30b-a3b-q4-k-m-gguf
 configurations:
   sleep-idle-seconds: 600
-  ctx-size: 32768
+  ctx-size: 131072

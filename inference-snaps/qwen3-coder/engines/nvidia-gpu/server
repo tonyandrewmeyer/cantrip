@@ -11,4 +11,5 @@ exec "$SNAP_COMPONENTS/llamacpp-cuda/server" \
   --jinja \
   --ctx-size "$ctx_size" \
   --sleep-idle-seconds "$sleep_idle_seconds" \
+  --parallel 1 \
   "$@"
