@@ -37,7 +37,7 @@ class TestExecutorLifecycle:
         fake_executor.running = False
 
         with patch(
-            "cantrip.agent.executor_controller.BackgroundExecutor",
+            "cantrip.agent.controllers.executor_controller.BackgroundExecutor",
             return_value=fake_executor,
         ) as cls:
             agent.start_executor()
@@ -47,7 +47,7 @@ class TestExecutorLifecycle:
 
     def test_start_max_concurrency_threaded_to_executor(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
-        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
+        with patch("cantrip.agent.controllers.executor_controller.BackgroundExecutor") as cls:
             cls.return_value.running = False
             agent.start_executor(max_concurrency=5)
         kwargs = cls.call_args.kwargs
@@ -58,13 +58,13 @@ class TestExecutorLifecycle:
         existing = MagicMock()
         existing.running = True
         agent._executor_ctl._executor = existing
-        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
+        with patch("cantrip.agent.controllers.executor_controller.BackgroundExecutor") as cls:
             agent.start_executor()
         cls.assert_not_called()
 
     def test_work_queue_publishes_to_bus_after_start(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
-        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
+        with patch("cantrip.agent.controllers.executor_controller.BackgroundExecutor") as cls:
             cls.return_value.running = False
             agent.start_executor()
 
@@ -229,9 +229,9 @@ class TestMcpPlumbing:
     def test_mcp_registry_is_lazy_and_cached(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with (
-            patch("cantrip.agent.mcp_controller.load_mcp_configs", return_value=[]),
+            patch("cantrip.agent.controllers.mcp_controller.load_mcp_configs", return_value=[]),
             patch(
-                "cantrip.agent.mcp_controller.MCPRegistry",
+                "cantrip.agent.controllers.mcp_controller.MCPRegistry",
                 return_value=MagicMock(),
             ) as cls,
         ):
@@ -243,7 +243,7 @@ class TestMcpPlumbing:
     def test_mcp_marketplace_sources_cached(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.mcp_controller.load_marketplace_sources",
+            "cantrip.agent.controllers.mcp_controller.load_marketplace_sources",
             return_value=[MagicMock(name="src")],
         ) as loader:
             one = agent.mcp_marketplace_sources
@@ -254,7 +254,7 @@ class TestMcpPlumbing:
     def test_mcp_marketplace_loader_is_lazy(self, tmp_path: pathlib.Path) -> None:
         agent = _agent(tmp_path)
         with patch(
-            "cantrip.agent.mcp_controller.MarketplaceLoader",
+            "cantrip.agent.controllers.mcp_controller.MarketplaceLoader",
             return_value=MagicMock(),
         ) as cls:
             a = agent.mcp_marketplace_loader

@@ -26,8 +26,12 @@ import unittest.mock as mock
 
 import pytest
 
+from cantrip.agent.controllers.arena_controller import ArenaController
+from cantrip.agent.controllers.executor_controller import ExecutorController
+from cantrip.agent.controllers.mcp_controller import MCPController
+from cantrip.agent.controllers.triage_controller import TriageController
+from cantrip.agent.controllers.watcher_controller import WatcherController
 from cantrip.agent.executor import BackgroundExecutor
-from cantrip.agent.executor_controller import ExecutorController
 from cantrip.agent.git.auto_commit import (
     _CANTRIP_TRAILER,
     _PRE_CANTRIP_MESSAGE,
@@ -43,12 +47,8 @@ from cantrip.agent.git.git_branch import (
     slugify,
     suggest_repo_name,
 )
-from cantrip.agent.mcp_controller import MCPController
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
-from cantrip.agent.race.arena_controller import ArenaController
 from cantrip.agent.state import AgentState
-from cantrip.agent.watcher.triage_controller import TriageController
-from cantrip.agent.watcher.watcher_controller import WatcherController
 from cantrip.hooks.runner import HookRunner
 from cantrip.llm.base import Message, Response, Role, ToolCall
 from cantrip.ui import events as ui_events
@@ -448,7 +448,9 @@ class TestTriageController:
             def start(self) -> None:
                 self.running = True
 
-        with mock.patch("cantrip.agent.watcher.triage_controller.IssueTriage", _CapturingTriage):
+        with mock.patch(
+            "cantrip.agent.controllers.triage_controller.IssueTriage", _CapturingTriage
+        ):
             assert ctl.start() is True
 
         callback = captured["cb"]
@@ -491,7 +493,9 @@ class TestTriageController:
             def start(self) -> None:
                 self.running = True
 
-        with mock.patch("cantrip.agent.watcher.triage_controller.IssueTriage", _CapturingTriage):
+        with mock.patch(
+            "cantrip.agent.controllers.triage_controller.IssueTriage", _CapturingTriage
+        ):
             assert ctl.retriage() is True
 
         callback = captured["cb"]
@@ -690,7 +694,7 @@ class TestWatcherControllerRouting:
         """start() returns False when Juju model detection fails."""
         # Patch model detection so it returns None (no model found).
         monkeypatch.setattr(
-            "cantrip.agent.watcher.watcher_controller.detect_current_juju_model",
+            "cantrip.agent.controllers.watcher_controller.detect_current_juju_model",
             lambda **_: None,
         )
         state = AgentState()  # No dev_model set.

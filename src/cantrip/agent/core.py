@@ -19,6 +19,11 @@ from cantrip.agent.context.context import (
     VirtualFileStore,
     resolve_short_session_mode,
 )
+from cantrip.agent.controllers.arena_controller import ArenaController
+from cantrip.agent.controllers.executor_controller import ExecutorController
+from cantrip.agent.controllers.mcp_controller import MCPController
+from cantrip.agent.controllers.triage_controller import TriageController
+from cantrip.agent.controllers.watcher_controller import WatcherController
 from cantrip.agent.core_services.message_history import MessageHistory
 from cantrip.agent.core_services.persistence import PersistenceController
 from cantrip.agent.core_services.provider_manager import ProviderManager
@@ -27,7 +32,6 @@ from cantrip.agent.core_services.tool_builder import ToolBuilder
 from cantrip.agent.core_services.usage_tracker import UsageTracker
 from cantrip.agent.design import parse_design_from_result
 from cantrip.agent.emotions import ParliamentResult, run_parliament
-from cantrip.agent.executor_controller import ExecutorController
 from cantrip.agent.git import auto_commit
 from cantrip.agent.git.git_branch import (
     PUSH_CONFIRM_PREFIX,
@@ -35,7 +39,6 @@ from cantrip.agent.git.git_branch import (
     create_branch,
     gh_pr_view,
 )
-from cantrip.agent.mcp_controller import MCPController
 from cantrip.agent.memory import (
     AutoWriter,
     MemoryEntry,
@@ -62,7 +65,6 @@ from cantrip.agent.queue import (
     WorkflowPhase,
     WorkQueue,
 )
-from cantrip.agent.race.arena_controller import ArenaController
 from cantrip.agent.runtime.preflight import (
     DEFAULT_PRESET,
     PreflightCallback,
@@ -87,9 +89,7 @@ from cantrip.agent.tools import (
     expand_leaves,
     resolve_subcommand,
 )
-from cantrip.agent.watcher.triage_controller import TriageController
 from cantrip.agent.watcher.watcher import WatcherConfig, WatcherEvent
-from cantrip.agent.watcher.watcher_controller import WatcherController
 from cantrip.agent.workflows import flows as flows_module
 from cantrip.agent.workflows import recipes as recipes_module
 from cantrip.codeintel import CodeIntel

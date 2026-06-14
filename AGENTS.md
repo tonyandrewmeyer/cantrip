@@ -61,6 +61,12 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
 - Always include **ops-tracing** and **COS integration**
 - Prefer **PyPI versions** of charm libraries over charmcraft fetch-libs
 - Three paths: **A** (12-Factor PaaS), **B** (Custom Apps), **C** (Infrastructure)
+- **Controllers live in `src/cantrip/agent/controllers/`.** A long-running
+  agent concern that `CantripAgent` composes and drives is an
+  `X_controller.py` module grouped by role under `agent/controllers/`
+  (`executor_controller`, `mcp_controller`, `watcher_controller`,
+  `triage_controller`, `arena_controller`), not co-located with the
+  domain module it drives. New controllers go here.
 
 ## Workflow
 

@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cantrip.agent.executor_controller import ExecutorController
+from cantrip.agent.controllers.executor_controller import ExecutorController
 from cantrip.agent.queue import AgentTask, TaskCategory, WorkQueue
 from cantrip.agent.state import AgentState
 from cantrip.agent.tools import ToolResult
@@ -53,7 +53,7 @@ def _start_with_mock_executor(
     fake_exec = MagicMock()
     fake_exec.running = False
     with patch(
-        "cantrip.agent.executor_controller.BackgroundExecutor",
+        "cantrip.agent.controllers.executor_controller.BackgroundExecutor",
         return_value=fake_exec,
     ) as cls:
         ctl.start(
@@ -149,7 +149,7 @@ class TestStart:
         existing = MagicMock()
         existing.running = True
         ctl._executor = existing
-        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
+        with patch("cantrip.agent.controllers.executor_controller.BackgroundExecutor") as cls:
             ctl.start(
                 queue=WorkQueue(),
                 tools=[],
@@ -164,7 +164,7 @@ class TestStart:
     def test_start_calls_ensure_store(self) -> None:
         ctl, _bus, _pti, _ptip = _make_controller()
         ensure_called = MagicMock()
-        with patch("cantrip.agent.executor_controller.BackgroundExecutor") as cls:
+        with patch("cantrip.agent.controllers.executor_controller.BackgroundExecutor") as cls:
             cls.return_value.running = False
             ctl.start(
                 queue=WorkQueue(),
@@ -220,7 +220,7 @@ class TestStart:
         fake_exec = MagicMock()
         fake_exec.running = False
         with patch(
-            "cantrip.agent.executor_controller.BackgroundExecutor",
+            "cantrip.agent.controllers.executor_controller.BackgroundExecutor",
             return_value=fake_exec,
         ):
             ctl.start(

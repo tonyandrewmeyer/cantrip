@@ -1027,7 +1027,7 @@ package level — not aesthetic uniformity.
 
 ### 113.4 High — Group flat modules under `src/cantrip/agent/`
 
-- [~] Move 49 of the 59 flat modules into themed subpackages
+- [x] Move 49 of the 59 flat modules into themed subpackages
   (suggested groupings; rename freely if a better cut presents):
   - `agent/race/` — `arena.py`, `arena_controller.py`, `race.py`.
   - `agent/context/` — `context.py`, `context_providers.py`,
@@ -1043,12 +1043,19 @@ package level — not aesthetic uniformity.
     `github_issues.py`, `triage_controller.py`.
   - `agent/skills_runtime/` — `skills.py`, `skill_export.py`,
     `skill_scanner.py`.
-- [ ] Decide explicitly between two patterns for the five
+- [x] Decide explicitly between two patterns for the five
   `X.py` + `X_controller.py` pairings (executor, watcher, arena,
   triage, mcp): either (a) keep the pattern and document it as a
   convention in CLAUDE.md, or (b) collapse controllers into a
   shared `controllers/` subdir, or (c) merge each controller into
-  its sibling.  Pick one and apply uniformly.
+  its sibling.  Pick one and apply uniformly.  **Chose (b):** all
+  five moved to `agent/controllers/` (`mcp_controller`,
+  `executor_controller`, `watcher_controller`, `triage_controller`,
+  `arena_controller`), grouped by role.  The watcher/triage/arena
+  controllers left their domain packages to get here; the convention
+  is documented in CLAUDE.md.  All imports were absolute so no
+  internal relative-import fixes were needed; every import and patch
+  string repointed in place, no shims.
 - [x] Update all call sites and `__init__.py` re-exports in the same
   commit.  No back-compat aliases.
 - [~] **Partial.**  All eight named groupings landed across six
@@ -1079,13 +1086,12 @@ package level — not aesthetic uniformity.
     offsets were bumped one level for the deeper module path.
   Flat top-level `agent/*.py` is now **17** (16 modules + `__init__`),
   meeting exit-criterion (b)'s "~15".
-- **Still open:** only the controller-pattern decision above
-  (executor/watcher/arena/triage/mcp `X_controller`).  The remaining
-  flat modules (`store`, `state`, `queue`, `subagent`, `core`,
-  `autodeploy`, `design`, `emotions`, `audit`, `snapshots`,
-  `cos_endpoints`, `services`, `session_preview`, `cache_monitor`,
-  `executor_controller`, `mcp_controller`) are either genuinely
-  top-level surfaces or the controllers covered by that decision.
+- [x] **Done.**  The controller-pattern decision landed (option (b);
+  all five `X_controller` modules now under `agent/controllers/`).
+  The remaining flat modules (`store`, `state`, `queue`, `subagent`,
+  `core`, `autodeploy`, `design`, `emotions`, `audit`, `snapshots`,
+  `cos_endpoints`, `services`, `session_preview`, `cache_monitor`) are
+  genuinely top-level surfaces.  113.4 complete.
 
 ### 113.5 Medium — `slash.py` registry refactor
 

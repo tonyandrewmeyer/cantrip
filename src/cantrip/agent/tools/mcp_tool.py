@@ -26,7 +26,7 @@ from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.mcp.exceptions import MCPError
 
 if TYPE_CHECKING:
-    from cantrip.agent.mcp_controller import MCPController
+    from cantrip.agent.controllers.mcp_controller import MCPController
     from cantrip.mcp import MCPRegistry, MCPToolInfo
 
 

@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from cantrip.agent.audit import AUDIT_FILENAME, AuditAction, AuditWriter, read_entries
-from cantrip.agent.mcp_controller import MCPController
+from cantrip.agent.controllers.mcp_controller import MCPController
 from cantrip.agent.safety.permissions import (
     PermissionDecision,
     PermissionManager,
