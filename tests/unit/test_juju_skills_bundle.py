@@ -1,6 +1,6 @@
 """Drift guard for the canonical/skills Juju bundle.
 
-The bundle at ``bundles/canonical-skills-juju/`` is regenerated from
+The bundle at ``examples/bundles/canonical-skills-juju/`` is regenerated from
 ``src/cantrip/skills/<name>/SKILL.md`` by ``scripts/build_juju_skills_bundle.py``.
 These tests fail loudly if the regenerator no longer reproduces the committed
 copy (so a source edit without ``make juju-skills-bundle`` is caught) and if
@@ -38,7 +38,7 @@ def _read_frontmatter(path: pathlib.Path) -> dict[str, object]:
 def test_bundle_has_no_drift() -> None:
     """Regenerating the bundle must produce exactly the committed bytes."""
     assert builder.check() == 0, (
-        "bundles/canonical-skills-juju/ is out of sync with"
+        "examples/bundles/canonical-skills-juju/ is out of sync with"
         " src/cantrip/skills/. Run `make juju-skills-bundle` and commit"
         " the regenerated files."
     )

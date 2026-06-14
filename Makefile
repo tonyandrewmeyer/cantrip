@@ -105,7 +105,7 @@ docs-check-strict:
 
 # Regenerate the canonical/skills Juju bundle from the cantrip source skills.
 # Source of truth: src/cantrip/skills/<name>/SKILL.md
-# Output: bundles/canonical-skills-juju/
+# Output: examples/bundles/canonical-skills-juju/
 juju-skills-bundle:
 	uv run python scripts/build_juju_skills_bundle.py
 

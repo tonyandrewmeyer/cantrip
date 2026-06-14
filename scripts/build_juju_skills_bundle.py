@@ -3,7 +3,7 @@
 
 The bundle is published to ``canonical/skills`` (see ``design/JUJU_SKILLS_BUNDLE.md``).
 Cantrip is the source of truth; the regenerated bundle lives under
-``bundles/canonical-skills-juju/`` and is checked in so reviewers see both
+``examples/bundles/canonical-skills-juju/`` and is checked in so reviewers see both
 halves in one PR.
 
 Usage:
@@ -25,7 +25,7 @@ import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE_SKILLS_DIR = REPO_ROOT / "src" / "cantrip" / "skills"
-BUNDLE_DIR = REPO_ROOT / "bundles" / "canonical-skills-juju"
+BUNDLE_DIR = REPO_ROOT / "examples" / "bundles" / "canonical-skills-juju"
 DEST_DIR = BUNDLE_DIR / "skills" / "products" / "juju"
 
 # The bundle version stamped onto every generated SKILL.md. Bump on a curated
@@ -421,7 +421,7 @@ The `-check` form is the drift guard `make check` runs via
 ## Publishing
 
 The push to `canonical/skills` is manual in v1. Copy
-`bundles/canonical-skills-juju/skills/products/juju/` into a local checkout
+`examples/bundles/canonical-skills-juju/skills/products/juju/` into a local checkout
 of `canonical/skills` and open a PR there. Upstream
 `scripts/validate_skills.py` will validate the frontmatter on its CI.
 """

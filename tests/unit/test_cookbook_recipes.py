@@ -1,8 +1,8 @@
-"""Structure and verifier checks for the ``cookbook/`` recipes (Phase 55.6).
+"""Structure and verifier checks for the ``examples/cookbook/`` recipes (Phase 55.6).
 
 Two levels of protection:
 
-1. **Structure drift.**  Every ``cookbook/<name>/`` directory must
+1. **Structure drift.**  Every ``examples/cookbook/<name>/`` directory must
    carry ``README.md``, ``prompts.md``, and ``verify.py``; the
    verifier must be syntactically valid Python and import cleanly.
    A future recipe can't land with a broken format.
@@ -29,11 +29,11 @@ import textwrap
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-COOKBOOK_ROOT = REPO_ROOT / "cookbook"
+COOKBOOK_ROOT = REPO_ROOT / "examples" / "cookbook"
 
 
 def _recipe_dirs() -> list[pathlib.Path]:
-    """Return every cookbook recipe directory (child of ``cookbook/``)."""
+    """Return every cookbook recipe directory (child of ``examples/cookbook/``)."""
     if not COOKBOOK_ROOT.is_dir():
         return []
     return sorted(p for p in COOKBOOK_ROOT.iterdir() if p.is_dir())
@@ -55,12 +55,12 @@ class TestCookbookStructure:
 
     def test_cookbook_root_exists(self) -> None:
         assert COOKBOOK_ROOT.is_dir(), (
-            f"cookbook/ must exist at repo root; looked under {COOKBOOK_ROOT}"
+            f"examples/cookbook/ must exist at repo root; looked under {COOKBOOK_ROOT}"
         )
 
     def test_cookbook_has_readme(self) -> None:
         readme = COOKBOOK_ROOT / "README.md"
-        assert readme.is_file(), "cookbook/README.md is required"
+        assert readme.is_file(), "examples/cookbook/README.md is required"
         body = readme.read_text(encoding="utf-8")
         # The index must at least list the recipe format and link to recipes.
         assert "Recipe format" in body
@@ -90,7 +90,7 @@ class TestCookbookStructure:
 
 
 class TestSprintCharmVerifier:
-    """Verifier for ``cookbook/build-a-sprint-charm/``.
+    """Verifier for ``examples/cookbook/build-a-sprint-charm/``.
 
     Builds an in-process charm directory that matches the sprint-mode
     shape and exercises the verifier's happy path plus each failure
@@ -233,7 +233,7 @@ class TestSprintCharmVerifier:
 
 
 class TestHarnessMigrationVerifier:
-    """Verifier for ``cookbook/migrate-harness-to-scenario/``.
+    """Verifier for ``examples/cookbook/migrate-harness-to-scenario/``.
 
     Builds an in-process charm tree that matches the post-migration
     shape (Scenario tests, ``ops[testing]`` wired up, no Harness) and
@@ -409,7 +409,7 @@ class TestHarnessMigrationVerifier:
 
 
 class TestStatefulCharmVerifier:
-    """Verifier for ``cookbook/build-a-stateful-charm/``.
+    """Verifier for ``examples/cookbook/build-a-stateful-charm/``.
 
     Builds an in-process charm tree matching the full-build shape
     (Scenario unit tests, ops-tracing, COS relations, Jubilant
@@ -668,7 +668,7 @@ class TestStatefulCharmVerifier:
 
 
 class TestTerraformModuleVerifier:
-    """Verifier for ``cookbook/generate-a-terraform-module/``.
+    """Verifier for ``examples/cookbook/generate-a-terraform-module/``.
 
     Builds an in-process charm tree carrying a standard four-file
     Terraform module and exercises the verifier's happy path plus
@@ -932,7 +932,7 @@ class TestTerraformModuleVerifier:
 
 
 class TestAddObservabilityVerifier:
-    """Verifier for ``cookbook/add-observability/``.
+    """Verifier for ``examples/cookbook/add-observability/``.
 
     Builds an in-process charm tree that's been wired into COS and
     exercises the verifier's happy path (both the K8s three-relation

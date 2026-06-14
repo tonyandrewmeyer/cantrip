@@ -39,6 +39,6 @@ The `-check` form is the drift guard `make check` runs via
 ## Publishing
 
 The push to `canonical/skills` is manual in v1. Copy
-`bundles/canonical-skills-juju/skills/products/juju/` into a local checkout
+`examples/bundles/canonical-skills-juju/skills/products/juju/` into a local checkout
 of `canonical/skills` and open a PR there. Upstream
 `scripts/validate_skills.py` will validate the frontmatter on its CI.

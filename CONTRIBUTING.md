@@ -104,7 +104,7 @@ landing-page doc-cards grid) are documented in
 ### Cookbook recipes
 
 Runnable charm-building recipes live under
-[`cookbook/`](cookbook/README.md). Each recipe is a self-contained
+[`examples/cookbook/`](examples/cookbook/README.md). Each recipe is a self-contained
 directory with a walkthrough `README.md`, copy-paste `prompts.md`,
 and a `verify.py` that asserts the resulting charm matches the
 shape the recipe teaches. The verifiers double as regression
@@ -114,7 +114,7 @@ with a broken format or drift from its promised output.
 
 Live Cantrip runs (LLM + charmcraft + juju) are deliberately
 **not** part of CI. To add a new recipe, copy
-`cookbook/build-a-sprint-charm/` as a template and update the
+`examples/cookbook/build-a-sprint-charm/` as a template and update the
 verifier to match your recipe's guarantees.
 
 ### Running the Application

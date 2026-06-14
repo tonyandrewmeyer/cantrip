@@ -1222,7 +1222,7 @@ package level — not aesthetic uniformity.
 
 ### 113.9 Low — Decide on `cookbook/` / `demos/` / `examples/` / `bundles/`
 
-- [ ] Four top-level directories carry illustrative material with
+- [x] Four top-level directories carry illustrative material with
   overlapping intent.  Decide a unification policy or accept the
   split:
   - **`cookbook/`** — guided multi-step charm-building walkthroughs
@@ -1231,7 +1231,7 @@ package level — not aesthetic uniformity.
   - **`examples/`** — small worked example code (`examples/mcp/…`).
   - **`bundles/`** — generated artefact bundles published downstream
     (`canonical-skills-juju/`).
-- [ ] Options to evaluate:
+- [x] Options to evaluate:
   - **Unify** under a single `examples/` root (`examples/cookbook/`,
     `examples/demos/`, `examples/mcp/`, `examples/bundles/`) — fewer
     top-level directories, one entry point for illustrative material.
@@ -1242,7 +1242,16 @@ package level — not aesthetic uniformity.
     user-facing tutorials), keep `examples/` and `bundles/` separate
     (one is small code snippets, the other is published downstream
     output).
-- [ ] Pick one, apply, and write the convention into CLAUDE.md.
+- [x] Pick one, apply, and write the convention into CLAUDE.md.
+- [x] **Done.**  Chose **Unify**: `cookbook/`, `demos/`, and `bundles/`
+  moved under the existing `examples/` root (joining `examples/mcp/`),
+  giving `examples/{cookbook,demos,mcp,bundles}/`.  Path constants
+  (`COOKBOOK_ROOT`, the bundle builder's `BUNDLE_DIR`), the
+  `.pre-commit-config.yaml` large-file exclude, `CONTRIBUTING.md`, the
+  cookbook GitHub links in `docs/src/howto-improve.md` (HTML rebuilt),
+  and the Makefile output comment were all repointed.  Historical
+  records (`CHANGELOG.md`, `ROADMAP_ARCHIVE.md`) left as-is per the
+  113.8 precedent.  CLAUDE.md records the `examples/` convention.
 
 ### 113.10 High — Move `inference-snaps/` outside the repo path
 

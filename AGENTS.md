@@ -75,6 +75,14 @@ Key rules are embedded in the system prompt (`src/cantrip/agent/prompts/system.p
   `notifications.py`, `workspace.py`) stay flat at the top of
   `src/cantrip/`; promote a top-level module to a package only when it
   grows a cohesive multi-file surface.
+- **Illustrative material lives under `examples/`.** The four kinds of
+  worked material are grouped in one top-level root:
+  `examples/cookbook/` (guided multi-step charm-building walkthroughs),
+  `examples/demos/` (narrative demos + screen recordings),
+  `examples/mcp/` (small worked example code), and `examples/bundles/`
+  (generated artefact bundles published downstream, e.g.
+  `canonical-skills-juju/`). New illustrative material goes under the
+  matching `examples/` subdir, not a new top-level directory.
 
 ## Workflow
 
