@@ -1,16 +1,16 @@
+# PILOT — temporarily reduced cooldown/frequency for dependabot-agent step 9.
+# Revert after pilot exits per non-roadmap/dependabot-agent/PLAN.md in
+# canonical-work-queue. 3d cooldown is deliberately risky; pilot acceptance
+# is "agent reviews fast", not "releases are settled".
 version: 2
 updates:
   # Python dependencies
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "daily"
     cooldown:
-      default-days: 14
-      semver-major-days: 14
-      semver-minor-days: 14
-      semver-patch-days: 14
+      default-days: 3
     groups:
       python-dependencies:
         patterns:
@@ -29,10 +29,9 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "daily"
     cooldown:
-      default-days: 14
+      default-days: 3
     groups:
       github-actions:
         patterns:
