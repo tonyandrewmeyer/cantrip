@@ -60,12 +60,16 @@ def _raise_timeout(coro, *_args, **_kwargs):
 
 def _mock_juju_unavailable():
     """Patch _juju_available to return False."""
-    return mock.patch("cantrip.agent.tools.observability._juju_available", return_value=False)
+    return mock.patch(
+        "cantrip.agent.tools.observability._common._juju_available", return_value=False
+    )
 
 
 def _mock_juju_available():
     """Patch _juju_available to return True."""
-    return mock.patch("cantrip.agent.tools.observability._juju_available", return_value=True)
+    return mock.patch(
+        "cantrip.agent.tools.observability._common._juju_available", return_value=True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +270,7 @@ class TestTempoQueryTool:
         """Patch _find_cos_unit to return a mock juju and unit name."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         return mock.patch(
-            "cantrip.agent.tools.observability._find_cos_unit",
+            "cantrip.agent.tools.observability._common._find_cos_unit",
             return_value=(mock_juju, "tempo-k8s/0"),
         ), mock_juju
 
@@ -325,7 +329,7 @@ class TestTempoQueryTool:
         with (
             _mock_juju_available(),
             mock.patch(
-                "cantrip.agent.tools.observability._find_cos_unit",
+                "cantrip.agent.tools.observability._common._find_cos_unit",
                 side_effect=ValueError("No app containing 'tempo' found"),
             ),
         ):
@@ -407,7 +411,7 @@ class TestLokiQueryTool:
         """Patch _find_cos_unit to return a mock juju and unit name."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         return mock.patch(
-            "cantrip.agent.tools.observability._find_cos_unit",
+            "cantrip.agent.tools.observability._common._find_cos_unit",
             return_value=(mock_juju, "loki-k8s/0"),
         ), mock_juju
 
@@ -497,7 +501,7 @@ class TestLokiQueryTool:
         with (
             _mock_juju_available(),
             mock.patch(
-                "cantrip.agent.tools.observability._find_cos_unit",
+                "cantrip.agent.tools.observability._common._find_cos_unit",
                 side_effect=ValueError("No app containing 'loki' found"),
             ),
         ):
@@ -613,7 +617,7 @@ class TestGrafanaScreenshotTool:
         """Patch _find_cos_unit to return a mock juju handle."""
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         return mock.patch(
-            "cantrip.agent.tools.observability._find_cos_unit",
+            "cantrip.agent.tools.observability._common._find_cos_unit",
             return_value=(mock_juju, "grafana/0"),
         ), mock_juju
 
@@ -641,7 +645,7 @@ class TestGrafanaScreenshotTool:
     async def test_happy_path_saves_png(self, tool, tmp_path, png_payload, monkeypatch):
         """Successful render writes the PNG to the cache dir and returns the path."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -679,7 +683,7 @@ class TestGrafanaScreenshotTool:
     async def test_uses_d_solo_endpoint_for_panel(self, tool, tmp_path, png_payload, monkeypatch):
         """Requests with panel_id hit /render/d-solo/ with panelId= query."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -696,7 +700,7 @@ class TestGrafanaScreenshotTool:
     async def test_uses_d_endpoint_without_panel(self, tool, tmp_path, png_payload, monkeypatch):
         """Requests without panel_id hit /render/d/ (full dashboard)."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -715,7 +719,7 @@ class TestGrafanaScreenshotTool:
     ):
         """When the action returns a password, the SSH script adds Basic auth."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -734,7 +738,7 @@ class TestGrafanaScreenshotTool:
     ):
         """No password from the action → request without Authorization header."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -752,7 +756,7 @@ class TestGrafanaScreenshotTool:
     async def test_non_png_response_surfaces_error_snippet(self, tool, tmp_path, monkeypatch):
         """An HTML error page (renderer plugin missing) is surfaced verbatim."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -775,7 +779,7 @@ class TestGrafanaScreenshotTool:
     ):
         """When we had no password, hint at running the action manually."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -818,7 +822,7 @@ class TestGrafanaScreenshotTool:
         with (
             _mock_juju_available(),
             mock.patch(
-                "cantrip.agent.tools.observability._find_cos_unit",
+                "cantrip.agent.tools.observability._common._find_cos_unit",
                 side_effect=ValueError("No app containing 'grafana' found"),
             ),
         ):
@@ -1014,7 +1018,7 @@ class TestTempoWaterfallTool:
     def _mock_find_cos_unit(self):
         mock_juju = mock.MagicMock(spec=jubilant.Juju)
         return mock.patch(
-            "cantrip.agent.tools.observability._find_cos_unit",
+            "cantrip.agent.tools.observability._common._find_cos_unit",
             return_value=(mock_juju, "tempo/0"),
         ), mock_juju
 
@@ -1037,7 +1041,7 @@ class TestTempoWaterfallTool:
         with (
             _mock_juju_available(),
             mock.patch(
-                "cantrip.agent.tools.observability._find_cos_unit",
+                "cantrip.agent.tools.observability._common._find_cos_unit",
                 side_effect=ValueError("No app containing 'tempo' found"),
             ),
         ):
@@ -1066,7 +1070,7 @@ class TestTempoWaterfallTool:
     @pytest.mark.asyncio
     async def test_happy_path_renders_and_saves_png(self, tool, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         patch, mock_juju = self._mock_find_cos_unit()
@@ -1358,7 +1362,7 @@ class TestJujuStatusRenderTool:
     @pytest.mark.asyncio
     async def test_happy_path_renders_and_saves_png(self, tool, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         status = _fake_status(
@@ -1417,7 +1421,7 @@ class TestJujuStatusRenderTool:
         """An empty model renders cleanly — the tool exists to diagnose
         sparse models, so zero apps is a legitimate happy path."""
         monkeypatch.setattr(
-            "cantrip.agent.tools.observability._SCREENSHOT_CACHE_DIR",
+            "cantrip.agent.tools.observability.rendering._SCREENSHOT_CACHE_DIR",
             tmp_path,
         )
         status = _fake_status(apps={}, model_name="empty", cloud=None)

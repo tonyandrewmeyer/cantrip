@@ -1032,6 +1032,18 @@ package level — not aesthetic uniformity.
     patched helpers repointed to `…acceptance._common.*` (the
     `juju_subprocess.*` patches resolve through the re-export).  Largest
     submodule now 406 lines.
+  - [x] `observability.py` (1,676) → `observability/` subpackage:
+    `_common` (COS-unit lookup, output truncation, SSH fetch helpers,
+    patchable `_juju_available`), `logs` (debug-log / stream / Tempo
+    query / Loki query — the text tools), `rendering` (Grafana
+    screenshot / Tempo waterfall / Juju status render — the PNG tools
+    plus their shared palette, font, and cache-path helpers).  All seven
+    tool classes + the helper surface re-exported from `__init__`; the
+    `_find_cos_unit` / `_juju_available` patch strings repoint to
+    `…observability._common.*`, `_SCREENSHOT_CACHE_DIR` to
+    `…observability.rendering.*`, and the `jubilant` / `asyncio`
+    shared-module patches resolve through the `__init__` re-export.
+    Largest submodule now 1,090 lines.
 
 ### 113.4 High — Group flat modules under `src/cantrip/agent/`
 
