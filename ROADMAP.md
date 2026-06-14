@@ -1313,12 +1313,13 @@ package level — not aesthetic uniformity.
   `charm.py` are loose follow-ons).
   - **Progress:** `acceptance.py` (→ `acceptance/`), `observability.py`
     (→ `observability/`), `subagent.py` (→ `subagent/`:
-    `core` + `allowlists`), and `store.py` (→ `store/`: `core` +
-    `_usage` / `_memory` / `_checkpoints` mixins + `_common`) are split
-    and under the bar.  **Still over 1,500:** `core.py` (3,508, deferred
-    — needs more 113.1-style service extraction) and `executor/core.py`
-    (1,632, single `BackgroundExecutor` class — mixin-extraction
-    candidate).
+    `core` + `allowlists`), `store.py` (→ `store/`: `core` +
+    `_usage` / `_memory` / `_checkpoints` mixins + `_common`), and
+    `executor/core.py` (1,632 → 1,087; `RaceMixin` → `executor/_race.py`
+    and `WorktreeMixin` → `executor/_worktree.py`, both composed onto
+    `BackgroundExecutor`) are split and under the bar.  **Still over
+    1,500:** `core.py` (3,508, deferred — needs more 113.1-style service
+    extraction).
 - (b) `src/cantrip/agent/` has no more than ~15 top-level Python
   files; the rest live in themed subpackages.
 - (c) `design/` contains only files listed under "active-contract
