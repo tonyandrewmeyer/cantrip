@@ -1020,10 +1020,18 @@ package level — not aesthetic uniformity.
   module was deleted.  The only namespace patch targets (charmcraft's
   `subprocess` / `shutil`) were repointed to
   `…publishing.charmcraft.<name>`.  `make check` green.
-- [ ] Apply the same lens (no formal split obligation) to
+- [~] Apply the same lens (no formal split obligation) to
   `acceptance.py` (1,520), `charm.py` (1,440), `rockcraft.py` (1,298),
   `observability.py` (1,676) and split only when a clear sub-domain
   boundary jumps out.
+  - [x] `acceptance.py` (1,520) → `acceptance/` subpackage: `_common`
+    (constants + shared helpers + patchable `juju_subprocess`),
+    `actions`, `relations`, `endpoints`, `config` (variation +
+    under-load), `report`.  Six tool classes + the helper/constant
+    surface re-exported from `__init__`; test patch strings for the two
+    patched helpers repointed to `…acceptance._common.*` (the
+    `juju_subprocess.*` patches resolve through the re-export).  Largest
+    submodule now 406 lines.
 
 ### 113.4 High — Group flat modules under `src/cantrip/agent/`
 

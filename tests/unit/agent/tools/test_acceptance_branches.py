@@ -367,7 +367,7 @@ class TestRelationSmokeBranches:
                 return_value=True,
             ),
             patch(
-                "cantrip.agent.tools.acceptance._verify_relation_data",
+                "cantrip.agent.tools.acceptance._common._verify_relation_data",
                 return_value=(True, "App data keys: app-data"),
             ),
         ):
@@ -440,7 +440,7 @@ class TestRelationSmokeBranches:
                 return_value=True,
             ),
             patch(
-                "cantrip.agent.tools.acceptance._verify_relation_data",
+                "cantrip.agent.tools.acceptance._common._verify_relation_data",
                 return_value=(True, "App data keys: foo"),
             ),
         ):
@@ -479,7 +479,7 @@ class TestRelationSmokeBranches:
                 return_value=True,
             ),
             patch(
-                "cantrip.agent.tools.acceptance._verify_relation_data",
+                "cantrip.agent.tools.acceptance._common._verify_relation_data",
                 return_value=(False, "address-only"),
             ),
         ):
@@ -555,7 +555,7 @@ class TestWorkloadEndpointBranches:
         with (
             patch("shutil.which", return_value="/usr/bin/juju"),
             patch(
-                "cantrip.agent.tools.acceptance._get_unit_address",
+                "cantrip.agent.tools.acceptance._common._get_unit_address",
                 return_value="10.0.0.1",
             ),
             patch.object(
@@ -581,7 +581,7 @@ class TestWorkloadEndpointBranches:
         with (
             patch("shutil.which", return_value="/usr/bin/juju"),
             patch(
-                "cantrip.agent.tools.acceptance._get_unit_address",
+                "cantrip.agent.tools.acceptance._common._get_unit_address",
                 return_value=None,
             ),
         ):
@@ -597,7 +597,7 @@ class TestWorkloadEndpointBranches:
         with (
             patch("shutil.which", return_value="/usr/bin/juju"),
             patch(
-                "cantrip.agent.tools.acceptance._get_unit_address",
+                "cantrip.agent.tools.acceptance._common._get_unit_address",
                 return_value="10.0.0.1",
             ),
             patch.object(
