@@ -1307,19 +1307,26 @@ package level — not aesthetic uniformity.
 
 **Exit criteria:**
 
-- (a) No file in `src/cantrip/agent/` exceeds 1,500 lines (`core.py`,
-  `juju.py`, `publishing.py`, `slash.py`, `app.py` are the named
-  targets; `acceptance.py`, `observability.py`, `rockcraft.py`,
-  `charm.py` are loose follow-ons).
-  - **Progress:** `acceptance.py` (→ `acceptance/`), `observability.py`
+- (a) **Met.**  No file in `src/cantrip/agent/` exceeds 1,500 lines.
+  - `acceptance.py` (→ `acceptance/`), `observability.py`
     (→ `observability/`), `subagent.py` (→ `subagent/`:
     `core` + `allowlists`), `store.py` (→ `store/`: `core` +
     `_usage` / `_memory` / `_checkpoints` mixins + `_common`), and
     `executor/core.py` (1,632 → 1,087; `RaceMixin` → `executor/_race.py`
     and `WorktreeMixin` → `executor/_worktree.py`, both composed onto
-    `BackgroundExecutor`) are split and under the bar.  **Still over
-    1,500:** `core.py` (3,508, deferred — needs more 113.1-style service
-    extraction).
+    `BackgroundExecutor`) were split into subpackages.
+  - `core.py` (3,508 → **1,373**) was decomposed by mixin extraction
+    into `core_services/`: `PlanningConfirmationsMixin`
+    (design/day-2/improvement confirmations), `IntegrationMixin`
+    (watcher/triage/PR/arena/executor/MCP/bootstrap + session
+    lifecycle), `ArchitectEditorMixin` (the Phase 71.2 dual-pass turn),
+    `TurnEngineMixin` (retry helpers, failure-cap escalation, the
+    streaming + non-streaming conversation loops), and `ToolingMixin`
+    (tool/prompt/context assembly + tool-call dispatch and
+    observability) — all composed onto `CantripAgent`, with state and
+    the test-patched module seams (`parse_design_from_result`,
+    `TaskPlanner`, `create_branch`, the plan-mode helpers, …) reached
+    through the `core` module object so no test patch strings moved.
 - (b) `src/cantrip/agent/` has no more than ~15 top-level Python
   files; the rest live in themed subpackages.
 - (c) `design/` contains only files listed under "active-contract
