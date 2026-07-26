@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cantrip.mcp import MCPConfigError, ServerConfig, load_configs
 from cantrip.mcp.config import _parse_yaml
 from cantrip.mcp.types import TransportKind
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _write_yaml(path: pathlib.Path, content: str) -> pathlib.Path:

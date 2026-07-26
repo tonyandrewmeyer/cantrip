@@ -62,9 +62,9 @@ class RecordingProvider(FakeProvider):
     async def complete(
         self,
         messages: list[llm.Message],
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
+        tools: list[llm.Tool] | None = None,
         temperature: float = 0.7,
-        max_tokens: int | None = None,  # noqa: ARG002
+        max_tokens: int | None = None,
         thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ) -> llm.Response:
@@ -97,9 +97,9 @@ class CallbackProvider(FakeProvider):
         self,
         messages: list[llm.Message],
         tools: list[llm.Tool] | None = None,
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ) -> llm.Response:
         self.last_response_schema = response_schema
@@ -130,10 +130,10 @@ class MultiRoleProvider(FakeProvider):
     async def complete(
         self,
         messages: list[llm.Message],
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        tools: list[llm.Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ) -> llm.Response:
         self.last_response_schema = response_schema
@@ -203,11 +203,11 @@ class FailingProvider(FakeProvider):
 
     async def complete(
         self,
-        messages: list[llm.Message],  # noqa: ARG002
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        messages: list[llm.Message],
+        tools: list[llm.Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ) -> llm.Response:
         self.last_response_schema = response_schema
@@ -218,11 +218,11 @@ class FailingProvider(FakeProvider):
 
     async def stream(
         self,
-        messages: list[llm.Message],  # noqa: ARG002
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        messages: list[llm.Message],
+        tools: list[llm.Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ):
         self.last_response_schema = response_schema
@@ -266,11 +266,11 @@ class FlakyProvider(FakeProvider):
 
     async def complete(
         self,
-        messages: list[llm.Message],  # noqa: ARG002
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        messages: list[llm.Message],
+        tools: list[llm.Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ) -> llm.Response:
         self.last_response_schema = response_schema
@@ -279,11 +279,11 @@ class FlakyProvider(FakeProvider):
 
     async def stream(
         self,
-        messages: list[llm.Message],  # noqa: ARG002
-        tools: list[llm.Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        messages: list[llm.Message],
+        tools: list[llm.Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ):
         self.last_response_schema = response_schema

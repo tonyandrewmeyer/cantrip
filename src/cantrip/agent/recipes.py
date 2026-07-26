@@ -595,12 +595,10 @@ def discover_recipes(
         bundled_dir = BUNDLED_RECIPES_DIR
     user_dir = user_config_dir / "recipes"
     merged: dict[str, Recipe] = dict(_collect_recipes(bundled_dir))
-    for name, recipe in _collect_recipes(user_dir).items():
-        merged[name] = recipe
+    merged.update(_collect_recipes(user_dir))
     if charm_path is not None:
         repo_dir = charm_path / REPO_RECIPES_DIR
-        for name, recipe in _collect_recipes(repo_dir).items():
-            merged[name] = recipe
+        merged.update(_collect_recipes(repo_dir))
     return sorted(merged.values(), key=lambda r: r.name)
 
 
@@ -837,7 +835,7 @@ def _get_env() -> jinja2.sandbox.SandboxedEnvironment:
     missing parameter raises at render rather than silently producing
     empty output.
     """
-    global _JINJA_ENV  # noqa: PLW0603
+    global _JINJA_ENV
     if _JINJA_ENV is None:
         _JINJA_ENV = jinja2.sandbox.SandboxedEnvironment(
             keep_trailing_newline=True,
@@ -902,13 +900,13 @@ def render_instructions(
 
 
 __all__ = [
+    "BUNDLED_RECIPES_DIR",
     "PARAMETER_REQUIREMENTS",
     "PARAMETER_TYPES",
-    "Parameter",
-    "PromptCallback",
-    "BUNDLED_RECIPES_DIR",
     "REPO_RECIPES_DIR",
     "USER_CONFIG_RECIPES_DIR",
+    "Parameter",
+    "PromptCallback",
     "Recipe",
     "RecipeError",
     "RecipeRegistry",

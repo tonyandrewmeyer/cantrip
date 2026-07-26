@@ -95,7 +95,7 @@ def _stub_run_juju_json(payload):
     production caller invokes ``_run_juju_json(args, timeout=10)``.
     """
 
-    def _stub(args, timeout=10):  # noqa: ARG001
+    def _stub(args, timeout=10):
         return payload
 
     return _stub
@@ -163,7 +163,7 @@ class TestCurrentControllerSafety:
     def test_controller_prefix_in_model_argument(self, monkeypatch):
         captured: list[list[str]] = []
 
-        def fake_run(args, timeout=10):  # noqa: ARG001
+        def fake_run(args, timeout=10):
             captured.append(list(args))
             return {
                 "remote-ctrl": {"details": {"cloud": "aws", "api-endpoints": ["1.2.3.4:17070"]}}
@@ -219,7 +219,7 @@ class TestControllerConfirmRequired:
         monkeypatch.setattr(
             controller_safety,
             "current_controller_safety",
-            lambda model=None: ControllerSafety(  # noqa: ARG005
+            lambda model=None: ControllerSafety(
                 name="local",
                 cloud="localhost",
                 kind=ControllerKind.LOCAL,
@@ -234,7 +234,7 @@ class TestControllerConfirmRequired:
         monkeypatch.setattr(
             controller_safety,
             "current_controller_safety",
-            lambda model=None: ControllerSafety(  # noqa: ARG005
+            lambda model=None: ControllerSafety(
                 name="prod",
                 cloud="aws",
                 kind=ControllerKind.NON_LOCAL,

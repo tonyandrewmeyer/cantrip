@@ -114,6 +114,7 @@ def _on_leader_elected(self, event: ops.LeaderElectedEvent) -> None:
         self.model.get_relation("replication").data[self.app]["primary"] = self._unit_address()
     self.unit.status = ops.ActiveStatus("primary")
 
+
 def _on_peer_relation_changed(self, event: ops.RelationChangedEvent) -> None:
     """Replica reacts to primary election or config changes."""
     primary = event.relation.data[self.app].get("primary")
@@ -135,6 +136,7 @@ def _on_peer_relation_joined(self, event: ops.RelationJoinedEvent) -> None:
     if self.unit.is_leader():
         # Share cluster configuration with the new member.
         event.relation.data[self.app]["cluster-key"] = self._generate_cluster_key()
+
 
 def _unit_address(self) -> str:
     """Return this unit's address for peer communication."""
@@ -188,6 +190,7 @@ def _on_peer_relation_joined(self, event: ops.RelationJoinedEvent) -> None:
         members = self._get_cluster_members(event.relation)
         members.append(event.relation.data[event.unit].get("address", ""))
         event.relation.data[self.app]["members"] = json.dumps(members)
+
 
 def _on_peer_relation_departed(self, event: ops.RelationDepartedEvent) -> None:
     """Remove the departing unit from the cluster."""

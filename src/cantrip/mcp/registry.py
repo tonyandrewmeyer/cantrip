@@ -21,12 +21,12 @@ from typing import TYPE_CHECKING, Any
 
 from cantrip.mcp.client import MCPClient
 from cantrip.mcp.exceptions import MCPError
-from cantrip.mcp.types import MCPToolInfo, ServerConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from cantrip.mcp.elicitation import ElicitationRequest
+    from cantrip.mcp.types import MCPToolInfo, ServerConfig
 
 log = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ class MCPRegistry:
         except MCPError as exc:
             self._record_failure(name, exc)
             return
-        except Exception as exc:  # noqa: BLE001 - SDK can raise anything
+        except Exception as exc:
             self._record_failure(name, exc)
             return
         self._status[name] = ServerStatus.CONNECTED
@@ -144,7 +144,7 @@ class MCPRegistry:
         client = self._clients[name]
         try:
             await client.stop()
-        except Exception:  # noqa: BLE001 - cleanup is best-effort
+        except Exception:
             log.debug("Error stopping MCP server %r", name, exc_info=True)
         # Don't override an already-failed entry — keeps the status
         # readable in /mcp output after a partial outage.

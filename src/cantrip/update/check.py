@@ -86,7 +86,7 @@ def _settings_disabled() -> bool:
 
 
 def update_check_disabled() -> bool:
-    """True when the env var or settings file opts out of the check."""
+    """Return true when the env var or settings file opts out of the check."""
     if _is_truthy_env(os.environ.get(DISABLE_ENV)):
         return True
     return _settings_disabled()

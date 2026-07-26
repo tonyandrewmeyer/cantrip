@@ -84,7 +84,7 @@ async def stream_lines(
     proc = await tail_logs(model, level=level, unit=unit, lines=lines)
     count = 0
     try:
-        assert proc.stdout is not None  # noqa: S101
+        assert proc.stdout is not None
         while count < max_lines:
             try:
                 line = await asyncio.wait_for(

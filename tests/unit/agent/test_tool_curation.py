@@ -8,11 +8,14 @@ per-turn curated tool slice (``_tools_for_llm`` / ``workflow_phase`` /
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
 
 from cantrip.agent.core import CantripAgent
 from cantrip.agent.queue import AgentTask, TaskCategory, WorkflowPhase
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class _ShortSessionProvider(FakeProvider):

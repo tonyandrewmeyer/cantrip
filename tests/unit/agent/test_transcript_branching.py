@@ -9,9 +9,8 @@ and exports keep agreeing on what the active conversation is.
 
 from __future__ import annotations
 
-import pathlib
 import sqlite3
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,6 +19,10 @@ from cantrip.agent.core import CantripAgent
 from cantrip.agent.store import SCHEMA_VERSION, SessionStore
 from cantrip.llm.base import Role
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterator
 
 
 @pytest.fixture

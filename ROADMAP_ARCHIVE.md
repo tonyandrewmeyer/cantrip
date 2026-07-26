@@ -13686,6 +13686,7 @@ class:
 ```python
 import ops_tracing
 
+
 class MyCharm(ops.CharmBase):
     def __init__(self, framework):
         super().__init__(framework)

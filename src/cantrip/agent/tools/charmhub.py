@@ -387,8 +387,7 @@ class CharmhubInfoTool(Tool):
         containers = metadata.get("containers", {})
         if containers:
             lines.append("## Containers")
-            for cname in containers:
-                lines.append(f"- {cname}")
+            lines.extend(f"- {cname}" for cname in containers)
             lines.append("")
 
         # Config options.
@@ -647,7 +646,7 @@ class CharmhubFetchTool(Tool):
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            _stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=_GIT_CLONE_TIMEOUT_SECONDS,
             )

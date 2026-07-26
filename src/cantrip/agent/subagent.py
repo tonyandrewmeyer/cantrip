@@ -138,7 +138,7 @@ def _parse_exit_state(text: str) -> ExitState:
     lower = text.lower()
     if "blocked" in lower and ("need" in lower or "waiting" in lower or "cannot" in lower):
         return ExitState.BLOCKED
-    if "nothing to do" in lower or "already" in lower and "no changes" in lower:
+    if "nothing to do" in lower or ("already" in lower and "no changes" in lower):
         return ExitState.NOOP
     return ExitState.COMPLETED
 
@@ -1472,7 +1472,7 @@ class Subagent:
                 if self._on_tool_invoked is not None:
                     try:
                         self._on_tool_invoked(tc.name, args, tool_result, duration_ms, tc.id)
-                    except (  # noqa: PERF203
+                    except (
                         TypeError,
                         ValueError,
                         RuntimeError,

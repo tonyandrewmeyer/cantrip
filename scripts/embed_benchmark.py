@@ -171,11 +171,11 @@ def write_report(
     lines.append("")
     lines.append("| Provider | Wall (s) | Pages | Chunks | Embed batches |")
     lines.append("|---|---:|---:|---:|---:|")
-    for row in (voyage, local):
-        lines.append(
-            f"| {row['label']} | {row['wall_seconds']} | {row['pages']} | "
-            f"{row['chunks']} | {row['batches']} |"
-        )
+    lines.extend(
+        f"| {row['label']} | {row['wall_seconds']} | {row['pages']} | "
+        f"{row['chunks']} | {row['batches']} |"
+        for row in (voyage, local)
+    )
     lines.append("")
     lines.append("## Top-3 retrieval overlap")
     lines.append("")
@@ -195,13 +195,11 @@ def write_report(
         lines.append("")
         lines.append("**Voyage:**")
         lines.append("")
-        for url in v_urls:
-            lines.append(f"- {url}")
+        lines.extend(f"- {url}" for url in v_urls)
         lines.append("")
         lines.append("**Local (EmbeddingGemma):**")
         lines.append("")
-        for url in l_urls:
-            lines.append(f"- {url}")
+        lines.extend(f"- {url}" for url in l_urls)
         lines.append("")
     lines.append("## Verdict")
     lines.append("")
@@ -215,6 +213,7 @@ def write_report(
 
 
 def main() -> int:
+    """Run the embedding benchmark and write its report."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--site",

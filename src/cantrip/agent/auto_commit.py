@@ -34,12 +34,15 @@ agent loop never raises out because of an auto-commit hiccup.
 from __future__ import annotations
 
 import logging
-import pathlib
 import shutil
 import subprocess
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from cantrip.llm.base import Message, Role
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 
@@ -362,8 +365,7 @@ def build_commit_message(
         body_lines.append("")
     if files:
         body_lines.append("Touched:")
-        for path in files[:20]:
-            body_lines.append(f"  - {path}")
+        body_lines.extend(f"  - {path}" for path in files[:20])
         if len(files) > 20:
             body_lines.append(f"  - … and {len(files) - 20} more")
         body_lines.append("")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import pathlib
+from typing import TYPE_CHECKING
 
 from cantrip.agent.audit import (
     AUDIT_FILENAME,
@@ -15,6 +15,9 @@ from cantrip.agent.audit import (
     read_entries,
     scrub_arguments,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 class TestAuditEntry:

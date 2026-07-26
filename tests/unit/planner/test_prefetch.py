@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,6 +14,9 @@ from cantrip.agent.planner.prefetch import (
 )
 from cantrip.codeintel import CodeIntel, CodeIntelQuery
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -240,15 +243,15 @@ class TestPlannerEnrichment:
             def build(self, *, force: bool = False) -> None:
                 del force
 
-            def workspace_symbols(self, query, **kwargs):  # noqa: ANN001 — stub
+            def workspace_symbols(self, query, **kwargs):
                 del query, kwargs
                 return ([], 0)
 
-            def go_to_definition(self, symbol, **kwargs):  # noqa: ANN001 — stub
+            def go_to_definition(self, symbol, **kwargs):
                 del kwargs
                 return DefinitionResult(query=symbol, matches=(), semantic=False, note="stub")
 
-            def find_references(self, symbol, **kwargs):  # noqa: ANN001 — stub
+            def find_references(self, symbol, **kwargs):
                 del kwargs
                 return ReferencesResult(
                     query=symbol,

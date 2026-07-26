@@ -28,7 +28,7 @@ import dataclasses
 from abc import ABC, abstractmethod
 
 
-class RoleNotConfigured(Exception):
+class RoleNotConfigured(Exception):  # noqa: N818  # Documented public API name.
     """No provider is configured for the requested role.
 
     Surfaced to callers as a clean message rather than an
@@ -197,11 +197,11 @@ class RoleRouter:
         return self._rerank
 
     def has_embed(self) -> bool:
-        """``True`` when an embed provider is registered."""
+        """Return True when an embed provider is registered."""
         return self._embed is not None
 
     def has_rerank(self) -> bool:
-        """``True`` when a rerank provider is registered."""
+        """Return True when a rerank provider is registered."""
         return self._rerank is not None
 
 

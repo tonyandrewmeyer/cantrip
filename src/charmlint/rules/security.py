@@ -24,22 +24,22 @@ class SecretInPlainConfig(Rule):
         has_juju_secrets = bool(re.search(r"juju.*secret|Secret(?:Changed|Rotate)", all_source))
 
         # Look for config options with secret-looking names.
-        secret_opts: list[str] = []
-        for opt_name in context.config_options:
-            if any(kw in opt_name.lower() for kw in _SECRET_CONFIG_KEYWORDS):
-                secret_opts.append(opt_name)
+        secret_opts: list[str] = [
+            opt_name
+            for opt_name in context.config_options
+            if any(kw in opt_name.lower() for kw in _SECRET_CONFIG_KEYWORDS)
+        ]
 
         if secret_opts and not has_juju_secrets:
-            diagnostics: list[models.Diagnostic] = []
-            for opt in secret_opts:
-                diagnostics.append(
-                    self.diagnostic(
-                        f"Config option '{opt}' looks like a secret "
-                        f"— use Juju secrets instead of plain-text config",
-                        path="charmcraft.yaml",
-                        fix_hint="Use the Juju secrets API for sensitive data",
-                    )
+            diagnostics: list[models.Diagnostic] = [
+                self.diagnostic(
+                    f"Config option '{opt}' looks like a secret "
+                    f"— use Juju secrets instead of plain-text config",
+                    path="charmcraft.yaml",
+                    fix_hint="Use the Juju secrets API for sensitive data",
                 )
+                for opt in secret_opts
+            ]
             return diagnostics
         return []
 

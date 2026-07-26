@@ -9,7 +9,6 @@ through thin delegators so the public surface (``watcher_running`` /
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cantrip.agent.autodeploy import task_for_watcher_event
@@ -22,6 +21,8 @@ from cantrip.agent.watcher import EventWatcher, WatcherConfig, WatcherEvent
 from cantrip.ui import events as ui_events
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cantrip.agent.queue import AgentTask, WorkQueue
     from cantrip.agent.state import AgentState
     from cantrip.agent.store import SessionStore

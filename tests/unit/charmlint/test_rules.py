@@ -19,7 +19,7 @@ class TestMetadataRules:
         report = lint(tmp_charm)
         ids = {d.rule_id for d in report.diagnostics}
         assert "META001" in ids
-        meta001 = [d for d in report.diagnostics if d.rule_id == "META001"][0]
+        meta001 = next(d for d in report.diagnostics if d.rule_id == "META001")
         assert meta001.severity == Severity.ERROR
 
     def test_full_metadata_no_meta_diagnostics(self, tmp_charm: pathlib.Path):

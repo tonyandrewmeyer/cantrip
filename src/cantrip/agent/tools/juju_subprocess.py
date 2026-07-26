@@ -82,7 +82,7 @@ def run_juju(
     args: list[str],
     model: str | None = None,
     *,
-    timeout: int = JUJU_SUBPROCESS_TIMEOUT,  # noqa: ARG001 — preserved for caller compat.
+    timeout: int = JUJU_SUBPROCESS_TIMEOUT,
 ) -> subprocess.CompletedProcess[str]:
     """Run a juju CLI command via Jubilant and return a CompletedProcess.
 

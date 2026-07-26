@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -11,6 +11,9 @@ import pytest
 from cantrip.docs_index import crawl, index, sites
 from cantrip.docs_index.store import DocsStore
 from tests.support.roles import StubEmbed as _StubEmbed
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Test fixtures

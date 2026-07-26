@@ -174,7 +174,7 @@ class TestExecutorErrorResilience:
 
         from cantrip.agent.executor import core as mod
 
-        def _always_fail(snapshot: Any) -> Any:  # noqa: ARG001
+        def _always_fail(snapshot: Any) -> Any:
             raise ValueError("persistent failure")
 
         executor._running = True
@@ -197,7 +197,7 @@ class TestExecutorErrorResilience:
 
         call_count = 0
 
-        def _fail_then_succeed(snapshot: Any) -> Any:  # noqa: ARG001
+        def _fail_then_succeed(snapshot: Any) -> Any:
             nonlocal call_count
             call_count += 1
             if call_count <= 3:

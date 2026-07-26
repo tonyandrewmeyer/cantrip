@@ -33,7 +33,10 @@ import pathlib
 import shlex
 import threading
 import traceback
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 

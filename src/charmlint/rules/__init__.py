@@ -40,7 +40,7 @@ class Rule(abc.ABC):
         line: int | None = None,
         fix_hint: str | None = None,
     ) -> models.Diagnostic:
-        """Convenience helper to create a Diagnostic for this rule."""
+        """Return convenience helper to create a Diagnostic for this rule."""
         return models.Diagnostic(
             rule_id=self.id,
             severity=severity or self.default_severity,

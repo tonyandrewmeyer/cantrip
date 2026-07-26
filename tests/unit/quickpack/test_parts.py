@@ -63,7 +63,7 @@ class TestParts:
 
         captured: list[list[str]] = []
 
-        def _capture(cmd, **_kwargs):  # noqa: ANN001
+        def _capture(cmd, **_kwargs):
             captured.append(list(cmd))
             return mock.MagicMock(returncode=0, stdout="", stderr="")
 
@@ -92,7 +92,7 @@ class TestParts:
 
         captured: list[list[str]] = []
 
-        def _capture(cmd, **_kwargs):  # noqa: ANN001
+        def _capture(cmd, **_kwargs):
             captured.append(list(cmd))
             return mock.MagicMock(returncode=0, stdout="", stderr="")
 
@@ -120,7 +120,7 @@ class TestParts:
         prime_dir = tmp_path / "prime"
         prime_dir.mkdir()
 
-        def _fail(cmd, **_kwargs):  # noqa: ANN001 — test stub mimics subprocess.run.
+        def _fail(cmd, **_kwargs):
             raise subprocess.CalledProcessError(
                 returncode=1,
                 cmd=cmd,

@@ -22,7 +22,6 @@ import asyncio
 import dataclasses
 import logging
 import pathlib
-from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any
 
 from cantrip import diagnostics
@@ -51,6 +50,8 @@ from cantrip.ui import events as ui_events
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from cantrip.agent.core import CantripAgent
 
 
@@ -202,7 +203,7 @@ def dispatch(agent: CantripAgent, message: str) -> SlashResult | None:
     verb = message.partition(" ")[0].lower()
     try:
         return _dispatch_inner(agent, message)
-    except Exception as exc:  # noqa: BLE001 — last-resort safety net.
+    except Exception as exc:
         chat_message = diagnostics.report_internal_error(verb or "slash dispatch", exc)
         return SlashResult(text=chat_message)
 
@@ -1555,8 +1556,7 @@ def _parse_review_filters(args: str) -> tuple[_ReviewFilters | None, str | None]
                     return None, f"_Unknown severity ``{piece}``.  Known: {levels}._"
                 severities.add(lowered)
         elif key == "--name":
-            for piece in _split_values(value):
-                name_globs.append(piece)
+            name_globs.extend(_split_values(value))
         else:
             return None, f"_Unknown flag ``{key}``._"
 
@@ -1942,7 +1942,7 @@ async def _launchpad_mcp_section(agent: CantripAgent, query: str) -> str | None:
     for tool_name, arg_name in candidates:
         try:
             result = await client.call_tool(tool_name, {arg_name: query})
-        except Exception as exc:  # noqa: BLE001 - MCP SDK can raise anything
+        except Exception as exc:
             log.debug(
                 "launchpad MCP %s call failed: %s",
                 tool_name,
@@ -1971,7 +1971,7 @@ def _mcp_registry_or_none(agent: CantripAgent) -> Any:
         return None
     try:
         return getter()
-    except Exception:  # noqa: BLE001 - never block the slash on registry errors
+    except Exception:
         log.debug("registry_if_loaded raised", exc_info=True)
         return None
 
@@ -2031,14 +2031,14 @@ async def _run_icon(agent: CantripAgent, description: str, charm_path: str) -> s
 
 __all__ = [
     "COMMAND_CATALOGUE",
-    "CommandInfo",
     "SHARED_VERBS",
+    "CommandInfo",
     "SlashResult",
+    "TreeNode",
+    "build_tree_nodes",
     "dispatch",
     "export_transcript",
     "format_cost",
-    "TreeNode",
-    "build_tree_nodes",
     "handle_branch",
     "handle_redo",
     "handle_tree",

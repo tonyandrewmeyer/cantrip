@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,6 +21,9 @@ from cantrip.agent.permissions import (
     PermissionRule,
     PermissionRuleset,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Loader

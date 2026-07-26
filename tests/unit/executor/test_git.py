@@ -431,7 +431,7 @@ class TestRevertCleansUntrackedFiles:
 
         calls: list[list[str]] = []
 
-        def tracking_run(cmd, **kwargs):  # noqa: ARG001
+        def tracking_run(cmd, **kwargs):
             calls.append(list(cmd))
             # Return a clean result for all commands.
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from cantrip.agent import lint_context
 from cantrip.agent.tools.post_edit_lint import DiagnosticsReport, FileDiagnostic
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _diag(

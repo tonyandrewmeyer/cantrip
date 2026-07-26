@@ -19,8 +19,8 @@ Scenarios covered:
 
 from __future__ import annotations
 
-import pathlib
 import subprocess
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -29,6 +29,9 @@ from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.core import CantripAgent
 from cantrip.llm.base import Message, Response, Role, ToolCall
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 @pytest.fixture

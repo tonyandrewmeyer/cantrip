@@ -320,7 +320,7 @@ class TestCheckRegistry:
     def test_full_url_target_does_not_get_scheme_alternation(self, monkeypatch):
         attempts: list[tuple[Any, Any]] = []
 
-        def fake_create_connection(addr, *, timeout):  # noqa: ARG001  # called by name
+        def fake_create_connection(addr, *, timeout):  # called by name
             del timeout
             attempts.append(addr)
             return _ctx_obj()

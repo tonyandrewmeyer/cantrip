@@ -251,7 +251,7 @@ def check_registry(target: str, timeout: float = 3.0) -> dict[str, Any]:
             probes.append(probe)
             continue
         try:
-            with urllib.request.urlopen(
+            with urllib.request.urlopen(  # noqa: S310
                 f"{candidate.rstrip('/')}/v2/",
                 timeout=timeout,
             ) as response:

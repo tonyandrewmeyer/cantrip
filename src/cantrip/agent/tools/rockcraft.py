@@ -840,7 +840,9 @@ class LocalRegistryStatusTool(Tool):
         for scheme in ("http", "https"):
             probe_url = f"{scheme}://{host_port}/v2/"
             try:
-                with httpx.Client(timeout=5.0, verify=False) as client:
+                # Only probes /v2/ for liveness on a local registry, which
+                # commonly has a self-signed cert.
+                with httpx.Client(timeout=5.0, verify=False) as client:  # noqa: S501
                     response = client.get(probe_url)
             except httpx.TimeoutException:
                 continue
@@ -921,7 +923,8 @@ class LocalRegistryStatusTool(Tool):
 
 
 def _guess_substrate() -> str:
-    """Module-level substrate detector — wraps the static method above
+    """Module-level substrate detector — wraps the static method above.
+
     so other tools can call it without an instance.
     """
     return LocalRegistryStatusTool._guess_substrate()

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import pathlib
 from typing import TYPE_CHECKING
 
 import yaml
@@ -25,6 +24,8 @@ import yaml
 from cantrip.agent.memory.export import sanitise_body
 
 if TYPE_CHECKING:
+    import pathlib
+
     from cantrip.agent.skills import SkillsIndex
 
 log = logging.getLogger(__name__)

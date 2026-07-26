@@ -81,10 +81,12 @@ class MyCharm(ops.CharmBase):
         self._metrics = MetricsEndpointProvider(
             self,
             relation_name="metrics-endpoint",
-            jobs=[{
-                "static_configs": [{"targets": ["*:8080"]}],
-                "scrape_interval": "30s",
-            }],
+            jobs=[
+                {
+                    "static_configs": [{"targets": ["*:8080"]}],
+                    "scrape_interval": "30s",
+                }
+            ],
         )
 ```
 

@@ -130,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the charmlint CLI. Returns the exit code."""
-    global _use_colour  # noqa: PLW0603
+    global _use_colour
 
     parser = _build_parser()
     args = parser.parse_args(argv)

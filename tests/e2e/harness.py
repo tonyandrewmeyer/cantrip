@@ -21,15 +21,16 @@ import pathlib
 import shutil
 import subprocess
 import time
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 import pytest
 
-from cantrip.agent.core import CantripAgent
 from cantrip.llm.base import ProviderRateLimitError
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from cantrip.agent.core import CantripAgent
     from cantrip.llm.base import LLMProvider
 
 log = logging.getLogger(__name__)
@@ -215,9 +216,7 @@ def tool_calls(agent: CantripAgent, name: str) -> list[dict]:
     """Return every argument dict for agent calls to *name* so far."""
     results: list[dict] = []
     for msg in agent.state.messages:
-        for tc in msg.tool_calls:
-            if tc.name == name:
-                results.append(tc.arguments)
+        results.extend(tc.arguments for tc in msg.tool_calls if tc.name == name)
     return results
 
 

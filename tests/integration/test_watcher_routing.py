@@ -155,7 +155,7 @@ class TestWatcherEventRouting:
     async def test_watcher_event_task_executed_by_executor(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A routed DEBUG task is picked up and completed by the executor."""
         provider = FakeProvider(responses=[Response(content="Investigated the failure.")])

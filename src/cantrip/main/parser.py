@@ -97,7 +97,7 @@ def _add_run_subparser(subparsers: _SubParsers) -> None:
 
 
 def _add_run_model_options(parser: argparse.ArgumentParser) -> None:
-    """Provider, model, and Phase 72.3 role-router selection."""
+    """Add the provider, model and role-router selection options."""
     parser.add_argument(
         "--provider",
         choices=[

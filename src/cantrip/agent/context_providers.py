@@ -32,9 +32,11 @@ from __future__ import annotations
 import dataclasses
 import enum
 import logging
-import pathlib
 import re
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    import pathlib
 
 log = logging.getLogger(__name__)
 
@@ -430,7 +432,7 @@ async def expand_mentions(
             continue
         try:
             block = await provider.expand(mention.args, ctx)
-        except Exception as exc:  # noqa: BLE001 — provider boundary
+        except Exception as exc:
             log.warning("@%s expansion failed: %s", mention.name, exc, exc_info=True)
             block = ContextBlock(
                 raw=mention.raw,

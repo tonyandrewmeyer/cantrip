@@ -10,13 +10,16 @@ the regenerated frontmatter would not satisfy the canonical/skills validator
 
 from __future__ import annotations
 
-import pathlib
 import re
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
 
 from scripts import build_juju_skills_bundle as builder
+
+if TYPE_CHECKING:
+    import pathlib
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?\n)---\n", re.DOTALL)
 _SUMMARY_MAX_CHARS = 160

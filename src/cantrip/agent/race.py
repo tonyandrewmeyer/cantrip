@@ -34,7 +34,6 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from cantrip.agent.queue import TaskCategory
 from cantrip.agent.subagent import ExitState
 
 # Prefix for CONFIRM tasks that gate a pre-race cost confirmation.  The
@@ -51,6 +50,7 @@ class RaceGate(enum.StrEnum):
 
 
 if TYPE_CHECKING:
+    from cantrip.agent.queue import TaskCategory
     from cantrip.agent.subagent import Subagent, SubagentResult
     from cantrip.agent.worktree import WorktreeAllocator, WorktreeHandle
     from cantrip.llm import base as llm
@@ -208,7 +208,7 @@ class RaceConfig:
     confirm_threshold_tokens: int = 200_000
 
     def should_race(self, category: TaskCategory, candidate_count: int) -> bool:
-        """True when a task of ``category`` should run a race.
+        """Return true when a task of ``category`` should run a race.
 
         A race needs at least two candidates — one candidate is just a
         normal subagent run, not a race.
@@ -874,7 +874,8 @@ class RaceCoordinator:
             )
             elapsed = time.monotonic() - start
             log.info(
-                "Race for task %s cancelled mid-flight after %.1fs: budget=%d tokens, total=%d (per-candidate=%s)",
+                "Race for task %s cancelled mid-flight after %.1fs: budget=%d tokens, total=%d "
+                "(per-candidate=%s)",
                 task_id,
                 elapsed,
                 monitor.budget_tokens if monitor else 0,
@@ -996,7 +997,7 @@ class RaceCoordinator:
             if handle is not None:
                 await self._safe_release(handle, keep_branch=False)
             raise
-        except Exception as exc:  # noqa: BLE001 — race must record every non-cancel crash as a failed outcome so one candidate's blow-up does not cancel the others through asyncio.gather.
+        except Exception as exc:
             log.exception(
                 "Race candidate %s/%s: subagent.run() raised",
                 task_id,

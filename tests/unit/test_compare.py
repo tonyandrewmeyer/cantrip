@@ -9,12 +9,15 @@ will call into it.
 
 from __future__ import annotations
 
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cantrip import compare
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _write_charm(

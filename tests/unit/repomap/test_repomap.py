@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-import pathlib
 import textwrap
-
-import pytest
+from typing import TYPE_CHECKING
 
 from cantrip.repomap import DEFAULT_TOKEN_BUDGET, RepoMap, SymbolKind
 from cantrip.repomap.graph import build_graph, pagerank, rank_files
@@ -16,6 +14,11 @@ from cantrip.repomap.symbols import (
     parse_charm_metadata,
     parse_python_file,
 )
+
+if TYPE_CHECKING:
+    import pathlib
+
+    import pytest
 
 # ---------------------------------------------------------------------------
 # Fixture builder
@@ -341,18 +344,17 @@ class TestRender:
         assert "class Foo(Bar)" in rendered
 
     def test_truncates_under_tight_budget(self) -> None:
-        files: list[FileSymbols] = []
-        for i in range(20):
-            files.append(
-                FileSymbols(
-                    file=f"file_{i:02d}.py",
-                    definitions=[
-                        _sym(f"Class{i}", SymbolKind.CLASS, f"file_{i:02d}.py"),
-                        _sym(f"helper_{i}", SymbolKind.FUNCTION, f"file_{i:02d}.py"),
-                    ],
-                    references=[],
-                )
+        files: list[FileSymbols] = [
+            FileSymbols(
+                file=f"file_{i:02d}.py",
+                definitions=[
+                    _sym(f"Class{i}", SymbolKind.CLASS, f"file_{i:02d}.py"),
+                    _sym(f"helper_{i}", SymbolKind.FUNCTION, f"file_{i:02d}.py"),
+                ],
+                references=[],
             )
+            for i in range(20)
+        ]
         rendered = render(rank_files(files), token_budget=10)
         assert len(rendered) < 20 * 4  # ~80 chars max under the budget
 

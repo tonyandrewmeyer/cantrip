@@ -329,15 +329,14 @@ class GeminiProvider(LLMProvider):
         if not tools:
             return None
 
-        declarations = []
-        for tool in tools:
-            declarations.append(
-                genai_types.FunctionDeclaration(
-                    name=tool.name,
-                    description=tool.description,
-                    parameters=self._sanitize_schema_for_gemini(tool.parameters),
-                )
+        declarations = [
+            genai_types.FunctionDeclaration(
+                name=tool.name,
+                description=tool.description,
+                parameters=self._sanitize_schema_for_gemini(tool.parameters),
             )
+            for tool in tools
+        ]
         return [genai_types.Tool(function_declarations=declarations)]
 
     @staticmethod
@@ -404,16 +403,13 @@ class GeminiProvider(LLMProvider):
         stored in ``Message.metadata["_gemini_thought_parts"]`` and later
         reconstructed into ``genai_types.Part`` objects.
         """
-        thought_parts: list[dict[str, str]] = []
-        for part in parts:
-            if getattr(part, "thought", False) and getattr(part, "thought_signature", None):
-                thought_parts.append(
-                    {
-                        "thought_signature": base64.b64encode(part.thought_signature).decode(
-                            "ascii"
-                        ),
-                    }
-                )
+        thought_parts: list[dict[str, str]] = [
+            {
+                "thought_signature": base64.b64encode(part.thought_signature).decode("ascii"),
+            }
+            for part in parts
+            if getattr(part, "thought", False) and getattr(part, "thought_signature", None)
+        ]
         return thought_parts
 
     async def complete(

@@ -42,10 +42,12 @@ import logging
 import pathlib
 import shlex
 import uuid
-from collections.abc import Callable, Iterator, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Mapping
 
 log = logging.getLogger(__name__)
 
@@ -607,7 +609,7 @@ PLAN_MODE_OVERLAY: PermissionRuleset = _plan_mode_overlay()
 
 
 def plan_mode_message(tool_name: str) -> str:
-    """Standard denial message for a tool refused by plan mode.
+    """Return standard denial message for a tool refused by plan mode.
 
     Surfaces in the synthetic ``ToolResult`` error a subagent returns
     when plan mode blocks a call.  Centralised here so the wording is
@@ -694,7 +696,7 @@ class PermissionAskRequest:
 
 
 class PermissionManager:
-    """Park ``ask`` decisions on futures, resolve when the user answers.
+    r"""Park ``ask`` decisions on futures, resolve when the user answers.
 
     Thin analogue of :class:`cantrip.mcp.elicitation.ElicitationManager`.
     The subagent's tool-dispatch loop calls :meth:`request` which
@@ -805,7 +807,7 @@ class PermissionManager:
                 )
                 try:
                     self._on_auto_approve(payload)
-                except Exception:  # noqa: BLE001 — callback is user code; a broken UI hook must not block tool dispatch.
+                except Exception:
                     log.debug(
                         "permission auto-approve callback failed for %s",
                         tool_name,
@@ -833,7 +835,7 @@ class PermissionManager:
             )
             try:
                 self._on_request(payload)
-            except Exception:  # noqa: BLE001 — callback is user code; a broken UI hook must not block the prompt.
+            except Exception:
                 log.debug("permission ask callback failed for %s", tool_name, exc_info=True)
 
         try:

@@ -268,9 +268,7 @@ class TestWarmUp:
         original_run = AsyncMock(return_value=(0, "ok", ""))
 
         async def capture_path(*args: str, timeout: int = 600) -> tuple[int, str, str]:
-            for arg in args:
-                if "cantrip-warmup" in arg:
-                    written_paths.append(arg)
+            written_paths.extend(arg for arg in args if "cantrip-warmup" in arg)
             return await original_run(*args, timeout=timeout)
 
         with (
@@ -529,7 +527,7 @@ class TestBootstrap:
         # to_thread calls: list_controllers, juju.status, juju.deploy (fails).
         call_count = 0
 
-        async def selective_to_thread(func, *args, **kwargs):  # noqa: ARG001
+        async def selective_to_thread(func, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -588,7 +586,7 @@ class TestBootstrap:
         # to_thread calls: list_controllers, _find_k8s_controller (returns None → skip).
         call_count = 0
 
-        async def selective_to_thread(func, *args, **kwargs):  # noqa: ARG001
+        async def selective_to_thread(func, *args, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:

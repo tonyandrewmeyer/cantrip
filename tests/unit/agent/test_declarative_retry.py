@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import pathlib
-from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -25,6 +24,10 @@ from cantrip.agent.permissions import (
     PermissionRule,
     PermissionRuleset,
 )
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Awaitable, Callable
 
 # ---------------------------------------------------------------------------
 # parse_retry_config

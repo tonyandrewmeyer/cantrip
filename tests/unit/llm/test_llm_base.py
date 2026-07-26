@@ -171,12 +171,12 @@ class TestLLMProviderInterface:
 
             async def complete(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 return llm.Response(content="ok")
 
             async def stream(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 yield llm.Chunk(content="ok", is_final=True)
 
         assert StubProvider().supports_vision is False
@@ -206,12 +206,12 @@ class TestLLMProviderInterface:
 
             async def complete(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 return llm.Response(content="ok")
 
             async def stream(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 yield llm.Chunk(content="ok", is_final=True)
 
         p = StubProvider()
@@ -231,12 +231,12 @@ class TestLLMProviderInterface:
 
             async def complete(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 return llm.Response(content="ok")
 
             async def stream(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 yield llm.Chunk(content="ok", is_final=True)
 
         p = StubProvider()
@@ -258,12 +258,12 @@ class TestLLMProviderInterface:
 
             async def complete(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 return llm.Response(content="ok")
 
             async def stream(
                 self, messages, tools=None, temperature=0.7, max_tokens=None, thinking_budget=None
-            ):  # noqa: ARG002
+            ):
                 yield llm.Chunk(content="ok", is_final=True)
 
         p = StubProvider()

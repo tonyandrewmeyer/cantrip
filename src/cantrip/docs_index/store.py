@@ -21,9 +21,12 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import math
-import pathlib
 import sqlite3
 import struct
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pathlib
 
 _SCHEMA_VERSION = 1
 

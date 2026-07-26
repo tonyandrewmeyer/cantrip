@@ -253,7 +253,7 @@ class MCPClient:
                     auth=auth,
                 ) as (read, write, _get_session_id):
                     await self._serve(ClientSession, read, write)
-        except BaseException as exc:  # noqa: BLE001 - capture for the start() waiter
+        except BaseException as exc:
             if not self._ready.is_set():
                 self._start_error = exc
                 self._ready.set()
@@ -303,7 +303,7 @@ class MCPClient:
             await self._task
         except asyncio.CancelledError:
             pass
-        except Exception:  # noqa: BLE001 - keep stop() best-effort
+        except Exception:
             log.debug(
                 "MCP server %s background task raised on shutdown",
                 self._config.name,

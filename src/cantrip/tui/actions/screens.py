@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import pathlib
 from typing import TYPE_CHECKING
 
 from cantrip.tui.widgets import status as status_widgets
 
 if TYPE_CHECKING:
+    import pathlib
+
     from cantrip.tui.app import CantripApp
 
 

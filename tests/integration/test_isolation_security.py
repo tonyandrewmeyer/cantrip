@@ -21,6 +21,7 @@ import pathlib
 import shutil
 import subprocess
 import types
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -36,7 +37,6 @@ from cantrip.agent.permissions import (
 )
 from cantrip.agent.policy import GovernancePolicy
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus, WorkQueue
-from cantrip.agent.sandbox import SandboxPolicy
 from cantrip.agent.state import AgentState
 from cantrip.agent.subagent import Subagent, SubagentContext
 from cantrip.agent.tools.files import EditFileTool, ListDirectoryTool, ReadFileTool, WriteFileTool
@@ -46,6 +46,9 @@ from cantrip.llm.base import Response, ToolCall
 from tests.conftest import FakeProvider
 from tests.support.providers import CallbackProvider
 from tests.support.tools import make_stub_tool
+
+if TYPE_CHECKING:
+    from cantrip.agent.sandbox import SandboxPolicy
 
 
 def _git_available() -> bool:
@@ -493,9 +496,11 @@ class TestPermissionAndPolicyBoundaryInRealFlows:
         def callback(messages, _tools):
             # On the follow-up turn, harvest any tool-result error text.
             for msg in messages:
-                for tr in getattr(msg, "tool_results", None) or []:
-                    if tr.is_error:
-                        captured_errors.append(tr.content or "")
+                captured_errors.extend(
+                    tr.content or ""
+                    for tr in getattr(msg, "tool_results", None) or []
+                    if tr.is_error
+                )
             if any(captured_errors):
                 return Response(content="Understood, staying read-only.")
             return Response(
@@ -535,9 +540,11 @@ class TestPermissionAndPolicyBoundaryInRealFlows:
 
         def callback(messages, _tools):
             for msg in messages:
-                for tr in getattr(msg, "tool_results", None) or []:
-                    if tr.is_error:
-                        captured_errors.append(tr.content or "")
+                captured_errors.extend(
+                    tr.content or ""
+                    for tr in getattr(msg, "tool_results", None) or []
+                    if tr.is_error
+                )
             if any(captured_errors):
                 return Response(content="Cannot deploy from research.")
             return Response(
@@ -576,9 +583,11 @@ class TestPermissionAndPolicyBoundaryInRealFlows:
 
         def callback(messages, _tools):
             for msg in messages:
-                for tr in getattr(msg, "tool_results", None) or []:
-                    if tr.is_error:
-                        captured_errors.append(tr.content or "")
+                captured_errors.extend(
+                    tr.content or ""
+                    for tr in getattr(msg, "tool_results", None) or []
+                    if tr.is_error
+                )
             if any(captured_errors):
                 return Response(content="Won't delete the tree.")
             return Response(
@@ -622,9 +631,11 @@ class TestPermissionAndPolicyBoundaryInRealFlows:
 
         def callback(messages, _tools):
             for msg in messages:
-                for tr in getattr(msg, "tool_results", None) or []:
-                    if tr.is_error:
-                        captured_errors.append(tr.content or "")
+                captured_errors.extend(
+                    tr.content or ""
+                    for tr in getattr(msg, "tool_results", None) or []
+                    if tr.is_error
+                )
             if any(captured_errors):
                 return Response(content="No approval available.")
             return Response(

@@ -5,7 +5,7 @@ import pathlib
 import re
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, ClassVar
 
 import yaml
 
@@ -632,7 +632,7 @@ class CharmcraftPackTool(Tool):
                 )
             ):
                 result = subprocess.run(
-                    ["sudo"] + cmd,
+                    ["sudo", *cmd],
                     cwd=charm_path,
                     capture_output=True,
                     text=True,
@@ -1090,7 +1090,7 @@ class AnalyseFrameworkTool(Tool):
         }
 
     # Maps framework name to its charmcraft/rockcraft profile.
-    _PROFILE_MAP: dict[str, str] = {
+    _PROFILE_MAP: ClassVar[dict[str, str]] = {
         "flask": "flask-framework",
         "django": "django-framework",
         "fastapi": "fastapi-framework",
@@ -1105,11 +1105,11 @@ class AnalyseFrameworkTool(Tool):
     # Upstream (canonical/skills) uses ``expressjs``; Cantrip's profile
     # map and downstream consumers use ``express``.  Translate at the
     # detector boundary so the rest of the tool only sees Cantrip names.
-    _UPSTREAM_NAME_MAP: dict[str, str] = {"expressjs": "express"}
+    _UPSTREAM_NAME_MAP: ClassVar[dict[str, str]] = {"expressjs": "express"}
 
     # Maps detected framework to a coarse language label, kept on the
     # tool so the legacy ``data["language"]`` field stays populated.
-    _LANGUAGE_MAP: dict[str, str] = {
+    _LANGUAGE_MAP: ClassVar[dict[str, str]] = {
         "flask": "python",
         "django": "python",
         "fastapi": "python",

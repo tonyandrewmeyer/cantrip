@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -22,6 +22,9 @@ from cantrip.codeintel.index import (
     render_references,
     render_symbols,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Fixtures

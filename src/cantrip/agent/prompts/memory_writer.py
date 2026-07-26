@@ -21,7 +21,7 @@ _WRITER_TEMPLATE: Any = None
 
 def _get_env() -> Any:
     """Return the shared Jinja2 environment, creating it on first call."""
-    global _JINJA_ENV  # noqa: PLW0603
+    global _JINJA_ENV
     if _JINJA_ENV is None:
         import jinja2
 
@@ -35,7 +35,7 @@ def _get_env() -> Any:
 
 def _get_template() -> Any:
     """Return the writer template, loading it on first call."""
-    global _WRITER_TEMPLATE  # noqa: PLW0603
+    global _WRITER_TEMPLATE
     if _WRITER_TEMPLATE is None:
         _WRITER_TEMPLATE = _get_env().get_template("memory_writer.md.j2")
     return _WRITER_TEMPLATE

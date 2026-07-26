@@ -126,7 +126,7 @@ class PreflightRunner:
         if self._callback:
             try:
                 self._callback(event)
-            except Exception:  # noqa: BLE001 - UI surface failure can't break the run.
+            except Exception:
                 log.debug("preflight callback raised for %s", check_name, exc_info=True)
 
     async def warm_up(self) -> PreflightResult:
@@ -170,7 +170,7 @@ class PreflightRunner:
                 tmp.write(_WARMUP_CONFIG)
                 config_path = pathlib.Path(tmp.name)
 
-            rc, stdout, stderr = await _run_concierge(
+            rc, _stdout, stderr = await _run_concierge(
                 "prepare", "-c", str(config_path), timeout=600
             )
             if rc != 0:
@@ -266,7 +266,7 @@ class PreflightRunner:
             f"Preparing environment ({preset})",
         )
         try:
-            rc, stdout, stderr = await _run_concierge(
+            rc, _stdout, stderr = await _run_concierge(
                 "prepare",
                 "--preset",
                 preset,
@@ -368,7 +368,7 @@ class PreflightRunner:
         # Run concierge prepare with the full preset.
         self._emit("bootstrap", CheckStatus.RUNNING, f"Bootstrapping controller ({preset})")
         try:
-            rc, stdout, stderr = await _run_concierge("prepare", "--preset", preset, timeout=600)
+            rc, _stdout, stderr = await _run_concierge("prepare", "--preset", preset, timeout=600)
             if rc != 0:
                 msg = f"concierge prepare --preset {preset} failed (exit {rc})"
                 self._emit("bootstrap", CheckStatus.FAILED, msg, detail=stderr.strip())

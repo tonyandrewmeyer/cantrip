@@ -25,7 +25,8 @@ class DeprecatedSeries(Rule):
         if "series" in context.metadata:
             return [
                 self.diagnostic(
-                    "'series' is deprecated in charm metadata — use 'bases' or 'platforms' instead",
+                    "'series' is deprecated in charm metadata — use 'bases' or 'platforms' "
+                    "instead",
                     path="charmcraft.yaml",
                     fix_hint="Remove 'series' and use 'bases' or 'platforms'",
                 )
@@ -46,18 +47,17 @@ class NamingConventions(Rule):
     default_severity = models.Severity.WARNING
 
     def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
-        diagnostics: list[models.Diagnostic] = []
 
         # Check config option names.
-        for opt_name in context.config_options:
-            if "_" in opt_name:
-                diagnostics.append(
-                    self.diagnostic(
-                        f"Config option '{opt_name}' uses underscores "
-                        f"— prefer hyphens ('{opt_name.replace('_', '-')}')",
-                        path="charmcraft.yaml",
-                    )
-                )
+        diagnostics: list[models.Diagnostic] = [
+            self.diagnostic(
+                f"Config option '{opt_name}' uses underscores "
+                f"— prefer hyphens ('{opt_name.replace('_', '-')}')",
+                path="charmcraft.yaml",
+            )
+            for opt_name in context.config_options
+            if "_" in opt_name
+        ]
 
         # Check action names and parameter names.
         for action_name, action_def in context.actions.items():
@@ -75,15 +75,15 @@ class NamingConventions(Rule):
             if not isinstance(params, dict):
                 continue
             properties = params.get("properties", params)
-            for param_name in properties:
-                if "_" in param_name:
-                    diagnostics.append(
-                        self.diagnostic(
-                            f"Action '{action_name}' parameter '{param_name}' uses underscores "
-                            f"— prefer hyphens ('{param_name.replace('_', '-')}')",
-                            path="charmcraft.yaml",
-                        )
-                    )
+            diagnostics.extend(
+                self.diagnostic(
+                    f"Action '{action_name}' parameter '{param_name}' uses underscores "
+                    f"— prefer hyphens ('{param_name.replace('_', '-')}')",
+                    path="charmcraft.yaml",
+                )
+                for param_name in properties
+                if "_" in param_name
+            )
 
         return diagnostics
 

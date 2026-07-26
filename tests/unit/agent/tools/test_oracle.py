@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +15,9 @@ from cantrip.agent.tools.oracle import (
 )
 from cantrip.llm.base import Message, Response, Role
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Helpers

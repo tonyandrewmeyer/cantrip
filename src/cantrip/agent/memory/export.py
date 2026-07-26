@@ -30,7 +30,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
-import pathlib
 import re
 from typing import TYPE_CHECKING
 
@@ -39,6 +38,8 @@ import yaml
 from cantrip.agent.memory.core import MemoryScopeError, slugify_title
 
 if TYPE_CHECKING:
+    import pathlib
+
     from cantrip.agent.memory.core import MemoryEntry, MemoryManager
 
 log = logging.getLogger(__name__)

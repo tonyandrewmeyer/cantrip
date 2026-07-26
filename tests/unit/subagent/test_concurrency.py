@@ -33,7 +33,7 @@ class TestConcurrentToolExecution:
         sleep_duration = 0.1
         call_times: list[float] = []
 
-        async def _slow_execute(**kwargs: Any) -> ToolResult:  # noqa: ARG001
+        async def _slow_execute(**kwargs: Any) -> ToolResult:
             call_times.append(time.monotonic())
             await asyncio.sleep(sleep_duration)
             return ToolResult(success=True, output="ok")
@@ -79,11 +79,11 @@ class TestConcurrentToolExecution:
         """Results from concurrent tool calls are matched to the correct tool call IDs."""
         import asyncio
 
-        async def _execute_a(**kwargs: Any) -> ToolResult:  # noqa: ARG001
+        async def _execute_a(**kwargs: Any) -> ToolResult:
             await asyncio.sleep(0.05)
             return ToolResult(success=True, output="result-a")
 
-        async def _execute_b(**kwargs: Any) -> ToolResult:  # noqa: ARG001
+        async def _execute_b(**kwargs: Any) -> ToolResult:
             return ToolResult(success=True, output="result-b")
 
         tool_a = _make_tool("read_file")
@@ -104,7 +104,7 @@ class TestConcurrentToolExecution:
                 tools: Any = None,
                 temperature: float = 0.7,
                 max_tokens: int | None = None,
-                thinking_budget: int | None = None,  # noqa: ARG002
+                thinking_budget: int | None = None,
             ) -> Response:
                 captured_messages.append(list(messages))
                 return await super().complete(

@@ -85,16 +85,15 @@ class UnknownTopLevelFields(Rule):
     default_severity = models.Severity.WARNING
 
     def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
-        diagnostics: list[models.Diagnostic] = []
-        for key in context.metadata:
-            if key not in _KNOWN_TOP_LEVEL:
-                diagnostics.append(
-                    self.diagnostic(
-                        f"Unrecognised top-level field '{key}' in charmcraft.yaml — possible typo",
-                        path="charmcraft.yaml",
-                        fix_hint=_suggest_closest(key, _KNOWN_TOP_LEVEL),
-                    )
-                )
+        diagnostics: list[models.Diagnostic] = [
+            self.diagnostic(
+                f"Unrecognised top-level field '{key}' in charmcraft.yaml — possible typo",
+                path="charmcraft.yaml",
+                fix_hint=_suggest_closest(key, _KNOWN_TOP_LEVEL),
+            )
+            for key in context.metadata
+            if key not in _KNOWN_TOP_LEVEL
+        ]
         return diagnostics
 
 
@@ -115,15 +114,15 @@ class UnknownResourceFields(Rule):
         for res_name, res_def in resources.items():
             if not isinstance(res_def, dict):
                 continue
-            for key in res_def:
-                if key not in _KNOWN_RESOURCE_FIELDS:
-                    diagnostics.append(
-                        self.diagnostic(
-                            f"Unrecognised field '{key}' in resource '{res_name}' — possible typo",
-                            path="charmcraft.yaml",
-                            fix_hint=_suggest_closest(key, _KNOWN_RESOURCE_FIELDS),
-                        )
-                    )
+            diagnostics.extend(
+                self.diagnostic(
+                    f"Unrecognised field '{key}' in resource '{res_name}' — possible typo",
+                    path="charmcraft.yaml",
+                    fix_hint=_suggest_closest(key, _KNOWN_RESOURCE_FIELDS),
+                )
+                for key in res_def
+                if key not in _KNOWN_RESOURCE_FIELDS
+            )
         return diagnostics
 
 

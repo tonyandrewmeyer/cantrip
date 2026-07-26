@@ -19,12 +19,15 @@ branches that don't exercise on a healthy repo:
 
 from __future__ import annotations
 
-import pathlib
 import subprocess
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 from cantrip.agent import auto_commit as ac
 from cantrip.llm.base import Message, Role, ToolCall
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _proc(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMock:

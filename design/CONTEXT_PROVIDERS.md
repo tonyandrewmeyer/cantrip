@@ -51,8 +51,7 @@ Three reasons:
 class ContextProvider(Protocol):
     info: ProviderInfo
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
-        ...
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock: ...
 ```
 
 A `ProviderInfo` is the public-facing metadata (name, summary,

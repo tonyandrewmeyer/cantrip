@@ -29,7 +29,8 @@ dependencies = [
     # Juju integration
     "jubilant>=1.8,<2",            # Juju control (1.x is API-stable; pin to avoid silent v2 break)
     # Security
-    "cryptography>=46.0.7",        # Transitive; pinned for CVE fix
+    "cryptography>=46.0.7",
+    "defusedxml>=0.7",        # Transitive; pinned for CVE fix
     "requests>=2.33.0",            # Transitive; pinned for CVE fix
     "pygments>=2.20.0",            # Transitive; pinned for CVE fix
     # Web UI
@@ -54,7 +55,7 @@ dev = [
     "pytest-bdd>=8.1.0",
     "coverage[toml]>=7.13.5",
     "ty",
-    "ruff>=0.15.12",
+    "ruff>=0.16.0",
     "zizmor>=1.24.1",
     "pytest-xdist>=3.8.0",
     "pytest-cov>=7.1.0",
@@ -78,34 +79,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cantrip", "src/charmlint", "src/quickpack", "src/pypi_attest"]
-
-[tool.ruff]
-line-length = 99
-target-version = "py312"
-# Gold-standard charm implementations are reference charms, not cantrip source.
-extend-exclude = ["tests/eval/charms/*/gold-*"]
-
-[tool.ruff.lint]
-select = [
-    "E",     # pycodestyle errors
-    "W",     # pycodestyle warnings
-    "F",     # pyflakes
-    "I",     # isort
-    "B",     # flake8-bugbear
-    "C4",    # flake8-comprehensions
-    "UP",    # pyupgrade
-    "ARG",   # flake8-unused-arguments
-    "SIM",   # flake8-simplify
-]
-ignore = [
-    "E501",  # line too long (handled by formatter)
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ARG002"]  # Test fakes have unused params by design.
-
-[tool.ruff.lint.isort]
-known-first-party = ["cantrip", "charmlint", "quickpack", "pypi_attest"]
 
 [tool.ty.environment]
 python-version = "3.12"
@@ -157,3 +130,80 @@ markers = [
     "live: tests requiring real external services (Juju, LLM APIs)",
     "slow: slow tests (charmcraft comparison, real uv invocations)",
 ]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+extend-exclude = [
+    "tests/eval/charms/*/gold-*",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E",
+    "W",
+    "I",
+    "N",
+    "A",
+    "UP",
+    "YTT",
+    "S",
+    "B",
+    "SIM",
+    "RUF",
+    "PERF",
+    "D",
+    "FA",
+    "TC",
+]
+ignore = [
+    "D105",
+    "D107",
+    "D203",
+    "D204",
+    "D213",
+    "D215",
+    "D400",
+    "D404",
+    "D406",
+    "D407",
+    "D408",
+    "D409",
+    "D413",
+    "E501",
+    # Method docstrings are not mandated; module/class/function docs are.
+    "D102",
+    # This tool deliberately shells out to juju/charmcraft/snap.
+    "S603",
+    "S607",
+    # Prose uses real typography (en dashes, ×, curly quotes); these are
+    # intentional, not homoglyph mistakes.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # Asserts are used for internal invariants and type narrowing, not for
+    # validating untrusted input.
+    "S101",
+    # `id`/`type`/`input` mirror the textual and ops APIs this code wraps.
+    "A002",
+    # Jinja renders LLM prompts, not HTML; autoescaping would corrupt them.
+    "S701",
+    # `random` is used for retry jitter and sampling, never for secrets.
+    "S311",
+    # ProviderInfo is a frozen dataclass, so sharing one default is safe.
+    "RUF009",
+    # Names of environment variables and auth *methods*, not secrets.
+    "S105",
+    "S106",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/test_claude.py" = ["N805"]  # Stub classes mimic SDK callables.
+"tests/**/test_inference_snap.py" = ["N801"]  # Names encode model ids (Qwen3_14b).
+"tests/**/test_mcp_apps.py" = ["N815"]  # Mirrors the MCP wire schema (mimeType).
+"tests/**/test_rock_contract.py" = ["S103"]  # Sets exec bits on test fixtures.
+"tests/**/test_observability_tools.py" = ["S107"]  # Dummy credentials.
+"tests/**/test_mcp_elicitation.py" = ["RUF006"]  # Fire-and-forget tasks under test.
+"demos/**" = ["S108"]  # Demo scripts write under /tmp deliberately.
+"**/tests/**" = ["ARG002", "D", "S101", "S105", "S106", "S108", "PLR2004", "ARG", "SLF001", "N802", "N803", "N806"]

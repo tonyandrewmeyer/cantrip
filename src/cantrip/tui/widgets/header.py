@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+from typing import TYPE_CHECKING
 
-from textual.app import ComposeResult
 from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 # Single brand mark — also used by the welcome wordmark in
 # ``ChatWidget`` so the two surfaces speak the same vocabulary.

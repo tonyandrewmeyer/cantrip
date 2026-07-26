@@ -46,7 +46,7 @@ Short description of what this library does.
 """
 
 LIBID = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"  # UUID4, assigned by `charmcraft register-lib`.
-LIBAPI = 0   # Major version — bump only on breaking changes.
+LIBAPI = 0  # Major version — bump only on breaking changes.
 LIBPATCH = 7  # Patch — increment on every change, including additive ones.
 
 PYDEPS = ["pydantic>=2", "cryptography>=42"]  # PyPI deps the library imports.
@@ -168,7 +168,10 @@ class _TestCharm(ops.CharmBase):
 
 
 def test_emits_database_ready_on_valid_data():
-    ctx = testing.Context(_TestCharm, meta={"name": "c", "requires": {"database": {"interface": "postgresql_client"}}})
+    ctx = testing.Context(
+        _TestCharm,
+        meta={"name": "c", "requires": {"database": {"interface": "postgresql_client"}}},
+    )
     relation = testing.Relation(
         endpoint="database",
         interface="postgresql_client",
@@ -188,7 +191,10 @@ def test_emits_database_ready_on_valid_data():
 
 
 def test_connection_info_returns_none_on_invalid_data():
-    ctx = testing.Context(_TestCharm, meta={"name": "c", "requires": {"database": {"interface": "postgresql_client"}}})
+    ctx = testing.Context(
+        _TestCharm,
+        meta={"name": "c", "requires": {"database": {"interface": "postgresql_client"}}},
+    )
     relation = testing.Relation(
         endpoint="database",
         remote_app_data={"host": "10.0.0.1"},  # Missing fields.

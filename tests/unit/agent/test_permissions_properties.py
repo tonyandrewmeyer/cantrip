@@ -192,8 +192,10 @@ class TestCatchAllDenyIsAbsorbing:
         # tools section's last match becomes the DENY rule (it matches
         # every subject), and DENY beats every other section's outcome.
         with_deny = PermissionRuleset(
-            tools=ruleset.tools
-            + (PermissionRule(pattern="*", outcome=PermissionOutcome.DENY, source="hypothesis"),),
+            tools=(
+                *ruleset.tools,
+                PermissionRule(pattern="*", outcome=PermissionOutcome.DENY, source="hypothesis"),
+            ),
             bash=ruleset.bash,
             paths=ruleset.paths,
             agents=ruleset.agents,
@@ -248,12 +250,18 @@ class TestUnmatchedRuleIsInert:
         inert_pattern = "zzz-unmatchable-sentinel-" + outcome.value
         before = evaluate(ruleset, tool, args)
         with_inert = PermissionRuleset(
-            tools=ruleset.tools
-            + (PermissionRule(pattern=inert_pattern, outcome=outcome, source="hypothesis"),),
-            bash=ruleset.bash
-            + (PermissionRule(pattern=inert_pattern, outcome=outcome, source="hypothesis"),),
-            paths=ruleset.paths
-            + (PermissionRule(pattern=inert_pattern, outcome=outcome, source="hypothesis"),),
+            tools=(
+                *ruleset.tools,
+                PermissionRule(pattern=inert_pattern, outcome=outcome, source="hypothesis"),
+            ),
+            bash=(
+                *ruleset.bash,
+                PermissionRule(pattern=inert_pattern, outcome=outcome, source="hypothesis"),
+            ),
+            paths=(
+                *ruleset.paths,
+                PermissionRule(pattern=inert_pattern, outcome=outcome, source="hypothesis"),
+            ),
             agents=ruleset.agents,
             bash_tools=ruleset.bash_tools,
             name=ruleset.name,

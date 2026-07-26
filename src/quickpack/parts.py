@@ -252,11 +252,11 @@ def process_uv_part(
 
     # Clean up venv to match charmcraft's UV plugin behaviour:
     # remove python* binaries and extra scripts, keep only activate.
-    _KEEP_BIN = {"activate"}
+    keep_bin = {"activate"}
     venv_bin = venv_dir / "bin"
     if venv_bin.is_dir():
         for entry in venv_bin.iterdir():
-            if entry.name not in _KEEP_BIN:
+            if entry.name not in keep_bin:
                 entry.unlink()
 
     venv_lib64 = venv_dir / "lib64"

@@ -9,7 +9,7 @@ from cantrip.agent.tools.base import Tool, ToolResult
 
 
 def _relaxed_whitespace_span(old_string: str, content: str) -> tuple[int, int] | None:
-    """Locate *old_string* in *content* tolerant of whitespace differences.
+    r"""Locate *old_string* in *content* tolerant of whitespace differences.
 
     Phase 103.3: when ``edit_file`` / ``multi_edit`` opt into
     ``relax_whitespace=True`` and the exact ``old_string`` doesn't appear
@@ -132,7 +132,7 @@ def _did_you_mean_hint(old_string: str, content: str, *, max_lines: int = 12) ->
     # Keep the file headers (first two lines) plus the hunk header, then
     # *max_lines* of body.
     if len(diff_lines) > max_lines + 3:
-        diff_lines = diff_lines[: max_lines + 3] + ["… (truncated)"]
+        diff_lines = [*diff_lines[: max_lines + 3], "… (truncated)"]
     return "\n".join(diff_lines)
 
 

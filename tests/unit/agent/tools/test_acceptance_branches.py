@@ -25,9 +25,8 @@ the existing suite skips:
 from __future__ import annotations
 
 import json
-import pathlib
 import subprocess
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -43,6 +42,9 @@ from cantrip.agent.tools.acceptance import (
     _get_unit_address,
     _verify_relation_data,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Helpers

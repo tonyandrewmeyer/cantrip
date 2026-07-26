@@ -183,7 +183,7 @@ def _diagnostic_provider() -> CallbackProvider:
     LLM stubs that have to know about turn order.
     """
 
-    def respond(messages, tools):  # noqa: ARG001
+    def respond(messages, tools):
         for msg in messages:
             if msg.role.value == "system" and _VERIFY_TITLE_FRAGMENT in msg.content:
                 raise RuntimeError("Verification failed")
@@ -246,7 +246,7 @@ class TestStatefulFlows:
     async def test_interrupted_session_resumes_and_finishes_pending_deploy(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A session saved mid-flow resumes with state + queue intact and
         the executor of a *fresh* agent completes the previously-pending
@@ -343,7 +343,7 @@ class TestStatefulFlows:
     async def test_failed_verify_creates_debug_task_through_agent(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Driven through ``CantripAgent.start_executor`` (not a raw
         BackgroundExecutor): a failing verify follow-up auto-creates a
@@ -379,7 +379,7 @@ class TestStatefulFlows:
     async def test_improvement_flow_audits_existing_charm_and_runs_fixes(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Existing charm → audit task DONE → user confirms improvements
         → fix tasks created → executor runs every fix to completion."""
@@ -448,7 +448,7 @@ class TestStatefulFlows:
     async def test_user_override_steers_design_to_machine_path(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """User rejects the synthesised plan with an override; the
         planner is consulted with the override visible, build tasks
@@ -468,9 +468,9 @@ class TestStatefulFlows:
                 thinking_budget=None,
                 response_schema=None,
             ):
-                for msg in messages:
-                    if msg.role.value == "user":
-                        seen_planner_messages.append(msg.content)
+                seen_planner_messages.extend(
+                    msg.content for msg in messages if msg.role.value == "user"
+                )
                 return await super().complete(
                     messages=messages,
                     tools=tools,

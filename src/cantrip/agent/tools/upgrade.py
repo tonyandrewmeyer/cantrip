@@ -39,10 +39,11 @@ def _check_hook_failures(app: str, model: str | None, lines: int = 100) -> list[
         return []
     if result.returncode != 0:
         return []
-    failures = []
-    for line in result.stdout.splitlines():
-        if "hook failed" in line.lower() or "error" in line.lower():
-            failures.append(line.strip())
+    failures = [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if "hook failed" in line.lower() or "error" in line.lower()
+    ]
     return failures[-20:]  # Keep last 20 for brevity.
 
 
@@ -214,8 +215,7 @@ class UpgradeTestTool(Tool):
         if hook_failures:
             report_lines.append("## Hook Failures During Upgrade")
             report_lines.append("")
-            for line in hook_failures:
-                report_lines.append(f"  {line}")
+            report_lines.extend(f"  {line}" for line in hook_failures)
             report_lines.append("")
 
         # Step 6: compare pre/post status.

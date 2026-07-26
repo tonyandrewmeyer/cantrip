@@ -153,19 +153,19 @@ def _verify_relation_data(
 
     unit_data = data.get(unit, {})
     # Standard address-only keys that don't indicate real data flow.
-    _ADDRESS_KEYS = {"ingress-address", "private-address", "egress-subnets"}
+    address_keys = {"ingress-address", "private-address", "egress-subnets"}
 
     for rel in unit_data.get("relation-info", []):
         if rel.get("endpoint") != endpoint:
             continue
         # Check application-level data.
         app_data = rel.get("application-data", {})
-        meaningful_app = set(app_data.keys()) - _ADDRESS_KEYS
+        meaningful_app = set(app_data.keys()) - address_keys
         if meaningful_app:
             return True, f"App data keys: {', '.join(sorted(meaningful_app))}"
         # Check related unit data.
-        for _runit, rdata in rel.get("related-units", {}).items():
-            meaningful_unit = set(rdata.get("data", {}).keys()) - _ADDRESS_KEYS
+        for rdata in rel.get("related-units", {}).values():
+            meaningful_unit = set(rdata.get("data", {}).keys()) - address_keys
             if meaningful_unit:
                 return True, f"Unit data keys: {', '.join(sorted(meaningful_unit))}"
         return False, "Relation established but databag is empty (address-only)"
@@ -356,7 +356,7 @@ class ActionExerciserTool(Tool):
 
             try:
                 proc = subprocess.run(
-                    ["juju"] + cmd_args,
+                    ["juju", *cmd_args],
                     capture_output=True,
                     text=True,
                     timeout=timeout,
@@ -637,11 +637,11 @@ class RelationSmokeTool(Tool):
             "| Endpoint | Interface | Role | Partner | Status | Notes |",
             "|----------|-----------|------|---------|--------|-------|",
         ]
-        for r in results:
-            lines.append(
-                f"| {r['endpoint']} | {r['interface']} | {r['role']} "
-                f"| {r['partner']} | {r['status']} | {r['notes']} |"
-            )
+        lines.extend(
+            f"| {r['endpoint']} | {r['interface']} | {r['role']} "
+            f"| {r['partner']} | {r['status']} | {r['notes']} |"
+            for r in results
+        )
 
         lines.extend(
             [
@@ -821,11 +821,11 @@ class WorkloadEndpointTool(Tool):
             "| Endpoint | Protocol | Status | Response Time | Notes |",
             "|----------|----------|--------|--------------|-------|",
         ]
-        for r in results:
-            lines.append(
-                f"| {r['endpoint']} | {r['protocol']} | {r['status']} "
-                f"| {r.get('response_time', '—')} | {r.get('notes', '')} |"
-            )
+        lines.extend(
+            f"| {r['endpoint']} | {r['protocol']} | {r['status']} "
+            f"| {r.get('response_time', '—')} | {r.get('notes', '')} |"
+            for r in results
+        )
         lines.extend(
             [
                 "",
@@ -864,13 +864,15 @@ class WorkloadEndpointTool(Tool):
 
         # Discover ports from containers.
         containers = metadata.get("containers", {})
-        for _name, container_spec in containers.items():
+        for container_spec in containers.values():
             if not isinstance(container_spec, dict):
                 continue
             # OCI image containers may declare ports.
-            for port_entry in container_spec.get("ports", []):
-                if isinstance(port_entry, dict) and "target" in port_entry:
-                    probes.append({"port": port_entry["target"], "protocol": "http"})
+            probes.extend(
+                {"port": port_entry["target"], "protocol": "http"}
+                for port_entry in container_spec.get("ports", [])
+                if isinstance(port_entry, dict) and "target" in port_entry
+            )
 
         # Check config for port options.
         config_opts = metadata.get("config", {}).get("options", {})
@@ -888,13 +890,13 @@ class WorkloadEndpointTool(Tool):
                 port = p.get("port")
                 if port and port not in seen_ports:
                     seen_ports.add(port)
-                    for health_path in ("/health", "/ready", "/healthz", "/readyz"):
-                        health_probes.append(
-                            {
-                                "url": f"http://{unit_addr}:{port}{health_path}",
-                                "protocol": "http",
-                            }
-                        )
+                    health_probes.extend(
+                        {
+                            "url": f"http://{unit_addr}:{port}{health_path}",
+                            "protocol": "http",
+                        }
+                        for health_path in ("/health", "/ready", "/healthz", "/readyz")
+                    )
             probes.extend(health_probes)
 
         return probes
@@ -1352,11 +1354,10 @@ class ConfigUnderLoadTool(Tool):
             "| Probe | Status | Time (ms) | OK |",
             "|-------|--------|-----------|----|",
         ]
-        for p in probes:
-            lines.append(
-                f"| {p['probe']} | {p['status']} | {p['elapsed_ms']} | "
-                f"{'yes' if p['ok'] else 'NO'} |"
-            )
+        lines.extend(
+            f"| {p['probe']} | {p['status']} | {p['elapsed_ms']} | {'yes' if p['ok'] else 'NO'} |"
+            for p in probes
+        )
         lines.extend(["", f"**Verdict: {verdict}**", ""])
 
         return ToolResult(

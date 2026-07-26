@@ -107,8 +107,7 @@ def _format_catalogue(registry: recipes.RecipeRegistry) -> str:
             "(user) — see `design/RECIPES.md` for the schema."
         )
     lines = ["**Recipes**", ""]
-    for recipe in registry.recipes:
-        lines.append(f"- `/recipe {recipe.name}` — {recipe.title}")
+    lines.extend(f"- `/recipe {recipe.name}` — {recipe.title}" for recipe in registry.recipes)
     lines.append("")
     lines.append(
         "Run `/recipe <name> --help` for the parameter list.  Invoke "
@@ -329,8 +328,10 @@ def _validate_response(recipe: recipes.Recipe, response: str) -> str | None:
 def _format_retry_outcome(
     outcome: declarative_retry.RetryOutcome,
 ) -> str:
-    """Render :class:`RetryOutcome` for the chat — same shape as
-    :func:`cantrip.agent.commands.slash._run_primary_with_retry`."""
+    """Render :class:`RetryOutcome` for the chat — same shape as.
+
+    :func:`cantrip.agent.commands.slash._run_primary_with_retry`.
+    """
     if outcome.converged:
         if outcome.attempts == 1:
             return outcome.output

@@ -180,7 +180,7 @@ _GPG_TIMEOUT_SECONDS = 30.0
 def _gpg_encrypt(path: pathlib.Path, payload: str) -> None:
     """Symmetric GPG encryption to ``path`` (binary)."""
     try:
-        completed = subprocess.run(  # noqa: S603 - opted-in GPG path
+        completed = subprocess.run(
             ["gpg", "--batch", "--yes", "--symmetric", "-o", str(path)],
             input=payload.encode("utf-8"),
             capture_output=True,
@@ -201,7 +201,7 @@ def _gpg_encrypt(path: pathlib.Path, payload: str) -> None:
 def _gpg_decrypt(path: pathlib.Path) -> str:
     """Symmetric GPG decryption from ``path`` to text."""
     try:
-        completed = subprocess.run(  # noqa: S603 - opted-in GPG path
+        completed = subprocess.run(
             ["gpg", "--batch", "--decrypt", str(path)],
             capture_output=True,
             check=False,

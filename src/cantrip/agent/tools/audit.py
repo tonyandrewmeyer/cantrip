@@ -113,20 +113,17 @@ def _charmlint_to_audit_report(
     if must_fix:
         lines.append("## Must Fix")
         lines.append("")
-        for item in must_fix:
-            lines.append(f"- {item}")
+        lines.extend(f"- {item}" for item in must_fix)
         lines.append("")
     if should_fix:
         lines.append("## Should Fix")
         lines.append("")
-        for item in should_fix:
-            lines.append(f"- {item}")
+        lines.extend(f"- {item}" for item in should_fix)
         lines.append("")
     if nice_to_have:
         lines.append("## Nice to Have")
         lines.append("")
-        for item in nice_to_have:
-            lines.append(f"- {item}")
+        lines.extend(f"- {item}" for item in nice_to_have)
         lines.append("")
     if not must_fix and not should_fix and not nice_to_have:
         lines.append("No issues found — the charm looks good!")
@@ -172,7 +169,7 @@ def _charmlint_to_audit_report(
 
     # Build listing_fields from META diagnostics.
     listing_present = dict.fromkeys(_LISTING_FIELDS, True)
-    _META_TO_FIELD = {
+    meta_to_field = {
         "META002": "display-name",
         "META003": "summary",
         "META004": "description",
@@ -180,7 +177,7 @@ def _charmlint_to_audit_report(
         "META006": "issues",
         "META007": "source",
     }
-    for rid, field in _META_TO_FIELD.items():
+    for rid, field in meta_to_field.items():
         if rid in rule_ids:
             listing_present[field] = False
 
@@ -271,7 +268,7 @@ class CharmAuditTool(Tool):
         else:
             charm_name = charm_dir.name
 
-        report_text, findings, data = _charmlint_to_audit_report(charm_dir, charm_name)
+        report_text, _findings, data = _charmlint_to_audit_report(charm_dir, charm_name)
 
         total = data.get("total_issues", 0)
         caption = "clean" if total == 0 else f"{total} issue{'s' if total != 1 else ''}"

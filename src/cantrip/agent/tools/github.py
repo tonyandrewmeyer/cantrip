@@ -830,8 +830,7 @@ class GhRepoBootstrapTool(Tool):
             summary_lines.append("Skipped (already present): " + ", ".join(skipped))
         if protection_applied:
             summary_lines.append(f"Applied branch protection to {branch}.")
-        for warning in warnings:
-            summary_lines.append(f"Warning: {warning}")
+        summary_lines.extend(f"Warning: {warning}" for warning in warnings)
         if not summary_lines:
             summary_lines.append("Nothing to do (all steps disabled).")
 

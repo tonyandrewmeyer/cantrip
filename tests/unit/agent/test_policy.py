@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -24,6 +24,9 @@ from cantrip.agent.policy import (
     policy_from_dict,
     policy_to_dict,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 class TestGovernancePolicy:

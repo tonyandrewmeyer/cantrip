@@ -18,6 +18,7 @@ to git from rule modules.
 """
 
 import ast
+import itertools
 import pathlib
 import re
 
@@ -235,9 +236,7 @@ class LibraryBreakingChange(Rule):
             if len(versions) < 2:
                 continue
             versions.sort()
-            for (older_api, older_path), (newer_api, newer_path) in zip(
-                versions, versions[1:], strict=False
-            ):
+            for (older_api, older_path), (newer_api, newer_path) in itertools.pairwise(versions):
                 older_names = self._public_names(context, older_path)
                 newer_names = self._public_names(context, newer_path)
                 if older_names is None or newer_names is None:

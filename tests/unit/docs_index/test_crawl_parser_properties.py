@@ -95,11 +95,10 @@ def _well_formed_sitemap(host: str) -> st.SearchStrategy[bytes]:
     ) -> bytes:
         outer = "urlset" if kind == "urlset" else "sitemapindex"
         inner = "url" if kind == "urlset" else "sitemap"
-        locs: list[str] = []
-        for path in on_host_paths:
-            locs.append(f"<{inner}><loc>https://{host}{path}</loc></{inner}>")
-        for url in off_host_urls:
-            locs.append(f"<{inner}><loc>{url}</loc></{inner}>")
+        locs: list[str] = [
+            f"<{inner}><loc>https://{host}{path}</loc></{inner}>" for path in on_host_paths
+        ]
+        locs.extend(f"<{inner}><loc>{url}</loc></{inner}>" for url in off_host_urls)
         body = (
             f'<?xml version="1.0" encoding="UTF-8"?>'
             f'<{outer} xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -228,7 +227,7 @@ class TestParseSitemapMalformedRaises:
             parse_sitemap(payload, host="example.com")
         except ET.ParseError:
             return
-        except Exception as exc:  # noqa: BLE001 — explicit "no surprises" guard.
+        except Exception as exc:
             raise AssertionError(
                 f"parse_sitemap raised unexpected {type(exc).__name__}: {exc!r}"
             ) from exc

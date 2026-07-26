@@ -934,9 +934,9 @@ class TestStream:
         provider.client = MagicMock()
         provider.client.stream = MagicMock(return_value=mock_resp)
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Hi")])
+        ]
 
         # Should have a content chunk and a final chunk with usage.
         assert any(c.content == "Hello" for c in chunks)
@@ -967,9 +967,9 @@ class TestStream:
         provider.client = MagicMock()
         provider.client.stream = MagicMock(return_value=mock_resp)
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Hi")])
+        ]
 
         assert any(c.content == "Hi" for c in chunks)
         final = [c for c in chunks if c.is_final]
@@ -996,9 +996,9 @@ class TestStream:
         provider.client = MagicMock()
         provider.client.stream = MagicMock(return_value=mock_resp)
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Hi")])
+        ]
 
         final = [c for c in chunks if c.is_final]
         assert len(final) == 1
@@ -1064,10 +1064,13 @@ _QWEN3_14B_TOOL_CALL_SSE: list[str] = [
         '"type":"function","function":{"name":"read_file","arguments":""}}]}}]}'
     ),
     'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\""}}]}}]}',
-    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"path"}}]}}]}',
+    "data: "
+    '{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"path"}}]}}]}',
     'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\": \\""}}]}}]}',
-    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"charmcraft"}}]}}]}',
-    'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":".yaml"}}]}}]}',
+    "data: "
+    '{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"charmcraft"}}]}}]}',
+    "data: "
+    '{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":".yaml"}}]}}]}',
     'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"}"}}]}}]}',
     (
         'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],'
@@ -1147,11 +1150,12 @@ class TestQwen3_14bRecordedTrace:
         provider.client = MagicMock()
         provider.client.stream = MagicMock(return_value=mock_resp)
 
-        chunks = []
-        async for chunk in provider.stream(
-            [Message(role=Role.USER, content="Read charmcraft.yaml")]
-        ):
-            chunks.append(chunk)
+        chunks = [
+            chunk
+            async for chunk in provider.stream(
+                [Message(role=Role.USER, content="Read charmcraft.yaml")]
+            )
+        ]
 
         final = [c for c in chunks if c.is_final]
         assert len(final) == 1

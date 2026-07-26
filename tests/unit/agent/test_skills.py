@@ -1196,7 +1196,7 @@ class TestSkillExportCLI:
         from cantrip.agent.skills import SkillsIndex as _SkillsIndexCls
 
         class _IsolatedIndex(_SkillsIndexCls):
-            def __init__(self, *a: object, **kw: object) -> None:  # noqa: D401
+            def __init__(self, *a: object, **kw: object) -> None:
                 super().__init__(source)
 
         return _IsolatedIndex

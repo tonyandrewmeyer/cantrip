@@ -196,17 +196,16 @@ def snapshot_from_queue(
     ``.status``, ``.dependencies``, ``.noop_count``) to avoid a hard import
     cycle with ``queue.py``.
     """
-    infos: list[TaskInfo] = []
-    for t in tasks:
-        infos.append(
-            TaskInfo(
-                id=t.id,
-                category=str(t.category),
-                status=TaskSnapshot(str(t.status)),
-                dependencies=tuple(t.dependencies),
-                noop_count=t.noop_count,
-            )
+    infos: list[TaskInfo] = [
+        TaskInfo(
+            id=t.id,
+            category=str(t.category),
+            status=TaskSnapshot(str(t.status)),
+            dependencies=tuple(t.dependencies),
+            noop_count=t.noop_count,
         )
+        for t in tasks
+    ]
     return WorkQueueState(
         tasks=tuple(infos),
         active_subagent_count=active_subagent_count,

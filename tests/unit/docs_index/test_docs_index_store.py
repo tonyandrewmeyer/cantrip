@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import pathlib
+import itertools
+from typing import TYPE_CHECKING
 
 from cantrip.docs_index.chunk import (
     DEFAULT_CHUNK_TOKENS,
@@ -11,6 +12,9 @@ from cantrip.docs_index.chunk import (
     chunk_text,
 )
 from cantrip.docs_index.store import Chunk, DocsStore
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Chunker
@@ -52,7 +56,7 @@ class TestChunker:
         # Each chunk's start advances by less than chunk_chars (==
         # overlap is positive).  ``50 tokens × 4 chars = 200``;
         # ``10 tokens × 4 chars = 40``; advance per step ≤ 160.
-        for prev, nxt in zip(chunks[:-1], chunks[1:], strict=True):
+        for prev, nxt in itertools.pairwise(chunks):
             advance = nxt.char_start - prev.char_start
             assert advance < 200
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cantrip.agent.git_branch import (
@@ -31,6 +30,8 @@ from cantrip.agent.queue import AgentTask, TaskCategory
 from cantrip.agent.race import RACE_CONFIRM_PREFIX
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cantrip.agent.queue import WorkQueue
     from cantrip.agent.state import AgentState
     from cantrip.agent.store import SessionStore

@@ -491,7 +491,8 @@ def generate_placeholder_svg(charm_name: str) -> str:
     same icon.
     """
     initial = charm_name[0].upper() if charm_name else "?"
-    colour_idx = int(hashlib.md5(charm_name.encode()).hexdigest(), 16) % len(_ICON_COLOURS)
+    digest = hashlib.md5(charm_name.encode(), usedforsecurity=False).hexdigest()
+    colour_idx = int(digest, 16) % len(_ICON_COLOURS)
     fill = _ICON_COLOURS[colour_idx]
 
     return (
@@ -737,7 +738,7 @@ _DOCS_TEMPLATE_FILES: tuple[tuple[str, str], ...] = (
 
 def _docs_template_env() -> jinja2.Environment:
     """Return the shared docs Jinja env, creating it on first call."""
-    global _DOCS_TEMPLATE_ENV  # noqa: PLW0603
+    global _DOCS_TEMPLATE_ENV
     if _DOCS_TEMPLATE_ENV is None:
         _DOCS_TEMPLATE_ENV = jinja2.Environment(
             loader=jinja2.FileSystemLoader(_DOCS_TEMPLATE_DIR),
@@ -815,7 +816,7 @@ def _rewrite_root_link(url: str) -> str:
     """
     if _ABSOLUTE_URL_RE.match(url) or url.startswith("#"):
         return url
-    path, anchor = (url.split("#", 1) + [""])[:2]
+    path, anchor = ([*url.split("#", 1), ""])[:2]
     anchor_suffix = "#" + anchor if anchor else ""
     if path.startswith("./"):
         path = path[2:]
@@ -1197,7 +1198,7 @@ def _build_integrate_block(
 
 
 def _build_actions_block(charm_name: str, actions: dict[str, Any]) -> str:
-    """Render the actions how-to body — one section per action, optional desc.
+    r"""Render the actions how-to body — one section per action, optional desc.
 
     Returned without a trailing newline; the template that consumes this
     block (``docs/how-to/actions.md.j2``) ends with ``{{ block }}\\n`` so
@@ -1671,7 +1672,8 @@ def _compose_architecture_page(intro: str, decisions: list[dict[str, Any]]) -> s
 
 
 class ExtractDesignDecisionsTool(Tool):
-    """Refresh ``docs/explanation/architecture.md`` with the chronological
+    """Refresh ``docs/explanation/architecture.md`` with the chronological.
+
     decision log mined from the session transcript.
     """
 

@@ -746,9 +746,9 @@ class TestClaudeProviderStream:
 
         provider.client.messages.stream = MagicMock(return_value=_MockStream())
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Hi")])
+        ]
 
         final = chunks[-1]
         assert final.is_final

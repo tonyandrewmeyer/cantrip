@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import argparse
-import pathlib
 import sqlite3
 import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import argparse
+    import pathlib
+
     from cantrip.agent import durability as durability_mod
     from cantrip.agent import store as store_mod
 

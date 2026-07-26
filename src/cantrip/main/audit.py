@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import pathlib
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
 
 
 def _audit(args: argparse.Namespace) -> int:

@@ -63,7 +63,7 @@ __all__ = [
 
 
 def main() -> int:
-    """Main entry point."""
+    """Return main entry point."""
     args = parse_args()
 
     if args.command == "export-transcript":

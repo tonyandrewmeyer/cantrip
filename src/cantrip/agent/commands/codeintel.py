@@ -55,7 +55,7 @@ def handle_symbols(agent: CantripAgent, args: str = "") -> str:
     try:
         ci.build()
         matches, truncated = ci.workspace_symbols(query)
-    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
+    except Exception as exc:
         return diagnostics.report_internal_error("/symbols", exc)
     if not matches:
         return f"**No symbols matching `{query}`.**"
@@ -74,7 +74,7 @@ def handle_definition(agent: CantripAgent, args: str = "") -> str:
     try:
         ci.build()
         result = ci.go_to_definition(symbol)
-    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
+    except Exception as exc:
         return diagnostics.report_internal_error("/definition", exc)
     if not result.semantic:
         return f"**No definition for `{symbol}`.**"
@@ -87,7 +87,7 @@ def handle_definition(agent: CantripAgent, args: str = "") -> str:
 
 
 def handle_references(agent: CantripAgent, args: str = "") -> str:
-    """``/references <symbol>`` — list every recorded callsite for a symbol."""
+    """Handle ``/references <symbol>``: list every recorded callsite for a symbol."""
     symbol, _ = _split_args(args)
     if not symbol:
         return "Usage: `/references <symbol>` — lists every recorded callsite."
@@ -97,7 +97,7 @@ def handle_references(agent: CantripAgent, args: str = "") -> str:
     try:
         ci.build()
         result = ci.find_references(symbol)
-    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
+    except Exception as exc:
         return diagnostics.report_internal_error("/references", exc)
     if not result.semantic:
         return f"**No references for `{symbol}`.**"

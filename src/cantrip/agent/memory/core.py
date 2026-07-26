@@ -27,12 +27,13 @@ import logging
 import os
 import pathlib
 import re
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cantrip.agent.store import SessionStore
 
 log = logging.getLogger(__name__)
@@ -807,8 +808,10 @@ class MemoryManager:
         """
         entries: list[MemoryEntry] = []
         if scope in (None, "charm") and self._session_store is not None:
-            for row in self._session_store.list_memory(kind=kind, status=status, tag=tag):
-                entries.append(_row_to_entry(row))
+            entries.extend(
+                _row_to_entry(row)
+                for row in self._session_store.list_memory(kind=kind, status=status, tag=tag)
+            )
         if scope in (None, "charm") and self._shared_store is not None:
             entries.extend(self._shared_store.list_entries(kind=kind, status=status, tag=tag))
         if scope in (None, "global"):
@@ -839,7 +842,7 @@ class MemoryManager:
         if entry is not None and self._on_recall is not None:
             try:
                 self._on_recall(entry)
-            except Exception:  # noqa: BLE001 - never let a UI hook break recall.
+            except Exception:
                 log.debug("recall callback failed", exc_info=True)
         return entry
 
@@ -847,8 +850,7 @@ class MemoryManager:
         """Keyword search across scopes. Returns charm-scope hits first."""
         entries: list[MemoryEntry] = []
         if scope in (None, "charm") and self._session_store is not None:
-            for row in self._session_store.search_memory(query):
-                entries.append(_row_to_entry(row))
+            entries.extend(_row_to_entry(row) for row in self._session_store.search_memory(query))
         if scope in (None, "charm") and self._shared_store is not None:
             entries.extend(self._shared_store.search(query))
         if scope in (None, "global"):
@@ -939,7 +941,7 @@ class MemoryManager:
         if self._on_write is not None:
             try:
                 self._on_write(entry)
-            except Exception:  # noqa: BLE001 - never let a UI hook break write.
+            except Exception:
                 log.debug("write callback failed", exc_info=True)
         return entry
 
@@ -964,7 +966,7 @@ class MemoryManager:
                 return "local"
             try:
                 choice = self._team_memory_decider(title, kind)
-            except Exception:  # noqa: BLE001 - decider is user code, never break the write.
+            except Exception:
                 log.warning("team_memory_decider raised; falling back to local", exc_info=True)
                 return "local"
             if choice == "shared":
@@ -1104,9 +1106,10 @@ class MemoryManager:
 
     def revalidate_all(self, *, scope: str | None = None) -> list[RevalidationResult]:
         """Revalidate every entry in *scope* (or both scopes by default)."""
-        results: list[RevalidationResult] = []
-        for entry in self.list_entries(scope=scope, status=None):
-            results.append(self.revalidate(scope=entry.scope, title=entry.title))
+        results: list[RevalidationResult] = [
+            self.revalidate(scope=entry.scope, title=entry.title)
+            for entry in self.list_entries(scope=scope, status=None)
+        ]
         return results
 
     # ── TTL sweep ───────────────────────────────────────────────────────

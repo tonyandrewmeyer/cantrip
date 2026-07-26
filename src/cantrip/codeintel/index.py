@@ -29,7 +29,6 @@ import logging
 import pathlib
 import time
 import typing
-from collections.abc import Iterable, Sequence
 
 from cantrip.repomap.symbols import (
     FileSymbols,
@@ -40,6 +39,9 @@ from cantrip.repomap.symbols import (
     parse_charm_metadata,
     parse_python_file,
 )
+
+if typing.TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 log = logging.getLogger(__name__)
 

@@ -35,7 +35,7 @@ def _render_template() -> str:
 class _StubWs:
     """Minimal stand-in for a ``WebSocketResponse`` that accepts weakrefs."""
 
-    __slots__ = ("closed", "__weakref__")
+    __slots__ = ("__weakref__", "closed")
 
     def __init__(self, *, closed: bool = False) -> None:
         self.closed = closed

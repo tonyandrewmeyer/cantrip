@@ -268,7 +268,7 @@ class SnapshotManager:
         if sha is not None and self._event_bus is not None:
             try:
                 self._event_bus.publish(ui_events.snapshot_created(turn_id=turn_id, sha=sha))
-            except Exception:  # noqa: BLE001 — UI failure must not break snapshots.
+            except Exception:
                 log.debug("Failed to publish snapshot_created event", exc_info=True)
         return sha
 
@@ -317,7 +317,7 @@ class SnapshotManager:
                         direction=direction,
                     )
                 )
-            except Exception:  # noqa: BLE001 — UI failure must not break restore.
+            except Exception:
                 log.debug("Failed to publish snapshot_restored event", exc_info=True)
         return paths_changed
 
@@ -405,7 +405,7 @@ class SnapshotManager:
     def _invoke(self, cmd: list[str]) -> subprocess.CompletedProcess[str]:
         """Shared subprocess invocation envelope."""
         try:
-            return subprocess.run(  # noqa: S603 — args are constants, paths internal.
+            return subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,

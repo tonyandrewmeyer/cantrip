@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +15,9 @@ from cantrip.agent.tools.codeintel import (
     build_codeintel_tools,
 )
 from cantrip.codeintel import CodeIntel
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Fixture builder — small charm with a couple of cross-file references.

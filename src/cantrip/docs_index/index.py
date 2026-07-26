@@ -29,14 +29,17 @@ import dataclasses
 import logging
 import pathlib
 import urllib.parse
-from collections.abc import Iterable
-
-import httpx
+from typing import TYPE_CHECKING
 
 from cantrip.docs_index import crawl, sites
 from cantrip.docs_index.chunk import chunk_text
 from cantrip.docs_index.store import Chunk, DocsStore
 from cantrip.llm.roles import EmbedProvider, record_role_usage
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    import httpx
 
 log = logging.getLogger(__name__)
 

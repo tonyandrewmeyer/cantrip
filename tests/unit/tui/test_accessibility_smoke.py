@@ -65,8 +65,7 @@ def _binding_sources() -> list[tuple[type, list[Binding]]]:
     sources: list[tuple[type, list[Binding]]] = [
         (app_module.CantripApp, list(app_module.CantripApp.BINDINGS)),
     ]
-    for cls in _screen_classes():
-        sources.append((cls, list(cls.BINDINGS)))
+    sources.extend((cls, list(cls.BINDINGS)) for cls in _screen_classes())
     return sources
 
 

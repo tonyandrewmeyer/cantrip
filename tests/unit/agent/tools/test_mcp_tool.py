@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
-from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +15,9 @@ from cantrip.agent.tools.base import Tool
 from cantrip.agent.tools.mcp_tool import MCPTool
 from cantrip.mcp import MCPRegistry, ServerConfig
 from cantrip.mcp.types import MCPToolInfo, TransportKind
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[4]
 

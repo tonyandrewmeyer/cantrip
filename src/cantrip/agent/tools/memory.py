@@ -560,8 +560,7 @@ class MemoryPurgeCheckTool(_MemoryToolBase):
         if not candidates:
             return ToolResult(success=True, output="(no memories due for purge)")
         lines = [f"{len(candidates)} memories due for purge — ask the user before deleting:"]
-        for entry in candidates:
-            lines.append(_entry_summary(entry))
+        lines.extend(_entry_summary(entry) for entry in candidates)
         return ToolResult(
             success=True,
             output="\n".join(lines),

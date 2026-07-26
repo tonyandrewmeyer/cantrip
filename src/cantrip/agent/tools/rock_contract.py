@@ -276,9 +276,11 @@ def _check_spring_boot(repo: pathlib.Path) -> tuple[list[str], list[str]]:
         issues.append(
             "Spring Boot extension requires pom.xml or build.gradle (or build.gradle.kts)."
         )
-    for wrapper in (mvnw, gradlew):
-        if wrapper.exists() and not wrapper.stat().st_mode & 0o111:
-            issues.append(f"{wrapper.name} exists but is not executable.")
+    issues.extend(
+        f"{wrapper.name} exists but is not executable."
+        for wrapper in (mvnw, gradlew)
+        if wrapper.exists() and not wrapper.stat().st_mode & 0o111
+    )
     warnings.append(
         "If both Maven and Gradle exist in upstream, ask the user which build "
         "path to keep in the trial copy."

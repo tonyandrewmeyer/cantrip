@@ -508,7 +508,6 @@ class ContextManager:
 
     def _virtualise_tool_message(self, message: Message) -> Message:
         """Virtualise individual tool results that exceed the threshold."""
-
         new_results = []
         changed = False
         for tr in message.tool_results:
@@ -566,8 +565,9 @@ class ContextManager:
 
         if virtual_files:
             parts.append("\nVirtual files available:")
-            for vf in virtual_files:
-                parts.append(f"  - {vf.id}: {vf.name} (~{vf.token_estimate:,} tokens)")
+            parts.extend(
+                f"  - {vf.id}: {vf.name} (~{vf.token_estimate:,} tokens)" for vf in virtual_files
+            )
 
         body = "\n".join(parts)
         framed = (
@@ -710,7 +710,7 @@ class ContextManager:
         )
         summary_msg = Message(role=Role.SYSTEM, content=summary_content)
         recent = messages[-self._keep_recent :] if len(messages) > self._keep_recent else messages
-        return [summary_msg] + list(recent)
+        return [summary_msg, *list(recent)]
 
     def _compact_ledger_and_drop(
         self,
@@ -877,8 +877,7 @@ class ContextManager:
             role = msg.role.value.upper()
             if msg.content:
                 parts.append(f"[{role}] {msg.content}")
-            for tc in msg.tool_calls:
-                parts.append(f"[{role}:tool_call] {tc.name}({tc.arguments})")
+            parts.extend(f"[{role}:tool_call] {tc.name}({tc.arguments})" for tc in msg.tool_calls)
             for tr in msg.tool_results:
                 status = "error" if tr.is_error else "ok"
                 # Preserve more content for errors (failure info is often

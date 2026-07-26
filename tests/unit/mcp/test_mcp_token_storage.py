@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pathlib
 import shutil
 import stat
+from typing import TYPE_CHECKING
 
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -16,6 +16,9 @@ from cantrip.mcp.token_storage import (
     default_token_dir,
     gpg_enabled,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _sample_tokens() -> OAuthToken:

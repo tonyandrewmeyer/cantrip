@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 from cantrip.agent import queue, state, store
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def seed_cli_export_session(charm_path: pathlib.Path) -> None:

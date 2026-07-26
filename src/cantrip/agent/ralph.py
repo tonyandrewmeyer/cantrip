@@ -24,11 +24,14 @@ import dataclasses
 import enum
 import hashlib
 import logging
-import pathlib
 import subprocess
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from cantrip.ui import events as ui_events
+
+if TYPE_CHECKING:
+    import pathlib
 
 log = logging.getLogger(__name__)
 
@@ -235,7 +238,7 @@ async def run_ralph(
     one call to ``process_message`` and we return whatever it
     produced.  ``-1`` means "no cap"; we rely on convergence or
     stall detection to terminate, with a hard safety ceiling
-    (``_UNLIMITED_SAFETY_CAP``) so a misbehaving agent can't loop
+    (``unlimited_safety_cap``) so a misbehaving agent can't loop
     forever without manual intervention.
 
     *event_bus* receives the ``ralph_*`` lifecycle events; pass
@@ -281,8 +284,8 @@ async def run_ralph(
     # real Ralph runs converge inside a dozen iterations, so 200 is
     # both well above the practical maximum and below any plausible
     # token budget for a single charm goal.
-    _UNLIMITED_SAFETY_CAP = 200
-    cap = _UNLIMITED_SAFETY_CAP if config.max_iterations < 0 else config.max_iterations
+    unlimited_safety_cap = 200
+    cap = unlimited_safety_cap if config.max_iterations < 0 else config.max_iterations
 
     responses: list[str] = []
     response_sigs: list[str] = []

@@ -236,14 +236,13 @@ class ScenarioCoverageTool(Tool):
             )
         if unexercised:
             lines.append("Unexercised handlers:")
-            for obs in unexercised:
-                lines.append(
-                    f"  {obs['path']}:{obs['line']}: {obs['handler']} (on={obs['event']})"
-                )
+            lines.extend(
+                f"  {obs['path']}:{obs['line']}: {obs['handler']} (on={obs['event']})"
+                for obs in unexercised
+            )
         if gaps:
             lines.append("Event-shape gaps:")
-            for gap in gaps:
-                lines.append(f"  - {gap}")
+            lines.extend(f"  - {gap}" for gap in gaps)
 
         if total == 0:
             caption = "scenario_coverage → no observers"

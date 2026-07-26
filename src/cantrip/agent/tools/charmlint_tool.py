@@ -153,7 +153,7 @@ class CharmlintTool(Tool):
                 continue
             try:
                 result = await client.call_tool(tool_name, {"path": str(charm_dir)})
-            except Exception as exc:  # noqa: BLE001 - MCP SDK can raise anything
+            except Exception as exc:
                 log.debug(
                     "charmcraft MCP %s call failed: %s",
                     tool_name,
@@ -306,9 +306,7 @@ class CharmlintTool(Tool):
 
         report = lint(charm_dir, config)
 
-        lines: list[str] = []
-        for d in report.diagnostics:
-            lines.append(d.format_text(charm_dir))
+        lines: list[str] = [d.format_text(charm_dir) for d in report.diagnostics]
         if lines:
             lines.append("")
         lines.append(report.summary_line())

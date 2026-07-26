@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -25,6 +25,9 @@ from cantrip.hooks import (
     first_veto,
     load_hooks,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Config parsing

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import pathlib
-
-import pytest
+from typing import TYPE_CHECKING
 
 from cantrip.docs_index import cli as docs_cli
 from cantrip.docs_index import index, sites
 from cantrip.docs_index.store import Chunk, DocsStore
+
+if TYPE_CHECKING:
+    import pathlib
+
+    import pytest
 
 
 def _make_args(**kwargs: object) -> argparse.Namespace:

@@ -71,11 +71,13 @@ class MyCharm(ops.CharmBase):
         path = event.params["path"]
         try:
             backup_id = self._perform_backup(path)
-            event.set_results({
-                "backup-id": backup_id,
-                "path": path,
-                "status": "success",
-            })
+            event.set_results(
+                {
+                    "backup-id": backup_id,
+                    "path": path,
+                    "status": "success",
+                }
+            )
         except FileNotFoundError:
             event.fail(f"Backup path does not exist: {path}")
 

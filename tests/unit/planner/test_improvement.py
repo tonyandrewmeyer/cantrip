@@ -78,7 +78,7 @@ class TestPlanImprovementFixes:
         gaps = {"cos_tracing": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps, confirm_task_id=confirm_id)
 
-        obs = [t for t in tasks if t.id.startswith("fill-observability-")][0]
+        obs = next(t for t in tasks if t.id.startswith("fill-observability-"))
         assert confirm_id in obs.dependencies
 
     def test_all_fix_tasks_use_primary_model(self) -> None:
@@ -124,7 +124,7 @@ class TestPlanImprovementFixes:
         gaps = {"cos_tracing": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        obs = [t for t in tasks if t.id.startswith("fill-observability-")][0]
+        obs = next(t for t in tasks if t.id.startswith("fill-observability-"))
         assert "Grafana dashboard" in obs.description
         assert "alert rules" in obs.description
 
@@ -132,7 +132,7 @@ class TestPlanImprovementFixes:
         gaps = {"integration_tests": True}
         tasks = plan_improvement_fixes(self._ctx(), gaps)
 
-        test_task = [t for t in tasks if t.id.startswith("fill-tests-")][0]
+        test_task = next(t for t in tasks if t.id.startswith("fill-tests-"))
         assert "Jubilant" in test_task.description
         assert "run_charm_tests" in test_task.description
 

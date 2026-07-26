@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import TYPE_CHECKING
 
-from cantrip.agent.queue import AgentTask
+if TYPE_CHECKING:
+    from cantrip.agent.queue import AgentTask
 
 
 @dataclasses.dataclass

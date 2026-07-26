@@ -10,7 +10,7 @@ import sqlite3
 import subprocess
 import time
 from collections.abc import AsyncIterator, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cantrip.agent import (
     auto_commit,
@@ -395,7 +395,7 @@ def detect_github_repo(charm_path: pathlib.Path | None) -> str | None:
     if charm_path is None:
         return None
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             cwd=str(charm_path),
             capture_output=True,
@@ -723,7 +723,7 @@ class CantripAgent:
         return self._hook_stats
 
     def _on_hook_result(self, result: HookResult) -> None:
-        """Listener fired by :class:`HookRunner` after each hook run.
+        """Return listener fired by :class:`HookRunner` after each hook run.
 
         Feeds the result into :class:`HookStats` and writes a
         ``hook_invocation`` transcript event so the ``/hooks``
@@ -828,7 +828,7 @@ class CantripAgent:
                     source=entry.source,
                 )
             )
-        except Exception:  # noqa: BLE001 - UI hook must not break memory writes.
+        except Exception:
             log.debug("memory_written event publish failed", exc_info=True)
 
     def _on_memory_recalled(self, entry: MemoryEntry) -> None:
@@ -837,7 +837,7 @@ class CantripAgent:
             self._event_bus.publish(
                 ui_events.memory_recalled(title=entry.title, scope=entry.scope, kind=entry.kind)
             )
-        except Exception:  # noqa: BLE001 - UI hook must not break recall.
+        except Exception:
             log.debug("memory_recalled event publish failed", exc_info=True)
 
     def _maybe_schedule_correction_writer(self, user_message: str) -> None:
@@ -882,8 +882,9 @@ class CantripAgent:
         for msg in self.state.messages[-max_messages:]:
             if msg.role != Role.ASSISTANT:
                 continue
-            for tc in msg.tool_calls:
-                tool_calls.append({"name": tc.name, "arguments": tc.arguments})
+            tool_calls.extend(
+                {"name": tc.name, "arguments": tc.arguments} for tc in msg.tool_calls
+            )
         return collect_file_citations(tool_calls, base_path=self.state.charm_path)
 
     def _current_turn_files(self, *, max_messages: int = 6) -> list[pathlib.Path]:
@@ -1155,7 +1156,7 @@ class CantripAgent:
                 provider=self._get_provider("compaction"),
                 ledger=self.state.ledger,
             )
-        except Exception:  # noqa: BLE001 — any compaction failure must fall through to emergency truncation; the loop has to keep running.
+        except Exception:
             log.warning(
                 "Compaction failed, falling back to emergency truncation",
                 exc_info=True,
@@ -1379,7 +1380,7 @@ class CantripAgent:
                 )
             )
             self._publish_short_session_status()
-        except Exception:  # noqa: BLE001 - UI hook must not break the swap.
+        except Exception:
             log.debug("model_switched event publish failed", exc_info=True)
 
     def _publish_short_session_status(self) -> None:
@@ -1484,7 +1485,7 @@ class CantripAgent:
             from cantrip.agent.preflight import substrate_summary
 
             self._substrate_cache = substrate_summary()
-        except Exception:  # noqa: BLE001 - never block the prompt on a probe error.
+        except Exception:
             log.debug("substrate_summary probe failed", exc_info=True)
             self._substrate_cache = False  # cache the failure so we don't retry
             return None
@@ -1569,7 +1570,7 @@ class CantripAgent:
             rm.build()
             pressure = self._context_manager.context_pressure(self.state.messages)
             rendered = rm.render_for_prompt(context_pressure=pressure)
-        except Exception as exc:  # noqa: BLE001 — best-effort; never block a turn.
+        except Exception as exc:
             log.warning("repomap: render skipped (%s: %s)", type(exc).__name__, exc)
             return None
         return rendered or None
@@ -1582,7 +1583,7 @@ class CantripAgent:
     # Names match LLM-facing entries — Juju leaves are bundled behind the
     # single ``juju`` tool, so the sets reference the bundle name; the
     # leaf still dispatches via the subcommand rewrite at the executor.
-    _CORE_TOOLS_BY_PHASE: dict[WorkflowPhase, set[str]] = {
+    _CORE_TOOLS_BY_PHASE: ClassVar[dict[WorkflowPhase, set[str]]] = {
         WorkflowPhase.BUILD: {
             "read_file",
             "write_file",
@@ -2266,7 +2267,7 @@ class CantripAgent:
     )
 
     def _architect_provider(self) -> LLMProvider:
-        """Provider for the architect pass.
+        """Return provider for the architect pass.
 
         Always the main provider.  ``state.architect_consecutive_failures``
         beyond the threshold also routes the *editor* pass through the
@@ -2275,7 +2276,7 @@ class CantripAgent:
         return self.provider
 
     def _editor_provider(self) -> LLMProvider:
-        """Provider for the editor pass.
+        """Return provider for the editor pass.
 
         Resolution order:
 
@@ -2380,7 +2381,7 @@ class CantripAgent:
             return
         try:
             auto_commit.pre_turn_commit_dirty(self.state.charm_path)
-        except Exception:  # noqa: BLE001 — never break the loop.
+        except Exception:
             log.debug("auto_commit pre-turn failed", exc_info=True)
 
     async def _summarise_for_commit(
@@ -2413,7 +2414,7 @@ class CantripAgent:
                 temperature=0.3,
                 max_tokens=80,
             )
-        except Exception:  # noqa: BLE001 — fall back to derived subject.
+        except Exception:
             log.debug("auto_commit summary generation failed", exc_info=True)
             return None
         if response and response.content:
@@ -2464,7 +2465,7 @@ class CantripAgent:
                         )
                     except sqlite3.Error:
                         log.debug("auto_commit event record failed", exc_info=True)
-        except Exception:  # noqa: BLE001 — never break the loop.
+        except Exception:
             log.debug("auto_commit post-turn failed", exc_info=True)
 
     async def _run_architect_editor_turn(
@@ -2494,7 +2495,8 @@ class CantripAgent:
         # Architect: prepend the architect instruction as a SYSTEM
         # message so it's clear the request is "propose, don't act".
         # Don't mutate the caller's list.
-        architect_msgs: list[Message] = list(messages) + [
+        architect_msgs: list[Message] = [
+            *list(messages),
             Message(role=Role.SYSTEM, content=self._ARCHITECT_INSTRUCTION),
         ]
         architect_resp = await self._complete_with_retry(
@@ -2514,7 +2516,7 @@ class CantripAgent:
                     ),
                 )
             )
-        except Exception:  # noqa: BLE001 — UI hook must not break the loop.
+        except Exception:
             log.debug("architect_pass UI publish failed", exc_info=True)
 
         editor_provider = self._editor_provider()
@@ -2522,11 +2524,11 @@ class CantripAgent:
         # Editor: append the proposal as a synthetic USER message so
         # the conversation alternates cleanly (the prior message ends
         # ASSISTANT or TOOL — never USER — when this method is called).
-        editor_msgs: list[Message] = list(messages) + [
+        editor_msgs: list[Message] = [
+            *list(messages),
             Message(
-                role=Role.USER,
-                content=self._EDITOR_INSTRUCTION_TEMPLATE.format(proposal=proposal),
-            )
+                role=Role.USER, content=self._EDITOR_INSTRUCTION_TEMPLATE.format(proposal=proposal)
+            ),
         ]
         editor_resp = await self._complete_with_retry(
             editor_msgs,
@@ -3802,7 +3804,7 @@ class CantripAgent:
 
 
 def _infer_gaps_from_audit(text: str) -> dict[str, bool]:
-    """Derive a gaps dictionary from free-form audit Markdown.
+    r"""Derive a gaps dictionary from free-form audit Markdown.
 
     The ``CharmAuditTool`` emits structured ``data["gaps"]`` on its tool
     result, but subagent task results are plain text summaries.  This

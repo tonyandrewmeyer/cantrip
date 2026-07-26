@@ -171,7 +171,7 @@ class TestProcessExited:
     async def test_short_lived_child_reports_exit_code(
         self, tool: WaitForTool, fast_cadence: None
     ) -> None:
-        proc = subprocess.Popen(  # noqa: S603 - test fixture
+        proc = subprocess.Popen(
             [sys.executable, "-c", "import sys; sys.exit(7)"],
         )
         try:
@@ -212,7 +212,7 @@ class TestProcessExited:
         assert result.data["exit_code"] is None
 
     async def test_timeout_when_running(self, tool: WaitForTool, fast_cadence: None) -> None:
-        proc = subprocess.Popen(  # noqa: S603 - test fixture
+        proc = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(60)"],
         )
         try:

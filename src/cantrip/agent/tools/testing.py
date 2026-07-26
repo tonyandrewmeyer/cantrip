@@ -431,7 +431,7 @@ def generate_integration_tests(
             "\n",
             "\n",
         ]
-        for action_name, _action_data in actions.items():
+        for action_name in actions:
             fn_name = re.sub(r"[^a-z0-9]", "_", action_name.lower())
             action_tests.append(
                 f"def test_action_{fn_name}(juju: jubilant.Juju):\n"

@@ -202,7 +202,7 @@ def capture_databag_snapshot(model: str) -> DatabagSnapshot:
         return DatabagSnapshot()
 
     apps = status_data.get("applications", {})
-    for _app_name, app_data in apps.items():
+    for app_data in apps.values():
         units = app_data.get("units", {})
         if not units:
             continue
@@ -299,33 +299,32 @@ def _diff_units(
     new_app: AppSnapshot,
 ) -> list[WatcherEvent]:
     """Compare units within an application and return detected events."""
-    events: list[WatcherEvent] = []
     old_units = {u.name: u for u in old_app.units}
     new_units = {u.name: u for u in new_app.units}
 
-    for uname in sorted(set(new_units) - set(old_units)):
-        events.append(
-            WatcherEvent(
-                source="status",
-                category="new_unit",
-                summary=f"New unit: {uname}",
-                detail=f"Unit '{uname}' was added to '{app_name}'.",
-                app=app_name,
-                unit=uname,
-            )
+    events: list[WatcherEvent] = [
+        WatcherEvent(
+            source="status",
+            category="new_unit",
+            summary=f"New unit: {uname}",
+            detail=f"Unit '{uname}' was added to '{app_name}'.",
+            app=app_name,
+            unit=uname,
         )
+        for uname in sorted(set(new_units) - set(old_units))
+    ]
 
-    for uname in sorted(set(old_units) - set(new_units)):
-        events.append(
-            WatcherEvent(
-                source="status",
-                category="removed_unit",
-                summary=f"Unit removed: {uname}",
-                detail=f"Unit '{uname}' was removed from '{app_name}'.",
-                app=app_name,
-                unit=uname,
-            )
+    events.extend(
+        WatcherEvent(
+            source="status",
+            category="removed_unit",
+            summary=f"Unit removed: {uname}",
+            detail=f"Unit '{uname}' was removed from '{app_name}'.",
+            app=app_name,
+            unit=uname,
         )
+        for uname in sorted(set(old_units) - set(new_units))
+    )
 
     for uname in sorted(set(old_units) & set(new_units)):
         old_unit = old_units[uname]
@@ -382,46 +381,45 @@ def _diff_apps(
     new: StatusSnapshot,
 ) -> list[WatcherEvent]:
     """Compare applications and their units between two snapshots."""
-    events: list[WatcherEvent] = []
     old_apps = {a.name: a for a in old.apps}
     new_apps = {a.name: a for a in new.apps}
 
-    for name in sorted(set(new_apps) - set(old_apps)):
-        events.append(
-            WatcherEvent(
-                source="status",
-                category="new_app",
-                summary=f"New application: {name}",
-                detail=f"Application '{name}' appeared in the model.",
-                app=name,
-            )
+    events: list[WatcherEvent] = [
+        WatcherEvent(
+            source="status",
+            category="new_app",
+            summary=f"New application: {name}",
+            detail=f"Application '{name}' appeared in the model.",
+            app=name,
         )
+        for name in sorted(set(new_apps) - set(old_apps))
+    ]
 
-    for name in sorted(set(old_apps) - set(new_apps)):
-        events.append(
-            WatcherEvent(
-                source="status",
-                category="removed_app",
-                summary=f"Application removed: {name}",
-                detail=f"Application '{name}' is no longer in the model.",
-                app=name,
-            )
+    events.extend(
+        WatcherEvent(
+            source="status",
+            category="removed_app",
+            summary=f"Application removed: {name}",
+            detail=f"Application '{name}' is no longer in the model.",
+            app=name,
         )
+        for name in sorted(set(old_apps) - set(new_apps))
+    )
 
     for name in sorted(set(old_apps) & set(new_apps)):
         old_app = old_apps[name]
         new_app = new_apps[name]
 
-        for rel in sorted(new_app.relations - old_app.relations):
-            events.append(
-                WatcherEvent(
-                    source="status",
-                    category="new_relation",
-                    summary=f"New relation: {rel}",
-                    detail=f"Relation '{rel}' was added involving '{name}'.",
-                    app=name,
-                )
+        events.extend(
+            WatcherEvent(
+                source="status",
+                category="new_relation",
+                summary=f"New relation: {rel}",
+                detail=f"Relation '{rel}' was added involving '{name}'.",
+                app=name,
             )
+            for rel in sorted(new_app.relations - old_app.relations)
+        )
 
         events.extend(_diff_units(name, old_app, new_app))
 

@@ -97,7 +97,7 @@ class TestProviderThrottle:
                 tools=None,
                 temperature=0.7,
                 max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
+                thinking_budget=None,
             ):
                 nonlocal call_count
                 call_count += 1

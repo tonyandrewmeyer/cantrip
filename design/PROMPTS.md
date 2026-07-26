@@ -90,6 +90,7 @@ env = jinja2.Environment(
 ```python
 _JINJA_SYNTAX = re.compile(r"[{}%]")
 
+
 def _sanitise(value: str | None) -> str | None:
     if value is None:
         return None

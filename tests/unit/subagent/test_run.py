@@ -1,6 +1,6 @@
 """Subagent tests: run."""
 
-import datetime
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
 
 import pytest
@@ -17,6 +17,9 @@ from cantrip.llm.base import ProviderRateLimitError, Response, ToolCall
 from tests.conftest import FakeProvider
 from tests.support.providers import RecordingProvider
 from tests.unit.subagent.conftest import _make_context, _make_tool
+
+if TYPE_CHECKING:
+    import datetime
 
 # ===================================================================
 # TestSubagentRun
@@ -145,7 +148,7 @@ class TestSubagentRetry:
                 tools=None,
                 temperature=0.7,
                 max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
+                thinking_budget=None,
             ):
                 nonlocal call_count
                 call_count += 1
@@ -179,7 +182,7 @@ class TestSubagentRetry:
                 tools=None,
                 temperature=0.7,
                 max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
+                thinking_budget=None,
             ):
                 raise ProviderRateLimitError("rate limited")
 

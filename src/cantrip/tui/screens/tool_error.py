@@ -1,5 +1,7 @@
 """Tool-failure detail modal screen for Cantrip TUI."""
 
+from typing import ClassVar
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -65,7 +67,7 @@ class ToolErrorScreen(ModalScreen):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "dismiss", "Close"),
     ]
 

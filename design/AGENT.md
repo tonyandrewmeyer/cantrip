@@ -93,13 +93,13 @@ The `WorkQueue` (in `agent/queue.py`) is the central coordination mechanism.
 @dataclass
 class AgentTask:
     id: str
-    title: str                          # Human-readable, shown in TUI checklist
-    status: TaskStatus                  # pending, active, done, failed, blocked
-    category: TaskCategory              # research, build, deploy, test, debug, infra
-    description: str                    # Detailed instructions for the subagent
-    dependencies: list[str]             # Task IDs that must complete first
-    result: str | None                  # Summary of what the task produced
-    blocked_reason: str | None          # Why it's blocked (e.g. "awaiting user confirmation")
+    title: str  # Human-readable, shown in TUI checklist
+    status: TaskStatus  # pending, active, done, failed, blocked
+    category: TaskCategory  # research, build, deploy, test, debug, infra
+    description: str  # Detailed instructions for the subagent
+    dependencies: list[str]  # Task IDs that must complete first
+    result: str | None  # Summary of what the task produced
+    blocked_reason: str | None  # Why it's blocked (e.g. "awaiting user confirmation")
 ```
 
 ### Task Lifecycle
@@ -526,19 +526,19 @@ template references a variable that isn't set yet. Fixing now."
 class AgentState:
     charm_name: str | None
     charm_path: Path | None
-    charm_type: str | None              # "machine" or "k8s"
+    charm_type: str | None  # "machine" or "k8s"
     framework: str | None
 
     dev_model: str | None
     cos_model: str | None
 
-    environment_ready: bool             # Transient
-    watcher_enabled: bool               # Transient
-    watcher_reacting: bool              # Transient — False ⇒ observe only, don't queue tasks
-    test_results: TestResults | None    # Transient
+    environment_ready: bool  # Transient
+    watcher_enabled: bool  # Transient
+    watcher_reacting: bool  # Transient — False ⇒ observe only, don't queue tasks
+    test_results: TestResults | None  # Transient
 
-    messages: list[Message]             # Conversation history
-    decisions: list[Decision]           # Key decisions (always in context)
+    messages: list[Message]  # Conversation history
+    decisions: list[Decision]  # Key decisions (always in context)
 ```
 
 ### SQLite Store (.cantrip)

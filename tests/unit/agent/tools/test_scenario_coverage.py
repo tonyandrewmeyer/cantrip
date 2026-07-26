@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -11,6 +11,9 @@ from cantrip.agent.tools.scenario_coverage import (
     ScenarioCoverageTool,
     scenario_coverage,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 @pytest.fixture

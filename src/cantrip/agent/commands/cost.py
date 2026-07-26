@@ -176,7 +176,6 @@ def format_cost(agent: CantripAgent) -> str:
             f"**Edit-string misses (unresolved):** {total_misses} across "
             f"{len(misses)} file{'s' if len(misses) != 1 else ''}"
         )
-        for path in sorted(misses):
-            lines.append(f"- {path}: {misses[path]}")
+        lines.extend(f"- {path}: {misses[path]}" for path in sorted(misses))
 
     return "\n".join(lines)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import pathlib
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
@@ -15,6 +15,9 @@ from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
 from cantrip.llm.base import ProviderError
 from cantrip.ui import events as ui_events
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Helpers

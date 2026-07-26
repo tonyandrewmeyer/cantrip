@@ -2,6 +2,7 @@
 
 import contextlib
 import pathlib
+from typing import ClassVar
 
 from rich.markup import escape as rich_escape
 from textual.app import ComposeResult
@@ -104,7 +105,7 @@ class TranscriptScreen(ModalScreen):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "close_or_dismiss", "Close"),
         Binding("v", "cycle_view", "View"),
         Binding("r", "refresh", "Refresh"),

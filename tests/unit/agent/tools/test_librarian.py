@@ -16,7 +16,7 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -32,6 +32,9 @@ from cantrip.agent.tools.charmhub import (
     _quality_flags,
 )
 from cantrip.agent.tools.launchpad import LaunchpadFetchTool, LaunchpadSearchTool
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # ---------------------------------------------------------------------------
 # Helpers

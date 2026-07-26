@@ -797,9 +797,9 @@ class TestMistralWireFormatStream:
         ]
         provider.client.stream = MagicMock(return_value=self._make_sse_mock(sse_lines))
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Weather?")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Weather?")])
+        ]
 
         # Content is buffered and re-yielded as a single chunk.
         content_chunks = [c for c in chunks if c.content]
@@ -828,9 +828,10 @@ class TestMistralWireFormatStream:
         ]
         provider.client.stream = MagicMock(return_value=self._make_sse_mock(sse_lines))
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Write it.")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk
+            async for chunk in provider.stream([Message(role=Role.USER, content="Write it.")])
+        ]
 
         finals = [c for c in chunks if c.is_final]
         assert len(finals) == 1
@@ -886,9 +887,10 @@ class TestMistralWireFormatStream:
         ]
         provider.client.stream = MagicMock(return_value=self._make_sse_mock(sse_lines))
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Juju status")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk
+            async for chunk in provider.stream([Message(role=Role.USER, content="Juju status")])
+        ]
 
         finals = [c for c in chunks if c.is_final]
         assert len(finals) == 1

@@ -371,7 +371,7 @@ class SandboxedRunner:
         }
         try:
             sink("sandbox_policy", payload)
-        except Exception as exc:  # noqa: BLE001 - sink errors must not propagate
+        except Exception as exc:
             log.debug("sandbox event sink raised %r; ignoring", exc)
 
     def wrap(
@@ -428,7 +428,7 @@ class SandboxedRunner:
             "--dev",
             "/dev",
             "--tmpfs",
-            "/tmp",
+            "/tmp",  # noqa: S108  # Private tmpfs inside the sandbox.
         ]
         if not policy.network:
             cmd.append("--unshare-net")

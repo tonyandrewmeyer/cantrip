@@ -329,6 +329,6 @@ def write_optional_yaml(
     dest = prime_dir / filename
     if source.is_file():
         shutil.copy2(str(source), str(dest))
-    elif field in project and project[field]:
+    elif project.get(field):
         with dest.open("w", encoding="utf-8") as fh:
             yaml.safe_dump(project[field], fh, default_flow_style=False)

@@ -413,7 +413,7 @@ class TestGeminiProviderComplete:
     @pytest.mark.asyncio
     async def test_complete_text_response(self):
         """Test that a text response is parsed correctly."""
-        provider, mock_genai = _make_provider()
+        provider, _mock_genai = _make_provider()
 
         mock_candidate = MagicMock()
         mock_candidate.content.parts = [_make_text_part("Hello there!")]
@@ -436,7 +436,7 @@ class TestGeminiProviderComplete:
     @pytest.mark.asyncio
     async def test_complete_with_tool_calls(self):
         """Test that function_call parts produce tool_calls."""
-        provider, mock_genai = _make_provider()
+        provider, _mock_genai = _make_provider()
 
         mock_candidate = MagicMock()
         mock_candidate.content.parts = [_make_function_call_part("juju_status", {"model": "dev"})]
@@ -459,7 +459,7 @@ class TestGeminiProviderComplete:
     @pytest.mark.asyncio
     async def test_complete_rate_limit_error(self):
         """Test that a 429 ClientError raises ProviderRateLimitError."""
-        provider, mock_genai = _make_provider()
+        provider, _mock_genai = _make_provider()
 
         from google.genai import errors as genai_errors
 
@@ -837,9 +837,7 @@ class TestGeminiProviderStream:
         provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
         messages = [Message(role=Role.USER, content="Hi")]
-        chunks = []
-        async for c in provider.stream(messages):
-            chunks.append(c)
+        chunks = [c async for c in provider.stream(messages)]
 
         # Two text chunks + one final chunk.
         assert len(chunks) == 3
@@ -865,9 +863,7 @@ class TestGeminiProviderStream:
         provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
         messages = [Message(role=Role.USER, content="Read the file")]
-        chunks = []
-        async for c in provider.stream(messages):
-            chunks.append(c)
+        chunks = [c async for c in provider.stream(messages)]
 
         # Only the final chunk should exist with tool calls.
         assert len(chunks) == 1
@@ -900,9 +896,7 @@ class TestGeminiProviderStream:
 
         provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
-        chunks = []
-        async for c in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(c)
+        chunks = [c async for c in provider.stream([Message(role=Role.USER, content="Hi")])]
 
         final = chunks[-1]
         assert final.is_final
@@ -923,9 +917,7 @@ class TestGeminiProviderStream:
 
         provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
-        chunks = []
-        async for c in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(c)
+        chunks = [c async for c in provider.stream([Message(role=Role.USER, content="Hi")])]
 
         final = chunks[-1]
         assert final.is_final
@@ -1305,9 +1297,7 @@ class TestThoughtSignatureRoundTrip:
 
         provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
-        chunks = []
-        async for c in provider.stream([Message(role=Role.USER, content="Read both")]):
-            chunks.append(c)
+        chunks = [c async for c in provider.stream([Message(role=Role.USER, content="Read both")])]
 
         final = chunks[-1]
         assert final.is_final is True
@@ -1335,9 +1325,7 @@ class TestThoughtSignatureRoundTrip:
 
         provider._client.aio.models.generate_content_stream = AsyncMock(return_value=_stream_gen())
 
-        chunks = []
-        async for c in provider.stream([Message(role=Role.USER, content="Hey")]):
-            chunks.append(c)
+        chunks = [c async for c in provider.stream([Message(role=Role.USER, content="Hey")])]
 
         # Final chunk should carry thought metadata.
         final = chunks[-1]

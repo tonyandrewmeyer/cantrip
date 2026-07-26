@@ -131,9 +131,7 @@ class TestCantripAgent:
         provider = FakeProvider([Response(content="Streamed answer")])
         agent = CantripAgent(provider=provider)
 
-        chunks = []
-        async for chunk in agent.process_message_streaming("Hi"):
-            chunks.append(chunk)
+        chunks = [chunk async for chunk in agent.process_message_streaming("Hi")]
 
         assert "".join(chunks) == "Streamed answer"
 
@@ -143,9 +141,7 @@ class TestCantripAgent:
         provider = FakeProvider([Response(content="Hello world from streaming")])
         agent = CantripAgent(provider=provider)
 
-        chunks = []
-        async for chunk in agent.process_message_streaming("Hi"):
-            chunks.append(chunk)
+        chunks = [chunk async for chunk in agent.process_message_streaming("Hi")]
 
         # FakeProvider.stream() splits on spaces, so we expect multiple chunks.
         assert len(chunks) > 1
@@ -164,9 +160,7 @@ class TestCantripAgent:
         agent = CantripAgent(provider=provider)
         agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="active"))
 
-        chunks = []
-        async for chunk in agent.process_message_streaming("Show status"):
-            chunks.append(chunk)
+        chunks = [chunk async for chunk in agent.process_message_streaming("Show status")]
 
         assert "".join(chunks) == "Status is active"
         # Multiple chunks from the word-splitting in FakeProvider.stream().
@@ -194,9 +188,7 @@ class TestCantripAgent:
         agent = CantripAgent(provider=provider)
         agent._execute_tool = AsyncMock(return_value=ToolResult(success=True, output="active"))
 
-        chunks = []
-        async for chunk in agent.process_message_streaming("Show status"):
-            chunks.append(chunk)
+        chunks = [chunk async for chunk in agent.process_message_streaming("Show status")]
 
         # The joined stream must have visible separation between rounds.
         joined = "".join(chunks)
@@ -299,8 +291,6 @@ class TestCantripAgent:
         agent = CantripAgent(provider=provider)
         agent.state.pack_succeeded = True
 
-        chunks: list[str] = []
-        async for chunk in agent.process_message_streaming("again"):
-            chunks.append(chunk)
+        [chunk async for chunk in agent.process_message_streaming("again")]
 
         assert agent.state.pack_succeeded is False

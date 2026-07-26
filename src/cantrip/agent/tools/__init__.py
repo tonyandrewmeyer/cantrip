@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pathlib
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.tools.base import Tool, ToolResult, execute_tool, tool_to_schema
@@ -12,6 +10,10 @@ from cantrip.agent.tools.subcommand import (
     expand_leaves,
     resolve_subcommand,
 )
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Callable
 
 
 def build_tools(
@@ -430,8 +432,10 @@ def build_tools(
             )
         )
     if mcp_registry is not None:
-        for info in mcp_registry.aggregated_tools():
-            tools.append(MCPTool(info, mcp_registry, controller=mcp_controller))
+        tools.extend(
+            MCPTool(info, mcp_registry, controller=mcp_controller)
+            for info in mcp_registry.aggregated_tools()
+        )
 
     # Phase 72b: read-only code intelligence.  Skipped when no getter
     # is supplied — the agent gets the getter wired up at construction

@@ -99,7 +99,7 @@ def fetch_issues(repo: str) -> list[GitHubIssue]:
         "number,title,labels,body,comments,url",
     ]
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
@@ -351,7 +351,7 @@ class IssueTriage:
             )
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 — triage runs in a background loop; one bad pass must not kill the watcher.
+        except Exception:
             log.exception("Issue triage failed for %s", self._repo)
         finally:
             self._running = False

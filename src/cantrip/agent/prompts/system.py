@@ -17,7 +17,7 @@ _COMPACT_TEMPLATE: Any = None
 
 def _get_env() -> Any:
     """Return the shared Jinja2 environment, creating it on first call."""
-    global _JINJA_ENV  # noqa: PLW0603
+    global _JINJA_ENV
     if _JINJA_ENV is None:
         import jinja2
 
@@ -32,12 +32,12 @@ def _get_env() -> Any:
 def _get_template(*, compact: bool = False) -> Any:
     """Return the system prompt template, loading it on first call."""
     if compact:
-        global _COMPACT_TEMPLATE  # noqa: PLW0603
+        global _COMPACT_TEMPLATE
         if _COMPACT_TEMPLATE is None:
             _COMPACT_TEMPLATE = _get_env().get_template("system_compact.md.j2")
         return _COMPACT_TEMPLATE
 
-    global _SYSTEM_TEMPLATE  # noqa: PLW0603
+    global _SYSTEM_TEMPLATE
     if _SYSTEM_TEMPLATE is None:
         _SYSTEM_TEMPLATE = _get_env().get_template("system.md.j2")
     return _SYSTEM_TEMPLATE
@@ -126,6 +126,7 @@ def build_system_prompt(
         workshop_prompt: Pre-read content of
             ``~/.config/cantrip/workshop-prompt.md`` when Cantrip runs inside
             a Canonical Workshop sandbox.  ``None`` skips the section.
+        compact: Emit the shortened prompt variant.
 
     Returns:
         Complete system prompt with context.

@@ -13,13 +13,16 @@ charm-build scenarios live in their own files.
 from __future__ import annotations
 
 import os
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cantrip.agent.core import CantripAgent
 
 from . import harness
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _all_provider_params() -> list[pytest.param]:

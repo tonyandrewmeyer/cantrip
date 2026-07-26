@@ -21,8 +21,7 @@ exercise the *whole* checkpoint → stop → restart → resume path:
 from __future__ import annotations
 
 import asyncio
-import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -36,6 +35,9 @@ from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm.base import Response, ToolCall
 from tests.conftest import FakeProvider
 from tests.support.wait import wait_for_queue_state, wait_until
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -83,11 +85,11 @@ class _HangAfterProvider(FakeProvider):
 
     async def complete(
         self,
-        messages: list[Any],  # noqa: ARG002
-        tools: list[Any] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        messages: list[Any],
+        tools: list[Any] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ) -> Response:
         self.last_response_schema = response_schema
@@ -138,7 +140,7 @@ class TestCheckpointStopRestartResume:
     async def test_partial_task_resumes_without_replaying_cached_steps(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ) -> None:
         db = tmp_path / ".cantrip"
 
@@ -229,7 +231,7 @@ class TestCheckpointStopRestartResume:
     async def test_completed_task_is_not_re_run_after_restart(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ) -> None:
         """A task that finished before the restart stays DONE and isn't re-dispatched."""
         db = tmp_path / ".cantrip"
@@ -257,7 +259,7 @@ class TestCheckpointStopRestartResume:
 
         # Restart: a provider that would explode if a subagent ran again.
         class _ExplodingProvider(FakeProvider):
-            async def complete(self, *args: Any, **kwargs: Any) -> Response:  # noqa: ARG002
+            async def complete(self, *args: Any, **kwargs: Any) -> Response:
                 raise AssertionError("a DONE task must not be re-executed on resume")
 
         store2 = SessionStore(db)
@@ -354,7 +356,7 @@ class TestSessionResumeWithActiveWork:
     async def test_interrupted_task_finishes_after_resume_via_executor(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ) -> None:
         """Queue a task, save, restart, run the executor — it picks the task up and finishes it."""
         agent = CantripAgent(provider=FakeProvider(), charm_path=tmp_path)

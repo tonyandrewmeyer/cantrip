@@ -137,7 +137,7 @@ class TestSprintCharmVerifier:
 
     def test_missing_charmcraft_yaml_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         (tmp_path / "requirements.txt").write_text("ops>=3,<4\n", encoding="utf-8")
-        with pytest.raises(verifier.VerifyError, match="charmcraft.yaml"):
+        with pytest.raises(verifier.VerifyError, match=r"charmcraft.yaml"):
             verifier.verify(tmp_path)
 
     def test_wrong_base_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -150,7 +150,7 @@ class TestSprintCharmVerifier:
                 plugin: charm
             """)
         self._write_sprint_charm(tmp_path, charmcraft_yaml=bad)
-        with pytest.raises(verifier.VerifyError, match="ubuntu@24.04"):
+        with pytest.raises(verifier.VerifyError, match=r"ubuntu@24.04"):
             verifier.verify(tmp_path)
 
     def test_uv_plugin_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -163,7 +163,7 @@ class TestSprintCharmVerifier:
                 plugin: uv
             """)
         self._write_sprint_charm(tmp_path, charmcraft_yaml=bad)
-        with pytest.raises(verifier.VerifyError, match="charm plugin|plugin: charm"):
+        with pytest.raises(verifier.VerifyError, match=r"charm plugin|plugin: charm"):
             verifier.verify(tmp_path)
 
     def test_build_snaps_present_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -206,7 +206,7 @@ class TestSprintCharmVerifier:
 
     def test_missing_src_charm_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         self._write_sprint_charm(tmp_path, src_charm_py=None)
-        with pytest.raises(verifier.VerifyError, match="src/charm.py"):
+        with pytest.raises(verifier.VerifyError, match=r"src/charm.py"):
             verifier.verify(tmp_path)
 
     def test_verifier_cli_returns_0_on_success(
@@ -308,7 +308,7 @@ class TestHarnessMigrationVerifier:
     def test_empty_tests_dir_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         (tmp_path / "tests").mkdir()
         (tmp_path / "pyproject.toml").write_text(self._PYPROJECT, encoding="utf-8")
-        with pytest.raises(verifier.VerifyError, match="no .py files"):
+        with pytest.raises(verifier.VerifyError, match=r"no .py files"):
             verifier.verify(tmp_path)
 
     def test_lingering_harness_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -337,7 +337,7 @@ class TestHarnessMigrationVerifier:
         (tmp_path / "tests" / "unit" / "test_charm.py").write_text(
             self._SCENARIO_TEST, encoding="utf-8"
         )
-        with pytest.raises(verifier.VerifyError, match="pyproject.toml"):
+        with pytest.raises(verifier.VerifyError, match=r"pyproject.toml"):
             verifier.verify(tmp_path)
 
     def test_invalid_pyproject_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -531,7 +531,7 @@ class TestStatefulCharmVerifier:
 
     def test_missing_charmcraft_yaml_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         self._write_full_charm(tmp_path, write_charmcraft=False)
-        with pytest.raises(verifier.VerifyError, match="charmcraft.yaml"):
+        with pytest.raises(verifier.VerifyError, match=r"charmcraft.yaml"):
             verifier.verify(tmp_path)
 
     def test_charmcraft_without_name_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -541,7 +541,7 @@ class TestStatefulCharmVerifier:
 
     def test_missing_src_charm_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         self._write_full_charm(tmp_path, write_charm_py=False)
-        with pytest.raises(verifier.VerifyError, match="src/charm.py"):
+        with pytest.raises(verifier.VerifyError, match=r"src/charm.py"):
             verifier.verify(tmp_path)
 
     def test_no_ops_tracing_dep_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -769,7 +769,7 @@ class TestTerraformModuleVerifier:
 
     def test_missing_charmcraft_yaml_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         self._write_module_charm(tmp_path, write_charmcraft=False)
-        with pytest.raises(verifier.VerifyError, match="charmcraft.yaml"):
+        with pytest.raises(verifier.VerifyError, match=r"charmcraft.yaml"):
             verifier.verify(tmp_path)
 
     def test_charmcraft_without_name_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -845,7 +845,7 @@ class TestTerraformModuleVerifier:
                 "terraform.tf": self._TERRAFORM_TF,
             },
         )
-        with pytest.raises(verifier.VerifyError, match="variables.tf"):
+        with pytest.raises(verifier.VerifyError, match=r"variables.tf"):
             verifier.verify(tmp_path)
 
     def test_no_output_blocks_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -858,7 +858,7 @@ class TestTerraformModuleVerifier:
                 "terraform.tf": self._TERRAFORM_TF,
             },
         )
-        with pytest.raises(verifier.VerifyError, match="outputs.tf"):
+        with pytest.raises(verifier.VerifyError, match=r"outputs.tf"):
             verifier.verify(tmp_path)
 
     def test_no_terraform_block_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -1055,7 +1055,7 @@ class TestAddObservabilityVerifier:
 
     def test_missing_charmcraft_yaml_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         self._write_observable_charm(tmp_path, write_charmcraft=False)
-        with pytest.raises(verifier.VerifyError, match="charmcraft.yaml"):
+        with pytest.raises(verifier.VerifyError, match=r"charmcraft.yaml"):
             verifier.verify(tmp_path)
 
     def test_charmcraft_without_name_fails(self, tmp_path: pathlib.Path, verifier) -> None:
@@ -1065,7 +1065,7 @@ class TestAddObservabilityVerifier:
 
     def test_missing_src_charm_fails(self, tmp_path: pathlib.Path, verifier) -> None:
         self._write_observable_charm(tmp_path, write_charm_py=False)
-        with pytest.raises(verifier.VerifyError, match="src/charm.py"):
+        with pytest.raises(verifier.VerifyError, match=r"src/charm.py"):
             verifier.verify(tmp_path)
 
     def test_no_ops_tracing_dep_fails(self, tmp_path: pathlib.Path, verifier) -> None:

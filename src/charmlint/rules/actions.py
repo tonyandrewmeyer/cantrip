@@ -137,7 +137,7 @@ def _collect_methods(tree: ast.AST) -> dict[str, ast.FunctionDef]:
 
 
 def _handler_terminates(handler: ast.FunctionDef) -> bool:
-    """True iff handler body calls ``*.set_results(...)`` or ``*.fail(...)``."""
+    """Return true iff handler body calls ``*.set_results(...)`` or ``*.fail(...)``."""
     for sub in ast.walk(handler):
         if (
             isinstance(sub, ast.Call)

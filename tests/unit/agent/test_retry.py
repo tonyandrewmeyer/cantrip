@@ -361,7 +361,7 @@ class _ScriptedStreamProvider(llm.LLMProvider):
         self._attempts = list(attempts)
         self.stream_calls = 0
 
-    async def complete(  # noqa: D401, ARG002 — abstract impl required.
+    async def complete(
         self,
         messages: list[llm.Message],
         tools: list[llm.Tool] | None = None,
@@ -372,7 +372,7 @@ class _ScriptedStreamProvider(llm.LLMProvider):
     ) -> llm.Response:
         raise AssertionError("complete() should not be called in streaming tests")
 
-    async def stream(  # noqa: ARG002
+    async def stream(
         self,
         messages: list[llm.Message],
         tools: list[llm.Tool] | None = None,

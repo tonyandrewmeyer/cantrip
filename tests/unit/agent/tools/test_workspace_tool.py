@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
 
 from cantrip.agent.tools.workspace import WorkspaceInfoTool
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _write(root: pathlib.Path, body: str) -> pathlib.Path:

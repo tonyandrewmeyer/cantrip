@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import dataclasses
 import io
-import pathlib
 import types
+from typing import TYPE_CHECKING
 
 import pytest
 import pytest_bdd
 
 from cantrip import main as cantrip_main
 from tests.support import transcript_seed
+
+if TYPE_CHECKING:
+    import argparse
+    import pathlib
 
 pytest_bdd.scenarios("features/cli_parsing.feature")
 pytest_bdd.scenarios("features/export_transcript.feature")
