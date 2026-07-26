@@ -184,7 +184,7 @@ class TestPushBranch:
             "cantrip.agent.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
         ):
-            ok, msg = push_branch("/path", "cantrip/fix")
+            ok, _msg = push_branch("/path", "cantrip/fix")
             assert ok is False
 
 
@@ -469,7 +469,7 @@ class TestBootstrapGithubRepo:
                 side_effect=[init_result, add_result, commit_result, gh_result],
             ),
         ):
-            ok, msg = bootstrap_github_repo("/path", "my-charm")
+            ok, _msg = bootstrap_github_repo("/path", "my-charm")
             assert ok is True
 
     def test_uses_org_prefix(self) -> None:
@@ -521,7 +521,7 @@ class TestCheckUpstreamDiverged:
             "cantrip.agent.git_branch.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
         ):
-            diverged, behind = check_upstream_diverged("/path")
+            diverged, _behind = check_upstream_diverged("/path")
             assert diverged is False
 
 
@@ -539,7 +539,7 @@ class TestGhIssueComment:
             mock.patch("cantrip.agent.git_branch.shutil.which", return_value="/usr/bin/gh"),
             mock.patch("cantrip.agent.git_branch.subprocess.run", return_value=result),
         ):
-            ok, msg = gh_issue_comment("owner/repo", 42, "Fixed!")
+            ok, _msg = gh_issue_comment("owner/repo", 42, "Fixed!")
             assert ok is True
 
     def test_failure(self) -> None:
@@ -554,7 +554,7 @@ class TestGhIssueComment:
 
     def test_no_gh(self) -> None:
         with mock.patch("cantrip.agent.git_branch.shutil.which", return_value=None):
-            ok, msg = gh_issue_comment("owner/repo", 42, "Fixed!")
+            ok, _msg = gh_issue_comment("owner/repo", 42, "Fixed!")
             assert ok is False
 
     def test_passes_correct_args(self) -> None:

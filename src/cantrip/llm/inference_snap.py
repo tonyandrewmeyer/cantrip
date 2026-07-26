@@ -382,7 +382,7 @@ class InferenceSnapProvider(OpenAICompatBase):
         full_content = "".join(accumulated)
 
         if not last_final.tool_calls:
-            tool_calls, remainder = parse_mistral_tool_call_content(full_content)
+            tool_calls, _remainder = parse_mistral_tool_call_content(full_content)
             if tool_calls:
                 # --jinja failed; the markers were in content.  Yield the
                 # parsed calls on the final chunk and suppress the raw marker

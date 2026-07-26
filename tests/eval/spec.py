@@ -92,19 +92,18 @@ class EvalSpec:
         spec_file = spec_dir / "spec.yaml"
         raw = yaml.safe_load(spec_file.read_text())
 
-        criteria = []
-        for entry in raw.get("rubric", []):
-            criteria.append(
-                Criterion(
-                    name=entry["name"],
-                    description=entry.get("description", ""),
-                    category=entry["category"],
-                    severity=Severity(entry.get("severity", "major")),
-                    check=entry["check"],
-                    args=entry.get("args", {}),
-                    points=entry.get("points", 1),
-                )
+        criteria = [
+            Criterion(
+                name=entry["name"],
+                description=entry.get("description", ""),
+                category=entry["category"],
+                severity=Severity(entry.get("severity", "major")),
+                check=entry["check"],
+                args=entry.get("args", {}),
+                points=entry.get("points", 1),
             )
+            for entry in raw.get("rubric", [])
+        ]
 
         # Discover gold-standard directories (any subdir that isn't __pycache__).
         golds = sorted(

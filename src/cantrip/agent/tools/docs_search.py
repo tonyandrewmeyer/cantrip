@@ -15,13 +15,15 @@ from __future__ import annotations
 
 import json
 import logging
-import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.docs_index import index, sites
 from cantrip.docs_index.store import DocsStore, SearchHit
 from cantrip.llm.roles import RoleNotConfigured, RoleRouter
+
+if TYPE_CHECKING:
+    import pathlib
 
 log = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ silently weaken the stack.
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -29,6 +29,9 @@ from cantrip.agent.subagent import (
 from cantrip.llm.base import Response, ToolCall
 from tests.conftest import FakeProvider
 from tests.unit.subagent.conftest import _make_context, _make_tool
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 class TestBuildPolicyEnforcer:

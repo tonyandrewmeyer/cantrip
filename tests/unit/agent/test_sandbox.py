@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pathlib
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
@@ -16,6 +16,9 @@ from cantrip.agent.sandbox import (
     sandbox_available,
     set_event_sink,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 class TestSandboxAvailable:

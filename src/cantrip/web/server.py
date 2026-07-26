@@ -214,7 +214,7 @@ def _handle_shared_slash_command(app: web.Application, agent: CantripAgent, cont
         # block instead.  The user's normal browser select+copy path
         # works on it; the TUI / CLI handle clipboard writes for real.
         body = (
-            f"{result.text}\n\nNo browser-side clipboard channel; "
+            f"{result.text}\n\nNo browser-side clipboard channel; "  # noqa: S608  # Markdown, not SQL.
             f"select and copy from below.\n\n```\n"
             f"{result.clipboard_text}\n```"
         )
@@ -228,7 +228,7 @@ async def _broadcast_followup(app: web.Application, followup) -> None:
     """Await a dispatcher follow-up coroutine and broadcast its result."""
     try:
         output = await followup
-    except Exception as exc:  # noqa: BLE001 - background task; surface any error
+    except Exception as exc:
         output = f"_Error: marketplace lookup failed: {exc}_"
     _broadcast_chat(app, "system", output)
 

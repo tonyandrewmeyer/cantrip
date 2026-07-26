@@ -27,13 +27,13 @@ def test_gold_standard_scores_perfectly(spec_dir, spec):
 
 
 @pytest.mark.parametrize("spec_dir,spec", _SPECS, ids=_IDS)
-def test_rubric_has_criteria(spec_dir, spec):  # noqa: ARG001
+def test_rubric_has_criteria(spec_dir, spec):
     """Every spec must define at least one rubric criterion."""
     assert spec.rubric.criteria, f"{spec.name} has no rubric criteria"
 
 
 @pytest.mark.parametrize("spec_dir,spec", _SPECS, ids=_IDS)
-def test_rubric_has_critical_criteria(spec_dir, spec):  # noqa: ARG001
+def test_rubric_has_critical_criteria(spec_dir, spec):
     """Every spec should have at least one critical criterion."""
     critical = [c for c in spec.rubric.criteria if c.severity is Severity.CRITICAL]
     assert critical, f"{spec.name} has no critical criteria"

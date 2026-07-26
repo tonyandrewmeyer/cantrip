@@ -19,8 +19,11 @@ to a fuller Ubuntu base without any ceremony.
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Framework eligibility table
@@ -281,17 +284,17 @@ def _check_entrypoint_scripts(repo: pathlib.Path, advisories: list[str]) -> None
     slice, but they warrant a mention so the user is aware of the dependency.
     """
     # Paths that 12-factor framework extensions treat as optional entrypoints.
-    _ENTRYPOINT_CANDIDATES = ("migrate.sh", "entrypoint.sh", "start.sh", "docker-entrypoint.sh")
-    _SHELL_ONLY_RE = re.compile(
+    entrypoint_candidates = ("migrate.sh", "entrypoint.sh", "start.sh", "docker-entrypoint.sh")
+    shell_only_re = re.compile(
         r"\b(source\b|\.[ \t]|export\b|\[\[|set -[euxo]|trap\b)", re.MULTILINE
     )
 
-    for name in _ENTRYPOINT_CANDIDATES:
+    for name in entrypoint_candidates:
         script = repo / name
         if not script.is_file():
             continue
         text = _read_text_safe(script)
-        if _SHELL_ONLY_RE.search(text):
+        if shell_only_re.search(text):
             advisories.append(
                 f"'{name}' uses shell-only constructs (source, [[, set -, …).  "
                 "In a chiselled rock the shebang interpreter (bash/sh) must be "

@@ -17,8 +17,8 @@ few lines: :class:`~tests.support.providers.FailingProvider` /
 from __future__ import annotations
 
 import os
-import pathlib
 import types
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -41,6 +41,9 @@ from tests.support.providers import CallbackProvider, FailingProvider, FlakyProv
 from tests.support.tools import make_raising_tool, make_stub_tool
 from tests.support.wait import wait_for_queue_state, wait_for_task_status
 
+if TYPE_CHECKING:
+    import pathlib
+
 _VALID_BRIEFING = '{"tasks": [{"title": "Scaffold the charm", "category": "build"}]}'
 
 
@@ -51,7 +54,7 @@ class TestProviderFailureInjection:
     @pytest.mark.asyncio
     async def test_non_transient_provider_error_fails_task_with_summary(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A non-transient ``ProviderError`` isn't retried — the task goes FAILED.
 
@@ -78,8 +81,8 @@ class TestProviderFailureInjection:
     @pytest.mark.asyncio
     async def test_overloaded_provider_exhausts_retries_then_fails(
         self,
-        fast_executor,  # noqa: ARG002
-        fast_retry,  # noqa: ARG002
+        fast_executor,
+        fast_retry,
     ):
         """A persistently-overloaded provider exhausts ``complete_with_retry`` then fails the task.
 
@@ -108,8 +111,8 @@ class TestProviderFailureInjection:
     @pytest.mark.asyncio
     async def test_connection_drop_exhausts_retries_then_fails(
         self,
-        fast_executor,  # noqa: ARG002
-        fast_retry,  # noqa: ARG002
+        fast_executor,
+        fast_retry,
     ):
         """A persistent mid-stream disconnect is retried as transient, then fails the task."""
         provider = FailingProvider(ProviderConnectionError("peer hung up"))
@@ -131,7 +134,7 @@ class TestProviderFailureInjection:
     @pytest.mark.asyncio
     async def test_provider_failure_does_not_block_independent_task(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """One task hits a provider error; an independent task still completes."""
 
@@ -249,7 +252,7 @@ class TestToolExecutionFailures:
     @pytest.mark.asyncio
     async def test_failing_tool_does_not_crash_subagent_loop(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A tool that raises mid-execute becomes an error result; the subagent recovers.
 
@@ -293,7 +296,7 @@ class TestToolExecutionFailures:
     @pytest.mark.asyncio
     async def test_tool_returning_failure_result_does_not_crash_subagent_loop(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A tool that *returns* ``success=False`` is surfaced and the task still completes."""
         provider = CallbackProvider(
@@ -331,7 +334,7 @@ class TestWorkLoopRecovery:
     async def test_persistent_provider_failure_terminates_and_persists(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Every subagent call fails — all tasks reach FAILED and the loop stops spinning.
 
@@ -367,8 +370,8 @@ class TestWorkLoopRecovery:
     @pytest.mark.asyncio
     async def test_transient_provider_failure_recovers_and_completes(
         self,
-        fast_executor,  # noqa: ARG002
-        fast_retry,  # noqa: ARG002
+        fast_executor,
+        fast_retry,
     ):
         """Two rate-limit blips then success — ``complete_with_retry`` recovers the task."""
         provider = FlakyProvider(

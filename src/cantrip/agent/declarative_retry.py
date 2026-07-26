@@ -32,8 +32,7 @@ import logging
 import pathlib
 import subprocess
 import time
-from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.permissions import (
     PermissionManager,
@@ -44,6 +43,9 @@ from cantrip.agent.permissions import (
     evaluate as evaluate_permissions,
 )
 from cantrip.llm.structured import StructuredOutputError, validate_against_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 log = logging.getLogger(__name__)
 
@@ -313,7 +315,7 @@ class RetryOutcome:
 # ---------------------------------------------------------------------------
 
 
-class _PermissionRefused(Exception):
+class _PermissionRefusedError(Exception):
     """Internal signal: a permission gate denied a shell command.
 
     Surfaces as a failed :class:`CheckResult` (or a no-op
@@ -329,7 +331,7 @@ async def _gate_shell_command(
     permission_manager: PermissionManager | None,
     agent_name: str,
 ) -> None:
-    """Raise :class:`_PermissionRefused` if the command is not allowed."""
+    """Raise :class:`_PermissionRefusedError` if the command is not allowed."""
     if permissions is None:
         return
     decision = evaluate_permissions(
@@ -339,10 +341,10 @@ async def _gate_shell_command(
         agent_name=agent_name,
     )
     if decision.outcome is PermissionOutcome.DENY:
-        raise _PermissionRefused(f"refused by permissions policy: {decision.reason}")
+        raise _PermissionRefusedError(f"refused by permissions policy: {decision.reason}")
     if decision.outcome is PermissionOutcome.ASK:
         if permission_manager is None:
-            raise _PermissionRefused(
+            raise _PermissionRefusedError(
                 "needs approval but this session has no interactive permission surface"
             )
         approved = await permission_manager.request(
@@ -351,7 +353,7 @@ async def _gate_shell_command(
             arguments={"command": command},
         )
         if not approved:
-            raise _PermissionRefused("user declined the permission prompt")
+            raise _PermissionRefusedError("user declined the permission prompt")
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +398,7 @@ async def _evaluate_shell(
             permission_manager=permission_manager,
             agent_name=agent_name,
         )
-    except _PermissionRefused as exc:
+    except _PermissionRefusedError as exc:
         return CheckResult(check=check, passed=False, detail=str(exc))
 
     cwd = repo_root if repo_root is not None else pathlib.Path.cwd()
@@ -525,7 +527,7 @@ async def _run_on_failure(
             permission_manager=permission_manager,
             agent_name=agent_name,
         )
-    except _PermissionRefused as exc:
+    except _PermissionRefusedError as exc:
         log.info("retry on_failure %r refused: %s", command, exc)
         return False
 
@@ -646,18 +648,17 @@ async def _run_checks(
     permission_manager: PermissionManager | None,
     agent_name: str,
 ) -> list[CheckResult]:
-    results: list[CheckResult] = []
-    for check in checks:
-        results.append(
-            await _evaluate_check(
-                check,
-                output,
-                repo_root=repo_root,
-                permissions=permissions,
-                permission_manager=permission_manager,
-                agent_name=agent_name,
-            )
+    results: list[CheckResult] = [
+        await _evaluate_check(
+            check,
+            output,
+            repo_root=repo_root,
+            permissions=permissions,
+            permission_manager=permission_manager,
+            agent_name=agent_name,
         )
+        for check in checks
+    ]
     return results
 
 

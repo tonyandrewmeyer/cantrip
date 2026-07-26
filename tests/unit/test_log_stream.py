@@ -11,7 +11,7 @@ from cantrip.juju import log_stream
 
 def _make_stdout(lines: list[bytes]) -> mock.AsyncMock:
     """Build an AsyncMock ``stdout`` that yields ``lines`` then EOF."""
-    queue = list(lines) + [b""]  # Trailing empty bytes marks EOF.
+    queue = [*list(lines), b""]  # Trailing empty bytes marks EOF.
     stdout = mock.AsyncMock()
     stdout.readline.side_effect = queue
     return stdout
@@ -102,9 +102,7 @@ class TestStreamLines:
             mock.patch("cantrip.juju.log_stream.juju_available", return_value=True),
             mock.patch("cantrip.juju.log_stream.tail_logs", return_value=proc),
         ):
-            collected: list[str] = []
-            async for line in log_stream.stream_lines("dev"):
-                collected.append(line)
+            collected: list[str] = [line async for line in log_stream.stream_lines("dev")]
 
         assert collected == ["first line", "second line", "third line"]
         proc.terminate.assert_called_once()

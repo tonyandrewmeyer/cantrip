@@ -23,7 +23,7 @@ _DAY2_TO_BUILD_TEMPLATE: Any = None
 
 def _get_env() -> Any:
     """Return the shared Jinja2 environment, creating it on first call."""
-    global _JINJA_ENV  # noqa: PLW0603
+    global _JINJA_ENV
     if _JINJA_ENV is None:
         import jinja2
 
@@ -37,7 +37,7 @@ def _get_env() -> Any:
 
 def render_full(*, categories: str, context_block: str) -> str:
     """Render the main planning prompt (research → synthesis → confirm)."""
-    global _FULL_TEMPLATE  # noqa: PLW0603
+    global _FULL_TEMPLATE
     if _FULL_TEMPLATE is None:
         _FULL_TEMPLATE = _get_env().get_template("full.md.j2")
     return _FULL_TEMPLATE.render(categories=categories, context_block=context_block)
@@ -45,7 +45,7 @@ def render_full(*, categories: str, context_block: str) -> str:
 
 def render_design_to_build(*, categories: str, context_block: str) -> str:
     """Render the prompt for generating build tasks from an approved design."""
-    global _DESIGN_TO_BUILD_TEMPLATE  # noqa: PLW0603
+    global _DESIGN_TO_BUILD_TEMPLATE
     if _DESIGN_TO_BUILD_TEMPLATE is None:
         _DESIGN_TO_BUILD_TEMPLATE = _get_env().get_template("design_to_build.md.j2")
     return _DESIGN_TO_BUILD_TEMPLATE.render(categories=categories, context_block=context_block)
@@ -53,7 +53,7 @@ def render_design_to_build(*, categories: str, context_block: str) -> str:
 
 def render_day2_to_build(*, categories: str, context_block: str) -> str:
     """Render the prompt for generating tasks from an approved day-2 plan."""
-    global _DAY2_TO_BUILD_TEMPLATE  # noqa: PLW0603
+    global _DAY2_TO_BUILD_TEMPLATE
     if _DAY2_TO_BUILD_TEMPLATE is None:
         _DAY2_TO_BUILD_TEMPLATE = _get_env().get_template("day2_to_build.md.j2")
     return _DAY2_TO_BUILD_TEMPLATE.render(categories=categories, context_block=context_block)

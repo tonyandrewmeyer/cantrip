@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import collections
 import dataclasses
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
-from cantrip.repomap.symbols import FileSymbols, Symbol
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from cantrip.repomap.symbols import FileSymbols, Symbol
 
 # PageRank parameters.  Damping and iteration count match the values
 # Brin/Page used in the original paper; convergence below 1e-6 on a

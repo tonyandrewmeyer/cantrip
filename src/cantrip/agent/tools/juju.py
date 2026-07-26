@@ -1647,8 +1647,10 @@ class CharmSyncTool(Tool):
         *,
         k8s: bool,
     ) -> None:
-        """Copy one local file to *unit*; k8s uses ``juju scp`` into the charm container,
-        machine charms shell out to ``sudo tee`` because scp drops privileges.
+        """Copy one local file to *unit*.
+
+        K8s uses ``juju scp`` into the charm container; machine charms shell out
+        to ``sudo tee`` because scp drops privileges.
         """
         remote_parent = str(pathlib.Path(remote_path).parent)
         safe_parent = shlex.quote(remote_parent)
@@ -1949,8 +1951,7 @@ class JujuShowSecretTool(Tool):
                 lines.append(f"Description: {secret.description}")
             if secret.access:
                 lines.append("Access:")
-                for access in secret.access:
-                    lines.append(f"  - {access.scope}: {access.role}")
+                lines.extend(f"  - {access.scope}: {access.role}" for access in secret.access)
 
             data: dict[str, Any] = {
                 "uri": str(secret.uri),
@@ -2151,7 +2152,6 @@ def _validate_config_against_charm(
     """
     import yaml
 
-    issues: list[dict[str, str]] = []
     charm_dir = pathlib.Path(charm_path)
 
     # Load declared config options from charmcraft.yaml or config.yaml.
@@ -2183,22 +2183,22 @@ def _validate_config_against_charm(
         return []
 
     # Keys in deployed config but not declared (may be deprecated or undeclared).
-    for key in sorted(deployed_keys - declared_keys):
-        issues.append(
-            {
-                "key": key,
-                "issue": "Deployed but not declared in charm config — may be deprecated",
-            }
-        )
+    issues: list[dict[str, str]] = [
+        {
+            "key": key,
+            "issue": "Deployed but not declared in charm config — may be deprecated",
+        }
+        for key in sorted(deployed_keys - declared_keys)
+    ]
 
     # Keys declared but not in deployed config (unusual — Juju usually shows all).
-    for key in sorted(declared_keys - deployed_keys):
-        issues.append(
-            {
-                "key": key,
-                "issue": "Declared in charm but not present in deployed config",
-            }
-        )
+    issues.extend(
+        {
+            "key": key,
+            "issue": "Declared in charm but not present in deployed config",
+        }
+        for key in sorted(declared_keys - deployed_keys)
+    )
 
     return issues
 
@@ -2353,8 +2353,7 @@ class JujuGetAppConfigTool(Tool):
             lines.append("")
             lines.append("## Validation Issues")
             lines.append("")
-            for issue in validation:
-                lines.append(f"  ! {issue['key']}: {issue['issue']}")
+            lines.extend(f"  ! {issue['key']}: {issue['issue']}" for issue in validation)
         return validation
 
 

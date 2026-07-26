@@ -22,8 +22,8 @@ Invariants under test:
 
 from __future__ import annotations
 
-import pathlib
 import string
+from typing import TYPE_CHECKING
 
 import yaml
 from hypothesis import HealthCheck, given, settings
@@ -31,6 +31,9 @@ from hypothesis import strategies as st
 
 from charmlint.linter import lint
 from charmlint.models import Severity
+
+if TYPE_CHECKING:
+    import pathlib
 
 # Hypothesis warns when a @given test uses a function-scoped pytest
 # fixture because the fixture is created once and then reused across

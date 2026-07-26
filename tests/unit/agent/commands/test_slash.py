@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import inspect
-import pathlib
-from collections.abc import Iterator
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,6 +15,10 @@ from cantrip.agent.commands.slash import SlashResult, dispatch
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
 from cantrip.agent.queue import WorkflowPhase
 from cantrip.agent.store import SessionStore
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterator
 
 
 @pytest.fixture

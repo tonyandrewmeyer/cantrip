@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +15,10 @@ from cantrip.agent.memory.export import (
     sanitise_body,
 )
 from cantrip.agent.store import SessionStore
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterator
 
 
 @pytest.fixture
@@ -91,7 +94,7 @@ class TestSanitiseBody:
 
     def test_multiple_redactions_counted(self) -> None:
         body = "ghp_123456789012345678abcdef and AKIAIOSFODNN7EXAMPLE"
-        sanitised, redactions = sanitise_body(body)
+        _sanitised, redactions = sanitise_body(body)
         assert redactions == 2
 
     def test_clean_body_no_changes(self) -> None:

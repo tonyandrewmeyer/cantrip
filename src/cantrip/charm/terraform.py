@@ -87,7 +87,8 @@ def _generate_variables_tf(
         ("channel", "Channel to deploy the charm from.", "string", '"latest/edge"'),
         (
             "config",
-            f"Charm configuration options. See https://charmhub.io/{charm_name}/configure for details.",
+            f"Charm configuration options. See https://charmhub.io/{charm_name}/configure for "
+            "details.",
             "map(string)",
             "{}",
         ),

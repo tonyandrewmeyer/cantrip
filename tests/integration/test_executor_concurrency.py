@@ -26,7 +26,7 @@ class TestExecutorPauseResume:
     async def test_process_message_pauses_executor(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """During process_message(), the executor is paused."""
         paused_during_call = False
@@ -38,11 +38,11 @@ class TestExecutorPauseResume:
 
             async def complete(
                 self,
-                messages,  # noqa: ARG002
-                tools=None,  # noqa: ARG002
-                temperature=0.7,  # noqa: ARG002
-                max_tokens=None,  # noqa: ARG002
-                thinking_budget=None,  # noqa: ARG002
+                messages,
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,
             ):
                 nonlocal paused_during_call
                 # Check if executor is paused when the LLM is called.
@@ -73,7 +73,7 @@ class TestExecutorPauseResume:
     async def test_executor_resumes_after_conversation(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """After process_message() completes, pending tasks get picked up."""
         provider = FakeProvider(
@@ -105,7 +105,7 @@ class TestExecutorPauseResume:
     async def test_executor_started_via_agent(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """CantripAgent.start_executor() creates and starts the executor."""
         provider = FakeProvider(responses=[Response(content="Done.")])
@@ -135,7 +135,7 @@ class TestLightModelRouting:
     @pytest.mark.asyncio
     async def test_research_task_uses_light_provider(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """RESEARCH tasks are routed to the light provider."""
         primary = FakeProvider(responses=[Response(content="primary response")])
@@ -172,7 +172,7 @@ class TestLightModelRouting:
     @pytest.mark.asyncio
     async def test_build_task_uses_primary_provider(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """BUILD tasks are routed to the primary provider."""
         primary = FakeProvider(responses=[Response(content="primary built")])
@@ -208,7 +208,7 @@ class TestLightModelRouting:
     @pytest.mark.asyncio
     async def test_operational_discovery_uses_primary(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """RESEARCH tasks with 'operational-discovery' use the primary provider."""
         primary = FakeProvider(responses=[Response(content="synthesis done")])

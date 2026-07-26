@@ -1,5 +1,7 @@
 """Help screen modal for Cantrip TUI."""
 
+from typing import ClassVar
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Horizontal, ScrollableContainer, Vertical
@@ -59,7 +61,7 @@ class HelpScreen(ModalScreen):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "dismiss", "Close"),
     ]
 

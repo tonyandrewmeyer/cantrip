@@ -39,10 +39,11 @@ Precedence (matches the ROADMAP 99.4 hints — ``paused`` beats
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from cantrip.agent.queue import AgentTask
 
 

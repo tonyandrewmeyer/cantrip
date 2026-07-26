@@ -516,12 +516,10 @@ def discover_flows(
         bundled_dir = BUNDLED_FLOWS_DIR
     user_dir = user_config_dir / "flows"
     merged: dict[str, Flow] = dict(_collect_flows(bundled_dir))
-    for name, flow in _collect_flows(user_dir).items():
-        merged[name] = flow
+    merged.update(_collect_flows(user_dir))
     if charm_path is not None:
         repo_dir = charm_path / REPO_FLOWS_DIR
-        for name, flow in _collect_flows(repo_dir).items():
-            merged[name] = flow
+        merged.update(_collect_flows(repo_dir))
     return sorted(merged.values(), key=lambda f: f.name)
 
 
@@ -604,14 +602,14 @@ def render_flow_prompt(flow: Flow) -> str:
 
 __all__ = [
     "BUNDLED_FLOWS_DIR",
+    "REPO_FLOWS_DIR",
+    "USER_CONFIG_FLOWS_DIR",
     "Flow",
     "FlowEdge",
     "FlowError",
     "FlowNode",
     "FlowRegistry",
     "NodeKind",
-    "REPO_FLOWS_DIR",
-    "USER_CONFIG_FLOWS_DIR",
     "discover_flows",
     "extract_mermaid_block",
     "load_flow_file",

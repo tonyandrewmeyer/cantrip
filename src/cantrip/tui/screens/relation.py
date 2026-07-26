@@ -3,6 +3,7 @@
 import functools
 import json
 import subprocess
+from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -74,7 +75,7 @@ class RelationDetailScreen(ModalScreen):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "dismiss", "Close"),
         Binding("r", "refresh", "Refresh"),
     ]

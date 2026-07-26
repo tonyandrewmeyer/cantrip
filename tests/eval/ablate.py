@@ -33,11 +33,14 @@ import dataclasses
 import os
 import re
 import sys
-from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 from cantrip.agent.prompts.system import build_system_prompt
 from cantrip.llm import create_provider
 from cantrip.llm.base import LLMProvider, Message, Role, Tool
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 # ---------------------------------------------------------------------------
 # Section parsing
@@ -176,7 +179,7 @@ async def _smoke_once(provider: LLMProvider, system_prompt: str) -> SmokeResult:
             ],
             max_tokens=128,
         )
-    except Exception as exc:  # noqa: BLE001 — wide net at the harness boundary; the operator wants to see the cell, not a crash
+    except Exception as exc:
         return SmokeResult(tool_call=None, non_empty=None, error=str(exc))
     tool_names = [tc.name for tc in tool_response.tool_calls]
     return SmokeResult(
@@ -252,13 +255,13 @@ def render_report(rows: list[Row]) -> str:
     header = f"{'section':<{name_width}}  {'tool_call':<10}  {'non_empty':<10}  delta"
     sep = f"{'-' * name_width}  {'-' * 10}  {'-' * 10}  -----"
     lines = [header, sep]
-    for row in rows:
-        lines.append(
-            f"{row.label:<{name_width}}  "
-            f"{_cell(row.result.tool_call):<10}  "
-            f"{_cell(row.result.non_empty):<10}  "
-            f"{row.delta}"
-        )
+    lines.extend(
+        f"{row.label:<{name_width}}  "
+        f"{_cell(row.result.tool_call):<10}  "
+        f"{_cell(row.result.non_empty):<10}  "
+        f"{row.delta}"
+        for row in rows
+    )
     return "\n".join(lines)
 
 
@@ -320,9 +323,7 @@ async def _async_main(argv: list[str]) -> int:
         print(f"{env_var} is not set — skipping ablation run.", file=sys.stderr)
         return 2
     provider = create_provider(args.provider, model=args.model)
-    rows: list[Row] = []
-    async for row in _produce_rows(provider, sections, prompt):
-        rows.append(row)
+    rows: list[Row] = [row async for row in _produce_rows(provider, sections, prompt)]
     print(render_report(rows))
     # Exit non-zero when at least one section's ablation lost a previously-
     # passing invariant.  The CLI is a development tool, not a CI gate, but

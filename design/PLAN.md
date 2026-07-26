@@ -707,6 +707,7 @@ Use `ops.testing` (Context, State, etc.) - the modern approach.
 ```python
 from ops import testing
 
+
 def test_start():
     ctx = testing.Context(MyCharm)
     state = testing.State()

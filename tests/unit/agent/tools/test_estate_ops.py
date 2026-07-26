@@ -9,8 +9,7 @@ host-coverage carve-out, and the report-rendering helper.
 
 from __future__ import annotations
 
-import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -21,6 +20,9 @@ from cantrip.agent.tools.estate_ops import (
     assess_estate_opportunities,
     render_estate_section,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _facets(opps: list[EstateOpportunity], product: str) -> set[str]:

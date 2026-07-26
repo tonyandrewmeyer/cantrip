@@ -1,5 +1,7 @@
 """Interactive design questions screen for the TUI."""
 
+from typing import ClassVar
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Vertical
@@ -76,7 +78,7 @@ class DesignQuestionsScreen(ModalScreen[list[DesignQuestion] | None]):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "cancel", "Cancel"),
         Binding("left", "previous", "Previous", show=False),
         Binding("p", "previous", "Previous", show=False),

@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-import pathlib
 import sqlite3
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cantrip.agent.queue import AgentTask, TaskStatus
@@ -20,6 +18,9 @@ from cantrip.agent.session_preview import SessionPreview
 from cantrip.llm.base import Message, Role
 
 if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Callable
+
     from cantrip.agent.queue import WorkQueue
     from cantrip.agent.state import AgentState
     from cantrip.agent.store import SessionStore
@@ -323,8 +324,7 @@ class PersistenceController:
 
         if state.decisions:
             parts.append("\n**Decisions:**")
-            for d in state.decisions:
-                parts.append(f"- {d.type}: {d.choice}")
+            parts.extend(f"- {d.type}: {d.choice}" for d in state.decisions)
 
         tasks = self._work_queue.all_tasks()
         if tasks:
@@ -338,8 +338,7 @@ class PersistenceController:
             completed = [t.title for t in tasks if t.status == TaskStatus.DONE]
             if completed:
                 parts.append("**Recent completed tasks:**")
-                for title in completed[-5:]:
-                    parts.append(f"- {title}")
+                parts.extend(f"- {title}" for title in completed[-5:])
 
         summary = "\n".join(parts)
 

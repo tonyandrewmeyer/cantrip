@@ -53,7 +53,7 @@ def _patch_juju(monkeypatch: pytest.MonkeyPatch, payload: str | None) -> None:
         return
     monkeypatch.setattr(planning_module.shutil, "which", lambda _name: "/usr/bin/juju")
 
-    def fake_run(*_args, **_kwargs):  # noqa: ANN002, ANN003 — match subprocess signature
+    def fake_run(*_args, **_kwargs):
         return subprocess.CompletedProcess(args=[], returncode=0, stdout=payload, stderr="")
 
     monkeypatch.setattr(planning_module.subprocess, "run", fake_run)

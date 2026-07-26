@@ -30,12 +30,10 @@ import base64
 import logging
 import pathlib
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from cantrip.agent.state import AgentState
-from cantrip.agent.store import SessionStore
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm.image import (
     DEFAULT_IMAGE_MODEL,
@@ -45,6 +43,10 @@ from cantrip.llm.image import (
     ImageResult,
     create_image_provider,
 )
+
+if TYPE_CHECKING:
+    from cantrip.agent.state import AgentState
+    from cantrip.agent.store import SessionStore
 
 log = logging.getLogger(__name__)
 

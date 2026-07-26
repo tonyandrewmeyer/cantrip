@@ -305,14 +305,18 @@ class JujuStreamLogsTool(Tool):
 
         collected: list[str] = []
         try:
-            async for line in stream_lines(
-                model,
-                level=level,
-                unit=unit,
-                lines=lines,
-                max_lines=max_lines,
-            ):
-                collected.append(line)
+            collected.extend(
+                [
+                    line
+                    async for line in stream_lines(
+                        model,
+                        level=level,
+                        unit=unit,
+                        lines=lines,
+                        max_lines=max_lines,
+                    )
+                ]
+            )
         except (OSError, TimeoutError) as exc:
             if collected:
                 # Return what we got so far.
@@ -607,10 +611,12 @@ class LokiQueryTool(Tool):
         for stream in streams:
             labels = stream.get("stream", {})
             label_str = ", ".join(f"{k}={v}" for k, v in labels.items())
-            for entry in stream.get("values", []):
-                # Each entry is [timestamp_ns, log_line].
-                if len(entry) >= 2:
-                    lines.append(f"[{label_str}] {entry[1]}")
+            # Each entry is [timestamp_ns, log_line].
+            lines.extend(
+                f"[{label_str}] {entry[1]}"
+                for entry in stream.get("values", [])
+                if len(entry) >= 2
+            )
 
         if not lines:
             return ToolResult(

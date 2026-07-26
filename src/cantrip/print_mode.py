@@ -21,7 +21,6 @@ the most common source of CONFIRM tasks.
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 import pathlib
@@ -43,6 +42,8 @@ from cantrip.llm.base import (
 from cantrip.ui import events as ui_events
 
 if TYPE_CHECKING:
+    import argparse
+
     from cantrip.agent.queue import AgentTask
 
 log = logging.getLogger(__name__)
@@ -129,8 +130,7 @@ def _format_pending_confirmations(tasks: list[AgentTask]) -> str:
         "",
         "Pending confirmations:",
     ]
-    for task in tasks:
-        lines.append(f"  - [{task.id}] {task.title}")
+    lines.extend(f"  - [{task.id}] {task.title}" for task in tasks)
     return "\n".join(lines)
 
 
@@ -357,7 +357,7 @@ async def _emit_slash_result(
     if result.followup is not None:
         try:
             followup_text = await result.followup
-        except Exception as exc:  # noqa: BLE001 — surface any handler error
+        except Exception as exc:
             followup_text = f"Error: slash follow-up failed: {exc}"
         if json_output:
             _emit_event(ui_events.chat_message(role="system", content=followup_text))

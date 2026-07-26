@@ -16,11 +16,14 @@ import asyncio
 import dataclasses
 import json
 import logging
-import pathlib
 from importlib import resources
+from typing import TYPE_CHECKING
 
 from cantrip.agent.retry import complete_with_retry
 from cantrip.llm import base as llm
+
+if TYPE_CHECKING:
+    import pathlib
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +80,7 @@ class ParliamentResult:
 
 
 def available_emotions() -> tuple[str, ...]:
-    """The full list of known emotion names."""
+    """Return the full list of known emotion names."""
     return EMOTIONS
 
 

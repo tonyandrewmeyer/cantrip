@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from cantrip.agent import flows
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.flows import handle_flow
 from cantrip.agent.commands.slash import SlashResult, dispatch
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable
 
 
 async def _drain(awaitable: Awaitable[str]) -> str:

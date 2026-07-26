@@ -13,10 +13,12 @@ import ast
 import dataclasses
 import enum
 import logging
-import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    import pathlib
 
 log = logging.getLogger(__name__)
 
@@ -177,7 +179,7 @@ class _PythonVisitor(ast.NodeVisitor):
 
     # -- definitions --------------------------------------------------
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802 — ast naming
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         bases = [_unparse(b) for b in node.bases]
         signature = f"({', '.join(bases)})" if bases else ""
         self.definitions.append(
@@ -198,10 +200,10 @@ class _PythonVisitor(ast.NodeVisitor):
             self.visit(child)
         self._class_stack.pop()
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._record_function(node)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._record_function(node)
 
     def _record_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
@@ -238,7 +240,7 @@ class _PythonVisitor(ast.NodeVisitor):
 
     # -- references ---------------------------------------------------
 
-    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+    def visit_Call(self, node: ast.Call) -> None:
         ref = _root_name(node.func)
         if ref:
             self._record_reference(ref, node.lineno)
@@ -249,7 +251,7 @@ class _PythonVisitor(ast.NodeVisitor):
             self._record_reference(leaf, node.lineno)
         self.generic_visit(node)
 
-    def visit_Attribute(self, node: ast.Attribute) -> None:  # noqa: N802
+    def visit_Attribute(self, node: ast.Attribute) -> None:
         # Only surface the attribute as a reference when it's read
         # standalone (not the ``func`` of a Call we already handled).
         # ``ast`` doesn't tell us the parent here, so we accept some
@@ -259,7 +261,7 @@ class _PythonVisitor(ast.NodeVisitor):
 
     # -- imports ------------------------------------------------------
 
-    def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
+    def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             # ``import foo`` — alias.name="foo", alias.asname=None.
             # ``import foo as f`` — alias.name="foo", alias.asname="f".
@@ -274,7 +276,7 @@ class _PythonVisitor(ast.NodeVisitor):
             self._record_reference(head, node.lineno)
         self.generic_visit(node)
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
         for alias in node.names:
             local = alias.asname or alias.name
@@ -357,7 +359,7 @@ def parse_charm_metadata(path: pathlib.Path, *, repo_root: pathlib.Path) -> File
 
 
 def is_charm_metadata(path: pathlib.Path) -> bool:
-    """True if *path* is a charm-metadata YAML we know how to parse."""
+    """Return true if *path* is a charm-metadata YAML we know how to parse."""
     return path.name in _METADATA_FILES
 
 

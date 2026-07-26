@@ -621,7 +621,7 @@ _MIN_MATCH_FRACTION = 0.5
 
 
 def _live_app_matches(live_name: str, live_charm: str | None, preset_app: PresetApp) -> bool:
-    """True iff a live app plausibly *is* this preset app.
+    """Return true iff a live app plausibly *is* this preset app.
 
     Matches on charm name first (robust to renames like ``prometheus`` →
     ``metrics``), then on app-name prefix (``prometheus-k8s`` deployed
@@ -670,7 +670,7 @@ class PresetMatch:
         return self.matched_required / total if total else 0.0
 
     def edge_for(self, live_a: str, live_b: str, interface: str) -> PresetEdge | None:
-        """The preset edge connecting two *live* apps over *interface*, if any.
+        """Return the preset edge connecting two *live* apps over *interface*, if any.
 
         Maps the live names back to their preset-app names and looks for
         a catalogue edge with that unordered pair and interface — used
@@ -768,8 +768,8 @@ def render_preset(bundle: PresetBundle) -> str:
             lines.append(f"- `{app.name}`{tag} — {app.summary}")
     lines.append("")
     lines.append("## Relations")
-    for edge in bundle.edges:
-        lines.append(
-            f"- `{edge.provider}` → `{edge.requirer}` · `{edge.interface}` — {edge.description}"
-        )
+    lines.extend(
+        f"- `{edge.provider}` → `{edge.requirer}` · `{edge.interface}` — {edge.description}"
+        for edge in bundle.edges
+    )
     return "\n".join(lines)

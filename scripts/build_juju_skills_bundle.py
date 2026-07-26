@@ -465,6 +465,7 @@ def check() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Build or check the bundled Juju skills."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check",

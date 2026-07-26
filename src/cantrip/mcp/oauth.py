@@ -25,10 +25,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import webbrowser
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from cantrip.mcp.types import OAuthConfig
 
 log = logging.getLogger(__name__)

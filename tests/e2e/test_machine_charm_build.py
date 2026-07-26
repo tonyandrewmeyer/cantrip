@@ -11,12 +11,15 @@ Requires ``GEMINI_API_KEY`` and a localhost/LXD Juju controller.
 from __future__ import annotations
 
 import logging
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cantrip.agent.core import CantripAgent
 from tests.e2e import harness, seeds
+
+if TYPE_CHECKING:
+    import pathlib
 
 pytestmark = [pytest.mark.e2e]
 

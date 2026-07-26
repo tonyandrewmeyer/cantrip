@@ -150,7 +150,7 @@ class TestElicitationManager:
         seen: list[ElicitationRequest] = []
         manager.set_callback(seen.append)
         # Cannot easily exercise without await, but assignment works.
-        assert manager._on_request is not None  # noqa: SLF001 - accessing private for test
+        assert manager._on_request is not None
 
     def test_default_timeout_constant(self) -> None:
         assert DEFAULT_ELICITATION_TIMEOUT >= 60
@@ -235,7 +235,7 @@ class TestAgentElicitationWiring:
     """``CantripAgent`` publishes elicitation requests and routes responses."""
 
     @pytest.mark.asyncio
-    async def test_publishes_to_event_bus(self, tmp_path) -> None:  # noqa: ANN001 - pytest fixture
+    async def test_publishes_to_event_bus(self, tmp_path) -> None:
         from cantrip.agent.core import CantripAgent
         from cantrip.ui.events import EventType
         from tests.conftest import FakeProvider
@@ -246,7 +246,7 @@ class TestAgentElicitationWiring:
 
         captured: list[dict] = []
 
-        def _capture(event) -> None:  # noqa: ANN001 - event-bus callback
+        def _capture(event) -> None:
             captured.append(dict(event.payload))
 
         agent.event_bus.subscribe(EventType.MCP_ELICITATION_REQUEST, _capture)
@@ -259,7 +259,7 @@ class TestAgentElicitationWiring:
             message="Pick something",
             requested_schema={"type": "object"},
         )
-        agent._on_mcp_elicitation(request)  # noqa: SLF001 - internal hook test
+        agent._on_mcp_elicitation(request)
 
         assert len(captured) == 1
         payload = captured[0]
@@ -267,7 +267,7 @@ class TestAgentElicitationWiring:
         assert payload["server_name"] == "charmhub"
         assert payload["mode"] == "form"
 
-    def test_complete_returns_false_when_no_registry(self, tmp_path) -> None:  # noqa: ANN001
+    def test_complete_returns_false_when_no_registry(self, tmp_path) -> None:
         from cantrip.agent.core import CantripAgent
         from tests.conftest import FakeProvider
 

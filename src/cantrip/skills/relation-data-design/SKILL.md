@@ -115,6 +115,7 @@ def _on_cluster_relation_changed(self, event: ops.RelationChangedEvent):
             # Add to cluster membership list.
             ...
 
+
 def _set_unit_address(self):
     # Write this unit's data to the peer relation.
     rel = self.model.get_relation("cluster")
@@ -165,6 +166,7 @@ def _on_db_relation_changed(self, event):
     secret = self.model.get_secret(label="db-password")
     secret.grant(event.relation)
     event.relation.data[self.app]["password-id"] = secret.id
+
 
 # Consumer side
 def _on_db_relation_changed(self, event):

@@ -18,7 +18,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.audit import AuditAction, AuditWriter, make_entry
@@ -27,7 +26,6 @@ from cantrip.agent.permissions import (
     PermissionManager,
     PermissionOutcome,
 )
-from cantrip.agent.tools.base import ToolResult
 from cantrip.mcp import (
     MarketplaceLoader,
     MarketplaceSource,
@@ -35,11 +33,14 @@ from cantrip.mcp import (
     load_marketplace_sources,
 )
 from cantrip.mcp import load_configs as load_mcp_configs
-from cantrip.mcp.types import MCPAppRender
 from cantrip.ui import events as ui_events
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from cantrip.agent.state import AgentState
+    from cantrip.agent.tools.base import ToolResult
+    from cantrip.mcp.types import MCPAppRender
 
 log = logging.getLogger(__name__)
 
@@ -177,7 +178,7 @@ class MCPController:
                     url=request.url,
                 )
             )
-        except Exception:  # noqa: BLE001 - UI hook must not break the SDK call.
+        except Exception:
             log.debug("mcp_elicitation_request publish failed", exc_info=True)
 
     def complete_elicitation(
@@ -232,7 +233,7 @@ class MCPController:
                     max_height_px=render.max_height_px,
                 )
             )
-        except Exception:  # noqa: BLE001 — UI bus hook must not crash a tool call.
+        except Exception:
             log.debug("mcp_app_render publish failed", exc_info=True)
         return app_id
 
@@ -311,7 +312,7 @@ class MCPController:
 
         try:
             decision = evaluator(name, args)
-        except Exception as exc:  # noqa: BLE001 — evaluator is caller code.
+        except Exception as exc:
             reason = f"permission evaluation failed: {exc}"
             log.warning("MCP App permission gate raised on %r: %s", name, exc)
             self._audit_app_call(name, AuditAction.DENIED, reason, args, server=app.server_name)
@@ -357,7 +358,7 @@ class MCPController:
         # ALLOW (or ASK approved) — dispatch through the agent's tool registry.
         try:
             result = await dispatcher(name, args)
-        except Exception as exc:  # noqa: BLE001 — dispatcher is caller code; iframes shouldn't crash the UI loop.
+        except Exception as exc:
             reason = f"tool dispatch raised: {exc}"
             log.warning("MCP App dispatch raised on %r: %s", name, exc)
             self._audit_app_call(name, AuditAction.DENIED, reason, args, server=app.server_name)
@@ -393,7 +394,7 @@ class MCPController:
                     source="mcp-app",
                 )
             )
-        except Exception:  # noqa: BLE001 — UI bus hook must not block dispatch.
+        except Exception:
             log.debug("mcp_app pending publish failed", exc_info=True)
 
     def _publish_app_tool_invoked(
@@ -413,7 +414,7 @@ class MCPController:
                     detail=detail,
                 )
             )
-        except Exception:  # noqa: BLE001 — UI bus hook must not block dispatch.
+        except Exception:
             log.debug("mcp_app tool_invoked publish failed", exc_info=True)
 
     def _publish_app_result(
@@ -435,7 +436,7 @@ class MCPController:
                     error=error,
                 )
             )
-        except Exception:  # noqa: BLE001 — UI bus hook must not block dispatch.
+        except Exception:
             log.debug("mcp_app_tool_result publish failed", exc_info=True)
 
     def _audit_app_call(

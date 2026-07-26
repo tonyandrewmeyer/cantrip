@@ -40,9 +40,11 @@ def validate_gold_standard(spec: EvalSpec, spec_dir: pathlib.Path) -> list[str]:
             continue
 
         result = run_rubric(spec, gold_dir, provider="gold", model=gold_name)
-        for cr in result.results:
-            if not cr.passed:
-                failures.append(f"[{gold_name}] {cr.criterion.name}: {cr.detail}")
+        failures.extend(
+            f"[{gold_name}] {cr.criterion.name}: {cr.detail}"
+            for cr in result.results
+            if not cr.passed
+        )
     return failures
 
 
@@ -61,8 +63,7 @@ def format_report(result: EvalResult) -> str:
     crit = result.critical_failures
     if crit:
         lines.append(f"**{len(crit)} CRITICAL failure(s):**")
-        for r in crit:
-            lines.append(f"- {r.criterion.name}: {r.detail}")
+        lines.extend(f"- {r.criterion.name}: {r.detail}" for r in crit)
         lines.append("")
 
     # Per-category breakdown.

@@ -157,7 +157,7 @@ class ListInferenceSnapsTool(Tool):
         for snap in snap_names:
             try:
                 result = await client.call_tool(_SNAP_INFO_TOOL, {"name": snap})
-            except Exception as exc:  # noqa: BLE001 - MCP SDK can raise anything
+            except Exception as exc:
                 log.debug("snapcraft MCP snap_info(%s) failed: %s", snap, exc, exc_info=True)
                 results[snap] = {"error": str(exc)}
                 continue

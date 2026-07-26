@@ -23,7 +23,9 @@ if not self.config.get("database-uri"):
 
 # Missing relation.
 if not self.model.get_relation("database"):
-    self.unit.status = ops.BlockedStatus("Integrate with a database: juju integrate <app> postgresql")
+    self.unit.status = ops.BlockedStatus(
+        "Integrate with a database: juju integrate <app> postgresql"
+    )
     return
 
 # Waiting for relation data.
@@ -74,9 +76,7 @@ def _on_get_health(self, event: ops.ActionEvent) -> None:
     container = self.unit.get_container("workload")
     try:
         services = container.get_services()
-        checks["processes"] = all(
-            svc.is_running() for svc in services.values()
-        )
+        checks["processes"] = all(svc.is_running() for svc in services.values())
     except ops.pebble.ConnectionError:
         checks["processes"] = False
 
@@ -89,8 +89,7 @@ def _on_get_health(self, event: ops.ActionEvent) -> None:
 
     # 3. Required relations connected.
     checks["relations"] = all(
-        self.model.get_relation(ep) is not None
-        for ep in self._required_endpoints
+        self.model.get_relation(ep) is not None for ep in self._required_endpoints
     )
 
     # 4. Certificate validity (if TLS).
@@ -98,10 +97,12 @@ def _on_get_health(self, event: ops.ActionEvent) -> None:
         checks["certificates"] = self._check_cert_validity()
 
     healthy = all(checks.values())
-    event.set_results({
-        "healthy": healthy,
-        "checks": checks,
-    })
+    event.set_results(
+        {
+            "healthy": healthy,
+            "checks": checks,
+        }
+    )
     if not healthy:
         event.fail(f"Unhealthy: {[k for k, v in checks.items() if not v]}")
 ```
@@ -122,6 +123,7 @@ def _on_pause(self, event: ops.ActionEvent) -> None:
     self._paused = True
     self.unit.status = ops.MaintenanceStatus("Paused — run 'resume' action to restart")
     event.set_results({"status": "paused"})
+
 
 def _on_resume(self, event: ops.ActionEvent) -> None:
     """Resume paused workload services."""
@@ -163,11 +165,13 @@ def _on_create_backup(self, event: ops.ActionEvent) -> None:
         event.fail(f"Backup failed: {e.stderr}")
         return
 
-    event.set_results({
-        "backup-id": timestamp,
-        "path": backup_path,
-        "status": "completed",
-    })
+    event.set_results(
+        {
+            "backup-id": timestamp,
+            "path": backup_path,
+            "status": "completed",
+        }
+    )
 ```
 
 **Key points:**
@@ -271,14 +275,17 @@ def _on_get_certificate(self, event: ops.ActionEvent) -> None:
 
     # Parse certificate for summary (not the private key!).
     import cryptography.x509
+
     cert = cryptography.x509.load_pem_x509_certificate(cert_path.read_bytes())
-    event.set_results({
-        "subject": str(cert.subject),
-        "issuer": str(cert.issuer),
-        "not-before": str(cert.not_valid_before_utc),
-        "not-after": str(cert.not_valid_after_utc),
-        "serial": str(cert.serial_number),
-    })
+    event.set_results(
+        {
+            "subject": str(cert.subject),
+            "issuer": str(cert.issuer),
+            "not-before": str(cert.not_valid_before_utc),
+            "not-after": str(cert.not_valid_after_utc),
+            "serial": str(cert.serial_number),
+        }
+    )
 ```
 
 ## Secret Rotation
@@ -294,6 +301,7 @@ secret.grant(relation)
 secret = self.model.get_secret(label="db-credentials")
 content = secret.get_content()
 password = content["password"]
+
 
 # Handle rotation.
 def _on_secret_rotate(self, event: ops.SecretRotateEvent) -> None:

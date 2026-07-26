@@ -8,13 +8,16 @@ state so a second ``/arena`` can start.
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cantrip.agent.core import CantripAgent
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _named_provider(model_name: str, response: str = "ok") -> FakeProvider:

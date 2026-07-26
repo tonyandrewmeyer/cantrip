@@ -468,9 +468,9 @@ class TestReasoningContent:
         mock_resp.__aexit__ = AsyncMock(return_value=False)
         provider.client.stream = MagicMock(return_value=mock_resp)
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Hi")])
+        ]
 
         content_chunks = [c for c in chunks if c.content]
         assert [c.content for c in content_chunks] == ["42"]
@@ -503,9 +503,9 @@ class TestReasoningContent:
         mock_resp.__aexit__ = AsyncMock(return_value=False)
         provider.client.stream = MagicMock(return_value=mock_resp)
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Hi")])
+        ]
 
         assert [c for c in chunks if c.content] == []
         finals = [c for c in chunks if c.is_final]
@@ -567,9 +567,9 @@ class TestReasoningContent:
         mock_resp.__aexit__ = AsyncMock(return_value=False)
         provider.client.stream = MagicMock(return_value=mock_resp)
 
-        chunks = []
-        async for chunk in provider.stream([Message(role=Role.USER, content="Hi")]):
-            chunks.append(chunk)
+        chunks = [
+            chunk async for chunk in provider.stream([Message(role=Role.USER, content="Hi")])
+        ]
 
         finals = [c for c in chunks if c.is_final]
         assert finals[0].metadata == {}

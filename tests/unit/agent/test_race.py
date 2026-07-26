@@ -10,8 +10,8 @@ see ``test_score_candidate_against_real_worktree``.
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 import subprocess
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,6 +20,9 @@ from cantrip.agent.queue import TaskCategory
 from cantrip.agent.subagent import ExitState, SubagentResult
 from cantrip.agent.worktree import WorktreeHandle
 from tests.support.worktrees import FakeAllocator
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Helpers

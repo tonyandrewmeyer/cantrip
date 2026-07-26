@@ -31,7 +31,7 @@ class TestPlanAndExecute:
     @pytest.mark.asyncio
     async def test_research_plan_executes_to_completion(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Planner produces research tasks; executor runs them to DONE.
 
@@ -87,7 +87,7 @@ class TestPlanAndExecute:
     @pytest.mark.asyncio
     async def test_dependency_chain_respected(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Three chained tasks (A -> B -> C) execute in order."""
         execution_order: list[str] = []
@@ -96,10 +96,10 @@ class TestPlanAndExecute:
             async def complete(
                 self,
                 messages,
-                tools=None,  # noqa: ARG002
-                temperature=0.7,  # noqa: ARG002
-                max_tokens=None,  # noqa: ARG002
-                thinking_budget=None,  # noqa: ARG002
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,
             ):
                 # Extract the task title from the system prompt to track order.
                 for msg in messages:
@@ -138,7 +138,7 @@ class TestPlanAndExecute:
     @pytest.mark.asyncio
     async def test_parallel_independent_tasks_both_complete(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Two tasks with no dependencies both reach DONE."""
         provider = FakeProvider(
@@ -171,7 +171,7 @@ class TestPlanAndExecute:
     @pytest.mark.asyncio
     async def test_failed_task_does_not_block_independent_tasks(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Task A fails; independent Task B still completes."""
 
@@ -179,10 +179,10 @@ class TestPlanAndExecute:
             async def complete(
                 self,
                 messages,
-                tools=None,  # noqa: ARG002
-                temperature=0.7,  # noqa: ARG002
-                max_tokens=None,  # noqa: ARG002
-                thinking_budget=None,  # noqa: ARG002
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,
             ):
                 self._call_count += 1
                 for msg in messages:
@@ -217,7 +217,7 @@ class TestPlanAndExecute:
     async def test_task_results_persisted_to_store(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Completed tasks are persisted via SessionStore."""
         provider = FakeProvider(responses=[Response(content="Research done.")])

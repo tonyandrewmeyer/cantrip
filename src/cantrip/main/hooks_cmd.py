@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import argparse
 import pathlib
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
 
 
 def _hooks_test(args: argparse.Namespace) -> int:

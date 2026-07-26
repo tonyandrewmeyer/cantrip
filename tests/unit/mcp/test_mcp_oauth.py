@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import pathlib
 import socket
+from typing import TYPE_CHECKING
 
 import aiohttp
 import pytest
@@ -22,6 +22,9 @@ from cantrip.mcp.oauth import (
     wait_for_localhost_callback,
 )
 from cantrip.mcp.types import TransportKind
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _free_port() -> int:
@@ -179,7 +182,7 @@ class TestRedirectHandler:
     async def test_invokes_webbrowser(self, monkeypatch: pytest.MonkeyPatch) -> None:
         opened: list[str] = []
 
-        def _fake_open(url: str, new: int = 0, autoraise: bool = False) -> bool:  # noqa: ARG001
+        def _fake_open(url: str, new: int = 0, autoraise: bool = False) -> bool:
             opened.append(url)
             return True
 
@@ -194,7 +197,7 @@ class TestRedirectHandler:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        def _fake_open(url: str, new: int = 0, autoraise: bool = False) -> bool:  # noqa: ARG001
+        def _fake_open(url: str, new: int = 0, autoraise: bool = False) -> bool:
             return False
 
         monkeypatch.setattr("cantrip.mcp.oauth.webbrowser.open", _fake_open)
@@ -355,7 +358,7 @@ class TestMCPClientOAuthWiring:
             oauth=None,
         )
         client = MCPClient(cfg)
-        assert client._build_oauth_provider() is None  # noqa: SLF001 - test only
+        assert client._build_oauth_provider() is None
 
     def test_oauth_set_builds_provider(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -369,7 +372,7 @@ class TestMCPClientOAuthWiring:
             oauth=OAuthConfig(client_name="t", scopes=["a"], redirect_port=9876),
         )
         client = MCPClient(cfg)
-        provider = client._build_oauth_provider()  # noqa: SLF001 - test only
+        provider = client._build_oauth_provider()
         assert provider is not None
         # The SDK exposes the provider as an httpx.Auth subclass.
         import httpx

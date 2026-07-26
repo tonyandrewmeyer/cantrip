@@ -6,3 +6,45 @@ dependencies = ["ops>=3,<4", "ops-tracing>=0.1"]
 
 [tool.charm-tools]
 include = ["src", "lib"]
+
+[tool.ruff]
+extend-exclude = ["lib"]
+line-length = 99
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E",
+    "W",
+    "I",
+    "N",
+    "A",
+    "UP",
+    "YTT",
+    "S",
+    "B",
+    "SIM",
+    "RUF",
+    "PERF",
+    "D",
+    "FA",
+    "TC",
+]
+ignore = [
+    "D105",
+    "D107",
+    "D203",
+    "D204",
+    "D213",
+    "D215",
+    "D400",
+    "D404",
+    "D406",
+    "D407",
+    "D408",
+    "D409",
+    "D413",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["D", "S101", "S105", "S106", "S108", "PLR2004", "ARG", "SLF001", "N802", "N803", "N806"]

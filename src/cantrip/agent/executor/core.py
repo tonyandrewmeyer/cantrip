@@ -596,7 +596,7 @@ class BackgroundExecutor:
                 await asyncio.sleep(_POLL_INTERVAL)
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:  # noqa: BLE001 — executor loop must absorb any per-iteration error; the consecutive-error counter handles repeated failures.
+            except Exception as exc:
                 self._consecutive_errors += 1
                 log.error(
                     "Unexpected error in executor loop (%d/%d): %s",
@@ -620,7 +620,7 @@ class BackgroundExecutor:
 
     async def _run_task_with_semaphore(self, task: AgentTask) -> None:
         """Acquire the semaphore, execute the task, then release."""
-        assert self._semaphore is not None  # noqa: S101
+        assert self._semaphore is not None
         async with self._semaphore:
             await self._execute_task(task)
 
@@ -1268,7 +1268,7 @@ class BackgroundExecutor:
         are preserved under composite task ids for post-hoc review.
         """
         base_path = self._state.charm_path
-        assert base_path is not None  # _should_race guards this  # noqa: S101
+        assert base_path is not None  # _should_race guards this
         # Phase 47.4 follow-up: per-race budget monitor.  ``budget_tokens``
         # of zero disables the watcher entirely (matches the dispatch
         # gate's semantics for the same field).  The monitor's
@@ -1337,7 +1337,7 @@ class BackgroundExecutor:
         # A viable winner always carries a result; the coordinator's scoring
         # layer forces a zero-total on ``result is None`` so pick_winner
         # cannot select it.
-        assert winner_result is not None  # noqa: S101
+        assert winner_result is not None
         winner_candidate_id = winner_outcome.spec.candidate_id
 
         # Non-COMPLETED winners (BLOCKED / NOOP) skip the merge: we do not

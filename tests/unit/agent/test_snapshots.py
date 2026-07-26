@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-import pathlib
 import shutil
 import subprocess
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +20,9 @@ from cantrip.agent.snapshots import (
 from cantrip.llm.base import Message, Role
 from cantrip.ui.events import EventBus, EventType
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None,

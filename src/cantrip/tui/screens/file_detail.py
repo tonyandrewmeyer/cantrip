@@ -12,6 +12,7 @@ import functools
 import pathlib
 import re
 import subprocess
+from typing import ClassVar
 
 from rich.console import Group, RenderableType
 from rich.syntax import Syntax
@@ -172,7 +173,7 @@ class FileDetailScreen(ModalScreen):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "dismiss", "Close"),
         Binding("r", "refresh", "Refresh"),
     ]
@@ -584,7 +585,7 @@ def _scalar_field(text: str, key: str) -> str | None:
 
 
 def _fallback_purpose(path: pathlib.Path) -> str:
-    """Generic purpose line when no content-specific summary was found."""
+    """Return generic purpose line when no content-specific summary was found."""
     suffix = path.suffix.lower() or "(no extension)"
     return f"[dim]{suffix} file — no structured summary available.[/dim]"
 

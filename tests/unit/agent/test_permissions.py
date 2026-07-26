@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -25,6 +25,9 @@ from cantrip.agent.permissions import (
     load_permissions_file,
     ruleset_from_dict,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Rule matching

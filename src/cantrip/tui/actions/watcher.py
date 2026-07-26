@@ -15,7 +15,8 @@ if TYPE_CHECKING:
 
 
 def subscribe_events(app: CantripApp) -> None:
-    """Subscribe to watcher events so the panes update even if the watcher
+    """Subscribe to watcher events so the panes update even if the watcher.
+
     starts later (e.g. once the agent provisions a model).
     """
     if not app._agent:

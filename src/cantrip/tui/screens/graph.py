@@ -15,21 +15,24 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+from typing import TYPE_CHECKING, ClassVar
 
-from jubilant import statustypes
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.events import Click
 from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from cantrip.agent import presets
 from cantrip.tui import topology
+
+if TYPE_CHECKING:
+    from jubilant import statustypes
+    from textual.app import ComposeResult
+    from textual.events import Click
 
 # Cycle order for the ``f`` binding; ``None`` means show every app.
 _FILTER_CYCLE: tuple[frozenset[str] | None, ...] = (
@@ -61,7 +64,7 @@ def _status_indicator(status: str) -> Text:
 
 
 def _has_catalogue_relation(app: statustypes.AppStatus) -> bool:
-    """True iff the app has registered itself with COS Catalogue.
+    """Return true iff the app has registered itself with COS Catalogue.
 
     Surfaced as a ``[cat]`` badge so users can spot at a glance which
     apps appear on the COS landing page.
@@ -126,7 +129,7 @@ def _app_panel(
 def _endpoint_for(
     status: statustypes.Status, app_name: str, other: str, interface: str
 ) -> str | None:
-    """The local endpoint name on *app_name*'s side of its relation to *other*."""
+    """Return the local endpoint name on *app_name*'s side of its relation to *other*."""
     app = status.apps.get(app_name)
     if app is None:
         return None
@@ -181,7 +184,7 @@ class GraphItem:
 def _focus_neighbours(
     focus_app: str | None, visible: set[str], edges: list[topology.Edge]
 ) -> set[str] | None:
-    """The focus app plus its direct neighbours, or ``None`` if no focus."""
+    """Return the focus app plus its direct neighbours, or ``None`` if no focus."""
     if not focus_app or focus_app not in visible:
         return None
     out = {focus_app}
@@ -202,7 +205,7 @@ def build_graph_items(
     preset_match: presets.PresetMatch | None = None,
     focus_app: str | None = None,
 ) -> list[GraphItem]:
-    """Build the ordered list of :class:`GraphItem`\\ s for one model.
+    r"""Build the ordered list of :class:`GraphItem`\\ s for one model.
 
     Apps come first — grouped under preset-layer headers when
     *preset_match* is given, otherwise alphabetically — followed by a
@@ -339,7 +342,7 @@ class GraphScreen(ModalScreen):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "back", "Close"),
         Binding("r", "refresh", "Refresh"),
         Binding("f", "cycle_filter", "Filter"),

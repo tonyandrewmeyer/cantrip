@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +15,9 @@ from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
 from tests.support.wait import wait_for_task_status
 from tests.unit.executor.conftest import _make_tool
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 @pytest.fixture

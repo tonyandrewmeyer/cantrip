@@ -211,14 +211,14 @@ class OpenAICompatBase(LLMProvider):
                 result.append(entry)
 
             elif msg.role == Role.TOOL:
-                for tr in msg.tool_results:
-                    result.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tr.tool_call_id,
-                            "content": tr.content,
-                        }
-                    )
+                result.extend(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tr.tool_call_id,
+                        "content": tr.content,
+                    }
+                    for tr in msg.tool_results
+                )
 
         return system_prompt, result
 

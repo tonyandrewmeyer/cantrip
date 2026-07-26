@@ -47,7 +47,8 @@ class TestParsePytestSummary:
         output = (
             "tests/unit/test_charm.py::test_install PASSED\n"
             "tests/unit/test_charm.py::test_start FAILED\n"
-            "============================= 1 passed, 1 failed in 0.3s =============================="
+            "============================= 1 passed, 1 failed in 0.3s "
+            "=============================="
         )
         result = _parse_pytest_summary(output)
         assert result == {"passed": 1, "failed": 1}

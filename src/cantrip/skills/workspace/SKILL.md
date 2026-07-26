@@ -166,6 +166,7 @@ patterns). Workspace-level tests add:
 ```python
 import jubilant
 
+
 def test_api_and_worker_handshake(juju: jubilant.Juju):
     # Pack each charm (or rely on a CI step that does it once).
     juju.deploy("./my-api-operator/my-api_amd64.charm", app="my-api")

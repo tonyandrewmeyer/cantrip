@@ -99,12 +99,10 @@ class DiagnosticsReport:
             return ""
         lines: list[str] = ["Lint diagnostics (post-edit):"]
         if self.diagnostics:
-            for d in self.diagnostics:
-                lines.append(f"  {d.format_line()}")
+            lines.extend(f"  {d.format_line()}" for d in self.diagnostics)
         else:
             lines.append("  (no issues found)")
-        for note in self.skipped:
-            lines.append(f"  [skipped] {note}")
+        lines.extend(f"  [skipped] {note}" for note in self.skipped)
         return "\n".join(lines)
 
     def to_data(self) -> dict[str, Any]:
@@ -331,35 +329,33 @@ def _charmlint_python(charm_dir: pathlib.Path) -> DiagnosticsReport:
     except (OSError, ValueError, RuntimeError) as exc:
         return DiagnosticsReport(skipped=[f"charmlint: {exc}"])
 
-    diagnostics: list[FileDiagnostic] = []
-    for d in report.diagnostics:
-        diagnostics.append(
-            FileDiagnostic(
-                tool="charmlint",
-                file=str(getattr(d, "path", "")),
-                severity=str(getattr(d, "severity", "warning")),
-                code=str(getattr(d, "rule_id", "")),
-                message=str(getattr(d, "message", "")),
-                line=getattr(d, "line", None),
-            )
+    diagnostics: list[FileDiagnostic] = [
+        FileDiagnostic(
+            tool="charmlint",
+            file=str(getattr(d, "path", "")),
+            severity=str(getattr(d, "severity", "warning")),
+            code=str(getattr(d, "rule_id", "")),
+            message=str(getattr(d, "message", "")),
+            line=getattr(d, "line", None),
         )
+        for d in report.diagnostics
+    ]
     return DiagnosticsReport(diagnostics=diagnostics)
 
 
 def _charmlint_report_from_payload(payload: dict[str, Any]) -> DiagnosticsReport:
     """Convert the Rust binary's JSON payload into a diagnostics report."""
-    diagnostics: list[FileDiagnostic] = []
-    for item in payload.get("diagnostics", []):
-        diagnostics.append(
-            FileDiagnostic(
-                tool="charmlint",
-                file=str(item.get("path", "")),
-                severity=str(item.get("severity", "warning")),
-                code=str(item.get("rule_id", "")),
-                message=str(item.get("message", "")),
-                line=item.get("line"),
-            )
+    diagnostics: list[FileDiagnostic] = [
+        FileDiagnostic(
+            tool="charmlint",
+            file=str(item.get("path", "")),
+            severity=str(item.get("severity", "warning")),
+            code=str(item.get("rule_id", "")),
+            message=str(item.get("message", "")),
+            line=item.get("line"),
         )
+        for item in payload.get("diagnostics", [])
+    ]
     return DiagnosticsReport(diagnostics=diagnostics)
 
 

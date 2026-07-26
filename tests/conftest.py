@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
-from cantrip.agent.queue import AgentTask
 from cantrip.llm.base import Chunk, LLMProvider, Message, Response, Tool
+
+if TYPE_CHECKING:
+    import pathlib
+
+    from cantrip.agent.queue import AgentTask
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -73,11 +77,11 @@ class FakeProvider(LLMProvider):
 
     async def complete(
         self,
-        messages: list[Message],  # noqa: ARG002
-        tools: list[Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ) -> Response:
         # Phase 73.3: capture the schema for assertion in tests; the
@@ -92,11 +96,11 @@ class FakeProvider(LLMProvider):
 
     async def stream(
         self,
-        messages: list[Message],  # noqa: ARG002
-        tools: list[Tool] | None = None,  # noqa: ARG002
-        temperature: float = 0.7,  # noqa: ARG002
-        max_tokens: int | None = None,  # noqa: ARG002
-        thinking_budget: int | None = None,  # noqa: ARG002
+        messages: list[Message],
+        tools: list[Tool] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        thinking_budget: int | None = None,
         response_schema: dict | None = None,
     ):
         self.last_response_schema = response_schema
@@ -185,7 +189,7 @@ class FakeGitService:
     ) -> None:
         self.revert_calls.append((str(charm_path), task.id, snapshot))
 
-    def has_uncommitted_changes(self, charm_path: str | pathlib.Path) -> bool:  # noqa: ARG002
+    def has_uncommitted_changes(self, charm_path: str | pathlib.Path) -> bool:
         return self._uncommitted
 
 
@@ -228,7 +232,7 @@ class FakeEnvironmentChecker:
     def __init__(self, error: str | None = None) -> None:
         self._error = error
 
-    def check(self, task: AgentTask) -> str | None:  # noqa: ARG002
+    def check(self, task: AgentTask) -> str | None:
         return self._error
 
 
@@ -238,5 +242,5 @@ class FakeFollowupPlanner:
     def __init__(self, followups: list[AgentTask] | None = None) -> None:
         self._followups = followups or []
 
-    def followup_tasks(self, task: AgentTask) -> list[AgentTask]:  # noqa: ARG002
+    def followup_tasks(self, task: AgentTask) -> list[AgentTask]:
         return list(self._followups)

@@ -134,7 +134,7 @@ class ElicitationManager:
         if self._on_request is not None:
             try:
                 self._on_request(request)
-            except Exception:  # noqa: BLE001 - UI hook must not break the SDK call.
+            except Exception:
                 log.debug(
                     "elicitation request callback failed for %s",
                     self._server_name,

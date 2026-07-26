@@ -69,7 +69,8 @@ class GrepTool(PathAwareTool):
                 "max_results": {
                     "type": "integer",
                     "description": (
-                        f"Maximum number of matching lines to return (default {_DEFAULT_MAX_RESULTS})."
+                        "Maximum number of matching lines to return (default "
+                        "{_DEFAULT_MAX_RESULTS})."
                     ),
                 },
             },

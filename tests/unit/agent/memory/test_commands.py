@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +14,10 @@ from cantrip.agent.memory.commands import (
     memory_help_text,
 )
 from cantrip.agent.store import SessionStore
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterator
 
 
 @pytest.fixture

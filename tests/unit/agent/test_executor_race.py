@@ -657,7 +657,7 @@ class TestExecuteRaceBudgetMidflight:
             def record_event(self, name: str, payload: dict[str, str]) -> None:
                 events.append((name, payload))
 
-            def save_tasks(self, _tasks: list[object]) -> None:  # noqa: ARG002
+            def save_tasks(self, _tasks: list[object]) -> None:
                 pass
 
         executor._state_service = _FakeStateService()

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cantrip.agent import emotions
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 class TestResolveEnabled:

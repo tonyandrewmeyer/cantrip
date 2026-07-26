@@ -86,6 +86,9 @@ class EventBus:
     def __init__(self) -> None:
         self._subscribers: dict[EventType | None, list[Subscriber]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
+        # Strong references to in-flight callback tasks: without these the
+        # event loop only keeps a weak reference and may collect them early.
+        self._pending_tasks: set[asyncio.Task[object]] = set()
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Bind to an event loop for cross-thread delivery."""
@@ -139,8 +142,10 @@ class EventBus:
                 try:
                     result = callback(event)
                     if asyncio.iscoroutine(result):
-                        asyncio.ensure_future(result)
-                except (  # noqa: PERF203
+                        task = asyncio.ensure_future(result)
+                        self._pending_tasks.add(task)
+                        task.add_done_callback(self._pending_tasks.discard)
+                except (
                     TypeError,
                     AttributeError,
                     KeyError,

@@ -97,7 +97,7 @@ def _rule_to_regex(rule: str) -> str:
 class _Matcher:
     """A compiled ignore rule."""
 
-    __slots__ = ("invert", "only_dirs", "compiled")
+    __slots__ = ("compiled", "invert", "only_dirs")
 
     def __init__(self, *, invert: bool, only_dirs: bool, regex: str) -> None:
         self.invert = invert

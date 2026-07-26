@@ -440,16 +440,16 @@ class TestDeadlockFreedom:
         # Zero tasks.
         for paused in (False, True):
             for draining in (False, True):
-                for active in (0, 1):
-                    states.append(
-                        _state(
-                            tasks=(),
-                            active_subagent_count=active,
-                            max_concurrency=2,
-                            paused=paused,
-                            draining=draining,
-                        )
+                states.extend(
+                    _state(
+                        tasks=(),
+                        active_subagent_count=active,
+                        max_concurrency=2,
+                        paused=paused,
+                        draining=draining,
                     )
+                    for active in (0, 1)
+                )
 
         # One task, all status × category × paused/draining combinations.
         for status, cat, paused, draining in itertools.product(

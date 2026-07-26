@@ -4,6 +4,8 @@ import ops
 
 
 class QpDemoCharm(ops.CharmBase):
+    """A minimal charm used by the quickpack demo recording."""
+
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
         self.framework.observe(self.on.install, self._on_install)

@@ -15,7 +15,7 @@ _env: jinja2.Environment | None = None
 
 def _get_env() -> jinja2.Environment:
     """Return the Jinja2 environment, creating it on first call."""
-    global _env  # noqa: PLW0603
+    global _env
     if _env is None:
         _env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),

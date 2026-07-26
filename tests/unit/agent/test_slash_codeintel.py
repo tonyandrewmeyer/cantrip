@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pathlib
 import textwrap
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,6 +16,9 @@ from cantrip.agent.commands.codeintel import (
 from cantrip.agent.commands.custom import CustomCommandRegistry
 from cantrip.agent.commands.slash import COMMAND_CATALOGUE, dispatch
 from cantrip.codeintel import CodeIntel
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Fixture: small charm with a couple of cross-file references.

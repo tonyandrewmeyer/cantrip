@@ -34,7 +34,7 @@ import pathlib
 import re
 import shlex
 import subprocess
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -51,6 +51,9 @@ from cantrip.agent.permissions import (
 from cantrip.agent.permissions import (
     evaluate as evaluate_permissions,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 log = logging.getLogger(__name__)
 
@@ -283,8 +286,7 @@ def discover_custom_commands(
     merged: dict[str, CustomCommand] = dict(_collect_commands(user_dir))
     if charm_path is not None:
         repo_dir = charm_path / REPO_COMMANDS_DIR
-        for verb, command in _collect_commands(repo_dir).items():
-            merged[verb] = command
+        merged.update(_collect_commands(repo_dir))
     return sorted(merged.values(), key=lambda cmd: cmd.verb)
 
 

@@ -355,7 +355,7 @@ class TestStartupReaper:
         allocator = FakeAllocator(handle_factory=_handle_for)
         reap_calls: list[set[str]] = []
 
-        async def _reap_disk(base: Any, active: set[str]) -> int:  # noqa: ARG001
+        async def _reap_disk(base: Any, active: set[str]) -> int:
             reap_calls.append(active)
             return 0
 
@@ -385,7 +385,7 @@ class TestStartupReaper:
         allocator = FakeAllocator(handle_factory=_handle_for)
         called = False
 
-        async def _reap_disk(base: Any, active: set[str]) -> int:  # noqa: ARG001
+        async def _reap_disk(base: Any, active: set[str]) -> int:
             nonlocal called
             called = True
             return 0

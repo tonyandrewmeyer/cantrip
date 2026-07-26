@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 import subprocess
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,6 +21,9 @@ from cantrip.agent.context_providers import (
     expand_mentions,
     truncate,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Test doubles
@@ -193,7 +196,7 @@ class TestExpansion:
         class Boom:
             info: ProviderInfo = ProviderInfo(name="boom", summary="", arg_style=ArgStyle.NONE)
 
-            async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002
+            async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
                 raise RuntimeError("bang")
 
         registry = _registry(Boom())
@@ -208,7 +211,7 @@ class TestExpansion:
         class MultiLine:
             info: ProviderInfo = ProviderInfo(name="ml", summary="", arg_style=ArgStyle.NONE)
 
-            async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002
+            async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
                 return ContextBlock(raw="@ml", rendered="line1\nline2\nline3")
 
         registry = _registry(MultiLine())

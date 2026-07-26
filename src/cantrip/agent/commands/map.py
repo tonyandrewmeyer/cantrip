@@ -86,7 +86,7 @@ def handle_map(agent: CantripAgent, args: str = "") -> str:
                 fenced=False,
             )
         rendered = rm.render_summary()
-    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
+    except Exception as exc:
         return diagnostics.report_internal_error("/map", exc)
     if not rendered:
         return (
@@ -123,7 +123,7 @@ def handle_map_refresh(agent: CantripAgent, args: str = "") -> str:
                 fenced=False,
             )
         rendered = rm.render_summary()
-    except Exception as exc:  # noqa: BLE001 — surface via diagnostics log.
+    except Exception as exc:
         return diagnostics.report_internal_error("/map-refresh", exc)
     if not rendered:
         return "Repository map rebuilt — no parseable files found under the active charm path."

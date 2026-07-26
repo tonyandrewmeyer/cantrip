@@ -153,7 +153,7 @@ class TestMCPController:
     @pytest.mark.asyncio
     async def test_start_is_idempotent(self, tmp_path: pathlib.Path):
         """Calling start() twice does not double-connect."""
-        ctl, invalidated = self._make_controller(charm_path=tmp_path)
+        ctl, _invalidated = self._make_controller(charm_path=tmp_path)
         # Patch start_all so we don't need real MCP servers.
         with mock.patch.object(ctl.registry, "start_all", new_callable=mock.AsyncMock) as m:
             await ctl.start()
@@ -304,7 +304,7 @@ class TestArenaController:
         ctl = self._make_controller(provider=primary, light_provider=secondary)
 
         # Manually inject a fake session.
-        ctl._session = arena.ArenaSession(  # noqa: SLF001
+        ctl._session = arena.ArenaSession(
             prompt="question",
             candidates=(
                 arena.ArenaCandidate(label="A", provider_name="pa", model_name="pa", response="a"),
@@ -321,7 +321,7 @@ class TestArenaController:
         from cantrip.agent import arena
 
         ctl = self._make_controller()
-        ctl._session = arena.ArenaSession(  # noqa: SLF001
+        ctl._session = arena.ArenaSession(
             prompt="q",
             candidates=(
                 arena.ArenaCandidate(
@@ -411,12 +411,12 @@ class TestTriageController:
         ctl, _ = self._make_controller(github_repo="canonical/test-charm")
         ctl.start()
         # Inject a fake examined set.
-        ctl._issue_triage._examined = {101, 202}  # noqa: SLF001
+        ctl._issue_triage._examined = {101, 202}
 
         ctl.retriage()
         # The new triage instance should carry the examined set.
-        assert 101 in ctl._issue_triage.examined_issues  # noqa: SLF001
-        assert 202 in ctl._issue_triage.examined_issues  # noqa: SLF001
+        assert 101 in ctl._issue_triage.examined_issues
+        assert 202 in ctl._issue_triage.examined_issues
         await ctl.stop()
 
 
@@ -486,11 +486,11 @@ class TestExecutorController:
         assert ctl.user_paused is True  # Still user-paused.
 
     @pytest.mark.asyncio
-    async def test_start_and_stop_lifecycle(self, fast_executor):  # noqa: ARG002
+    async def test_start_and_stop_lifecycle(self, fast_executor):
         """Executor starts, runs, and stops cleanly."""
         from tests.conftest import FakeProvider
 
-        ctl, events = self._make_controller()
+        ctl, _events = self._make_controller()
         provider = FakeProvider([Response(content='{"tasks": []}')])
         queue = WorkQueue()
         hook_runner = HookRunner()
@@ -509,7 +509,7 @@ class TestExecutorController:
         assert not ctl.running
 
     @pytest.mark.asyncio
-    async def test_start_twice_is_idempotent(self, fast_executor):  # noqa: ARG002
+    async def test_start_twice_is_idempotent(self, fast_executor):
         """Calling start() when already running is a no-op."""
         from tests.conftest import FakeProvider
 
@@ -579,7 +579,7 @@ class TestWatcherControllerRouting:
         """A charm-error watcher event produces a BUILD task in the queue."""
         from cantrip.agent.watcher import WatcherEvent
 
-        ctl, queue = self._make_controller()
+        ctl, _queue = self._make_controller()
         event = WatcherEvent(
             source="juju",
             category="charm-error",
@@ -951,8 +951,8 @@ class TestProviderFailover:
     @pytest.mark.asyncio
     async def test_flaky_provider_recovers_after_blips(
         self,
-        fast_executor,  # noqa: ARG002
-        fast_retry,  # noqa: ARG002
+        fast_executor,
+        fast_retry,
     ):
         """FlakyProvider raises twice then succeeds; the task reaches DONE."""
         from cantrip.llm.base import ProviderRateLimitError
@@ -980,7 +980,7 @@ class TestProviderFailover:
     @pytest.mark.asyncio
     async def test_independent_tasks_continue_after_one_fails(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A permanently failing task doesn't block unrelated pending tasks."""
         from tests.support.providers import CallbackProvider
@@ -1016,8 +1016,8 @@ class TestProviderFailover:
     @pytest.mark.asyncio
     async def test_failing_primary_all_tasks_reach_failed(
         self,
-        fast_executor,  # noqa: ARG002
-        fast_retry,  # noqa: ARG002
+        fast_executor,
+        fast_retry,
     ):
         """When the primary fails permanently, tasks go FAILED and the loop drains."""
         from cantrip.llm.base import ProviderError
@@ -1103,7 +1103,7 @@ class TestTriageToConfirmToBuildPath:
     @pytest.mark.asyncio
     async def test_confirmed_task_becomes_build_task_in_executor(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A CONFIRM task approved by the user is followed by a BUILD task running.
 

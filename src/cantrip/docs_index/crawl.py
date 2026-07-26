@@ -19,10 +19,16 @@ import dataclasses
 import html.parser
 import logging
 import urllib.parse
-import xml.etree.ElementTree as ET
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import httpx
+
+# Sitemaps come from remote sites, so parse them with defusedxml, which
+# guards against entity-expansion attacks.
+from defusedxml.ElementTree import ParseError, fromstring
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 
@@ -62,19 +68,22 @@ def parse_sitemap(xml_bytes: bytes, *, host: str) -> list[str]:
     (``<sitemapindex>``) — the latter point at sub-sitemaps that
     the caller fetches and parses recursively.
 
-    Malformed XML raises ``ET.ParseError``; the caller treats that
+    Malformed XML raises ``ParseError``; the caller treats that
     as a fatal site-level error rather than swallowing it silently.
     """
-    root = ET.fromstring(xml_bytes)
-    urls: list[str] = []
+    root = fromstring(xml_bytes)
     # Flat ``urlset`` — every ``<url><loc>`` is a page.
-    for elem in root.findall(f"{_SITEMAP_NS}url/{_SITEMAP_NS}loc"):
-        if elem.text:
-            urls.append(elem.text.strip())
+    urls: list[str] = [
+        elem.text.strip()
+        for elem in root.findall(f"{_SITEMAP_NS}url/{_SITEMAP_NS}loc")
+        if elem.text
+    ]
     # Index ``sitemapindex`` — every ``<sitemap><loc>`` is another sitemap.
-    for elem in root.findall(f"{_SITEMAP_NS}sitemap/{_SITEMAP_NS}loc"):
-        if elem.text:
-            urls.append(elem.text.strip())
+    urls.extend(
+        elem.text.strip()
+        for elem in root.findall(f"{_SITEMAP_NS}sitemap/{_SITEMAP_NS}loc")
+        if elem.text
+    )
     return [u for u in urls if _same_host(u, host)]
 
 
@@ -219,7 +228,7 @@ async def _fetch_sitemap_recursive(
                 pages.extend(
                     await _fetch_sitemap_recursive(client, url, host=host, depth=depth + 1)
                 )
-            except (httpx.HTTPError, ET.ParseError) as exc:
+            except (httpx.HTTPError, ParseError) as exc:
                 log.warning("nested sitemap %s failed: %s", url, exc)
                 continue
         else:

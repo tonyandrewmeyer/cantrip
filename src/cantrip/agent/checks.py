@@ -37,8 +37,7 @@ import dataclasses
 import fnmatch
 import logging
 import pathlib
-from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -46,6 +45,9 @@ from cantrip.agent import skills
 from cantrip.llm import schemas
 from cantrip.llm.base import LLMProvider, Message, Role
 from cantrip.llm.structured import StructuredOutputError, complete_structured
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 log = logging.getLogger(__name__)
 
@@ -138,10 +140,11 @@ class CheckReport:
 
         counts = self.counts_by_status()
         lines: list[str] = []
-        summary_parts = []
-        for status in ("pass", "fail", "error", "skipped"):
-            if counts.get(status):
-                summary_parts.append(f"{counts[status]} {status}")
+        summary_parts = [
+            f"{counts[status]} {status}"
+            for status in ("pass", "fail", "error", "skipped")
+            if counts.get(status)
+        ]
         lines.append(f"**Review checks** ({', '.join(summary_parts) or 'no results'})")
         lines.append("")
 
@@ -160,8 +163,7 @@ class CheckReport:
         if self.shadows:
             lines.append("---")
             lines.append("**Shadowed checks** (later layer overrides earlier):")
-            for note in self.shadows:
-                lines.append(f"- {note}")
+            lines.extend(f"- {note}" for note in self.shadows)
 
         return "\n".join(lines).rstrip()
 

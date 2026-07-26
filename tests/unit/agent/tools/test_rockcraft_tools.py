@@ -471,7 +471,7 @@ class TestRegistryImageExistsTool:
         }
         mock_result = mock.MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = '{"Digest": "sha256:abcd1234", "Architecture": "amd64", "Created": "2026-01-01T00:00:00Z", "Layers": ["layer1", "layer2", "layer3"]}'  # noqa: E501
+        mock_result.stdout = '{"Digest": "sha256:abcd1234", "Architecture": "amd64", "Created": "2026-01-01T00:00:00Z", "Layers": ["layer1", "layer2", "layer3"]}'
         mock_result.stderr = ""
         del manifest  # consumed via the JSON string above
 

@@ -1,4 +1,4 @@
-"""Task-completion notifications — terminal bell and desktop popups.
+r"""Task-completion notifications — terminal bell and desktop popups.
 
 Opt-in via the ``CANTRIP_NOTIFY`` environment variable:
 

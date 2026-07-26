@@ -28,12 +28,14 @@ import datetime
 import enum
 import json
 import logging
-import pathlib
 import threading
-from collections.abc import Iterable, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.memory.export import sanitise_body
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterable, Iterator
 
 log = logging.getLogger(__name__)
 

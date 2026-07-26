@@ -15,10 +15,9 @@ The dispatcher returns an exit code so it slots straight into
 
 from __future__ import annotations
 
-import argparse
 import asyncio
-import pathlib
 import sys
+from typing import TYPE_CHECKING
 
 from cantrip.docs_index import index, sites
 from cantrip.docs_index.store import DocsStore
@@ -28,6 +27,10 @@ from cantrip.llm.roles import (
     RoleNotConfigured,
     build_role_router,
 )
+
+if TYPE_CHECKING:
+    import argparse
+    import pathlib
 
 
 def dispatch(args: argparse.Namespace) -> int:
@@ -149,7 +152,7 @@ def _cmd_index(args: argparse.Namespace) -> int:
 
 
 async def _run_index(site: sites.DocSite, embed: EmbedProvider) -> index.IndexReport:
-    """Wrapper so ``asyncio.run`` has a single coroutine to drive."""
+    """Return wrapper so ``asyncio.run`` has a single coroutine to drive."""
     return await index.index_site(site, embed)
 
 

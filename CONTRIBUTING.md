@@ -155,6 +155,7 @@ uv run cantrip --web
 ```python
 import datetime
 
+
 def parse_status(data: dict[str, Any]) -> ModelStatus:
     """Parse Juju status from JSON.
 

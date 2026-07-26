@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import pathlib
 import subprocess
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
-from cantrip.llm.base import Image
-
 if TYPE_CHECKING:
+    import pathlib
+
     from cantrip.agent.tools.post_edit_lint import DiagnosticsReport
+    from cantrip.llm.base import Image
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ def build_tool_caption(
 
     # No preferred key; fall back to the first argument with a
     # non-empty value so the caption still carries *something*.
-    for _key, raw in args.items():
+    for raw in args.values():
         if raw in (None, ""):
             continue
         value = _format_caption_value(raw)
@@ -221,7 +221,7 @@ def build_tool_intro_caption(
             value = _format_caption_value(args[key])
             return f"{verb} {value}"
 
-    for _key, raw in args.items():
+    for raw in args.values():
         if raw in (None, ""):
             continue
         value = _format_caption_value(raw)

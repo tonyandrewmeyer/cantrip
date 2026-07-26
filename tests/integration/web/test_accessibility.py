@@ -16,13 +16,12 @@ so it's safe to collect in CI without mandating either dependency.
 from __future__ import annotations
 
 import asyncio
-import pathlib
 import shutil
 import socket
 import subprocess
 import threading
 import weakref
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import aiohttp.web as web
@@ -39,6 +38,10 @@ from cantrip.web.server import (
     WS_CLIENTS_KEY,
     _index,
 )
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterator
 
 # Every test in this module is synchronous on purpose — the aiohttp app
 # runs on a dedicated thread so test bodies can call subprocess.run
@@ -139,7 +142,7 @@ class _ServerThread(threading.Thread):
 
             loop.run_until_complete(_idle())
             loop.run_until_complete(runner.cleanup())
-        except BaseException as exc:  # noqa: BLE001 - propagate to fixture
+        except BaseException as exc:
             self._error = exc
             self._ready.set()
         finally:

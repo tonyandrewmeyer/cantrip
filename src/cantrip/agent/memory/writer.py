@@ -214,7 +214,7 @@ class AutoWriter:
                 temperature=_WRITER_TEMPERATURE,
                 max_tokens=_WRITER_MAX_TOKENS,
             )
-        except Exception as exc:  # noqa: BLE001 - defensive: many providers raise different errors
+        except Exception as exc:
             log.warning("AutoWriter LLM call failed: %s", exc)
             return AutoWriteDecision(
                 decision="skip",
@@ -240,7 +240,7 @@ class AutoWriter:
                 citations=citations,
                 source="auto",
             )
-        except Exception as exc:  # noqa: BLE001 - persistence surface varies by scope
+        except Exception as exc:
             log.warning("AutoWriter persistence failed: %s", exc)
             return AutoWriteDecision(
                 decision="write",

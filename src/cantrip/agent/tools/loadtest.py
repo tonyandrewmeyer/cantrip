@@ -182,7 +182,7 @@ def _detect_http_port(
                 return default
 
     # Check container ports (charmcraft.yaml v2 uses "ports" in containers).
-    for _ctr_name, ctr_data in containers.items():
+    for ctr_data in containers.values():
         if not isinstance(ctr_data, dict):
             continue
         for port_entry in ctr_data.get("ports", []):

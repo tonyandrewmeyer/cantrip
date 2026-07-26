@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +16,9 @@ from cantrip.agent.tools.post_edit_lint import (
     collect_touched_paths,
     run_post_edit_diagnostics,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 # A Python source that ruff flags loudly — unsorted imports plus an
 # unused import.  Keeps the fixture short and the diagnostics

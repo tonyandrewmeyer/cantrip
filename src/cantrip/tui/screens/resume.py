@@ -9,14 +9,16 @@ starts the executor.
 from __future__ import annotations
 
 import typing
+from typing import ClassVar
 
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
 if typing.TYPE_CHECKING:
+    from textual.app import ComposeResult
+
     from cantrip.agent.session_preview import SessionPreview
     from cantrip.llm.base import Message
 
@@ -78,7 +80,7 @@ class ResumePromptScreen(ModalScreen[str]):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("r", "choose_resume", "Resume"),
         Binding("f", "choose_fresh", "Fresh"),
         Binding("t", "toggle_transcript", "Transcript"),

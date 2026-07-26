@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,6 +20,9 @@ from cantrip.docs_index import index
 from cantrip.docs_index.store import Chunk, DocsStore
 from cantrip.llm.roles import RoleRouter
 from tests.support.roles import StubEmbed as _StubEmbed
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Helpers

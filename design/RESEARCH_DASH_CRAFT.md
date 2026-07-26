@@ -122,16 +122,24 @@ the Python host controls.**
 
 ```python
 cmd = [
-    'pi', '--mode', 'rpc',
-    '--no-session', '--no-context-files', '--no-themes',
-    '--extension', self._extension,
-    '--no-skills',                                 # default
-    '--no-prompt-templates',                       # default
-    '--system-prompt', '<charm-focused prompt>',   # custom, terse
-    '--model', 'openrouter/<model>',               # always via OpenRouter
+    "pi",
+    "--mode",
+    "rpc",
+    "--no-session",
+    "--no-context-files",
+    "--no-themes",
+    "--extension",
+    self._extension,
+    "--no-skills",  # default
+    "--no-prompt-templates",  # default
+    "--system-prompt",
+    "<charm-focused prompt>",  # custom, terse
+    "--model",
+    "openrouter/<model>",  # always via OpenRouter
 ]
-subprocess.Popen(cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE,
-                 text=True, bufsize=1, cwd=self._work_dir)
+subprocess.Popen(
+    cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE, text=True, bufsize=1, cwd=self._work_dir
+)
 ```
 
 Communication is **JSONL over stdin/stdout**: the host writes

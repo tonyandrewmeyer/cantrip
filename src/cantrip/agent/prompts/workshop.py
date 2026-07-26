@@ -22,7 +22,7 @@ class _Sentinel:
 
 
 _MISSING = _Sentinel()
-_cached: str | None | _Sentinel = _MISSING
+_cached: str | _Sentinel | None = _MISSING
 
 
 def workshop_prompt_text() -> str | None:
@@ -35,7 +35,7 @@ def workshop_prompt_text() -> str | None:
 
     Cached on first call.
     """
-    global _cached  # noqa: PLW0603
+    global _cached
     if isinstance(_cached, _Sentinel):
         try:
             _cached = _WORKSHOP_PROMPT_PATH.read_text(encoding="utf-8")
@@ -50,5 +50,5 @@ def workshop_prompt_text() -> str | None:
 
 def reset_cache() -> None:
     """Reset the cached probe — for tests only."""
-    global _cached  # noqa: PLW0603
+    global _cached
     _cached = _MISSING

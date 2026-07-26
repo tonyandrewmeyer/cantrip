@@ -7,14 +7,14 @@ import datetime
 import json
 import logging
 import os
-import pathlib
 from typing import TYPE_CHECKING, Any
 
-from cantrip.llm.base import Message
-
 if TYPE_CHECKING:
+    import pathlib
+
     from cantrip.agent.context import LedgerEntry
     from cantrip.agent.goal_budget import GoalBudget
+    from cantrip.llm.base import Message
 
 log = logging.getLogger(__name__)
 

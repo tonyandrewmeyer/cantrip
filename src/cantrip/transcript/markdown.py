@@ -87,8 +87,7 @@ def render_markdown(data: export_mod.TranscriptData) -> str:
 
     # Conversation.
     sections.append("\n## Conversation\n")
-    for msg in data.messages:
-        sections.append(render_message(msg))
+    sections.extend(render_message(msg) for msg in data.messages)
 
     # Events.
     if data.events:

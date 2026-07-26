@@ -63,12 +63,14 @@ class TestContextManagement:
         # FakeProvider count_tokens uses chars//4, and compaction threshold is 80%.
         # Context window = 200 tokens → threshold at 160 tokens → 640 chars.
         provider = FakeProvider(
-            # First response for the user message.
-            [Response(content="short")]
-            # Then a summary response during compaction.
-            + [Response(content="Summary of conversation.")]
-            # Then the response after compaction.
-            + [Response(content="After compaction.")],
+            [
+                # First response for the user message.
+                Response(content="short"),
+                # Then a summary response during compaction.
+                Response(content="Summary of conversation."),
+                # Then the response after compaction.
+                Response(content="After compaction."),
+            ],
             context_window_tokens=200,
         )
         agent = CantripAgent(provider=provider)

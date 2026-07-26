@@ -17,6 +17,7 @@ import numpy as np
 
 
 def main() -> None:
+    """Render the quickpack benchmark chart."""
     results_file = sys.argv[1] if len(sys.argv) > 1 else "results.json"
     output_file = sys.argv[2] if len(sys.argv) > 2 else "benchmark_chart.png"
 

@@ -45,6 +45,7 @@ Add to `src/charm.py`:
 ```python
 import ops_tracing
 
+
 class MyCharm(ops.CharmBase):
     def __init__(self, framework):
         super().__init__(framework)
@@ -66,6 +67,7 @@ Key patterns:
 import ops
 import ops.testing
 
+
 def test_start_ready():
     ctx = ops.testing.Context(MyCharm)
     container = ops.testing.Container("workload", can_connect=True)
@@ -85,9 +87,11 @@ Cover:
 ```python
 import jubilant
 
+
 def test_deploy(juju: jubilant.Juju):
     juju.deploy("./my-charm_amd64.charm", app="my-charm")
     juju.wait(apps=["my-charm"], status="active")
+
 
 def test_relate_database(juju: jubilant.Juju):
     juju.deploy("postgresql-k8s", app="postgresql")

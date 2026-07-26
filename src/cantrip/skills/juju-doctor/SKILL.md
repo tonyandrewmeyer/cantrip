@@ -60,8 +60,7 @@ def status(juju_statuses: dict[str, dict]):
                 ws = unit_data.get("workload-status", {})
                 if ws.get("current") != "active":
                     raise Exception(
-                        f"{unit_name} in {model_name} is "
-                        f"{ws.get('current')}, not active"
+                        f"{unit_name} in {model_name} is {ws.get('current')}, not active"
                     )
 ```
 
@@ -162,6 +161,7 @@ juju-doctor schema --builtins
 
 ```python
 """Probe: Validate deployment health."""
+
 
 def status(juju_statuses: dict[str, dict]):
     """Check all units are active and idle."""

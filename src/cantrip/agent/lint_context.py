@@ -24,9 +24,8 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import pathlib
 import time
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from cantrip.agent.tools.post_edit_lint import (
     DiagnosticsReport,
@@ -35,6 +34,10 @@ from cantrip.agent.tools.post_edit_lint import (
     _run_ruff,
     _run_ty,
 )
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 
@@ -109,8 +112,7 @@ class DiagnosticsBlock:
             if not group:
                 continue
             lines.append(f"  **{severity}s**:")
-            for d in group:
-                lines.append(f"    {_format_diagnostic(d)}")
+            lines.extend(f"    {_format_diagnostic(d)}" for d in group)
 
         if self.truncated:
             lines.append(
@@ -119,8 +121,7 @@ class DiagnosticsBlock:
                 "run `cantrip lint` for the full list."
             )
 
-        for note in self.skipped:
-            lines.append(f"  [skipped] {note}")
+        lines.extend(f"  [skipped] {note}" for note in self.skipped)
 
         return "\n".join(lines)
 

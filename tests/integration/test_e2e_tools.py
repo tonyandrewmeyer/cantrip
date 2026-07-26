@@ -9,11 +9,14 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cantrip.agent.tools import build_tools, expand_leaves
-from cantrip.agent.tools.base import ToolResult
+
+if TYPE_CHECKING:
+    from cantrip.agent.tools.base import ToolResult
 
 
 def _juju_status_works() -> bool:

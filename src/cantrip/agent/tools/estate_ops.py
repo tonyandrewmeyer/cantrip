@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import pathlib
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pathlib
 
 # Tokens that indicate the repo already documents Ubuntu Pro adoption.
 # Matched case-insensitively against README + docs + charm metadata.

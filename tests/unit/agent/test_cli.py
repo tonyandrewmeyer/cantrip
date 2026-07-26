@@ -98,9 +98,9 @@ class TestSlashCompleter:
     def test_completer_exposes_all_matches_across_states(self) -> None:
         """Several verbs start with ``/``, so state 0..N-1 yields each once."""
         completer = cli._make_slash_completer(self._verbs())
-        results: list[str | None] = []
-        for state in range(len(self._verbs()) + 1):
-            results.append(completer("/", state))
+        results: list[str | None] = [
+            completer("/", state) for state in range(len(self._verbs()) + 1)
+        ]
         assert None in results  # Terminates.
         verbs_returned = [r for r in results if r is not None]
         # Every catalogued verb is reachable via Tab-cycling from ``/``.

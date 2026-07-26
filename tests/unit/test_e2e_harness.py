@@ -9,11 +9,14 @@ without needing an API key or juju.
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.e2e import harness, seeds
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Workspace seeding

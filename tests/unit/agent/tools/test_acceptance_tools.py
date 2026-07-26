@@ -754,7 +754,7 @@ class TestVerifyRelationData:
         mock_result.returncode = 1
 
         with patch("subprocess.run", return_value=mock_result):
-            has_data, notes = _verify_relation_data("myapp/0", "database", None)
+            has_data, _notes = _verify_relation_data("myapp/0", "database", None)
 
         assert has_data is False
 

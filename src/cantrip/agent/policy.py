@@ -368,7 +368,7 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
 
 
 def _is_short_flag(token: str, letter: str) -> bool:
-    """True when *token* is a POSIX short-flag bundle containing *letter*.
+    """Return true when *token* is a POSIX short-flag bundle containing *letter*.
 
     Handles ``-r``, ``-rf``, ``-fr`` uniformly while rejecting
     long-form options that happen to contain the letter (``--recurse``

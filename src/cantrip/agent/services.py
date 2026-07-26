@@ -7,12 +7,14 @@ the executor code.
 
 from __future__ import annotations
 
-import pathlib
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cantrip.agent.queue import AgentTask
-from cantrip.agent.subagent import SubagentContext, SubagentResult
-from cantrip.agent.worktree import WorktreeHandle
+if TYPE_CHECKING:
+    import pathlib
+
+    from cantrip.agent.queue import AgentTask
+    from cantrip.agent.subagent import SubagentContext, SubagentResult
+    from cantrip.agent.worktree import WorktreeHandle
 
 # ---------------------------------------------------------------------------
 # SubagentRunner — runs a subagent for a given task

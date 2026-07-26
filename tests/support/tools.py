@@ -51,7 +51,7 @@ def make_stub_tool(
         def parameters(self) -> dict[str, Any]:
             return schema
 
-        async def execute(self, **kwargs: Any) -> ToolResult:  # noqa: ARG002
+        async def execute(self, **kwargs: Any) -> ToolResult:
             return ToolResult(success=success, output=output)
 
     return _StubTool()
@@ -90,7 +90,7 @@ def make_raising_tool(
         def parameters(self) -> dict[str, Any]:
             return schema
 
-        async def execute(self, **kwargs: Any) -> ToolResult:  # noqa: ARG002
+        async def execute(self, **kwargs: Any) -> ToolResult:
             raise error
 
     return _RaisingTool()

@@ -16,7 +16,7 @@ _CACHED: str | None = None
 
 def load_compaction_prompt() -> str:
     """Return the compaction prompt text, reading the file on first call."""
-    global _CACHED  # noqa: PLW0603
+    global _CACHED
     if _CACHED is None:
         _CACHED = _PROMPT_PATH.read_text().rstrip("\n")
     return _CACHED

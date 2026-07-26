@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import sys
-from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -17,6 +17,9 @@ from cantrip.mcp import (
     ServerConfig,
 )
 from cantrip.mcp.types import TransportKind
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 # Project root — ``python -m tests.unit.mcp_stub_server`` only resolves
 # when invoked from here, and xdist workers may have a different cwd.

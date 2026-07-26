@@ -12,11 +12,14 @@ this module contains only the control flow that threads runtime context
 from __future__ import annotations
 
 import platform
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from cantrip.agent.planner.context import PlanningContext
 from cantrip.agent.prompts import tasks as task_prompts
 from cantrip.agent.queue import AgentTask, ModelHint, TaskCategory
+
+if TYPE_CHECKING:
+    from cantrip.agent.planner.context import PlanningContext
 
 # Frameworks with well-understood 12-factor PaaS charm paths — skip research.
 _FAST_PATH_FRAMEWORKS = frozenset(

@@ -488,7 +488,7 @@ async def _repl(agent: CantripAgent) -> None:
             if shared_result.followup is not None:
                 try:
                     followup_text = await shared_result.followup
-                except Exception as exc:  # noqa: BLE001 — surface any loader error
+                except Exception as exc:
                     followup_text = f"_Error: marketplace lookup failed: {exc}_"
                 print(f"{followup_text}\n")
             if shared_result.quit:

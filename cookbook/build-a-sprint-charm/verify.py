@@ -161,6 +161,7 @@ def verify(charm_dir: pathlib.Path) -> None:
 
 
 def main(argv: list[str]) -> int:
+    """Verify the cookbook recipe's output and report the result."""
     if len(argv) != 1:
         sys.stderr.write(
             "Usage: verify.py <charm-dir>\n  <charm-dir>: path to the directory Cantrip built\n"

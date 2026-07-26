@@ -20,9 +20,12 @@ import dataclasses
 import logging
 import shlex
 import subprocess
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from cantrip.agent.sandbox import SandboxedRunner, SandboxPolicy
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 

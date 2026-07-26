@@ -28,7 +28,7 @@ _SKETCH_MIN_WIDTH = 28
 
 
 def _relation_pair_count(status: statustypes.Status) -> int:
-    """Number of distinct app-pairs related in *status* (interface-agnostic)."""
+    """Return number of distinct app-pairs related in *status* (interface-agnostic)."""
     pairs: set[tuple[str, str]] = set()
     for app_name, app in status.apps.items():
         for related_list in app.relations.values():
@@ -57,10 +57,7 @@ def _cos_collapsed_summary(status: statustypes.Status) -> str:
     if len(counts) == 1 and "active" in counts:
         health = "all active"
     else:
-        parts = []
-        for name in _STATUS_ORDER:
-            if counts.get(name):
-                parts.append(f"{counts[name]} {name}")
+        parts = [f"{counts[name]} {name}" for name in _STATUS_ORDER if counts.get(name)]
         # Tack on any exotic statuses we didn't pre-rank, so nothing
         # silently vanishes when Juju grows a new state.
         for name, n in counts.items():
@@ -452,7 +449,7 @@ class JujuStatusWidget(Widget):
         return False
 
     def _sketch_mode(self) -> bool:
-        """True when there is room for the compact topology sketch.
+        """Return true when there is room for the compact topology sketch.
 
         Width 0 means the widget hasn't been laid out yet — treat that
         as "not enough room" so the first paint (driven by ``on_resize``
@@ -531,7 +528,7 @@ class JujuStatusWidget(Widget):
         self._render_offers(container)
 
     def _render_list(self, container: Vertical, visible: dict[str, statustypes.AppStatus]) -> None:
-        """The verbose fallback — an ``AppBox`` + ``RelationLine`` per app."""
+        """Return the verbose fallback — an ``AppBox`` + ``RelationLine`` per app."""
         for app_name, app in visible.items():
             container.mount(AppBox(app_name, app, highlight=app_name == self.current_app))
             # Pick the first unit for relation detail lookups.
@@ -550,7 +547,7 @@ class JujuStatusWidget(Widget):
     def _render_sketch(
         self, container: Vertical, visible: dict[str, statustypes.AppStatus]
     ) -> None:
-        """The compact topology sketch — app nodes, then interface-grouped edges.
+        """Return the compact topology sketch — app nodes, then interface-grouped edges.
 
         App nodes carry their status colour and open the F8 graph when
         clicked; the unit-level breakdown is intentionally dropped (F8

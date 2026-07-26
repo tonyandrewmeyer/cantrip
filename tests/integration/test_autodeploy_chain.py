@@ -29,7 +29,7 @@ class TestAutoDeployChain:
     async def test_build_triggers_deploy_followup(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A completed BUILD task auto-creates a DEPLOY follow-up."""
         provider = FakeProvider(
@@ -72,7 +72,7 @@ class TestAutoDeployChain:
     async def test_failed_verify_triggers_debug(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """A failed verification task auto-creates a DEBUG follow-up.
 
@@ -81,7 +81,7 @@ class TestAutoDeployChain:
         remains pending — but it IS created, which is what we verify.
         """
 
-        def respond(messages, tools):  # noqa: ARG001
+        def respond(messages, tools):
             # Find the task title in the system prompt.
             system_text = ""
             for msg in messages:
@@ -121,7 +121,7 @@ class TestAutoDeployChain:
     async def test_full_chain_build_deploy_verify_success(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """When all stages succeed, no DEBUG task is created."""
         provider = FakeProvider(
@@ -157,7 +157,7 @@ class TestAutoDeployChain:
     @pytest.mark.asyncio
     async def test_no_followups_without_dev_model(
         self,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """When dev_model is None, no follow-up tasks are created after BUILD."""
         provider = FakeProvider(responses=[Response(content="Build done.")])
@@ -187,7 +187,7 @@ class TestAutoDeployChain:
     async def test_chain_persisted_to_store(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """The full chain is persisted to the SessionStore at each step."""
         provider = FakeProvider(

@@ -328,18 +328,23 @@ class CantripApp(App):
         ("q", "quit", "Quit"),
     ]
 
+
 # Key widgets
 class TaskListWidget(Widget):
     """Live task checklist driven by WorkQueue state."""
 
+
 class JujuStatusWidget(Widget):
     """Displays juju status with app boxes and relations."""
+
 
 class ChatWidget(Widget):
     """Chat history and input."""
 
+
 class StatusBar(Widget):
     """Bottom bar with active task, COS health, test summary, watcher status."""
+
 
 # Future
 class ModelGraphWidget(Widget):

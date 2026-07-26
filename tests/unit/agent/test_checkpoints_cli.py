@@ -7,8 +7,7 @@ and writes to stdout / stderr, which ``capsys`` captures.
 
 from __future__ import annotations
 
-import pathlib
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -26,6 +25,10 @@ from cantrip.main import (
 )
 from cantrip.transcript.export import TranscriptData
 from cantrip.tui.screens.transcript import TranscriptScreen
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Iterator
 
 
 @pytest.fixture

@@ -14,9 +14,12 @@ real waits don't spuriously trip.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from cantrip.agent.queue import AgentTask, TaskStatus, WorkQueue
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 DEFAULT_TIMEOUT = 5.0
 DEFAULT_INTERVAL = 0.02

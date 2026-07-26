@@ -105,7 +105,7 @@ class _FilterExpr:
     the operator is already waiting on a tool call.
     """
 
-    __slots__ = ("source", "_tree")
+    __slots__ = ("_tree", "source")
 
     def __init__(self, source: str):
         self.source = source

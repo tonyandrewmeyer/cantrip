@@ -137,8 +137,10 @@ def _format_server_tools(registry: MCPRegistry, server_name: str) -> str:
     if not snapshot.tools:
         return f"_Server {server_name!r} exposes no tools._"
     lines = [f"**Tools on `{server_name}`:**"]
-    for tool in snapshot.tools:
-        lines.append(f"- `{tool.qualified_name}` — {tool.description or '(no description)'}")
+    lines.extend(
+        f"- `{tool.qualified_name}` — {tool.description or '(no description)'}"
+        for tool in snapshot.tools
+    )
     return "\n".join(lines)
 
 

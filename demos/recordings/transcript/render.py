@@ -13,15 +13,15 @@ import sys
 # Make the in-repo cantrip package importable without installing.
 sys.path.insert(0, "/home/ubuntu/cantrip/src")
 
-from cantrip.transcript.export import TranscriptData  # noqa: E402
-from cantrip.transcript.html import render_html  # noqa: E402
+from cantrip.transcript.export import TranscriptData
+from cantrip.transcript.html import render_html
 
 OUT_DIR = pathlib.Path("/tmp/cantrip-transcript-demo")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def sample_data() -> TranscriptData:
-    """A plausible mid-sized 'build a Redis charm' session."""
+    """Return a plausible mid-sized 'build a Redis charm' session."""
     return TranscriptData(
         charm_name="redis-k8s-operator",
         charm_path="/home/alex/charms/redis-k8s-operator",
@@ -175,7 +175,8 @@ def sample_data() -> TranscriptData:
                             "- charmhub.io/grafana-agent-k8s — COS scrape relation interface\n"
                             "- canonical/operator-framework — ops 2.x Pebble layer recipes\n"
                             "- canonical/ops-tracing — span emission around hook entry/exit\n"
-                            "- redis.io/security — protected-mode and AUTH for non-localhost listeners"
+                            "- redis.io/security — protected-mode and AUTH for non-localhost "
+                            "listeners"
                         ),
                         "is_error": False,
                     },
@@ -248,7 +249,8 @@ def sample_data() -> TranscriptData:
                         "tool_call_id": "tc-pack",
                         "content": (
                             "Packed redis-k8s-operator_amd64.charm (4.2 MB) in 10.8s.\n"
-                            "Skipped charmcraft (used quickpack venv with matching CPython 3.12.3)."
+                            "Skipped charmcraft (used quickpack venv with matching CPython "
+                            "3.12.3)."
                         ),
                         "is_error": False,
                     },
@@ -337,6 +339,7 @@ def sample_data() -> TranscriptData:
 
 
 def main() -> None:
+    """Render the demo transcript to disk."""
     html = render_html(sample_data())
     html_path = OUT_DIR / "transcript.html"
     html_path.write_text(html, encoding="utf-8")

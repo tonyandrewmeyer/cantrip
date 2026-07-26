@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +16,9 @@ from cantrip.agent.goal_budget import (
 )
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 @pytest.fixture

@@ -17,13 +17,13 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import os
-import pathlib
 import re
 import shlex
 import subprocess
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    import pathlib
     from collections.abc import Sequence
 
     from .spec import EvalSpec

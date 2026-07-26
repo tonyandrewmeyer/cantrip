@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from cantrip.repomap.graph import FileRanking
+from typing import TYPE_CHECKING
+
 from cantrip.repomap.symbols import Symbol, SymbolKind
+
+if TYPE_CHECKING:
+    from cantrip.repomap.graph import FileRanking
 
 # Cantrip's overall token budget tracking is character-based at ~4
 # chars per token (matches estimate_message_tokens elsewhere).
@@ -54,8 +58,7 @@ def _render_file_block(ranking: FileRanking) -> str:
     if not symbols:
         return ""
     lines = [f"{ranking.file}:"]
-    for sym in symbols:
-        lines.append(f"  {_format_symbol(sym)}")
+    lines.extend(f"  {_format_symbol(sym)}" for sym in symbols)
     return "\n".join(lines)
 
 
@@ -119,8 +122,7 @@ def render_full_markdown(rankings: list[FileRanking]) -> str:
             continue
         parts.append(f"### `{ranking.file}`")
         parts.append("")
-        for sym in symbols:
-            parts.append(f"- `{_format_symbol(sym)}`")
+        parts.extend(f"- `{_format_symbol(sym)}`" for sym in symbols)
         parts.append("")
     return "\n".join(parts).rstrip()
 

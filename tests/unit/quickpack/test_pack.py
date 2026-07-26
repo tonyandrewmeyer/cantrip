@@ -294,7 +294,7 @@ class TestPack:
             pack.quick_pack(charm_project, output_dir=tmp_path)
 
     def test_quick_pack_no_charmcraft_yaml(self, tmp_path: pathlib.Path) -> None:
-        with pytest.raises(FileNotFoundError, match="charmcraft.yaml"):
+        with pytest.raises(FileNotFoundError, match=r"charmcraft.yaml"):
             pack.quick_pack(tmp_path)
 
     def test_quick_pack_custom_entrypoint(

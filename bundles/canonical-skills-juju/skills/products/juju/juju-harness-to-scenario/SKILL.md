@@ -100,6 +100,7 @@ into the next `ctx.run(...)`.
 ```python
 from ops import testing
 
+
 def test_backup_action():
     ctx = testing.Context(MyCharm)
     state_in = testing.State(containers={testing.Container("workload", can_connect=True)})
@@ -115,6 +116,7 @@ For failure paths:
 
 ```python
 import pytest
+
 with pytest.raises(testing.ActionFailed) as exc:
     ctx.run(ctx.on.action("backup", params={"path": "/bad"}), state_in)
 assert "permission denied" in exc.value.message
@@ -162,9 +164,11 @@ active = testing.Container(
 )
 down = testing.Container("workload", can_connect=False)
 
+
 def test_status_active():
     state_out = ctx.run(ctx.on.update_status(), testing.State(containers={active}))
     assert state_out.unit_status == testing.ActiveStatus()
+
 
 def test_status_waiting_when_disconnected():
     state_out = ctx.run(ctx.on.update_status(), testing.State(containers={down}))

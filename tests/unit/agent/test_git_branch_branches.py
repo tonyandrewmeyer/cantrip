@@ -267,7 +267,7 @@ class TestBootstrapGithubRepo:
             patch("cantrip.agent.git_branch._has_commits", return_value=True),
             patch("cantrip.agent.git_branch.subprocess.run", side_effect=_mock_run),
         ):
-            ok, url = gb.bootstrap_github_repo(
+            ok, _url = gb.bootstrap_github_repo(
                 ".",
                 "myrepo",
                 org="canon",

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import argparse
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
 
 
 def _compare_charms(args: argparse.Namespace) -> int:

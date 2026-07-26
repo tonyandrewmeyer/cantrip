@@ -15,18 +15,16 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.executor import BackgroundExecutor
-from cantrip.agent.queue import AgentTask
-from cantrip.agent.tools import ToolResult
 from cantrip.llm.base import Message, Role
 from cantrip.ui import events as ui_events
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from cantrip.agent.queue import WorkQueue
+    from cantrip.agent.queue import AgentTask, WorkQueue
     from cantrip.agent.state import AgentState
     from cantrip.agent.store import SessionStore
-    from cantrip.agent.tools import Tool
+    from cantrip.agent.tools import Tool, ToolResult
     from cantrip.hooks import HookRunner
     from cantrip.llm.base import LLMProvider
 

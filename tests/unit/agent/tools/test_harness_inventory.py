@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -10,6 +10,9 @@ from cantrip.agent.tools.harness_inventory import (
     HarnessInventoryTool,
     harness_inventory,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 @pytest.fixture

@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
-from cantrip.agent.planner.context import PlanningContext
 from cantrip.agent.planner.deterministic import (
     is_fast_path,
     is_improvement,
@@ -36,10 +36,13 @@ from cantrip.agent.planner.deterministic import (
 from cantrip.agent.planner.prefetch import prefetch_symbol_block
 from cantrip.agent.prompts import planning as planning_prompts
 from cantrip.agent.queue import AgentTask, TaskCategory, TaskStatus
-from cantrip.codeintel import CodeIntelQuery
 from cantrip.llm import base as llm
 from cantrip.llm.schemas import PLANNER_BRIEFING
 from cantrip.llm.structured import complete_structured
+
+if TYPE_CHECKING:
+    from cantrip.agent.planner.context import PlanningContext
+    from cantrip.codeintel import CodeIntelQuery
 
 log = logging.getLogger(__name__)
 
@@ -421,8 +424,6 @@ def _merge_tasks(
             preserved_ids.add(task.id)
 
     merged = list(preserved)
-    for task in new:
-        if task.id not in preserved_ids:
-            merged.append(task)
+    merged.extend(task for task in new if task.id not in preserved_ids)
 
     return merged

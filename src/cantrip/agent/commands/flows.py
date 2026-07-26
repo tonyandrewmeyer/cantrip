@@ -63,8 +63,7 @@ def _format_flow_help(flow: flows.Flow) -> str:
         lines.append("")
     if terminal_nodes:
         lines.append("**Terminal nodes:**")
-        for node in terminal_nodes:
-            lines.append(f"- `{node.id}` — {node.label}")
+        lines.extend(f"- `{node.id}` — {node.label}" for node in terminal_nodes)
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -79,8 +78,7 @@ def _format_catalogue(registry: flows.FlowRegistry) -> str:
             "for the schema."
         )
     lines = ["**Flows**", ""]
-    for flow in registry.flows:
-        lines.append(f"- `/flow {flow.name}` — {flow.description}")
+    lines.extend(f"- `/flow {flow.name}` — {flow.description}" for flow in registry.flows)
     lines.append("")
     lines.append(
         "Run `/flow <name> --help` for the parameter list and node "

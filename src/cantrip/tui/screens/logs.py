@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import functools
 import subprocess
+from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -85,7 +86,7 @@ class LogScreen(ModalScreen):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("escape", "dismiss", "Close"),
         Binding("r", "refresh", "Refresh"),
         Binding("l", "cycle_level", "Level"),

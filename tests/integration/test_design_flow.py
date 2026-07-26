@@ -78,15 +78,15 @@ class TestDesignConfirmation:
             async def complete(
                 self,
                 messages,
-                tools=None,  # noqa: ARG002
-                temperature=0.7,  # noqa: ARG002
-                max_tokens=None,  # noqa: ARG002
-                thinking_budget=None,  # noqa: ARG002
-                response_schema=None,  # noqa: ARG002
+                tools=None,
+                temperature=0.7,
+                max_tokens=None,
+                thinking_budget=None,
+                response_schema=None,
             ):
-                for msg in messages:
-                    if msg.role.value == "user":
-                        received_messages.append(msg.content)
+                received_messages.extend(
+                    msg.content for msg in messages if msg.role.value == "user"
+                )
                 return Response(content=BUILD_PLAN_JSON)
 
         provider = CapturingProvider()
@@ -146,7 +146,7 @@ class TestDesignConfirmation:
     async def test_confirmation_then_executor_runs_builds(
         self,
         tmp_path: pathlib.Path,
-        fast_executor,  # noqa: ARG002
+        fast_executor,
     ):
         """Full flow: confirm -> build tasks -> executor completes them."""
         provider = MultiRoleProvider(

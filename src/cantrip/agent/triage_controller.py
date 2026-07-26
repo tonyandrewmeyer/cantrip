@@ -9,13 +9,14 @@ through thin delegators so the public surface (``issue_triage_running`` /
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cantrip.agent.git_branch import check_upstream_diverged, gh_issue_comment
 from cantrip.agent.github_issues import IssueTriage
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cantrip.agent.queue import AgentTask, WorkQueue
     from cantrip.agent.state import AgentState
     from cantrip.agent.store import SessionStore
@@ -138,7 +139,7 @@ class TriageController:
             on_issues_found=_on_issues_found,
         )
         # Transfer examined set from previous run.
-        self._issue_triage._examined = examined  # noqa: SLF001
+        self._issue_triage._examined = examined
         self._issue_triage.start()
         log.info("Issue re-triage started for %s", self._state.github_repo)
         return True

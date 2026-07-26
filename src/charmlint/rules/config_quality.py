@@ -77,7 +77,7 @@ class ConfigMissingDescription(Rule):
 
 
 def _option_is_read(option_name: str, sources: dict[pathlib.Path, str]) -> bool:
-    """True iff some src/ source reads ``<...>.config["X"]`` or ``.config.get("X")``.
+    """Return true iff some src/ source reads ``<...>.config["X"]`` or ``.config.get("X")``.
 
     Catches the canonical access shapes the ``adding-config`` skill teaches
     (``self.config["log-level"]``, ``self.config.get("log-level", "info")``,

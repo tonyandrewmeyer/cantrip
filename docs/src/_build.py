@@ -93,10 +93,12 @@ _EXTERNAL_LINK_RE = re.compile(
 
 
 def _mark_external_links(html_text: str) -> str:
-    """Add ``target="_blank" rel="noopener"`` to any `<a>` with an http(s)
+    """Add ``target="_blank" rel="noopener"`` to any `<a>` with an http(s).
+
     href that doesn't already carry a target attribute.  Matches the
     hand-authored style where external links consistently open in a new
-    tab."""
+    tab.
+    """
     return _EXTERNAL_LINK_RE.sub(
         lambda m: f'<a href="{m.group(1)}" target="_blank" rel="noopener">',
         html_text,
@@ -164,10 +166,12 @@ def _build_all(out_dir: pathlib.Path) -> list[tuple[pathlib.Path, str]]:
 
 
 class _DOMFlatten(html.parser.HTMLParser):
-    """Collapse an HTML document into a list of (kind, …) tuples suitable for
+    """Collapse an HTML document into a list of (kind, …) tuples suitable for.
+
     structural equality comparison.  Whitespace runs inside text nodes are
     collapsed; entity references are resolved so ``&mdash;`` and ``—`` compare
-    equal."""
+    equal.
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)

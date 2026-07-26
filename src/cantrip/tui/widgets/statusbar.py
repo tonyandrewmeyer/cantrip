@@ -1,6 +1,7 @@
 """Custom status bar widget for the Cantrip TUI."""
 
 import contextlib
+from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.css.query import NoMatches
@@ -65,7 +66,7 @@ class StatusBar(Widget):
     # Phase 99.4: badge text for each lifecycle label.  Closed mapping
     # so a future label addition has to update both this table and the
     # ``LIFECYCLE_LABELS`` tuple in ``cantrip.agent.lifecycle``.
-    _LIFECYCLE_BADGES = {
+    _LIFECYCLE_BADGES: ClassVar[dict] = {
         "running": "",
         "paused": "PAUSED",
         "done": "DONE",

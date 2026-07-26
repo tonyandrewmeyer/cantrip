@@ -29,7 +29,7 @@ _TEMPLATE_CACHE: dict[str, Any] = {}
 
 def _get_env() -> Any:
     """Return the shared Jinja2 environment, creating it on first call."""
-    global _JINJA_ENV  # noqa: PLW0603
+    global _JINJA_ENV
     if _JINJA_ENV is None:
         import jinja2
 

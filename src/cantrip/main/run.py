@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import argparse
 import os
-import pathlib
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
+    import pathlib
 
 # Markers that identify the Cantrip source tree when inspecting a
 # ``pyproject.toml``.  Having *both* avoids confusing a third-party

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 import random
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,6 +12,9 @@ from cantrip.agent import arena
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
 from cantrip.llm.base import Response
 from tests.conftest import FakeProvider
+
+if TYPE_CHECKING:
+    import pathlib
 
 # ---------------------------------------------------------------------------
 # Helpers

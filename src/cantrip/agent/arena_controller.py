@@ -8,12 +8,13 @@ through thin delegators so the public surface (``active_arena`` /
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cantrip.agent import arena
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cantrip.agent.memory import MemoryManager
     from cantrip.agent.store import SessionStore
     from cantrip.llm.base import LLMProvider

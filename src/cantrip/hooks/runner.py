@@ -253,11 +253,11 @@ class HookRunner:
         # Operator identity is cached after the first fire() so we don't
         # spawn ``git config`` on every tool call.  Sentinel is ``...``
         # because ``None`` is a valid resolved value (git unconfigured).
-        self._operator_cache: dict[str, str] | None | _OperatorUnset = _OPERATOR_UNSET
+        self._operator_cache: dict[str, str] | _OperatorUnset | None = _OPERATOR_UNSET
 
     @classmethod
     def from_disk(cls, repo_root: pathlib.Path | str | None = None) -> HookRunner:
-        """Convenience constructor that loads ``hooks.yaml`` from disk."""
+        """Return convenience constructor that loads ``hooks.yaml`` from disk."""
         return cls(load_hooks(repo_root=repo_root), repo_root=repo_root)
 
     def set_listener(self, listener: HookResultListener | None) -> None:
@@ -360,7 +360,7 @@ class HookRunner:
             if self._listener is not None:
                 try:
                     self._listener(result)
-                except Exception:  # noqa: BLE001 — telemetry failure must never abort the agent.
+                except Exception:
                     log.debug("HookRunner listener raised", exc_info=True)
         return results
 

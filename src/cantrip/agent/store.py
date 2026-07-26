@@ -303,7 +303,7 @@ class SessionStore:
 
     def _apply_migrations(self) -> None:
         """Apply incremental schema migrations based on stored version."""
-        assert self._conn is not None  # noqa: S101
+        assert self._conn is not None
         # Caller (``open``) only invokes this when the schema_version
         # table has at least one row, so the SELECT always returns one.
         row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -1140,19 +1140,18 @@ class SessionStore:
             "SELECT * FROM subagent_messages WHERE task_id = ? ORDER BY message_index",
             (task_id,),
         ).fetchall()
-        result: list[dict[str, object]] = []
-        for r in rows:
-            result.append(
-                {
-                    "task_id": r["task_id"],
-                    "message_index": r["message_index"],
-                    "role": r["role"],
-                    "content": r["content"],
-                    "tool_calls": _safe_json_load(r["tool_calls"]),
-                    "tool_results": _safe_json_load(r["tool_results"]),
-                    "timestamp": r["timestamp"],
-                }
-            )
+        result: list[dict[str, object]] = [
+            {
+                "task_id": r["task_id"],
+                "message_index": r["message_index"],
+                "role": r["role"],
+                "content": r["content"],
+                "tool_calls": _safe_json_load(r["tool_calls"]),
+                "tool_results": _safe_json_load(r["tool_results"]),
+                "timestamp": r["timestamp"],
+            }
+            for r in rows
+        ]
         return result
 
     # ── Event log ────────────────────────────────────────────────────────
@@ -1190,16 +1189,15 @@ class SessionStore:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY id"
         rows = self._db.execute(query, params).fetchall()
-        result: list[dict[str, object]] = []
-        for r in rows:
-            result.append(
-                {
-                    "id": r["id"],
-                    "event_type": r["event_type"],
-                    "detail": _safe_json_load(r["detail"], fallback={}),
-                    "timestamp": r["timestamp"],
-                }
-            )
+        result: list[dict[str, object]] = [
+            {
+                "id": r["id"],
+                "event_type": r["event_type"],
+                "detail": _safe_json_load(r["detail"], fallback={}),
+                "timestamp": r["timestamp"],
+            }
+            for r in rows
+        ]
         return result
 
     # ── Token usage ──────────────────────────────────────────────────────

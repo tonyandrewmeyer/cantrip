@@ -231,7 +231,7 @@ class TestMarketplaceLoader:
     async def test_directory_missing_file_raises(self, tmp_path: pathlib.Path) -> None:
         loader = MarketplaceLoader(cache_dir=tmp_path / "cache")
         src = MarketplaceSource(kind=SourceKind.DIRECTORY, location=str(tmp_path / "no-such"))
-        with pytest.raises(OSError, match="no marketplace.json"):
+        with pytest.raises(OSError, match=r"no marketplace.json"):
             await loader.load(src)
 
     @pytest.mark.asyncio

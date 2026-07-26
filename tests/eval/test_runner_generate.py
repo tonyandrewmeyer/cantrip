@@ -14,8 +14,6 @@ import pathlib
 import subprocess
 from typing import TYPE_CHECKING
 
-import pytest
-
 from tests.eval import generator, runner
 from tests.eval.spec import (
     CharmPath,
@@ -28,6 +26,8 @@ from tests.eval.spec import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    import pytest
 
 
 def _make_spec() -> EvalSpec:
@@ -81,9 +81,9 @@ def _fake_runner_factory(
         cwd: pathlib.Path | str | None = None,
         env: dict[str, str] | None = None,
         timeout: float | None = None,
-        check: bool = False,  # noqa: ARG001
-        capture_output: bool = False,  # noqa: ARG001
-        text: bool = False,  # noqa: ARG001
+        check: bool = False,
+        capture_output: bool = False,
+        text: bool = False,
     ) -> subprocess.CompletedProcess:
         captured["args"] = tuple(args)
         captured["cwd"] = cwd

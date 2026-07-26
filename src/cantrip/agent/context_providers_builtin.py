@@ -26,6 +26,7 @@ import pathlib
 import shutil
 import subprocess
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from cantrip.agent import lint_context, presets
 from cantrip.agent.context_providers import (
@@ -46,7 +47,9 @@ from cantrip.codeintel.index import (
     render_references,
     render_symbols,
 )
-from cantrip.llm import roles as llm_roles
+
+if TYPE_CHECKING:
+    from cantrip.llm import roles as llm_roles
 
 log = logging.getLogger(__name__)
 
@@ -234,7 +237,7 @@ class DiffProvider:
         arg_style=ArgStyle.NONE,
     )
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Shell out to ``git diff HEAD`` and return the patch text."""
         raw = "@diff"
         if shutil.which("git") is None:
@@ -304,7 +307,7 @@ class TerminalProvider:
         arg_style=ArgStyle.NONE,
     )
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Pull the most recent visible shell row and render it inline."""
         # ``args`` is always empty for an ``ArgStyle.NONE`` provider — the
         # parser doesn't consume any tokens after the mention name, so
@@ -329,7 +332,7 @@ class TerminalProvider:
                 rendered="[@terminal: session store missing latest_visible_shell_row]",
                 error="unsupported store",
             )
-        except Exception as exc:  # noqa: BLE001 - SQLite can raise broadly
+        except Exception as exc:
             log.debug("latest_visible_shell_row raised", exc_info=True)
             return ContextBlock(
                 raw=raw,
@@ -501,7 +504,7 @@ class ProblemsProvider:
     )
     cache: lint_context.DiagnosticsCache | None = None
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Run the project-wide lint sweep and render the result."""
         raw = "@problems"
         charm_path = ctx.charm_path or ctx.repo_root or pathlib.Path.cwd()
@@ -544,7 +547,7 @@ class UrlProvider:
         args_hint="<url>",
     )
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Fetch *args* and return its text body."""
         raw = f"@url {args}".rstrip()
         if not args:
@@ -582,7 +585,7 @@ class CharmProvider:
         args_hint="<name>",
     )
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Fetch metadata for the charm called *args*."""
         raw = f"@charm {args}".rstrip()
         if not args:
@@ -624,7 +627,7 @@ class PresetProvider:
         args_hint="[slug]",
     )
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Render the catalogue index, or one preset when *args* names it."""
         slug = args.strip()
         if not slug:
@@ -668,7 +671,7 @@ class JujuProvider:
         args_hint="<subcmd>",
     )
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Run ``juju <args>`` if the verb is in the read-only allowlist."""
         raw = f"@juju {args}".rstrip()
         if not args:
@@ -750,7 +753,7 @@ class DocsProvider:
     role_router: llm_roles.RoleRouter | None = None
     cache_root: pathlib.Path | None = None
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         """Run a docs_search and render the top hits as a block."""
         raw = f"@docs {args}".rstrip()
         if not args.strip():
@@ -834,7 +837,7 @@ class SymbolProvider:
     )
     getter: CodeIntelGetter | None = None
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         raw = f"@symbol {args}".rstrip()
         query = args.strip()
         if not query:
@@ -870,7 +873,7 @@ class DefinitionProvider:
     )
     getter: CodeIntelGetter | None = None
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         raw = f"@definition {args}".rstrip()
         if not args:
             return ContextBlock(
@@ -905,7 +908,7 @@ class ReferencesProvider:
     )
     getter: CodeIntelGetter | None = None
 
-    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:  # noqa: ARG002 — protocol shape
+    async def expand(self, args: str, ctx: ExpansionContext) -> ContextBlock:
         raw = f"@references {args}".rstrip()
         if not args:
             return ContextBlock(

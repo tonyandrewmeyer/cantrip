@@ -167,9 +167,7 @@ class TestUsageRecording:
         )
         agent = CantripAgent(provider=provider, charm_path=tmp_path)
 
-        chunks = []
-        async for chunk in agent.process_message_streaming("hi"):
-            chunks.append(chunk)
+        [chunk async for chunk in agent.process_message_streaming("hi")]
 
         assert agent._store is not None
         total = agent._store.get_total_usage()

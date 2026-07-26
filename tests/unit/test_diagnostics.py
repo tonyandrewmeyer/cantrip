@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import pathlib
-
-import pytest
+from typing import TYPE_CHECKING
 
 from cantrip import diagnostics
+
+if TYPE_CHECKING:
+    import pathlib
+
+    import pytest
 
 
 def _raise_and_capture() -> Exception:

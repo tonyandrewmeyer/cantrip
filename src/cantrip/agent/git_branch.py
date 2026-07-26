@@ -58,7 +58,7 @@ def suggest_repo_name(charm_name: str) -> str:
 def current_branch(charm_path: str) -> str | None:
     """Return the name of the current git branch, or ``None``."""
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=charm_path,
             capture_output=True,
@@ -97,7 +97,7 @@ def create_branch(charm_path: str, description: str) -> str | None:
     branch_name = f"{BRANCH_PREFIX}{slug}"
 
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "checkout", "-b", branch_name],
             cwd=charm_path,
             capture_output=True,
@@ -124,7 +124,7 @@ def create_branch(charm_path: str, description: str) -> str | None:
 def switch_branch(charm_path: str, branch_name: str) -> bool:
     """Switch to an existing branch.  Returns ``True`` on success."""
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "checkout", branch_name],
             cwd=charm_path,
             capture_output=True,
@@ -147,7 +147,7 @@ def push_branch(
     or error text.
     """
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "push", "-u", remote, branch_name],
             cwd=charm_path,
             capture_output=True,
@@ -186,7 +186,7 @@ def create_pull_request(
         cmd.extend(["--base", base])
 
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             cmd,
             cwd=charm_path,
             capture_output=True,
@@ -266,7 +266,7 @@ def build_pr_body(
 def has_git_repo(charm_path: str) -> bool:
     """Return ``True`` if *charm_path* is inside a git repository."""
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "rev-parse", "--git-dir"],
             cwd=charm_path,
             capture_output=True,
@@ -281,7 +281,7 @@ def has_git_repo(charm_path: str) -> bool:
 def has_remote(charm_path: str) -> bool:
     """Return ``True`` if the git repo at *charm_path* has an ``origin`` remote."""
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             cwd=charm_path,
             capture_output=True,
@@ -298,7 +298,7 @@ def gh_available() -> bool:
     if not shutil.which("gh"):
         return False
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["gh", "auth", "status"],
             capture_output=True,
             text=True,
@@ -314,7 +314,7 @@ def git_init(charm_path: str) -> bool:
     if has_git_repo(charm_path):
         return True
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "init"],
             cwd=charm_path,
             capture_output=True,
@@ -329,7 +329,7 @@ def git_init(charm_path: str) -> bool:
 def git_add_and_commit(charm_path: str, message: str) -> bool:
     """Stage all files and create an initial commit."""
     try:
-        add = subprocess.run(  # noqa: S603, S607
+        add = subprocess.run(
             ["git", "add", "."],
             cwd=charm_path,
             capture_output=True,
@@ -338,7 +338,7 @@ def git_add_and_commit(charm_path: str, message: str) -> bool:
         )
         if add.returncode != 0:
             return False
-        commit = subprocess.run(  # noqa: S603, S607
+        commit = subprocess.run(
             ["git", "commit", "-m", message],
             cwd=charm_path,
             capture_output=True,
@@ -389,7 +389,7 @@ def bootstrap_github_repo(
         cmd.extend(["--description", description])
 
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             cmd,
             cwd=charm_path,
             capture_output=True,
@@ -411,7 +411,7 @@ def bootstrap_github_repo(
 def _has_commits(charm_path: str) -> bool:
     """Return ``True`` if the git repo has at least one commit."""
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=charm_path,
             capture_output=True,
@@ -432,7 +432,7 @@ def check_upstream_diverged(charm_path: str, branch: str = "main") -> tuple[bool
     """
     # Fetch quietly first.
     try:
-        subprocess.run(  # noqa: S603, S607
+        subprocess.run(
             ["git", "fetch", "origin", branch],
             cwd=charm_path,
             capture_output=True,
@@ -443,7 +443,7 @@ def check_upstream_diverged(charm_path: str, branch: str = "main") -> tuple[bool
         return False, 0
 
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             ["git", "rev-list", "--count", f"HEAD..origin/{branch}"],
             cwd=charm_path,
             capture_output=True,
@@ -484,7 +484,7 @@ def gh_issue_comment(repo: str, issue_number: int, body: str) -> tuple[bool, str
     ]
 
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
@@ -571,7 +571,7 @@ def gh_pr_view(
     ]
 
     try:
-        result = subprocess.run(  # noqa: S603, S607
+        result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,

@@ -69,7 +69,8 @@ _REFERENCE_SECTION_HEADINGS = {
 
 
 def _strip_code_blocks(body: str) -> str:
-    """Replace fenced code content and HTML-comment bodies with blank lines
+    """Replace fenced code content and HTML-comment bodies with blank lines.
+
     so body checks don't fire on example material that is clearly marked
     as example.
 
@@ -403,7 +404,9 @@ def format_findings(findings: list[Finding]) -> str:
             f"{counts[SEVERITY_MEDIUM]} MEDIUM, {counts[SEVERITY_LOW]} LOW"
         )
         lines = [header]
-        for f in sorted(group, key=lambda x: (x.severity, x.code)):
-            lines.append(f"  {f.severity}: {f.code} — {f.message}")
+        lines.extend(
+            f"  {f.severity}: {f.code} — {f.message}"
+            for f in sorted(group, key=lambda x: (x.severity, x.code))
+        )
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)

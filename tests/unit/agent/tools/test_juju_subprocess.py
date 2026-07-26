@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import jubilant
 import pytest
 
 from cantrip.agent.tools import juju_subprocess
+
+if TYPE_CHECKING:
+    import pathlib
 
 
 def _cli_error(

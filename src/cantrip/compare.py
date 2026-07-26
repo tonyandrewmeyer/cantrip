@@ -14,10 +14,12 @@ just calls :func:`compare_charms` and prints :func:`format_report`.
 from __future__ import annotations
 
 import dataclasses
-import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    import pathlib
 
 # Top-level files and directories we flag in the structure section.
 # Presence / absence matters; content is compared elsewhere for the
@@ -309,7 +311,7 @@ def _diff_sets(left: frozenset[str], right: frozenset[str]) -> DictDiff:
 
 
 def _diff_dicts(left: dict[str, Any], right: dict[str, Any]) -> DictDiff:
-    """Dict diff — added (in right only), removed (in left only), changed (value differs)."""
+    """Return dict diff — added (in right only), removed (in left only), changed (value differs)."""
     left_keys = set(left)
     right_keys = set(right)
     return DictDiff(

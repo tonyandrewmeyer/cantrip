@@ -149,12 +149,12 @@ class TestDay2Confirmation:
                 tools=None,
                 temperature=0.7,
                 max_tokens=None,
-                thinking_budget=None,  # noqa: ARG002
-                response_schema=None,  # noqa: ARG002
+                thinking_budget=None,
+                response_schema=None,
             ):
-                for msg in messages:
-                    if msg.role.value == "user":
-                        received_messages.append(msg.content)
+                received_messages.extend(
+                    msg.content for msg in messages if msg.role.value == "user"
+                )
                 return Response(content=DAY2_IMPL_PLAN_JSON)
 
         provider = CapturingProvider()
@@ -184,7 +184,7 @@ class TestDay2Confirmation:
         assert any("Skip HA" in msg for msg in received_messages)
 
     @pytest.mark.asyncio
-    async def test_day2_then_executor(self, tmp_path: pathlib.Path, fast_executor):  # noqa: ARG002
+    async def test_day2_then_executor(self, tmp_path: pathlib.Path, fast_executor):
         """Day-2 impl tasks are picked up and completed by the executor."""
         provider = MultiRoleProvider(
             planner_responses=[Response(content=DAY2_IMPL_PLAN_JSON)],

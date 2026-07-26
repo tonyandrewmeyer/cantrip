@@ -109,7 +109,7 @@ def _juju_controller_healthy() -> bool:
 
 
 def _controller_matches_preset(preset: str, cloud: str) -> bool:
-    """Does a controller with *cloud* satisfy *preset*?
+    """Do a controller with *cloud* satisfy *preset*?
 
     ``k8s`` preset needs a K8s-family cloud; ``machine`` preset needs
     anything else (LXD, MAAS, OpenStack, EC2 — all fine).

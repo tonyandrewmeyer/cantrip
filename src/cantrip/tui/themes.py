@@ -97,7 +97,7 @@ def _theme_from_dict(name: str, data: dict[str, Any]) -> Theme:
 def _load_yaml_theme(path: pathlib.Path) -> Theme | None:
     """Load a single YAML theme file, returning None on failure."""
     try:
-        import yaml  # noqa: I001
+        import yaml
     except ImportError:
         log.debug("PyYAML not installed — skipping user theme %s", path)
         return None

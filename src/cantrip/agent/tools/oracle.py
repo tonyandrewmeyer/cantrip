@@ -26,15 +26,17 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.retry import complete_with_retry
-from cantrip.agent.state import AgentState
-from cantrip.agent.store import SessionStore
 from cantrip.agent.tools.base import Tool, ToolResult
 from cantrip.llm import base as llm
 from cantrip.llm import create_provider
 from cantrip.llm.pricing import estimate_cost
+
+if TYPE_CHECKING:
+    from cantrip.agent.state import AgentState
+    from cantrip.agent.store import SessionStore
 
 log = logging.getLogger(__name__)
 

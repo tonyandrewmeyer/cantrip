@@ -236,7 +236,8 @@ class K8sDiagnosticsTool(Tool):
                 output="",
                 error=(
                     f"Binary '{_BINARY_NAME}' not found.  "
-                    "Build it with: cd src/cantrip-kdiag && go build -o cantrip-kdiag ./cmd/cantrip-kdiag/"
+                    "Build it with: cd src/cantrip-kdiag && go build -o cantrip-kdiag "
+                    "./cmd/cantrip-kdiag/"
                 ),
             )
 
@@ -395,8 +396,7 @@ def _format_output(report: dict[str, Any], mode: str) -> str:
         lines.append(f"warning events: {warning_count}")
     if warnings:
         lines.append("warnings:")
-        for w in warnings[:10]:
-            lines.append(f"  - {w}")
+        lines.extend(f"  - {w}" for w in warnings[:10])
         if len(warnings) > 10:
             lines.append(f"  ... and {len(warnings) - 10} more")
 

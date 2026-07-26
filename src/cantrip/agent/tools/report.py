@@ -108,8 +108,7 @@ def _format_test_report(
             lines.append("```")
             # Show last 50 lines of output.
             output_lines = results["output"].splitlines()
-            for line in output_lines[-50:]:
-                lines.append(line)
+            lines.extend(output_lines[-50:])
             lines.append("```")
             lines.append("</details>")
             lines.append("")

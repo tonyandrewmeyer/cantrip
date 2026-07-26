@@ -7,6 +7,7 @@ import logging
 import pathlib
 import sqlite3
 import traceback
+from typing import ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -81,7 +82,7 @@ class CantripApp(App):
 
     CSS_PATH = "cantrip.tcss"
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         Binding("f1", "help", "Help"),
         Binding("f2", "toggle_status", "Toggle Status"),
         Binding("f3", "logs", "Logs"),
@@ -1313,7 +1314,8 @@ class CantripApp(App):
             elif feedback.needs_changes and feedback.comments:
                 chat.add_system_message(feedback.format_for_chat())
                 chat.add_system_message(
-                    "Reply **fix** to address the review feedback, or **skip** to handle it manually."
+                    "Reply **fix** to address the review feedback, or **skip** to handle it "
+                    "manually."
                 )
                 self._pending_maintenance = {
                     "awaiting_fix": True,
@@ -1580,7 +1582,8 @@ class CantripApp(App):
     # -- Watcher integration --------------------------------------------------
 
     def _subscribe_watcher_events(self) -> None:
-        """Subscribe to watcher events so the panes update even if the
+        """Subscribe to watcher events so the panes update even if the.
+
         watcher starts later (e.g. once the agent provisions a model).
         """
         watcher_actions.subscribe_events(self)

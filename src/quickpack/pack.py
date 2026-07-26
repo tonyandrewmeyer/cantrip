@@ -106,7 +106,7 @@ def quick_pack(
     output_dir: str | pathlib.Path | None = None,
     verify_attestations: bool = False,
 ) -> pathlib.Path:
-    """Pack a charm directory into a ``.charm`` file.
+    r"""Pack a charm directory into a ``.charm`` file.
 
     This is a fast, local-only alternative to ``charmcraft pack`` that
     supports the ``uv`` and ``dump`` plugins.  It skips LXD builds,
