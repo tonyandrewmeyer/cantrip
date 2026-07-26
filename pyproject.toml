@@ -150,6 +150,7 @@ select = [
     "YTT",
     "S",
     "B",
+    "C4",
     "SIM",
     "RUF",
     "PERF",
@@ -207,3 +208,6 @@ ignore = [
 "tests/**/test_mcp_elicitation.py" = ["RUF006"]  # Fire-and-forget tasks under test.
 "demos/**" = ["S108"]  # Demo scripts write under /tmp deliberately.
 "**/tests/**" = ["ARG002", "D", "S101", "S105", "S106", "S108", "PLR2004", "ARG", "SLF001", "N802", "N803", "N806"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cantrip", "charmlint", "quickpack", "pypi_attest"]
