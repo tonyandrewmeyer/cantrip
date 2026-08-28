@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +34,12 @@ _MAX_RECONNECT_BACKOFF = 30.0
 # the backoff schedule above is ~31 s of wait — enough for a transient
 # blip, short enough that the user sees a failure rather than a hang.
 _MAX_RECONNECT_ATTEMPTS = 5
+# The streamable-HTTP transport holds a long-lived GET stream open for
+# server-initiated messages, so its read timeout has to outlast the
+# per-request one or that stream is torn down mid-conversation.  Matches
+# the SDK's own default; a server configured with a longer
+# ``timeout_seconds`` raises this to match.
+_SSE_READ_TIMEOUT = 300.0
 
 
 class MCPClient:
@@ -166,8 +171,11 @@ class MCPClient:
             result = await self._session.call_tool(name, arguments)
         except (ConnectionError, BrokenPipeError, OSError) as exc:
             raise MCPConnectionError(str(exc)) from exc
-        structured = _content_to_structured(result.content, server_name=self._config.name)
-        if getattr(result, "isError", False):
+        # ``call_tool`` returns a union since SDK 2.0; only the
+        # ``CallToolResult`` arm carries content.
+        content = getattr(result, "content", None) or []
+        structured = _content_to_structured(list(content), server_name=self._config.name)
+        if getattr(result, "is_error", False):
             raise MCPInvocationError(structured.text or f"tool {name!r} reported an error")
         return structured
 
@@ -230,9 +238,10 @@ class MCPClient:
         signals readiness, then blocks on the ``stop`` event.  Both
         contexts exit in this task, satisfying anyio's same-task rule.
         """
+        import httpx2
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
-        from mcp.client.streamable_http import streamablehttp_client
+        from mcp.client.streamable_http import streamable_http_client
 
         try:
             if self._config.transport == TransportKind.STDIO:
@@ -245,13 +254,25 @@ class MCPClient:
                 async with stdio_client(params) as (read, write):
                     await self._serve(ClientSession, read, write)
             else:
-                auth = self._build_oauth_provider()
-                async with streamablehttp_client(
-                    self._config.url or "",
-                    headers=dict(self._config.headers) or None,
-                    timeout=self._config.timeout_seconds,
-                    auth=auth,
-                ) as (read, write, _get_session_id):
+                # Since SDK 2.0 the streamable-HTTP transport takes its
+                # headers, timeout, and auth from a caller-supplied
+                # ``httpx2`` client rather than as keyword arguments.  We
+                # own the client, so we own its lifetime too.
+                async with (
+                    httpx2.AsyncClient(
+                        headers=dict(self._config.headers),
+                        timeout=httpx2.Timeout(
+                            self._config.timeout_seconds,
+                            read=max(self._config.timeout_seconds, _SSE_READ_TIMEOUT),
+                        ),
+                        auth=self._build_oauth_provider(),
+                        follow_redirects=True,
+                    ) as http_client,
+                    streamable_http_client(
+                        self._config.url or "",
+                        http_client=http_client,
+                    ) as (read, write),
+                ):
                     await self._serve(ClientSession, read, write)
         except BaseException as exc:
             if not self._ready.is_set():
@@ -273,11 +294,10 @@ class MCPClient:
         write: Any,
     ) -> None:
         """Run the session inside the transport context, then await stop."""
-        timeout = datetime.timedelta(seconds=self._config.timeout_seconds)
         async with client_session_cls(
             read,
             write,
-            read_timeout_seconds=timeout,
+            read_timeout_seconds=self._config.timeout_seconds,
             elicitation_callback=self._elicitation.handle,
         ) as session:
             await session.initialize()
@@ -375,8 +395,8 @@ def _build_tool_infos(
         if allowlist is not None and name not in allowlist:
             continue
         description = getattr(tool, "description", "") or ""
-        schema = getattr(tool, "inputSchema", None) or {}
-        # The SDK declares inputSchema as ``dict[str, Any]``; copy
+        schema = getattr(tool, "input_schema", None) or {}
+        # The SDK declares input_schema as ``dict[str, Any]``; copy
         # defensively so a downstream caller cannot mutate the SDK's
         # internal structure.
         out.append(

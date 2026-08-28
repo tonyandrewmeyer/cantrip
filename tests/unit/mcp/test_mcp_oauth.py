@@ -374,10 +374,11 @@ class TestMCPClientOAuthWiring:
         client = MCPClient(cfg)
         provider = client._build_oauth_provider()
         assert provider is not None
-        # The SDK exposes the provider as an httpx.Auth subclass.
-        import httpx
+        # The SDK exposes the provider as an httpx2.Auth subclass, so it
+        # can be handed straight to the transport's HTTP client.
+        import httpx2
 
-        assert isinstance(provider, httpx.Auth)
+        assert isinstance(provider, httpx2.Auth)
 
     @pytest.mark.asyncio
     async def test_stdio_with_oauth_rejected_at_validate(self, tmp_path: pathlib.Path) -> None:

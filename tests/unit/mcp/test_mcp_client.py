@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import pathlib
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import mcp.types as mcp_types
 import pytest
 
 from cantrip.mcp import (
@@ -16,6 +18,7 @@ from cantrip.mcp import (
     MCPInvocationError,
     ServerConfig,
 )
+from cantrip.mcp.client import _build_tool_infos
 from cantrip.mcp.types import TransportKind
 
 if TYPE_CHECKING:
@@ -195,3 +198,120 @@ class TestReconnect:
         )
         with pytest.raises(MCPConnectionError, match="after 3 attempts"):
             await asyncio.wait_for(c._reconnect(), timeout=10.0)
+
+
+# ── SDK shape ──────────────────────────────────────────────────────────
+#
+# The stdio suite above drives a real server, so it covers the handshake
+# and the happy path.  These tests pin the two places where Cantrip
+# reads SDK objects field by field: a rename on either side degrades
+# silently (empty schemas, swallowed tool errors) rather than raising,
+# so assert against genuine SDK models rather than hand-rolled stubs.
+
+
+class TestSDKShape:
+    def test_tool_input_schema_survives_conversion(self) -> None:
+        schema = {"type": "object", "properties": {"text": {"type": "string"}}}
+        tools = _build_tool_infos(
+            "srv",
+            [mcp_types.Tool(name="echo", description="d", input_schema=schema)],
+            [],
+        )
+        assert [t.input_schema for t in tools] == [schema]
+
+    @pytest.mark.asyncio
+    async def test_error_result_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        c = MCPClient(_stub_config())
+        result = mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text="server said no")],
+            is_error=True,
+        )
+        monkeypatch.setattr(c, "_session", _SessionStub(result), raising=False)
+        with pytest.raises(MCPInvocationError, match="server said no"):
+            await c._call_tool_once("echo", {})
+
+
+class _SessionStub:
+    """Minimal stand-in for ``ClientSession`` in the call-tool path."""
+
+    def __init__(self, result: mcp_types.CallToolResult) -> None:
+        self._result = result
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> mcp_types.CallToolResult:
+        del name, arguments
+        return self._result
+
+
+# ── HTTP transport wiring ──────────────────────────────────────────────
+
+
+class _HTTPTransportRecorder:
+    """Replaces the SDK's streamable-HTTP transport and client session.
+
+    Captures the URL and the ``httpx2`` client Cantrip hands to the
+    transport so the test can assert the per-server headers, timeout,
+    and auth actually reach the wire.
+    """
+
+    def __init__(self) -> None:
+        self.url: str | None = None
+        self.http_client: Any = None
+
+    @contextlib.asynccontextmanager
+    async def transport(self, url: str, *, http_client: Any) -> Any:
+        self.url = url
+        self.http_client = http_client
+        yield object(), object()
+
+    def session(self, *_args: Any, **_kwargs: Any) -> Any:
+        return _SessionContext()
+
+
+class _SessionContext:
+    """Async-context stand-in for ``ClientSession`` during ``_run``."""
+
+    async def __aenter__(self) -> _SessionContext:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def initialize(self) -> None:
+        return None
+
+    async def list_tools(self) -> Any:
+        return mcp_types.ListToolsResult(
+            tools=[mcp_types.Tool(name="ping", description="p", input_schema={})]
+        )
+
+
+class TestHTTPTransport:
+    """The HTTP branch has no live server in the unit suite, so pin the
+    call contract Cantrip has with the SDK transport instead."""
+
+    @pytest.mark.asyncio
+    async def test_http_transport_receives_configured_http_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import mcp
+        import mcp.client.streamable_http as sdk_http
+
+        recorder = _HTTPTransportRecorder()
+        monkeypatch.setattr(sdk_http, "streamable_http_client", recorder.transport)
+        monkeypatch.setattr(mcp, "ClientSession", recorder.session)
+
+        config = ServerConfig(
+            name="remote",
+            transport=TransportKind.HTTP,
+            url="https://mcp.example.com/mcp",
+            headers={"X-Cantrip": "1"},
+            timeout_seconds=12.0,
+        )
+        async with MCPClient(config) as c:
+            assert [t.name for t in c.tools] == ["ping"]
+
+        assert recorder.url == "https://mcp.example.com/mcp"
+        assert recorder.http_client.headers["X-Cantrip"] == "1"
+        assert recorder.http_client.timeout.connect == 12.0
+        # The server-initiated GET stream outlives a single request.
+        assert recorder.http_client.timeout.read == 300.0

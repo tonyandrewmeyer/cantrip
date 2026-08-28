@@ -3,7 +3,7 @@
 Run as a subprocess via stdio.  Exposes two tools:
 
 * ``echo`` — returns whatever string was passed in.
-* ``boom`` — raises so the client sees an error response.
+* ``boom`` — reports a tool error so the client sees an error response.
 
 Run via ``python -m tests.unit.mcp_stub_server`` (the test launches it
 through ``uv run python -m`` so it sees the project venv).
@@ -12,46 +12,63 @@ through ``uv run python -m`` so it sees the project venv).
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
+from typing import TYPE_CHECKING
 
 import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
+if TYPE_CHECKING:
+    from mcp.server import ServerRequestContext
 
-def build_server() -> Server:
-    server: Server = Server("cantrip-stub")
+_TOOLS = [
+    types.Tool(
+        name="echo",
+        description="Echo a string back",
+        input_schema={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+    ),
+    types.Tool(
+        name="boom",
+        description="Always errors",
+        input_schema={"type": "object", "properties": {}},
+    ),
+]
 
-    @server.list_tools()
-    async def list_tools() -> list[types.Tool]:
-        return [
-            types.Tool(
-                name="echo",
-                description="Echo a string back",
-                inputSchema={
-                    "type": "object",
-                    "properties": {"text": {"type": "string"}},
-                    "required": ["text"],
-                },
-            ),
-            types.Tool(
-                name="boom",
-                description="Always errors",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-        ]
 
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, object]) -> list[types.TextContent]:
-        if name == "echo":
-            text = str(arguments.get("text", ""))
-            return [types.TextContent(type="text", text=text)]
-        if name == "boom":
-            raise RuntimeError("intentional failure for tests")
-        return [types.TextContent(type="text", text=f"unknown tool: {name}")]
+async def _list_tools(
+    _context: ServerRequestContext[None],
+    _params: types.PaginatedRequestParams | None,
+) -> types.ListToolsResult:
+    return types.ListToolsResult(tools=list(_TOOLS))
 
-    return server
+
+async def _call_tool(
+    _context: ServerRequestContext[None],
+    params: types.CallToolRequestParams,
+) -> types.CallToolResult:
+    arguments = params.arguments or {}
+    if params.name == "echo":
+        text = str(arguments.get("text", ""))
+        return types.CallToolResult(content=[types.TextContent(type="text", text=text)])
+    if params.name == "boom":
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text="intentional failure for tests")],
+            is_error=True,
+        )
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=f"unknown tool: {params.name}")],
+        is_error=True,
+    )
+
+
+def build_server() -> Server[None]:
+    """Build the stub server with its two tool handlers wired up."""
+    return Server("cantrip-stub", on_list_tools=_list_tools, on_call_tool=_call_tool)
 
 
 async def main() -> None:
@@ -67,7 +84,4 @@ async def main() -> None:
 if __name__ == "__main__":
     # Make sure stdout is unbuffered — MCP framing is line-sensitive.
     sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]
-    # Suppress the JSON debug noise some MCP shutdown paths print.
     asyncio.run(main())
-    # Forces a clean exit if the server returns due to EOF on stdin.
-    json  # noqa: B018  silence unused-import lint

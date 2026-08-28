@@ -18,7 +18,7 @@ from cantrip.mcp.elicitation import (
 def _form_params(message: str = "Pick a value") -> mcp_types.ElicitRequestFormParams:
     return mcp_types.ElicitRequestFormParams(
         message=message,
-        requestedSchema={
+        requested_schema={
             "type": "object",
             "properties": {"name": {"type": "string"}},
         },
