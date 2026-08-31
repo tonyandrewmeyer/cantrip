@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import mcp.types as mcp_types
-    from mcp.shared.context import RequestContext
+    from mcp.client.session import ClientRequestContext
 
 log = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class ElicitationManager:
 
     async def handle(
         self,
-        _context: RequestContext[Any, Any] | None,
+        _context: ClientRequestContext | None,
         params: mcp_types.ElicitRequestParams,
     ) -> mcp_types.ElicitResult | mcp_types.ErrorData:
         """SDK-facing callback bound to ``ClientSession.elicitation_callback``.
@@ -203,7 +203,7 @@ def _request_from_params(
     """Build the Cantrip-side request from the SDK's union of param types."""
     mode = getattr(params, "mode", "form")
     message = getattr(params, "message", "") or ""
-    schema = getattr(params, "requestedSchema", None)
+    schema = getattr(params, "requested_schema", None)
     url = getattr(params, "url", None)
     return ElicitationRequest(
         request_id=request_id,

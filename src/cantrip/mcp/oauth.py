@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from mcp.shared.auth import AuthorizationCodeResult
+
     from cantrip.mcp.types import OAuthConfig
 
 log = logging.getLogger(__name__)
@@ -81,20 +83,23 @@ def make_callback_handler(
     port: int,
     *,
     timeout: float = DEFAULT_OAUTH_TIMEOUT,
-) -> Callable[[], Awaitable[tuple[str, str | None]]]:
+) -> Callable[[], Awaitable[AuthorizationCodeResult]]:
     """Return an async callback handler that captures one OAuth redirect.
 
     The returned coroutine, when awaited, binds an aiohttp server to
     ``127.0.0.1:<port>``, waits for one ``GET /callback?code=...&state=...``
-    request, and returns ``(code, state)``.  The server stops listening
-    immediately afterwards.
+    request, and returns the SDK's :class:`AuthorizationCodeResult`.  The
+    server stops listening immediately afterwards.
 
     The factory pattern lets tests stub the handler with a custom
     ``code/state`` source without touching the network.
     """
 
-    async def _wait_for_callback() -> tuple[str, str | None]:
-        return await wait_for_localhost_callback(port, timeout=timeout)
+    async def _wait_for_callback() -> AuthorizationCodeResult:
+        from mcp.shared.auth import AuthorizationCodeResult
+
+        code, state = await wait_for_localhost_callback(port, timeout=timeout)
+        return AuthorizationCodeResult(code=code, state=state)
 
     return _wait_for_callback
 

@@ -310,9 +310,15 @@ class ClaudeProvider(LLMProvider):
         return kwargs
 
     @staticmethod
-    def _extract_usage(usage: object) -> dict[str, int]:
-        """Extract token counts from an Anthropic usage object."""
-        result = {
+    def _extract_usage(usage: anthropic.types.Usage) -> dict[str, int]:
+        """Extract token counts from an Anthropic usage object.
+
+        The ``hasattr`` guards are load-bearing: the agent's cache
+        monitor treats the *presence* of the cache keys as the signal
+        that the provider reports cache statistics at all, so a usage
+        object without them must not gain zeroed entries.
+        """
+        result: dict[str, int] = {
             "prompt_tokens": usage.input_tokens,
             "completion_tokens": usage.output_tokens,
         }

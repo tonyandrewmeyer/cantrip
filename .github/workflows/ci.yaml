@@ -56,6 +56,10 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
+    # The suite runs in a couple of minutes; anything approaching this
+    # ceiling is a hang, and without it a deadlocked test burns the full
+    # six-hour Actions job limit before anyone sees a red tick.
+    timeout-minutes: 30
     strategy:
       # Surface a macOS failure separately from a Linux failure instead
       # of cancelling the survivor — Phase 49.4 adds a macOS-only

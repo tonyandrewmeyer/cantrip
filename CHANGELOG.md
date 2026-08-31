@@ -132,6 +132,32 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``tests/unit/agent/tools/test_librarian.py``.
 
 ### Fixed
+- **MCP subsystem migrated to the 2.0 SDK.**  The ``mcp`` 2.0 release
+  renamed the streamable-HTTP transport
+  (``streamablehttp_client`` → ``streamable_http_client``, which now
+  takes its headers, timeout, and auth from a caller-supplied
+  ``httpx2`` client and yields a two-tuple), moved the elicitation
+  callback context to ``mcp.client.session.ClientRequestContext``,
+  switched ``ClientSession(read_timeout_seconds=…)`` from a
+  ``timedelta`` to a float, changed the OAuth callback handler's
+  return type to ``AuthorizationCodeResult``, and renamed the model
+  fields to snake_case.  Cantrip was still on the 1.x shapes, so
+  connecting to any HTTP MCP server raised ``ImportError``, every
+  tool's ``input_schema`` silently arrived empty (read via the old
+  ``inputSchema``), and server-reported tool errors were silently
+  swallowed (read via the old ``isError``).  The in-tree stub server
+  used in the tests also stopped importing, which deadlocked the unit
+  suite — CI had been hitting the six-hour Actions job limit on every
+  push rather than failing.  All call sites updated, the floor moved
+  to ``mcp>=2.0``, and new tests pin the HTTP transport wiring and
+  both SDK field reads against real SDK models.
+  ``design/MCP_SERVERS.md``'s example server updated to the 2.0
+  handler API.
+- **CI test job carries a 30-minute timeout.**  A deadlocked test can
+  no longer burn the full six-hour Actions job limit before surfacing.
+- **`_extract_usage` types its Anthropic usage argument.**  It was
+  annotated ``object``, which under ``ty`` 0.0.74 widened the returned
+  token counts to ``dict[str, object]`` and failed the type check.
 - **`uses_scenario_tests` rubric check accepts `from ops import
   testing` idiom.**  The check at ``tests/eval/checks.py:218``
   previously substring-matched only ``"ops.testing"`` or

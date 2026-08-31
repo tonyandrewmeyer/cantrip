@@ -39,42 +39,54 @@ distribution ergonomics.
 Cantrip's client is a vanilla MCP client built on the official Python
 SDK ([`mcp`](https://pypi.org/project/mcp/)).  Any server that
 implements the protocol works — Python, Node, Go, Rust, anything else.
-The Python SDK is the easiest starting point because most of the
-protocol is one-line decorators:
+The Python SDK is the easiest starting point because the whole
+protocol reduces to a pair of handlers:
 
 ```python
 import mcp.types as types
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
 
 
-server = Server("charmhub-mcp")
-
-
-@server.list_tools()
-async def list_tools() -> list[types.Tool]:
-    return [
-        types.Tool(
-            name="search",
-            description="Search Charmhub for charms matching a query.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "limit": {"type": "integer", "default": 10},
+async def list_tools(
+    context: ServerRequestContext[None],
+    params: types.PaginatedRequestParams | None,
+) -> types.ListToolsResult:
+    return types.ListToolsResult(
+        tools=[
+            types.Tool(
+                name="search",
+                description="Search Charmhub for charms matching a query.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer", "default": 10},
+                    },
+                    "required": ["query"],
                 },
-                "required": ["query"],
-            },
-        ),
-    ]
+            ),
+        ]
+    )
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
-    if name == "search":
+async def call_tool(
+    context: ServerRequestContext[None],
+    params: types.CallToolRequestParams,
+) -> types.CallToolResult:
+    arguments = params.arguments or {}
+    if params.name == "search":
         results = await charmhub_search(arguments["query"], arguments.get("limit", 10))
-        return [types.TextContent(type="text", text=results.as_markdown())]
-    raise ValueError(f"unknown tool: {name}")
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=results.as_markdown())]
+        )
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=f"unknown tool: {params.name}")],
+        is_error=True,
+    )
+
+
+server = Server("charmhub-mcp", on_list_tools=list_tools, on_call_tool=call_tool)
 
 
 async def main() -> None:
@@ -87,6 +99,12 @@ if __name__ == "__main__":
 
     asyncio.run(main())
 ```
+
+SDK 2.0 replaced the 1.x `@server.list_tools()` / `@server.call_tool()`
+decorators with these constructor handlers, and renamed the model
+fields to snake_case (`input_schema`, `is_error`, `requested_schema`).
+The camelCase names survive as wire aliases, so a 1.x server keeps
+interoperating — but 1.x *Python* server code no longer imports.
 
 This stub already meets every Cantrip expectation: stdio transport,
 JSON-Schema tool descriptors, Markdown text results.  The
