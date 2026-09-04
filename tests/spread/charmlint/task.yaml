@@ -1154,6 +1154,45 @@ execute: |
   echo "PASS: legacy metadata.yaml"
 
   # ===================================================================
+  # 45b. Modern charmcraft.yaml — title and the links block
+  # ===================================================================
+  echo "=== Test: modern title/links metadata ==="
+  MODERN_DIR=$(mktemp -d)
+  mkdir -p "$MODERN_DIR/src"
+  cat > "$MODERN_DIR/charmcraft.yaml" <<'YAML'
+  name: moderncharm
+  title: Modern Charm
+  summary: A modern charm
+  description: Uses title and the links block instead of the legacy keys.
+  links:
+    documentation: https://discourse.charmhub.io/t/moderncharm/1
+    issues:
+      - https://github.com/example/moderncharm/issues
+    source:
+      - https://github.com/example/moderncharm
+  YAML
+  cat > "$MODERN_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+  class ModernCharm(ops.CharmBase):
+      pass
+  if __name__ == "__main__":
+      ops.main(ModernCharm)
+  PY
+  chmod +x "$MODERN_DIR/src/charm.py"
+
+  uv run charmlint "$MODERN_DIR" --format json --select META > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert not rule_ids, f'Modern metadata should satisfy every META rule, got {rule_ids}'
+  print('Modern title/links metadata OK')
+  "
+  rm -rf "$MODERN_DIR"
+  echo "PASS: modern title/links metadata"
+
+  # ===================================================================
   # 46. ATT001 — must-have packages missing attestations are errors
   # ===================================================================
   echo "=== Test: ATT001 must-have attestation enforced ==="

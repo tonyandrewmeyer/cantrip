@@ -107,21 +107,121 @@ pub fn run_all(ctx: &CharmContext) -> Vec<Diagnostic> {
 
 // ── META (Metadata Fields) ───────────────────────────────────────────
 
-fn check_metadata(ctx: &CharmContext) -> Vec<Diagnostic> {
-    let checks: &[(&str, &str, &str, Severity)] = &[
-        ("name", "META001", "Missing 'name' field in charm metadata", Severity::Error),
-        ("display-name", "META002", "Missing 'display-name' field", Severity::Warning),
-        ("summary", "META003", "Missing 'summary' field", Severity::Warning),
-        ("description", "META004", "Missing 'description' field", Severity::Warning),
-        ("docs", "META005", "Missing 'docs' URL", Severity::Info),
-        ("issues", "META006", "Missing 'issues' URL", Severity::Info),
-        ("source", "META007", "Missing 'source' URL", Severity::Info),
-    ];
+/// Whether a metadata value counts as present.
+///
+/// `links.issues`, `links.source` and `links.website` accept either a
+/// single string or a list of strings, so a bare presence test would
+/// treat `source: [""]` as satisfied.  Blank strings and lists holding
+/// only blanks are as good as absent.
+fn is_populated(value: Option<&Value>) -> bool {
+    match value {
+        None | Some(Value::Null) => false,
+        Some(Value::String(s)) => !s.trim().is_empty(),
+        Some(Value::Sequence(items)) => items.iter().any(|item| is_populated(Some(item))),
+        Some(Value::Mapping(m)) => !m.is_empty(),
+        Some(Value::Bool(b)) => *b,
+        Some(_) => true,
+    }
+}
 
+/// Whether the metadata declares the field a check looks for.
+///
+/// The unified `charmcraft.yaml` renamed several fields the legacy
+/// `metadata.yaml` kept at the top level: `display-name` became
+/// `title`, and the `docs` / `issues` / `source` URLs moved into a
+/// `links` mapping.  Each check accepts the modern spelling or the
+/// legacy one, so a compliant modern charm is not flagged while an
+/// unmigrated charm keeps linting as before.
+fn is_declared(metadata: &BTreeMap<String, Value>, check: &MetadataCheck) -> bool {
+    if check.keys.iter().any(|key| is_populated(metadata.get(*key))) {
+        return true;
+    }
+    let Some(Value::Mapping(links)) = metadata.get("links") else {
+        return false;
+    };
+    check
+        .link_keys
+        .iter()
+        .any(|key| is_populated(links.get(Value::String((*key).into()))))
+}
+
+/// One field-completeness check.
+///
+/// `keys` are top-level metadata keys and `link_keys` are keys under
+/// the `links` mapping; the field counts as declared when any of them
+/// holds a value.
+struct MetadataCheck {
+    keys: &'static [&'static str],
+    link_keys: &'static [&'static str],
+    rule_id: &'static str,
+    message: &'static str,
+    severity: Severity,
+}
+
+const METADATA_CHECKS: &[MetadataCheck] = &[
+    MetadataCheck {
+        keys: &["name"],
+        link_keys: &[],
+        rule_id: "META001",
+        message: "Missing 'name' field in charm metadata",
+        severity: Severity::Error,
+    },
+    MetadataCheck {
+        keys: &["title", "display-name"],
+        link_keys: &[],
+        rule_id: "META002",
+        message: "Missing 'title' field (or legacy 'display-name')",
+        severity: Severity::Warning,
+    },
+    MetadataCheck {
+        keys: &["summary"],
+        link_keys: &[],
+        rule_id: "META003",
+        message: "Missing 'summary' field",
+        severity: Severity::Warning,
+    },
+    MetadataCheck {
+        keys: &["description"],
+        link_keys: &[],
+        rule_id: "META004",
+        message: "Missing 'description' field",
+        severity: Severity::Warning,
+    },
+    MetadataCheck {
+        keys: &["docs"],
+        link_keys: &["documentation"],
+        rule_id: "META005",
+        message: "Missing documentation URL ('links.documentation' or legacy 'docs')",
+        severity: Severity::Info,
+    },
+    MetadataCheck {
+        keys: &["issues"],
+        link_keys: &["issues"],
+        rule_id: "META006",
+        message: "Missing issues URL ('links.issues' or legacy 'issues')",
+        severity: Severity::Info,
+    },
+    MetadataCheck {
+        keys: &["source"],
+        link_keys: &["source"],
+        rule_id: "META007",
+        message: "Missing source URL ('links.source' or legacy 'source')",
+        severity: Severity::Info,
+    },
+];
+
+fn check_metadata(ctx: &CharmContext) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    for &(field, rule_id, msg, severity) in checks {
-        if ctx.metadata.get(field).is_none() {
-            diagnostics.push(diag(rule_id, severity, msg, Some("charmcraft.yaml"), None, None));
+    for check in METADATA_CHECKS {
+        if !is_declared(&ctx.metadata, check) {
+            diagnostics.push(diag(
+                check.rule_id,
+                check.severity,
+                check.message,
+                Some("charmcraft.yaml"),
+                None,
+                None,
+            ));
         }
     }
     diagnostics
@@ -1122,6 +1222,107 @@ mod tests {
         let metas: Vec<&Diagnostic> =
             diags.iter().filter(|d| d.rule_id.starts_with("META")).collect();
         assert!(metas.is_empty(), "got: {metas:?}");
+    }
+
+    /// Collect the META rule IDs a charm directory produces.
+    fn meta_ids(dir: &std::path::Path) -> BTreeSet<String> {
+        run_rules(dir)
+            .iter()
+            .filter(|d| d.rule_id.starts_with("META"))
+            .map(|d| d.rule_id.clone())
+            .collect()
+    }
+
+    #[test]
+    fn modern_title_and_links_satisfy_metadata_rules() {
+        let dir = charm_with_yaml(
+            "name: test-charm\n\
+             title: Test Charm\n\
+             summary: A test charm\n\
+             description: A test charm for unit tests.\n\
+             links:\n  \
+               documentation: https://discourse.charmhub.io/t/test-charm/1\n  \
+               issues:\n    - https://github.com/example/test-charm/issues\n  \
+               source:\n    - https://github.com/example/test-charm\n  \
+               website:\n    - https://example.com\n  \
+               contact: Example <charms@example.com>\n",
+        );
+        assert!(meta_ids(dir.path()).is_empty(), "got: {:?}", meta_ids(dir.path()));
+    }
+
+    #[test]
+    fn links_as_plain_strings_satisfy_metadata_rules() {
+        let dir = charm_with_yaml(
+            "name: test-charm\n\
+             title: Test Charm\n\
+             summary: A test charm\n\
+             description: A test charm for unit tests.\n\
+             links:\n  \
+               documentation: https://example.com/docs\n  \
+               issues: https://example.com/issues\n  \
+               source: https://example.com/source\n",
+        );
+        assert!(meta_ids(dir.path()).is_empty(), "got: {:?}", meta_ids(dir.path()));
+    }
+
+    #[test]
+    fn legacy_top_level_keys_still_accepted() {
+        let dir = charm_with_yaml(
+            "name: test-charm\n\
+             display-name: Test Charm\n\
+             summary: A test charm\n\
+             description: A test charm for unit tests.\n\
+             docs: https://example.com/docs\n\
+             issues: https://example.com/issues\n\
+             source: https://example.com/source\n",
+        );
+        assert!(meta_ids(dir.path()).is_empty(), "got: {:?}", meta_ids(dir.path()));
+    }
+
+    #[test]
+    fn missing_title_and_links_still_flagged() {
+        let dir = charm_with_yaml("name: test-charm\n");
+        let expected: BTreeSet<String> =
+            ["META002", "META003", "META004", "META005", "META006", "META007"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+        assert_eq!(meta_ids(dir.path()), expected);
+    }
+
+    #[test]
+    fn blank_link_values_are_treated_as_absent() {
+        let dir = charm_with_yaml(
+            "name: test-charm\n\
+             title: '   '\n\
+             summary: A test charm\n\
+             description: A test charm for unit tests.\n\
+             links:\n  \
+               documentation: ''\n  \
+               issues: []\n  \
+               source:\n    - ''\n",
+        );
+        let expected: BTreeSet<String> = ["META002", "META005", "META006", "META007"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(meta_ids(dir.path()), expected);
+    }
+
+    #[test]
+    fn non_mapping_links_block_does_not_crash() {
+        let dir = charm_with_yaml(
+            "name: test-charm\n\
+             title: Test Charm\n\
+             summary: A test charm\n\
+             description: A test charm for unit tests.\n\
+             links: https://example.com\n",
+        );
+        let expected: BTreeSet<String> = ["META005", "META006", "META007"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(meta_ids(dir.path()), expected);
     }
 
     // ── COS rules ───────────────────────────────────────────────

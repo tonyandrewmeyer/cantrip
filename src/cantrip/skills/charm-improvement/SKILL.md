@@ -125,14 +125,19 @@ form:
 
 ```yaml
 name: my-charm
-display-name: My Charm
+title: My Charm
 summary: One-line description of the charm
 description: |
   Detailed description of what the charm does,
   how to deploy it, and key features.
-docs: https://discourse.charmhub.io/t/my-charm-docs
-issues: https://github.com/org/my-charm/issues
-source: https://github.com/org/my-charm
+links:
+  documentation: https://discourse.charmhub.io/t/my-charm-docs
+  issues:
+    - https://github.com/org/my-charm/issues
+  source:
+    - https://github.com/org/my-charm
+  website:
+    - https://example.com/my-charm
 tags:
   - databases
 ```

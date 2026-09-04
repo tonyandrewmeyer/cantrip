@@ -112,6 +112,50 @@ class TestCharmAuditTool:
         assert result.data["gaps"]["licence"] is False
 
     @pytest.mark.asyncio
+    async def test_listing_fields_use_modern_charmcraft_names(self, tool, temp_dir) -> None:
+        """A modern charm's listing fields all read as present.
+
+        Regression (#63): the META rules only recognised the legacy
+        top-level keys, so ``title`` plus a ``links`` block still
+        reported four missing listing fields.
+        """
+        _write_charmcraft_yaml(
+            temp_dir,
+            extra=(
+                "title: Test Charm\n"
+                "summary: A test charm\n"
+                "description: Detailed description\n"
+                "links:\n"
+                "  documentation: https://docs.example.com\n"
+                "  issues:\n    - https://github.com/test/issues\n"
+                "  source:\n    - https://github.com/test/charm\n"
+            ),
+        )
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        listing = result.data["listing_fields"]
+        assert listing["title"] is True
+        assert listing["links.documentation"] is True
+        assert listing["links.issues"] is True
+        assert listing["links.source"] is True
+
+    @pytest.mark.asyncio
+    async def test_listing_fields_flag_a_bare_charm(self, tool, temp_dir) -> None:
+        """A charm with neither spelling still reports the fields missing."""
+        _write_charmcraft_yaml(temp_dir)
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.success
+        listing = result.data["listing_fields"]
+        assert listing["title"] is False
+        assert listing["links.documentation"] is False
+        assert listing["links.issues"] is False
+        assert listing["links.source"] is False
+
+    @pytest.mark.asyncio
     async def test_output_is_markdown(self, tool, temp_dir) -> None:
         """The output is a formatted Markdown audit report."""
         _write_charmcraft_yaml(temp_dir)
