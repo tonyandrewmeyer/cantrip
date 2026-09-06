@@ -28,6 +28,110 @@ class TestMetadataRules:
         meta_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("META")}
         assert not meta_ids
 
+    def test_modern_title_and_links_satisfy_metadata_rules(self, tmp_charm: pathlib.Path):
+        """A unified charmcraft.yaml using ``title`` and ``links`` is compliant.
+
+        Regression (#63): the rules only looked for the legacy
+        top-level ``display-name`` / ``docs`` / ``issues`` / ``source``
+        keys, so every modern charm collected four false positives.
+        """
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test-charm",
+                "title": "Test Charm",
+                "summary": "A test charm",
+                "description": "A test charm used in charmlint unit tests.",
+                "links": {
+                    "documentation": "https://discourse.charmhub.io/t/test-charm/1",
+                    "issues": ["https://github.com/example/test-charm/issues"],
+                    "source": ["https://github.com/example/test-charm"],
+                    "website": ["https://example.com"],
+                    "contact": "Example <charms@example.com>",
+                },
+            },
+        )
+        report = lint(tmp_charm)
+        meta_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("META")}
+        assert not meta_ids
+
+    def test_links_as_plain_strings_satisfy_metadata_rules(self, tmp_charm: pathlib.Path):
+        """``links.issues`` / ``links.source`` also accept a bare string."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test-charm",
+                "title": "Test Charm",
+                "summary": "A test charm",
+                "description": "A test charm used in charmlint unit tests.",
+                "links": {
+                    "documentation": "https://example.com/docs",
+                    "issues": "https://example.com/issues",
+                    "source": "https://example.com/source",
+                },
+            },
+        )
+        report = lint(tmp_charm)
+        meta_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("META")}
+        assert not meta_ids
+
+    def test_legacy_top_level_keys_still_accepted(self, tmp_charm: pathlib.Path):
+        """An unmigrated metadata.yaml-style charm keeps passing."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test-charm",
+                "display-name": "Test Charm",
+                "summary": "A test charm",
+                "description": "A test charm used in charmlint unit tests.",
+                "docs": "https://example.com/docs",
+                "issues": "https://example.com/issues",
+                "source": "https://example.com/source",
+            },
+        )
+        report = lint(tmp_charm)
+        meta_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("META")}
+        assert not meta_ids
+
+    def test_missing_title_and_links_still_flagged(self, tmp_charm: pathlib.Path):
+        """A charm with neither spelling collects the same four findings."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test-charm"})
+        report = lint(tmp_charm)
+        meta_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("META")}
+        assert meta_ids == {"META002", "META003", "META004", "META005", "META006", "META007"}
+
+    def test_blank_link_values_are_treated_as_absent(self, tmp_charm: pathlib.Path):
+        """Empty strings and lists of blanks do not satisfy a check."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test-charm",
+                "title": "   ",
+                "summary": "A test charm",
+                "description": "A test charm used in charmlint unit tests.",
+                "links": {"documentation": "", "issues": [], "source": [""]},
+            },
+        )
+        report = lint(tmp_charm)
+        meta_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("META")}
+        assert meta_ids == {"META002", "META005", "META006", "META007"}
+
+    def test_non_mapping_links_block_does_not_crash(self, tmp_charm: pathlib.Path):
+        """A malformed ``links:`` scalar falls back to the legacy keys."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test-charm",
+                "title": "Test Charm",
+                "summary": "A test charm",
+                "description": "A test charm used in charmlint unit tests.",
+                "links": "https://example.com",
+            },
+        )
+        report = lint(tmp_charm)
+        meta_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("META")}
+        assert meta_ids == {"META005", "META006", "META007"}
+
 
 class TestObservabilityRules:
     """Tests for COS and ops-tracing checks."""

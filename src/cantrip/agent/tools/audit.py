@@ -19,14 +19,15 @@ _COS_RELATIONS = {
     "grafana-dashboard": "Grafana dashboard",
 }
 
-# Listing fields for the report.
+# Listing fields for the report, named as the unified charmcraft.yaml
+# spells them so the agent is not told to add a legacy key.
 _LISTING_FIELDS = {
-    "display-name": "Human-readable charm name",
+    "title": "Human-readable charm name (legacy: display-name)",
     "summary": "One-line summary",
     "description": "Detailed description",
-    "docs": "Documentation URL",
-    "issues": "Issue tracker URL",
-    "source": "Source code URL",
+    "links.documentation": "Documentation URL (legacy: docs)",
+    "links.issues": "Issue tracker URL (legacy: issues)",
+    "links.source": "Source code URL (legacy: source)",
     "tags": "Charmhub tags",
 }
 
@@ -170,12 +171,12 @@ def _charmlint_to_audit_report(
     # Build listing_fields from META diagnostics.
     listing_present = dict.fromkeys(_LISTING_FIELDS, True)
     meta_to_field = {
-        "META002": "display-name",
+        "META002": "title",
         "META003": "summary",
         "META004": "description",
-        "META005": "docs",
-        "META006": "issues",
-        "META007": "source",
+        "META005": "links.documentation",
+        "META006": "links.issues",
+        "META007": "links.source",
     }
     for rid, field in meta_to_field.items():
         if rid in rule_ids:

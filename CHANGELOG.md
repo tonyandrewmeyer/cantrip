@@ -132,6 +132,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   ``tests/unit/agent/tools/test_librarian.py``.
 
 ### Fixed
+- **charmlint META002/005/006/007 understand modern ``charmcraft.yaml``
+  (#63).**  The metadata rules only looked for the legacy top-level
+  ``display-name`` / ``docs`` / ``issues`` / ``source`` keys.  The
+  unified ``charmcraft.yaml`` renamed ``display-name`` to ``title``
+  and moved the three URLs into a ``links`` mapping
+  (``documentation`` / ``issues`` / ``source``), so every compliant
+  modern charm collected four false positives — reproduced across all
+  four ``sentry-operators`` charms.  Each rule now accepts the modern
+  spelling or the legacy one, and treats a blank string or a list of
+  blanks (``links.issues`` and friends take a string *or* a list) as
+  absent rather than satisfied.  Both implementations are fixed in
+  lockstep: ``src/charmlint/rules/metadata.py`` and
+  ``src/charmlint-rs/src/rules.rs``.  The ``charm_audit`` tool's
+  ``listing_fields`` keys, its listing-readiness task prompt, and the
+  ``charm-improvement`` skill's worked example follow the same
+  vocabulary so the agent is no longer told to add a legacy key.
+  Diagnostic messages name both spellings, e.g. ``META005 Missing
+  documentation URL ('links.documentation' or legacy 'docs')``.
 - **MCP subsystem migrated to the 2.0 SDK.**  The ``mcp`` 2.0 release
   renamed the streamable-HTTP transport
   (``streamablehttp_client`` → ``streamable_http_client``, which now
