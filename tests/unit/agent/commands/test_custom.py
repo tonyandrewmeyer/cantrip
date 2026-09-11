@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import textwrap
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
 
+from cantrip.agent import queue as queue_module
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.custom import (
     CustomCommand,
     CustomCommandError,
@@ -105,6 +108,49 @@ class TestLoadCommandFile:
         path.write_text("---\ndescription: nothing\n---\n   \n")
         with pytest.raises(CustomCommandError):
             load_command_file(path)
+
+
+class TestFrontmatterValidation:
+    """Malformed frontmatter names the offending key, not a stack trace.
+
+    A user hand-editing ``.cantrip/commands/*.md`` gets these messages
+    with the file path prefixed, so each one has to be specific enough
+    to point at the line they got wrong.
+    """
+
+    def _load(self, tmp_path: pathlib.Path, frontmatter: str) -> CustomCommand:
+        path = tmp_path / "thing.md"
+        path.write_text(f"---\n{frontmatter}\n---\nPrompt body.\n")
+        return load_command_file(path)
+
+    def _error(self, tmp_path: pathlib.Path, frontmatter: str) -> str:
+        with pytest.raises(CustomCommandError) as exc:
+            self._load(tmp_path, frontmatter)
+        return str(exc.value)
+
+    def test_unparseable_yaml(self, tmp_path: pathlib.Path):
+        assert "invalid YAML frontmatter" in self._error(tmp_path, "description: [unclosed")
+
+    def test_empty_frontmatter_is_treated_as_absent(self, tmp_path: pathlib.Path):
+        command = self._load(tmp_path, "# just a comment")
+        assert command.verb == "/thing"
+        assert command.description == "User command from thing.md"
+
+    def test_scalar_frontmatter_rejected(self, tmp_path: pathlib.Path):
+        assert "must be a YAML mapping" in self._error(tmp_path, "just-a-string")
+
+    def test_non_string_description_rejected(self, tmp_path: pathlib.Path):
+        assert "'description' must be a string" in self._error(tmp_path, "description: 42")
+
+    @pytest.mark.parametrize("value", ["agent: []", "agent: ''"])
+    def test_empty_or_non_string_agent_rejected(self, tmp_path: pathlib.Path, value: str):
+        assert "'agent' must be a non-empty string" in self._error(tmp_path, value)
+
+    def test_non_string_model_rejected(self, tmp_path: pathlib.Path):
+        assert "'model' must be a string or null" in self._error(tmp_path, "model: 3")
+
+    def test_non_boolean_subtask_rejected(self, tmp_path: pathlib.Path):
+        assert "'subtask' must be a boolean" in self._error(tmp_path, "subtask: maybe")
 
 
 class TestDiscoverCustomCommands:
@@ -437,3 +483,220 @@ class TestDispatcherIntegration:
 
         text = slash_commands.help_text()
         assert "User commands" not in text
+
+
+# ---------------------------------------------------------------------------
+# Execution — what the dispatcher's followup coroutine actually does
+# ---------------------------------------------------------------------------
+
+
+def _execution_agent(
+    tmp_path: pathlib.Path,
+    commands: tuple[CustomCommand, ...],
+    *,
+    reply: str = "model reply",
+) -> SimpleNamespace:
+    """Smallest agent shape ``_handle_custom_command`` reads.
+
+    Only the fall-through branch of ``dispatch`` is in play for a
+    custom verb, so nothing above it in the dispatcher is touched — a
+    namespace is enough, and it keeps the work-queue assertions
+    readable next to a real :class:`WorkQueue`.
+    """
+    received: list[str] = []
+
+    async def process_message(prompt: str) -> str:
+        received.append(prompt)
+        return reply
+
+    agent = SimpleNamespace(
+        custom_commands=CustomCommandRegistry(commands=commands),
+        state=SimpleNamespace(charm_path=tmp_path),
+        executor=None,
+        process_message=process_message,
+        _work_queue=queue_module.WorkQueue(),
+    )
+    agent._received = received
+    return agent
+
+
+def _command_file(tmp_path: pathlib.Path, name: str, text: str) -> CustomCommand:
+    path = tmp_path / f"{name}.md"
+    path.write_text(textwrap.dedent(text))
+    return load_command_file(path)
+
+
+class TestCustomCommandExecution:
+    """The ``followup`` coroutine: expand, then route primary vs. queue."""
+
+    async def test_primary_command_feeds_the_conversation_loop(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        command = _command_file(
+            tmp_path,
+            "greet",
+            """\
+            ---
+            description: greet
+            ---
+            Say hi to $ARGUMENTS.
+            """,
+        )
+        agent = _execution_agent(tmp_path, (command,))
+        result = slash_commands.dispatch(agent, "/greet the operator")
+        assert result is not None
+        assert result.text == "Running `/greet`…"
+        assert result.followup is not None
+        assert await result.followup == "model reply"
+        assert agent._received == ["Say hi to the operator."]
+
+    async def test_expansion_failure_never_reaches_the_model(self, tmp_path: pathlib.Path) -> None:
+        command = _command_file(
+            tmp_path,
+            "readfile",
+            """\
+            ---
+            description: read a file
+            ---
+            Summarise @does-not-exist.txt please.
+            """,
+        )
+        agent = _execution_agent(tmp_path, (command,))
+        result = slash_commands.dispatch(agent, "/readfile")
+        assert result is not None
+        assert result.followup is not None
+        text = await result.followup
+        assert "`/readfile` failed to expand:" in text
+        assert "no such file" in text
+        assert agent._received == []
+
+    async def test_subagent_command_is_queued_not_chatted(self, tmp_path: pathlib.Path) -> None:
+        command = _command_file(
+            tmp_path,
+            "dig",
+            """\
+            ---
+            description: deep research
+            agent: research
+            ---
+            Investigate $ARGUMENTS.
+            """,
+        )
+        agent = _execution_agent(tmp_path, (command,))
+        result = slash_commands.dispatch(agent, "/dig ingress")
+        assert result is not None
+        assert result.followup is not None
+        text = await result.followup
+        assert "Queued `/dig` as a research task" in text
+        assert agent._received == []
+        tasks = agent._work_queue.all_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].category is queue_module.TaskCategory.RESEARCH
+        assert tasks[0].description == "Investigate ingress."
+
+    async def test_subtask_on_a_primary_command_queues_as_build(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """``subtask: true`` is documented as "queue it even for primary".
+
+        ``primary`` is not a work-queue category, so the expansion
+        lands under ``build`` — the neutral background category —
+        rather than being rejected as an unknown agent.
+        """
+        command = _command_file(
+            tmp_path,
+            "background",
+            """\
+            ---
+            description: run in the background
+            subtask: true
+            ---
+            Do the slow thing.
+            """,
+        )
+        agent = _execution_agent(tmp_path, (command,))
+        result = slash_commands.dispatch(agent, "/background")
+        assert result is not None
+        assert result.followup is not None
+        text = await result.followup
+        assert "Queued `/background` as a build task" in text
+        tasks = agent._work_queue.all_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].category is queue_module.TaskCategory.BUILD
+
+    async def test_unknown_agent_name_is_reported_not_raised(self, tmp_path: pathlib.Path) -> None:
+        command = _command_file(
+            tmp_path,
+            "oops",
+            """\
+            ---
+            description: typo in the agent name
+            agent: reserch
+            ---
+            Investigate things.
+            """,
+        )
+        agent = _execution_agent(tmp_path, (command,))
+        result = slash_commands.dispatch(agent, "/oops")
+        assert result is not None
+        assert result.followup is not None
+        text = await result.followup
+        assert "names unknown agent 'reserch'" in text
+        assert agent._work_queue.all_tasks() == []
+
+
+class TestCustomCommandRetry:
+    """``retry:`` on a primary command routes through the retry runner."""
+
+    def _command(self, tmp_path: pathlib.Path, target: str, max_retries: int) -> CustomCommand:
+        return _command_file(
+            tmp_path,
+            "guarded",
+            f"""\
+            ---
+            description: write a file
+            retry:
+              max_retries: {max_retries}
+              checks:
+                - type: file_exists
+                  path: {target}
+            ---
+            Write the file.
+            """,
+        )
+
+    async def _run(self, agent: SimpleNamespace) -> str:
+        result = slash_commands.dispatch(agent, "/guarded")
+        assert result is not None
+        assert result.followup is not None
+        return await result.followup
+
+    async def test_passing_check_returns_the_bare_reply(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "out.txt").write_text("done\n")
+        agent = _execution_agent(tmp_path, (self._command(tmp_path, "out.txt", 1),))
+        assert await self._run(agent) == "model reply"
+        assert len(agent._received) == 1
+
+    async def test_late_convergence_is_annotated(self, tmp_path: pathlib.Path) -> None:
+        """The check fails on the first attempt and passes on the second."""
+        target = tmp_path / "late.txt"
+        agent = _execution_agent(tmp_path, (self._command(tmp_path, "late.txt", 2),))
+        original = agent.process_message
+
+        async def process_message(prompt: str) -> str:
+            reply = await original(prompt)
+            if len(agent._received) > 1:
+                target.write_text("now it exists\n")
+            return reply
+
+        agent.process_message = process_message
+        text = await self._run(agent)
+        assert "converged after 2 attempts" in text
+        assert text.startswith("model reply")
+
+    async def test_non_convergence_lists_the_failing_checks(self, tmp_path: pathlib.Path) -> None:
+        agent = _execution_agent(tmp_path, (self._command(tmp_path, "never.txt", 1),))
+        text = await self._run(agent)
+        assert "did not converge after 2 attempt(s)" in text
+        assert "file_exists `never.txt`" in text
+        assert len(agent._received) == 2

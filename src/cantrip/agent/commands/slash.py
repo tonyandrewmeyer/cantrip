@@ -440,10 +440,19 @@ async def _run_primary_with_retry(
 def _coerce_task_category(name: str) -> TaskCategory:
     """Map a string like ``"research"`` onto :class:`TaskCategory`.
 
+    ``primary`` names the conversation loop rather than a subagent, so
+    it has no category of its own.  A ``subtask: true`` command that
+    leaves ``agent`` at its default still has to land somewhere on the
+    queue, so it takes :attr:`TaskCategory.BUILD` — the neutral
+    background category the planner already uses for work that doesn't
+    classify itself.
+
     Raises :class:`ValueError` on unknown names so the custom-command
     handler can render a clear error instead of blowing up inside the
     work-queue validator.
     """
+    if name == custom_commands.DEFAULT_AGENT:
+        return TaskCategory.BUILD
     try:
         return TaskCategory(name)
     except ValueError as exc:
