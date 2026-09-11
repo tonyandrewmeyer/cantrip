@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -12,6 +13,19 @@ if TYPE_CHECKING:
     import pathlib
 
     from cantrip.agent.queue import AgentTask
+
+
+#: Skip a test that proves an operation fails on an unwritable path.
+#:
+#: ``chmod``-based permission tests are meaningless for root, which
+#: bypasses the mode bits entirely: the write succeeds and the test
+#: fails for a reason that has nothing to do with the code under test.
+#: Containers and dev images routinely run as root, so guard those
+#: tests rather than leaving the suite red there.
+skip_if_root = pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root bypasses filesystem permission bits, so the write under test succeeds",
+)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

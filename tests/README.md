@@ -71,7 +71,8 @@ helper should grow a parameter rather than living as a parallel definition.
 ## conftest layering
 
 * **`tests/conftest.py`** — auto-loaded by every test. Holds the project-wide fakes,
-  the `--run-slow` CLI flag, and the `_disable_pypi_update_check` autouse fixture.
+  the `--run-slow` CLI flag, the `_disable_pypi_update_check` autouse fixture, and the
+  `skip_if_root` marker (see below).
 * **`tests/integration/conftest.py`** — adds `RESEARCH_PLAN_JSON`, `BUILD_PLAN_JSON`,
   `SAMPLE_DESIGN_MD` canned planner outputs and the `fast_executor` fixture; re-exports
   shared providers / wait helpers so existing tests keep working with their old
@@ -100,6 +101,14 @@ uv run pytest tests/unit/test_tools.py -v
 uv run pytest tests/unit/test_tools.py::test_name -v
 uv run pytest tests/unit/test_tools.py -v --run-slow   # Opt into @pytest.mark.slow
 ```
+
+## Filesystem-permission tests
+
+A test that proves an operation *fails* on an unwritable path (`chmod 0o500`, a read-only
+parent) is meaningless for root, which bypasses the mode bits: the write succeeds and the
+test fails for a reason unrelated to the code under test. Containers and dev images often
+run as root, so decorate such tests with `@conftest.skip_if_root`
+(`from tests import conftest`) rather than leaving the suite red there.
 
 ## Adding a new shared fake
 
