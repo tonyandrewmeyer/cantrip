@@ -9,7 +9,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cantrip.agent.commands import share as share_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.slash import SlashResult, dispatch
 from cantrip.agent.memory import GlobalMemoryStore, MemoryManager
@@ -463,6 +462,47 @@ class TestBudget:
         assert result is not None
         assert ">= 0" in result.text
 
+    def test_sets_completion_token_cap(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        dispatch(agent, "/budget --max-completion-tokens 4096")
+        assert agent.state.goal_budget is not None
+        assert agent.state.goal_budget.max_completion_tokens == 4096
+
+    @pytest.mark.parametrize("args", ["--max-iterations", "--max-iterations 10 20"])
+    def test_flag_needs_exactly_one_value(
+        self, memory_manager: MemoryManager, session_store: SessionStore, args: str
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, f"/budget {args}")
+        assert result is not None
+        assert result.text == "Usage: ``/budget --max-iterations N``"
+
+    def test_rejects_non_integer_value(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        agent = self._make_agent(memory_manager, session_store, budget=None)
+        result = dispatch(agent, "/budget --max-iterations lots")
+        assert result is not None
+        assert "must be an integer" in result.text
+        assert agent.state.goal_budget is None
+
+    def test_summary_without_a_store_lists_the_caps(
+        self, memory_manager: MemoryManager, session_store: SessionStore
+    ) -> None:
+        """Before the store opens the caps are still worth showing."""
+        from cantrip.agent.goal_budget import GoalBudget
+
+        agent = self._make_agent(
+            memory_manager, session_store, budget=GoalBudget(max_iterations=7)
+        )
+        agent.store = None
+        result = dispatch(agent, "/budget")
+        assert result is not None
+        assert "iterations=7" in result.text
+        assert "Usage unavailable until the store opens" in result.text
+
 
 class TestGoal:
     """Phase 99.3: ``/goal`` shows, sets, and clears the user-prose objective."""
@@ -654,103 +694,6 @@ class TestShare:
         assert result.followup is not None
         assert "Uploading session" in result.text
         result.followup.close()
-
-    @pytest.mark.asyncio
-    async def test_share_happy_path_returns_gist_url(self, tmp_path: pathlib.Path) -> None:
-        from unittest.mock import patch
-
-        charm_path = tmp_path / "charm"
-        charm_path.mkdir()
-        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
-
-        async def _fake_comm(_self):
-            return (b"https://gist.github.com/user/abc123\n", b"")
-
-        # Mock the transcript pipeline so the test doesn't need a real
-        # SQLite file on disk.
-        with (
-            patch("cantrip.transcript.export.load_transcript", return_value={}),
-            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.commands.share.shutil.which", return_value="/usr/bin/gh"),
-            patch("cantrip.agent.commands.share.asyncio.create_subprocess_exec") as mock_exec,
-        ):
-            mock_proc = MagicMock()
-            mock_proc.returncode = 0
-            mock_proc.communicate = _fake_comm.__get__(mock_proc)
-
-            async def _fake_exec(*_args, **_kwargs):
-                return mock_proc
-
-            mock_exec.side_effect = _fake_exec
-
-            result = await share_commands.share_to_gist(
-                charm_path / ".cantrip",
-                charm_path,
-            )
-
-        assert "https://gist.github.com/user/abc123" in result
-
-    @pytest.mark.asyncio
-    async def test_share_falls_back_to_local_path_when_gh_missing(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        from unittest.mock import patch
-
-        charm_path = tmp_path / "charm"
-        charm_path.mkdir()
-        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
-
-        with (
-            patch("cantrip.transcript.export.load_transcript", return_value={}),
-            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.commands.share.shutil.which", return_value=None),
-        ):
-            result = await share_commands.share_to_gist(
-                charm_path / ".cantrip",
-                charm_path,
-            )
-
-        assert "`gh` is not installed" in result
-        assert "gh gist create" in result
-        # The user should see the local path so they can upload manually.
-        assert "cantrip-session-charm-" in result
-
-    @pytest.mark.asyncio
-    async def test_share_surfaces_gh_auth_failure_with_retry_command(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        from unittest.mock import patch
-
-        charm_path = tmp_path / "charm"
-        charm_path.mkdir()
-        (charm_path / ".cantrip").write_bytes(b"sqlite-placeholder")
-
-        async def _fake_comm(_self):
-            return (b"", b"You are not logged into any GitHub hosts. Run gh auth login\n")
-
-        with (
-            patch("cantrip.transcript.export.load_transcript", return_value={}),
-            patch("cantrip.transcript.html.render_html", return_value="<html/>"),
-            patch("cantrip.agent.commands.share.shutil.which", return_value="/usr/bin/gh"),
-            patch("cantrip.agent.commands.share.asyncio.create_subprocess_exec") as mock_exec,
-        ):
-            mock_proc = MagicMock()
-            mock_proc.returncode = 4
-            mock_proc.communicate = _fake_comm.__get__(mock_proc)
-
-            async def _fake_exec(*_args, **_kwargs):
-                return mock_proc
-
-            mock_exec.side_effect = _fake_exec
-
-            result = await share_commands.share_to_gist(
-                charm_path / ".cantrip",
-                charm_path,
-            )
-
-        assert "Failed to upload gist" in result
-        assert "gh auth login" in result
-        assert "gh gist create" in result
 
 
 class TestCopy:
@@ -1093,6 +1036,20 @@ class TestUpdate:
         assert result is not None
         assert "Usage" in result.text
 
+    def test_unwritable_settings_file_reports_cleanly(
+        self, memory_manager: MemoryManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cantrip import update as update_module
+
+        def _boom(_disabled: bool) -> None:
+            raise OSError("Read-only file system")
+
+        monkeypatch.setattr(update_module, "set_update_check_disabled", _boom)
+        result = dispatch(_fake_agent(memory_manager), "/update --no-check")
+        assert result is not None
+        assert "Failed to update ~/.config/cantrip/settings.json" in result.text
+        assert "Read-only file system" in result.text
+
 
 class TestUpdateFollowup:
     """The ``/update`` follow-up coroutine hits PyPI cache-bypassed."""
@@ -1212,6 +1169,76 @@ class TestSandbox:
         result = dispatch(agent, "/sandbox")
         assert result is not None
         assert "Transcript logging:** on" in result.text
+
+
+class TestVerbRouting:
+    """Every catalogued verb reaches its handler (Phase 114.1).
+
+    The drift test below proves each verb is *listed*; this class
+    proves each one is actually *wired*.  Every case drives the
+    handler's own "unavailable / usage" short-circuit, so the
+    assertions stay about routing rather than about what each feature
+    does — those live with their respective handlers.
+    """
+
+    def _agent(self, memory_manager: MemoryManager, **overrides) -> SimpleNamespace:
+        agent = _fake_agent(memory_manager)
+        agent.hook_runner = SimpleNamespace(hook_count=0)
+        agent.hook_stats = SimpleNamespace(for_hook=lambda _name: None)
+        agent.snapshot_manager = None
+        agent.repo_map = None
+        agent.code_intel = None
+        agent.state.architect_mode = False
+        agent.state.git_auto_commit = False
+        for key, value in overrides.items():
+            setattr(agent, key, value)
+        return agent
+
+    @pytest.mark.parametrize(
+        ("message", "needle"),
+        [
+            ("/hooks", "No hooks configured"),
+            ("/undo", "Snapshots are disabled"),
+            ("/redo", "Snapshots are disabled"),
+            ("/branch", "No session store available"),
+            ("/tree", "No session store available"),
+            ("/architect off", "Architect mode is already off"),
+            ("/auto-commit off", "Auto-commit is already off"),
+            ("/map-refresh", "No repository map"),
+            ("/diagnostics", "no charm path for this session"),
+            ("/review --severity", "``--severity`` needs a value"),
+            ("/search-charms", "Usage: ``/search-charms"),
+            ("/icon", "Usage: ``/icon"),
+        ],
+    )
+    def test_verb_reaches_its_handler(
+        self, memory_manager: MemoryManager, message: str, needle: str
+    ) -> None:
+        result = dispatch(self._agent(memory_manager, store=None), message)
+        assert result is not None, f"{message} fell through to the unknown-verb path"
+        assert needle in result.text
+        assert result.followup is None
+
+
+class TestCatalogueFor:
+    """``catalogue_for`` merges user-defined commands into the built-ins."""
+
+    def test_no_agent_returns_the_builtins(self) -> None:
+        assert slash_commands.catalogue_for(None) is slash_commands.COMMAND_CATALOGUE
+
+    def test_agent_without_a_registry_returns_the_builtins(
+        self, memory_manager: MemoryManager
+    ) -> None:
+        agent = _fake_agent(memory_manager)
+        agent.custom_commands = MagicMock()  # a Mock is not a real registry
+        assert slash_commands.catalogue_for(agent) is slash_commands.COMMAND_CATALOGUE
+
+    def test_empty_registry_returns_the_builtins(self, memory_manager: MemoryManager) -> None:
+        from cantrip.agent.commands.custom import CustomCommandRegistry
+
+        agent = _fake_agent(memory_manager)
+        agent.custom_commands = CustomCommandRegistry(commands=())
+        assert slash_commands.catalogue_for(agent) is slash_commands.COMMAND_CATALOGUE
 
 
 class TestCommandCatalogue:

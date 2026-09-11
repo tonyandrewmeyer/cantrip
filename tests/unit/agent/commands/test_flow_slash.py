@@ -167,6 +167,94 @@ class TestInvocation:
 
 
 # ---------------------------------------------------------------------------
+# Detail-page rendering (Phase 114.1)
+# ---------------------------------------------------------------------------
+
+
+def _make_branching_flow(name: str) -> flows.Flow:
+    """A flow with prose and a decision node — the full help-page shape."""
+    nodes = (
+        flows.FlowNode(
+            id="check",
+            label="COS present?",
+            kind=flows.NodeKind.DECISION,
+            annotation="Look for a grafana-agent relation.",
+        ),
+        flows.FlowNode(
+            id="wire",
+            label="Wire it up",
+            kind=flows.NodeKind.ACTION,
+            annotation="Add the relation.",
+        ),
+        flows.FlowNode(
+            id="done",
+            label="Finished",
+            kind=flows.NodeKind.TERMINAL,
+            annotation="Stop.",
+        ),
+    )
+    edges = (
+        flows.FlowEdge(src="check", dest="wire", label="no"),
+        flows.FlowEdge(src="check", dest="done", label="yes"),
+        flows.FlowEdge(src="wire", dest="done"),
+    )
+    return flows.Flow(
+        name=name,
+        description=f"Description for {name}.",
+        intro_prose="Run this before enabling observability.",
+        diagram_source="flowchart TD\ncheck{COS present?}\nwire[Wire it up]\ndone(Finished)",
+        entry_node="check",
+        nodes=nodes,
+        edges=edges,
+    )
+
+
+class TestFlowHelpPage:
+    def test_intro_prose_is_included(self) -> None:
+        registry = flows.FlowRegistry(flows=(_make_branching_flow("cos"),))
+        result = handle_flow(_agent(flows_registry=registry), "/flow", "cos --help")
+        assert "Run this before enabling observability." in result.text
+
+    def test_decision_nodes_list_their_branch_labels(self) -> None:
+        registry = flows.FlowRegistry(flows=(_make_branching_flow("cos"),))
+        result = handle_flow(_agent(flows_registry=registry), "/flow", "cos --help")
+        assert "**Decision nodes:**" in result.text
+        assert "`check` (COS present?)" in result.text
+        assert "`no`" in result.text
+        assert "`yes`" in result.text
+
+    def test_decision_block_omitted_when_the_flow_is_linear(self) -> None:
+        registry = flows.FlowRegistry(flows=(_make_flow("alpha"),))
+        result = handle_flow(_agent(flows_registry=registry), "/flow", "alpha --help")
+        assert "**Decision nodes:**" not in result.text
+        assert "**Terminal nodes:**" in result.text
+
+    def test_help_name_form_matches_the_flag_form(self) -> None:
+        """``/flow help <name>`` is the same page as ``/flow <name> --help``."""
+        registry = flows.FlowRegistry(flows=(_make_branching_flow("cos"),))
+        agent = _agent(flows_registry=registry)
+        assert (
+            handle_flow(agent, "/flow", "help cos").text
+            == handle_flow(agent, "/flow", "cos --help").text
+        )
+
+    def test_help_takes_at_most_one_name(self) -> None:
+        registry = flows.FlowRegistry(flows=(_make_flow("alpha"), _make_flow("beta")))
+        result = handle_flow(_agent(flows_registry=registry), "/flow", "help alpha beta")
+        assert "at most one flow name" in result.text
+        assert result.followup is None
+
+
+class TestRegistryMissing:
+    def test_handler_refuses_without_a_flow_registry(self) -> None:
+        agent = _agent()
+        agent.flows = None
+        result = handle_flow(agent, "/flow", "")
+        assert "no flow registry" in result.text
+        assert result.followup is None
+
+
+# ---------------------------------------------------------------------------
 # End-to-end dispatch through ``slash.dispatch``
 # ---------------------------------------------------------------------------
 

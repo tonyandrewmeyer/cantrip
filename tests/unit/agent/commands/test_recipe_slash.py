@@ -6,7 +6,8 @@ import asyncio
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
-from cantrip.agent import recipes
+from cantrip.agent import declarative_retry, recipes
+from cantrip.agent.commands import recipes as recipe_commands
 from cantrip.agent.commands import slash as slash_commands
 from cantrip.agent.commands.recipes import handle_recipe
 from cantrip.agent.commands.slash import SlashResult, dispatch
@@ -93,6 +94,7 @@ def _make_recipe(
     retry_config=None,
     extensions: tuple[str, ...] = (),
     sub_recipes: tuple[recipes.SubRecipeRef, ...] = (),
+    settings: recipes.RecipeSettings | None = None,
 ) -> recipes.Recipe:
     return recipes.Recipe(
         name=name,
@@ -104,6 +106,7 @@ def _make_recipe(
         retry=retry_config,
         extensions=extensions,
         sub_recipes=sub_recipes,
+        settings=settings if settings is not None else recipes.RecipeSettings(),
     )
 
 
@@ -583,6 +586,241 @@ class TestSubRecipes:
         assert "parent-reply" in output
         assert "cannot run" in output
         assert "mcp:absent" in output
+
+
+# ---------------------------------------------------------------------------
+# Help-page annotations (Phase 114.1)
+# ---------------------------------------------------------------------------
+
+
+class TestHelpAnnotations:
+    """``/recipe <name> --help`` announces every non-default behaviour.
+
+    Each annotation warns the user about something that changes what
+    invoking the recipe does — validation, retries, unapplied settings,
+    hard extension requirements, sub-recipe fan-out.  Losing one of
+    these silently is the failure mode worth guarding.
+    """
+
+    def _help(self, recipe: recipes.Recipe) -> str:
+        agent = _agent(recipes_registry=recipes.RecipeRegistry(recipes=(recipe,)))
+        result = handle_recipe(agent, f"{recipe.name} --help")
+        assert result.followup is None
+        return result.text
+
+    def test_parameterless_recipe_says_so(self) -> None:
+        assert "_No parameters._" in self._help(_make_recipe("bare", parameters=()))
+
+    def test_builtin_response_schema_is_named(self) -> None:
+        recipe = _make_recipe(
+            "checked",
+            response=recipes.RecipeResponseSpec(schema_name="acceptance_report"),
+        )
+        text = self._help(recipe)
+        assert "built-in schema" in text
+        assert "`acceptance_report`" in text
+
+    def test_inline_response_schema_is_described_generically(self) -> None:
+        recipe = _make_recipe(
+            "checked",
+            response=recipes.RecipeResponseSpec(schema={"type": "object"}),
+        )
+        text = self._help(recipe)
+        assert "inline JSON Schema" in text
+        assert "built-in schema" not in text
+
+    def test_retry_block_reports_the_attempt_cap(self) -> None:
+        config = declarative_retry.RetryConfig(
+            max_retries=2,
+            checks=(declarative_retry.FileExistsCheck(path="out.txt"),),
+        )
+        text = self._help(_make_recipe("flaky", retry_config=config))
+        assert "Retries up to 3 time(s)" in text
+        assert "1 check(s)" in text
+
+    def test_non_default_settings_are_flagged_as_unapplied(self) -> None:
+        recipe = _make_recipe(
+            "tuned",
+            settings=recipes.RecipeSettings(model="claude-opus-4-7"),
+        )
+        assert "not yet applied at dispatch" in self._help(recipe)
+
+    def test_default_settings_stay_quiet(self) -> None:
+        assert "not yet applied at dispatch" not in self._help(_make_recipe("plain"))
+
+    def test_required_extensions_are_listed(self) -> None:
+        recipe = _make_recipe("gated", extensions=("mcp:charmhub", "tool:juju_status"))
+        text = self._help(recipe)
+        assert "`mcp:charmhub`" in text
+        assert "`tool:juju_status`" in text
+        assert "refuse to invoke" in text
+
+    def test_sub_recipe_count_is_announced(self) -> None:
+        recipe = _make_recipe(
+            "parent",
+            sub_recipes=(
+                recipes.SubRecipeRef(name="child-a"),
+                recipes.SubRecipeRef(name="child-b"),
+            ),
+        )
+        assert "Runs 2 sub-recipe(s) sequentially" in self._help(recipe)
+
+    def test_help_name_form_matches_the_flag_form(self) -> None:
+        """``/recipe help <name>`` is the same page as ``/recipe <name> --help``."""
+        recipe = _make_recipe("documented", parameters=())
+        agent = _agent(recipes_registry=recipes.RecipeRegistry(recipes=(recipe,)))
+        by_name = handle_recipe(agent, "help documented")
+        by_flag = handle_recipe(agent, "documented --help")
+        assert by_name.text == by_flag.text
+        assert by_name.markdown is True
+
+
+# ---------------------------------------------------------------------------
+# Invocation failure modes (Phase 114.1)
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryMissing:
+    def test_handler_refuses_without_a_registry(self) -> None:
+        agent = _agent()
+        agent.recipes = None
+        result = handle_recipe(agent, "anything")
+        assert "no recipe registry" in result.text
+        assert result.followup is None
+
+    def test_sub_recipes_are_skipped_if_the_registry_disappears(self) -> None:
+        """Defensive: the parent reply still reaches the user."""
+        parent = _make_recipe(
+            "parent",
+            parameters=(),
+            instructions="Parent work.",
+            sub_recipes=(recipes.SubRecipeRef(name="child"),),
+        )
+        agent = _agent(
+            recipes_registry=recipes.RecipeRegistry(recipes=(parent,)),
+            process_response="parent reply",
+        )
+        result = handle_recipe(agent, "parent")
+        assert result.followup is not None
+        agent.recipes = None
+        assert asyncio.run(_drain(result.followup)) == "parent reply"
+
+
+class TestTemplateFailure:
+    def test_uncompilable_instructions_surface_a_clear_error(self) -> None:
+        recipe = _make_recipe("broken", parameters=(), instructions="{% for x in %}")
+        agent = _agent(recipes_registry=recipes.RecipeRegistry(recipes=(recipe,)))
+        result = handle_recipe(agent, "broken")
+        assert result.followup is not None
+        text = asyncio.run(_drain(result.followup))
+        assert "`/recipe broken` failed:" in text
+        assert agent._received == [], "a broken template must not reach the model"
+
+
+class TestRetryComposition:
+    """A recipe carrying ``retry:`` routes through the retry runner."""
+
+    def _agent_and_recipe(
+        self, tmp_path: pathlib.Path, *, target: str, max_retries: int = 1
+    ) -> tuple[SimpleNamespace, recipes.Recipe]:
+        config = declarative_retry.RetryConfig(
+            max_retries=max_retries,
+            checks=(declarative_retry.FileExistsCheck(path=target),),
+        )
+        recipe = _make_recipe(
+            "guarded",
+            parameters=(),
+            instructions="Write the file.",
+            retry_config=config,
+        )
+        agent = _agent(
+            recipes_registry=recipes.RecipeRegistry(recipes=(recipe,)),
+            process_response="done",
+            charm_path=tmp_path,
+        )
+        return agent, recipe
+
+    def test_first_attempt_pass_returns_the_bare_output(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "out.txt").write_text("ok\n")
+        agent, _ = self._agent_and_recipe(tmp_path, target="out.txt")
+        result = handle_recipe(agent, "guarded")
+        assert result.followup is not None
+        assert asyncio.run(_drain(result.followup)) == "done"
+        assert len(agent._received) == 1
+
+    def test_non_convergence_summarises_the_failed_checks(self, tmp_path: pathlib.Path) -> None:
+        agent, _ = self._agent_and_recipe(tmp_path, target="never-written.txt")
+        result = handle_recipe(agent, "guarded")
+        assert result.followup is not None
+        text = asyncio.run(_drain(result.followup))
+        assert text.startswith("done")
+        assert "did not converge after 2 attempt(s)" in text
+        assert "file_exists `never-written.txt`" in text
+        assert len(agent._received) == 2
+
+
+class TestRetryOutcomeFormatting:
+    """``_format_retry_outcome`` — the chat rendering of a retry run."""
+
+    def test_single_attempt_is_unannotated(self) -> None:
+        outcome = declarative_retry.RetryOutcome(
+            output="body", attempts=1, converged=True, timed_out=False
+        )
+        assert recipe_commands._format_retry_outcome(outcome) == "body"
+
+    def test_late_convergence_reports_the_attempt_count(self) -> None:
+        outcome = declarative_retry.RetryOutcome(
+            output="body", attempts=3, converged=True, timed_out=False
+        )
+        text = recipe_commands._format_retry_outcome(outcome)
+        assert "converged after 3 attempts" in text
+
+    def test_timeout_and_cleanup_are_both_announced(self) -> None:
+        check = declarative_retry.FileExistsCheck(path="artifact.json")
+        outcome = declarative_retry.RetryOutcome(
+            output="body",
+            attempts=4,
+            converged=False,
+            timed_out=True,
+            failures=(declarative_retry.CheckResult(check=check, passed=False, detail="missing"),),
+            on_failure_ran=True,
+        )
+        text = recipe_commands._format_retry_outcome(outcome)
+        assert "did not converge after 4 attempt(s) (timed out)" in text
+        assert "file_exists `artifact.json`: missing" in text
+        assert "on_failure cleanup ran." in text
+
+
+class TestExtensionProbeRobustness:
+    """``_check_extensions`` must not crash on an unusual agent shape."""
+
+    def _refusal(self, agent: SimpleNamespace) -> str:
+        result = handle_recipe(agent, "gated")
+        assert result.followup is not None
+        return asyncio.run(_drain(result.followup))
+
+    def _agent_for(self, extension: str) -> SimpleNamespace:
+        recipe = _make_recipe("gated", parameters=(), extensions=(extension,))
+        return _agent(recipes_registry=recipes.RecipeRegistry(recipes=(recipe,)))
+
+    def test_unrecognised_prefix_counts_as_missing(self) -> None:
+        agent = self._agent_for("plugin:whatever")
+        assert "`plugin:whatever`" in self._refusal(agent)
+
+    def test_a_registry_that_cannot_be_snapshotted_means_nothing_is_connected(self) -> None:
+        agent = self._agent_for("mcp:charmhub")
+        agent.mcp_registry = SimpleNamespace()  # no ``snapshot`` attribute
+        assert "`mcp:charmhub`" in self._refusal(agent)
+
+    def test_a_non_dict_tool_map_means_no_tools(self) -> None:
+        agent = self._agent_for("tool:juju_status")
+        agent._tool_map = object()
+        assert "`tool:juju_status`" in self._refusal(agent)
+
+    def test_an_agent_without_a_tool_map_means_no_tools(self) -> None:
+        agent = self._agent_for("tool:juju_status")
+        del agent._tool_map
+        assert "`tool:juju_status`" in self._refusal(agent)
 
 
 # ---------------------------------------------------------------------------
