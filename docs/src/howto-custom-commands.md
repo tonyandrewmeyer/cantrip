@@ -96,7 +96,12 @@ task and a subagent of that category picks it up.</dd>
   <dt><code>subtask</code></dt>
   <dd>Force work-queue dispatch even when <code>agent</code> is
 <code>primary</code>. Useful when you want a command to run
-in the background without pausing the current conversation.</dd>
+in the background without pausing the current conversation.
+<code>primary</code> is the conversation loop rather than a
+queue category, so a <code>subtask: true</code> command that
+leaves <code>agent</code> at its default is queued under
+<code>build</code>. Set <code>agent</code> explicitly if you
+want it filed somewhere else.</dd>
   <dt><code>retry</code></dt>
   <dd>Optional declarative retry block. When set, Cantrip runs
 the command, evaluates a list of <em>checks</em> against the
@@ -166,9 +171,11 @@ start.</li>
 <code>agent.process_message</code>, exactly as if you'd
 typed it. The answer lands in chat.</li>
   <li>For a subagent category or <code>subtask: true</code>
-&mdash; creates a work-queue task of that category. Progress
-shows up in the task panel; the agent continues the
-foreground conversation unchanged.</li>
+&mdash; creates a work-queue task of that category
+(<code>build</code> when <code>agent</code> is left at
+<code>primary</code>). Progress shows up in the task panel;
+the agent continues the foreground conversation
+unchanged.</li>
 </ol>
 
 <p>The catalogue (<code>/help</code>, slash-command autocomplete,

@@ -9,6 +9,7 @@ from cantrip.agent.tools.files import (
     WriteFileTool,
     _did_you_mean_hint,
 )
+from tests import conftest
 
 
 class TestPathAwareTool:
@@ -254,6 +255,7 @@ class TestWriteFileTool:
         assert result.success is True
         assert "5" in result.output
 
+    @conftest.skip_if_root
     @pytest.mark.asyncio
     async def test_write_to_read_only_directory(self, tmp_path):
         """Writing to a read-only directory reports an OS error."""

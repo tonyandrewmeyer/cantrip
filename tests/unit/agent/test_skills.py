@@ -6,6 +6,7 @@ import pytest
 
 from cantrip.agent.skills import SkillMetadata, SkillsIndex
 from cantrip.agent.tools.skills import LoadSkillTool
+from tests import conftest
 
 
 @pytest.fixture()
@@ -1014,6 +1015,7 @@ class TestExportSkill:
         message = str(exc_info.value)
         assert "not a directory" in message.lower()
 
+    @conftest.skip_if_root
     def test_target_under_unwritable_parent_raises_friendly(self, tmp_path: pathlib.Path) -> None:
         """Permission denied on the synthesised parent yields a clean error.
 

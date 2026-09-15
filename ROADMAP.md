@@ -1203,25 +1203,37 @@ Each sub-phase is independent and individually shippable.  The exit
 bar is *navigability + regression catch* on user-facing surfaces,
 not a higher overall coverage number — the current 88% gate stays.
 
-### 114.1 High — Command-layer coverage gap
+### 114.1 High — Command-layer coverage gap ✅
 
-- [ ] Add `tests/unit/agent/commands/test_map.py` covering
-  `src/cantrip/agent/commands/map.py` (currently 60%, missing
-  lines 46, 74, 92, 112–132 — sympath resolution and dispatch).
-- [ ] Add `tests/unit/agent/commands/test_cost.py` covering
-  `src/cantrip/agent/commands/cost.py` (currently 67%, missing
-  lines 44–46, 60, 67, 91–106, 109–114, 151–159, 162–164 — rate
-  calculation branches and token-pricing edges).
-- [ ] Extend `tests/unit/agent/commands/test_recipe_slash.py`
-  (and/or add `test_recipes.py`) to cover the 35 missing lines in
-  `recipes.py` (recipe parse/load edges around lines 63–93, 227–240,
-  334–347, 386–401).
-- [ ] Extend coverage on `commands/share.py` (80%, 9 missing) and
-  `commands/flows.py` (87%, 10 missing).  These are smaller and may
-  fold into existing files.
-- [ ] Exit: every module under `src/cantrip/agent/commands/` ≥ 90%
-  line coverage.  No coverage-gate change; the 88% project gate
-  stays.
+- [x] Added `tests/unit/agent/commands/test_map.py` covering
+  `src/cantrip/agent/commands/map.py` (60% → 100%): the compact /
+  full toggle, the "showing N of M" footer, the empty-map and
+  no-map notices, and both diagnostics paths.
+- [x] Added `tests/unit/agent/commands/test_cost.py` covering
+  `src/cantrip/agent/commands/cost.py` (67% → 100%).  Each of the
+  seven conditional rollup blocks (cache, context, replay savings,
+  per-model, per-category, per-role, edit-string misses) is driven
+  on and off independently.
+- [x] Extended `tests/unit/agent/commands/test_recipe_slash.py`
+  (80% → 100%): every help-page annotation, the missing-registry
+  and uncompilable-template refusals, retry composition and
+  `_format_retry_outcome`, and the extension-probe fallbacks.
+- [x] `commands/share.py` 80% → 100% via a new
+  `tests/unit/agent/commands/test_share.py` (the `share_to_gist`
+  tests moved out of `test_slash.py`, which keeps the
+  dispatch-contract cases); `commands/flows.py` 86% → 100% via new
+  detail-page cases in `test_flow_slash.py`.
+- [x] Also lifted the modules the original sweep didn't name:
+  `budget.py` 89% → 100%, `codeintel.py` 88% → 100%,
+  `custom.py` 89% → 93%, `slash.py` 88% → 94%.
+- [x] Exit met: every module under `src/cantrip/agent/commands/` is
+  ≥ 90% line coverage (package total 86% → 96%).  The 88% project
+  gate is unchanged.
+- [x] Bug found on the way: `subtask: true` on an `agent: primary`
+  custom command hit `TaskCategory("primary")` and died with
+  "names unknown agent 'primary'", contradicting both the docs and
+  its own error message.  Fixed in `_coerce_task_category` by
+  mapping `primary` onto `TaskCategory.BUILD`.
 
 ### 114.2 High — Promote inline MCP fakes to `tests/support/`
 

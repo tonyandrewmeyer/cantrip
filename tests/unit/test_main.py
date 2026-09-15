@@ -16,6 +16,7 @@ from unittest import mock
 import pytest
 
 from cantrip import main as cantrip_main
+from tests import conftest
 
 
 def _set_argv(monkeypatch: pytest.MonkeyPatch, *argv: str) -> None:
@@ -274,6 +275,7 @@ class TestRun:
         assert rc == 1
         assert "not a directory" in captured.err
 
+    @conftest.skip_if_root
     def test_unwritable_parent_yields_friendly_error(
         self,
         tmp_path: pathlib.Path,

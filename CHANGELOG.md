@@ -4,6 +4,40 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Fixed
+- **``subtask: true`` on a ``primary`` custom command no longer fails.**
+  ``docs/src/howto-custom-commands.md`` documents ``subtask`` as "force
+  work-queue dispatch even when ``agent`` is ``primary``", but the
+  dispatcher fed the agent name straight into ``TaskCategory(...)`` and
+  ``primary`` is not one — so the command died with the
+  self-contradictory "names unknown agent 'primary'; expected 'primary'
+  or a subagent category".  ``_coerce_task_category`` now maps
+  ``primary`` onto ``TaskCategory.BUILD``, the neutral background
+  category the planner already uses for unclassified work; an actual
+  typo (``agent: reserch``) still gets the clear error.  Found while
+  covering the custom-command dispatch path for Phase 114.1.
+
+### Changed
+- **Phase 114.1 — command-layer test coverage.**  Every module under
+  ``src/cantrip/agent/commands/`` is now at or above 90% line coverage
+  (the sub-phase's exit bar), up from a 60–89% spread across nine of
+  them; the package as a whole goes from 86% to 96%.  New
+  ``tests/unit/agent/commands/test_map.py``, ``test_cost.py`` and
+  ``test_share.py`` cover the ``/map`` envelope, the seven conditional
+  ``/cost`` rollup blocks, and every ``share_to_gist`` fallback;
+  ``test_slash.py``, ``test_custom.py``, ``test_recipe_slash.py``,
+  ``test_flow_slash.py`` and ``test_slash_codeintel.py`` gain the
+  error, plural and short-circuit paths they were missing.  The
+  ``share_to_gist`` tests move out of ``test_slash.py`` into the new
+  ``test_share.py`` so the dispatch-contract file stays about
+  dispatch.  No production behaviour changes beyond the ``subtask``
+  fix above; the 88% project gate is unchanged.
+- **Permission-based tests skip when running as root.**  Three tests
+  assert that writing under a ``chmod 0o500`` directory fails.  Root
+  bypasses the mode bits, so the write succeeded and the suite was red
+  in any container running as root.  They now carry a shared
+  ``tests.conftest.skip_if_root`` marker.
+
 ### Added
 - **Workshop environment system-prompt injection.**  When Cantrip runs
   inside a Canonical Workshop sandbox, the system prompt now picks up
