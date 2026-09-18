@@ -2,6 +2,8 @@
 
 import pathlib
 
+import pytest
+
 from charmlint.linter import lint
 from charmlint.models import Severity
 from tests.unit.charmlint.conftest import (
@@ -846,6 +848,103 @@ class TestSecurityRules:
         write_charm_source(tmp_charm, "import ops\n# Uses juju secret API\nSecretChanged\n")
         report = lint(tmp_charm)
         assert "SEC001" not in {d.rule_id for d in report.diagnostics}
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            pytest.param("secret = self.app.add_secret({'password': pw})\n", id="add_secret"),
+            pytest.param("secret = self.model.get_secret(label='db')\n", id="get_secret"),
+            pytest.param(
+                "self.framework.observe(self.on.secret_changed, self._on_secret_changed)\n",
+                id="observed-event",
+            ),
+            pytest.param(
+                "def _on_rotate(self, event: ops.SecretRotateEvent) -> None: ...\n",
+                id="rotate-event-class",
+            ),
+            pytest.param("def _use(self, secret: ops.Secret) -> None: ...\n", id="annotation"),
+            pytest.param("secret_id = self.config['db-secret']\n", id="secret-id"),
+        ],
+    )
+    def test_ops_secrets_api_suppresses_sec001(self, tmp_charm: pathlib.Path, source: str):
+        """The ops secrets API counts as using Juju secrets (issue #64).
+
+        None of these spellings contain the literal ``juju…secret`` the rule
+        originally looked for, so each used to be a false positive.
+        """
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "admin-password": {"type": "string", "description": "Password"},
+                    },
+                },
+            },
+        )
+        write_charm_source(tmp_charm, f"import ops\n\n{source}")
+        report = lint(tmp_charm)
+        assert "SEC001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_secret_typed_option_not_flagged(self, tmp_charm: pathlib.Path):
+        """``type: secret`` holds a URI, not the value, so it is already correct."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "smtp-password": {"type": "secret", "description": "SMTP creds"},
+                    },
+                },
+            },
+        )
+        write_charm_source(tmp_charm, "import ops\n")
+        report = lint(tmp_charm)
+        assert "SEC001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_secret_typed_option_does_not_excuse_its_neighbours(self, tmp_charm: pathlib.Path):
+        """Exemption is per-option — a sibling plain-string secret still fires."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "smtp-password": {"type": "secret", "description": "SMTP creds"},
+                        "api-token": {"type": "string", "description": "API token"},
+                    },
+                },
+            },
+        )
+        write_charm_source(tmp_charm, "import ops\n")
+        report = lint(tmp_charm)
+        sec001 = [d for d in report.diagnostics if d.rule_id == "SEC001"]
+        assert [d.message for d in sec001] == [
+            "Config option 'api-token' looks like a secret "
+            "— use Juju secrets instead of plain-text config"
+        ]
+
+    def test_secrets_api_in_vendored_lib_does_not_suppress(self, tmp_charm: pathlib.Path):
+        """Only the charm's own source counts — ``lib/`` is still excluded."""
+        write_charmcraft_yaml(
+            tmp_charm,
+            {
+                "name": "test",
+                "config": {
+                    "options": {
+                        "admin-password": {"type": "string", "description": "Password"},
+                    },
+                },
+            },
+        )
+        write_charm_source(tmp_charm, "import ops\n")
+        lib_dir = tmp_charm / "lib" / "charms" / "other" / "v0"
+        lib_dir.mkdir(parents=True)
+        (lib_dir / "thing.py").write_text("secret = self.app.add_secret({'a': 'b'})\n")
+        report = lint(tmp_charm)
+        assert "SEC001" in {d.rule_id for d in report.diagnostics}
 
 
 class TestStructureRules:
