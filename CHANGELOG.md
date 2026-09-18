@@ -5,6 +5,22 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **charmlint SEC001 recognises the ops secrets API.**  The rule decided
+  whether a charm used Juju secrets by grepping for ``juju.*secret`` or
+  ``SecretChanged``/``SecretRotate``.  The ops framework spells the API
+  ``app.add_secret`` / ``model.get_secret`` / ``self.on.secret_changed``,
+  none of which contain that literal, so a charm managing secrets
+  correctly still had every secret-looking config option flagged as an
+  error (reproduced on ``sentry-k8s``).  The detection pattern now covers
+  the ops surface — ``add_secret``, ``get_secret``, the four secret event
+  classes and their observed-event spellings, ``ops.Secret`` annotations
+  and ``secret_id`` — alongside the original alternatives.  Separately, a
+  config option declared ``type: secret`` carries a secret URI rather than
+  the value, so it is now exempt per-option regardless of what the source
+  looks like; a plain-string sibling in the same charm still fires.  The
+  fix hint names the concrete remedy (``type: secret`` plus
+  ``Model.get_secret()``) instead of pointing vaguely at "the Juju secrets
+  API".  Python and Rust implementations change in lockstep.  Closes #64.
 - **``subtask: true`` on a ``primary`` custom command no longer fails.**
   ``docs/src/howto-custom-commands.md`` documents ``subtask`` as "force
   work-queue dispatch even when ``agent`` is ``primary``", but the

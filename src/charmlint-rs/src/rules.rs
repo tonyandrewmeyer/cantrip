@@ -546,23 +546,48 @@ fn check_config_quality(ctx: &CharmContext) -> Vec<Diagnostic> {
 
 // ── SEC (Security) ───────────────────────────────────────────────────
 
+/// Evidence that the charm manages secrets through Juju rather than plain-text
+/// config.  The ops framework spells the API `app.add_secret` /
+/// `model.get_secret` / `ops.SecretChanged` — none of which contain the literal
+/// `juju…secret`, so matching only that missed every charm using the supported
+/// API.  The legacy alternative is kept for prose mentions and for `juju secret`
+/// CLI invocations that pre-date the ops surface.  Must stay in lockstep with
+/// `_JUJU_SECRETS_PATTERN` in `src/charmlint/rules/security.py`.
+const JUJU_SECRETS_PATTERN: &str = r"(?x)
+      juju.*secret                                     # prose / CLI mention
+    | \bSecret(?:Changed|Rotate|Remove|Expired)        # ops event classes
+    | \bsecret[-_](?:changed|rotate|rotated|remove|removed|expired)\b
+    | \badd_secret\b                                   # Application/Unit.add_secret
+    | \bget_secret\b                                   # Model.get_secret
+    | \bops\.Secret\b                                  # type annotations
+    | \bsecret[-_]id\b
+";
+
+/// Whether a config option is declared `type: secret`.
+///
+/// Such an option holds a secret URI, not the sensitive value itself, so it is
+/// already the recommended shape and must never be flagged.
+fn is_secret_typed(option: &Value) -> bool {
+    value_as_map(option)
+        .and_then(|m| get_str(m, "type"))
+        .is_some_and(|t| t == "secret")
+}
+
 fn check_security(ctx: &CharmContext) -> Vec<Diagnostic> {
     let secret_keywords = ["password", "secret", "token", "api-key", "api_key", "credential"];
 
     // SEC001: secret in plain config.
     let all_source = src_content(ctx);
-    let has_juju_secrets = Regex::new(r"juju.*secret|Secret(?:Changed|Rotate)")
-        .unwrap()
-        .is_match(&all_source);
+    let has_juju_secrets = Regex::new(JUJU_SECRETS_PATTERN).unwrap().is_match(&all_source);
 
     let secret_opts: Vec<&str> = ctx
         .config_options
-        .keys()
-        .filter(|name| {
+        .iter()
+        .filter(|(name, def)| {
             let lower = name.to_lowercase();
-            secret_keywords.iter().any(|kw| lower.contains(kw))
+            secret_keywords.iter().any(|kw| lower.contains(kw)) && !is_secret_typed(def)
         })
-        .map(|s| s.as_str())
+        .map(|(name, _def)| name.as_str())
         .collect();
 
     let mut diagnostics = Vec::new();
@@ -576,7 +601,9 @@ fn check_security(ctx: &CharmContext) -> Vec<Diagnostic> {
                 ),
                 Some("charmcraft.yaml"),
                 None,
-                Some("Use the Juju secrets API for sensitive data"),
+                Some(
+                    "Declare the option as 'type: secret' and read the value with Model.get_secret()",
+                ),
             ));
         }
     }
@@ -1534,6 +1561,75 @@ mod tests {
         );
         let ids = rule_ids(&run_rules(dir.path()));
         assert!(!ids.contains("SEC001"));
+    }
+
+    /// The ops secrets API counts as using Juju secrets (issue #64).  None of
+    /// these spellings contain the literal `juju…secret` the rule originally
+    /// looked for, so each used to be a false positive.
+    #[test]
+    fn ops_secrets_api_suppresses_sec001() {
+        for source in [
+            "secret = self.app.add_secret({'password': pw})\n",
+            "secret = self.model.get_secret(label='db')\n",
+            "self.framework.observe(self.on.secret_changed, self._on_secret_changed)\n",
+            "def _on_rotate(self, event: ops.SecretRotateEvent) -> None: ...\n",
+            "def _use(self, secret: ops.Secret) -> None: ...\n",
+            "secret_id = self.config['db-secret']\n",
+        ] {
+            let dir = charm_with_yaml(
+                "name: test\nconfig:\n  options:\n    admin-password:\n      type: string\n      description: Password\n",
+            );
+            write(&dir.path().join("src/charm.py"), &format!("import ops\n\n{source}"));
+            let ids = rule_ids(&run_rules(dir.path()));
+            assert!(!ids.contains("SEC001"), "SEC001 fired for: {source}");
+        }
+    }
+
+    /// `type: secret` holds a URI, not the value, so it is already correct.
+    #[test]
+    fn secret_typed_option_not_flagged() {
+        let dir = charm_with_yaml(
+            "name: test\nconfig:\n  options:\n    smtp-password:\n      type: secret\n      description: SMTP creds\n",
+        );
+        write(&dir.path().join("src/charm.py"), "import ops\n");
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(!ids.contains("SEC001"));
+    }
+
+    /// The exemption is per-option — a sibling plain-string secret still fires.
+    #[test]
+    fn secret_typed_option_does_not_excuse_its_neighbours() {
+        let dir = charm_with_yaml(
+            "name: test\nconfig:\n  options:\n    smtp-password:\n      type: secret\n      description: SMTP creds\n    api-token:\n      type: string\n      description: API token\n",
+        );
+        write(&dir.path().join("src/charm.py"), "import ops\n");
+        let diags = run_rules(dir.path());
+        let messages: Vec<&str> = diags
+            .iter()
+            .filter(|d| d.rule_id == "SEC001")
+            .map(|d| d.message.as_str())
+            .collect();
+        assert_eq!(
+            messages,
+            vec![
+                "Config option 'api-token' looks like a secret — use Juju secrets instead of plain-text config"
+            ],
+        );
+    }
+
+    /// Only the charm's own source counts — `lib/` is still excluded.
+    #[test]
+    fn secrets_api_in_vendored_lib_does_not_suppress_sec001() {
+        let dir = charm_with_yaml(
+            "name: test\nconfig:\n  options:\n    admin-password:\n      type: string\n      description: Password\n",
+        );
+        write(&dir.path().join("src/charm.py"), "import ops\n");
+        write(
+            &dir.path().join("lib/charms/other/v0/thing.py"),
+            "secret = self.app.add_secret({'a': 'b'})\n",
+        );
+        let ids = rule_ids(&run_rules(dir.path()));
+        assert!(ids.contains("SEC001"));
     }
 
     // ── STR rules ───────────────────────────────────────────────

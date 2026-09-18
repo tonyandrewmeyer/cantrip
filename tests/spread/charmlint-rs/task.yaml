@@ -1191,6 +1191,54 @@ execute: |
   echo "PASS: modern title/links metadata"
 
   # ===================================================================
+  # 45c. SEC001 — the ops secrets API and `type: secret` options
+  # ===================================================================
+  echo "=== Test: SEC001 recognises the ops secrets API ==="
+  SECRETS_DIR=$(mktemp -d)
+  mkdir -p "$SECRETS_DIR/src"
+  cat > "$SECRETS_DIR/charmcraft.yaml" <<'YAML'
+  name: secretscharm
+  title: Secrets Charm
+  summary: A charm that manages secrets the supported way
+  description: Uses the ops secrets API and a type-secret config option.
+  config:
+    options:
+      smtp-password:
+        type: secret
+        description: URI of a user secret holding the SMTP credentials.
+  YAML
+  cat > "$SECRETS_DIR/src/charm.py" <<'PY'
+  #!/usr/bin/env python3
+  import ops
+
+
+  class SecretsCharm(ops.CharmBase):
+      def __init__(self, framework: ops.Framework):
+          super().__init__(framework)
+          framework.observe(self.on.secret_changed, self._on_secret_changed)
+
+      def _on_secret_changed(self, event: ops.SecretChangedEvent) -> None:
+          secret = self.model.get_secret(id=str(self.config["smtp-password"]))
+          self.app.add_secret(secret.get_content(), label="derived")
+
+
+  if __name__ == "__main__":
+      ops.main(SecretsCharm)
+  PY
+  chmod +x "$SECRETS_DIR/src/charm.py"
+
+  charmlint "$SECRETS_DIR" --format json --select SEC > "$JSON_FILE"
+  python3 -c "
+  import json
+  data = json.load(open(\"$JSON_FILE\"))
+  rule_ids = {d['rule_id'] for d in data['diagnostics']}
+  assert 'SEC001' not in rule_ids, f'SEC001 should not fire for ops secrets usage, got {rule_ids}'
+  print('ops secrets API OK')
+  "
+  rm -rf "$SECRETS_DIR"
+  echo "PASS: SEC001 recognises the ops secrets API"
+
+  # ===================================================================
   # Cleanup
   # ===================================================================
   rm -rf "$CHARM_DIR"
