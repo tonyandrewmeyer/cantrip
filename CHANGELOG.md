@@ -5,6 +5,21 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **``charmlint`` ``PEB002`` recognises a ``can_connect()`` guard in the
+  caller.**  The rule analysed one function at a time, so the common
+  "guard once in ``_reconcile``, then call helpers" shape was flagged on
+  every helper: ``self.container.exec(...)`` inside ``_migrate`` fired
+  even though the only route to ``_migrate`` ran through a guard.
+  Reproduced on ``sentry-k8s``, ``sentry-snuba-k8s`` and
+  ``sentry-relay-k8s``.  ``PEB002`` now builds the charm's call graph
+  from ``src/`` (keyed by function name — the AST carries no type
+  information, so ``self._migrate(...)`` can only be matched by
+  attribute name) and reports a function only when a guard does not
+  cover every route to it.  A function nothing in the charm calls is
+  still treated as an entry point the framework dispatches, so an
+  unguarded handler is flagged as before; a helper with one guarded and
+  one unguarded caller is still flagged, and so is a recursive knot with
+  no guarded entry point.  Closes #66.
 - **``subtask: true`` on a ``primary`` custom command no longer fails.**
   ``docs/src/howto-custom-commands.md`` documents ``subtask`` as "force
   work-queue dispatch even when ``agent`` is ``primary``", but the

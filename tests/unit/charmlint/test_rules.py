@@ -493,6 +493,187 @@ class TestPebbleRules:
         report = lint(tmp_charm)
         assert "PEB002" not in {d.rule_id for d in report.diagnostics}
 
+    def test_guard_in_caller_covers_helper(self, tmp_charm: pathlib.Path):
+        """Charms guard once in _reconcile and call helpers (issue #66)."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+class C(ops.CharmBase):
+    def _reconcile(self, _):
+        if not self._container.can_connect():
+            return
+        self._migrate()
+
+    def _migrate(self):
+        self._container.exec(['migrate'])
+""",
+        )
+        report = lint(tmp_charm)
+        assert "PEB002" not in {d.rule_id for d in report.diagnostics}
+
+    def test_guard_in_caller_covers_helper_transitively(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+class C(ops.CharmBase):
+    def _reconcile(self, _):
+        if not self._container.can_connect():
+            return
+        self._migrate()
+
+    def _migrate(self):
+        self._apply()
+
+    def _apply(self):
+        self._container.replan()
+""",
+        )
+        report = lint(tmp_charm)
+        assert "PEB002" not in {d.rule_id for d in report.diagnostics}
+
+    def test_guard_in_caller_covers_helper_across_modules(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+from workload import migrate
+
+class C(ops.CharmBase):
+    def _reconcile(self, _):
+        if not self._container.can_connect():
+            return
+        migrate(self._container)
+""",
+        )
+        write_charm_source(
+            tmp_charm,
+            "def migrate(container):\n    container.exec(['migrate'])\n",
+            filename="workload.py",
+        )
+        report = lint(tmp_charm)
+        assert "PEB002" not in {d.rule_id for d in report.diagnostics}
+
+    def test_helper_with_unguarded_caller_flagged(self, tmp_charm: pathlib.Path):
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+class C(ops.CharmBase):
+    def _on_start(self, event):
+        self._migrate()
+
+    def _migrate(self):
+        self._container.exec(['migrate'])
+""",
+        )
+        report = lint(tmp_charm)
+        peb002 = [d for d in report.diagnostics if d.rule_id == "PEB002"]
+        assert len(peb002) == 1
+        assert "_migrate" in peb002[0].message
+
+    def test_helper_with_one_unguarded_caller_flagged(self, tmp_charm: pathlib.Path):
+        """A guarded caller does not excuse a second, unguarded one."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+class C(ops.CharmBase):
+    def _reconcile(self, _):
+        if not self._container.can_connect():
+            return
+        self._migrate()
+
+    def _on_start(self, event):
+        self._migrate()
+
+    def _migrate(self):
+        self._container.exec(['migrate'])
+""",
+        )
+        report = lint(tmp_charm)
+        peb002 = [d for d in report.diagnostics if d.rule_id == "PEB002"]
+        assert len(peb002) == 1
+        assert "_migrate" in peb002[0].message
+
+    def test_mutually_recursive_helpers_flagged(self, tmp_charm: pathlib.Path):
+        """Neither helper is an entry point, but no guarded caller reaches them."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+class C(ops.CharmBase):
+    def _ping(self):
+        self._container.replan()
+        self._pong()
+
+    def _pong(self):
+        self._ping()
+""",
+        )
+        report = lint(tmp_charm)
+        peb002 = [d for d in report.diagnostics if d.rule_id == "PEB002"]
+        assert len(peb002) == 1
+        assert "_ping" in peb002[0].message
+
+    def test_self_recursive_helper_flagged(self, tmp_charm: pathlib.Path):
+        """Direct recursion is not a guarded caller."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+class C(ops.CharmBase):
+    def _retry(self, attempts):
+        self._container.restart('app')
+        if attempts:
+            self._retry(attempts - 1)
+""",
+        )
+        report = lint(tmp_charm)
+        peb002 = [d for d in report.diagnostics if d.rule_id == "PEB002"]
+        assert len(peb002) == 1
+        assert "_retry" in peb002[0].message
+
+    def test_unguarded_definition_does_not_hide_behind_guarded_namesake(
+        self, tmp_charm: pathlib.Path
+    ):
+        """Two `_migrate` definitions: only the guarded one may pass."""
+        write_charmcraft_yaml(tmp_charm, {"name": "test"})
+        write_charm_source(
+            tmp_charm,
+            """\
+import ops
+
+class Guarded(ops.CharmBase):
+    def _migrate(self):
+        if not self._container.can_connect():
+            return
+        self._container.exec(['migrate'])
+
+class Unguarded(ops.CharmBase):
+    def _migrate(self):
+        self._container.exec(['migrate'])
+""",
+        )
+        report = lint(tmp_charm)
+        peb002 = [d for d in report.diagnostics if d.rule_id == "PEB002"]
+        assert len(peb002) == 1
+
     def test_layer_service_missing_keys_flagged(self, tmp_charm: pathlib.Path):
         write_charmcraft_yaml(tmp_charm, {"name": "test"})
         write_charm_source(
