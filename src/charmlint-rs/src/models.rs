@@ -86,6 +86,24 @@ pub struct CharmContext {
     pub readme_content: String,
     pub has_tests_unit: bool,
     pub has_tests_integration: bool,
+    /// Repository root enclosing `charm_dir`, or None when the charm is not
+    /// inside a repository.  Monorepos share repository-level assets (a single
+    /// `docs/` tree, one licence) between charms, so rules that look for such
+    /// assets must search here too.
+    pub repo_root: Option<PathBuf>,
+}
+
+impl CharmContext {
+    /// The directories to search for repository-level assets: the charm's own
+    /// directory first, then the repository root when it is a different
+    /// directory.  Charm-local assets therefore still win, and a charm outside
+    /// a repository behaves exactly as before.
+    pub fn search_roots(&self) -> Vec<&Path> {
+        match &self.repo_root {
+            Some(root) if root != &self.charm_dir => vec![&self.charm_dir, root],
+            _ => vec![&self.charm_dir],
+        }
+    }
 }
 
 /// Aggregated lint results.

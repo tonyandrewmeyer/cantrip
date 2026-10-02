@@ -2,12 +2,15 @@
 
 import pathlib
 
+from charmlint import linter
 from charmlint.linter import lint
 from charmlint.models import Severity
 from tests.unit.charmlint.conftest import (
     make_full_charm,
+    make_monorepo,
     write_charm_source,
     write_charmcraft_yaml,
+    write_shared_docs,
 )
 
 
@@ -876,3 +879,95 @@ class TestFullCharm:
         # that the full charm doesn't cover (TLS, some docs topics).
         for d in report.diagnostics:
             assert d.severity != Severity.ERROR, f"Unexpected error: {d.rule_id} {d.message}"
+
+
+class TestMonorepoAwareness:
+    """Rules that look for repository-level assets must search the repo root.
+
+    A monorepo keeps charms under ``charms/<name>/`` and shares one ``docs/``
+    tree and one licence across all of them, so searching only the charm
+    directory reports every charm as undocumented and unlicensed.
+    """
+
+    def test_shared_docs_tree_satisfies_doc_topics(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        write_shared_docs(tmp_path, "installation", "configuration", "usage", "troubleshooting")
+        report = lint(charm_dir)
+        doc_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DOC")}
+        assert not doc_ids & {"DOC002", "DOC003", "DOC004", "DOC005"}
+
+    def test_shared_docs_tree_only_covers_the_topics_it_documents(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        write_shared_docs(tmp_path, "installation")
+        report = lint(charm_dir)
+        doc_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DOC")}
+        assert "DOC002" not in doc_ids
+        assert {"DOC003", "DOC004", "DOC005"} <= doc_ids
+
+    def test_repo_without_shared_docs_still_flags_topics(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        report = lint(charm_dir)
+        doc_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DOC")}
+        assert {"DOC002", "DOC003", "DOC004", "DOC005"} <= doc_ids
+
+    def test_charm_outside_a_repository_still_flags_topics(self, tmp_path: pathlib.Path):
+        """Regression guard — the fallback must not fire without a repository."""
+        charm_dir = tmp_path / "test-charm"
+        (charm_dir / "src").mkdir(parents=True)
+        write_charmcraft_yaml(charm_dir, {"name": "test-charm"})
+        write_shared_docs(tmp_path, "installation", "troubleshooting")
+        report = lint(charm_dir)
+        doc_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DOC")}
+        assert {"DOC002", "DOC005"} <= doc_ids
+
+    def test_charm_local_docs_still_win(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        write_shared_docs(charm_dir, "installation")
+        report = lint(charm_dir)
+        doc_ids = {d.rule_id for d in report.diagnostics if d.rule_id.startswith("DOC")}
+        assert "DOC002" not in doc_ids
+
+    def test_shared_licence_satisfies_str001(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        (tmp_path / "LICENSE").write_text("Apache-2.0")
+        report = lint(charm_dir)
+        assert "STR001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_shared_british_spelling_licence_satisfies_str001(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        (tmp_path / "LICENCE").write_text("Apache-2.0")
+        report = lint(charm_dir)
+        assert "STR001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_repo_without_licence_still_flags_str001(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        report = lint(charm_dir)
+        assert "STR001" in {d.rule_id for d in report.diagnostics}
+
+    def test_git_file_marks_a_worktree_root(self, tmp_path: pathlib.Path):
+        """``.git`` is a file, not a directory, in worktrees and submodules."""
+        charm_dir = tmp_path / "charms" / "test-charm"
+        (charm_dir / "src").mkdir(parents=True)
+        write_charmcraft_yaml(charm_dir, {"name": "test-charm"})
+        (tmp_path / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n")
+        (tmp_path / "LICENSE").write_text("Apache-2.0")
+        report = lint(charm_dir)
+        assert "STR001" not in {d.rule_id for d in report.diagnostics}
+
+    def test_repo_root_recorded_on_the_context(self, tmp_path: pathlib.Path):
+        charm_dir = make_monorepo(tmp_path)
+        context = linter.build_context(charm_dir)
+        assert context.repo_root == tmp_path.resolve()
+        assert context.search_roots() == [charm_dir.resolve(), tmp_path.resolve()]
+
+    def test_search_roots_collapses_when_charm_is_the_repo_root(self, tmp_path: pathlib.Path):
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "src").mkdir()
+        write_charmcraft_yaml(tmp_path, {"name": "test-charm"})
+        context = linter.build_context(tmp_path)
+        assert context.search_roots() == [tmp_path.resolve()]
+
+    def test_search_roots_is_charm_dir_only_outside_a_repository(self, tmp_path: pathlib.Path):
+        context = linter.build_context(tmp_path)
+        assert context.repo_root is None
+        assert context.search_roots() == [tmp_path.resolve()]

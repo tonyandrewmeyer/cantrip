@@ -66,6 +66,22 @@ class CharmContext:
     readme_content: str = ""
     has_tests_unit: bool = False
     has_tests_integration: bool = False
+    # Repository root enclosing ``charm_dir``, or None when the charm is not
+    # inside a repository.  Monorepos share repository-level assets (a single
+    # ``docs/`` tree, one licence) between charms, so rules that look for such
+    # assets must search here too.
+    repo_root: pathlib.Path | None = None
+
+    def search_roots(self) -> list[pathlib.Path]:
+        """Return the directories to search for repository-level assets.
+
+        The charm's own directory first, then the repository root when it is a
+        different directory.  Charm-local assets therefore still win, and a
+        charm outside a repository behaves exactly as before.
+        """
+        if self.repo_root is None or self.repo_root == self.charm_dir:
+            return [self.charm_dir]
+        return [self.charm_dir, self.repo_root]
 
 
 @dataclasses.dataclass

@@ -5,6 +5,19 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Fixed
+- **charmlint's docs and licence rules are monorepo-aware.**  DOC002-DOC005
+  (installation / configuration / usage / troubleshooting docs) looked only in
+  ``<charm>/docs``, and STR001 looked only for ``<charm>/LICENSE``.  A monorepo
+  keeps its charms under ``charms/<name>/`` with one shared ``docs/`` tree and
+  one licence at the repository root, so every charm in such a repository was
+  reported as undocumented and unlicensed — five false positives per charm.
+  ``CharmContext`` now records the enclosing ``repo_root`` (nearest ancestor
+  with a ``.git`` entry, so linked worktrees and submodules count) and exposes
+  ``search_roots()``; those rules search the charm directory first and fall
+  back to the repository root.  Charm-local assets still win, and a charm
+  outside a repository behaves exactly as before.  Fixed in both the Python
+  and Rust implementations.  Closes
+  [#65](https://github.com/tonyandrewmeyer/cantrip/issues/65).
 - **``subtask: true`` on a ``primary`` custom command no longer fails.**
   ``docs/src/howto-custom-commands.md`` documents ``subtask`` as "force
   work-queue dispatch even when ``agent`` is ``primary``", but the

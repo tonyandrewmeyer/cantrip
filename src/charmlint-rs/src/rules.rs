@@ -629,8 +629,13 @@ fn check_security(ctx: &CharmContext) -> Vec<Diagnostic> {
 fn check_structure(ctx: &CharmContext) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    // STR001: no licence.
-    if !ctx.charm_dir.join("LICENSE").exists() && !ctx.charm_dir.join("LICENCE").exists() {
+    // STR001: no licence.  A monorepo normally carries one licence at the
+    // repository root rather than a copy in every charm directory.
+    let has_licence = ctx
+        .search_roots()
+        .iter()
+        .any(|root| root.join("LICENSE").exists() || root.join("LICENCE").exists());
+    if !has_licence {
         diagnostics.push(diag(
             "STR001",
             Severity::Info,
@@ -718,21 +723,27 @@ fn check_documentation(ctx: &CharmContext) -> Vec<Diagnostic> {
     diagnostics
 }
 
+/// Whether `keyword` appears in the README or in any `docs/` tree.
+///
+/// Monorepos commonly keep one `docs/` tree at the repository root, shared by
+/// every charm under `charms/<name>/`, so the repository root is searched as
+/// well as the charm's own directory.
 fn check_doc_topic(ctx: &CharmContext, keyword: &str) -> bool {
     if ctx.readme_content.to_lowercase().contains(keyword) {
         return true;
     }
-    let docs_dir = ctx.charm_dir.join("docs");
-    if docs_dir.is_dir() {
-        for entry in WalkDir::new(&docs_dir).follow_links(true) {
-            if let Ok(e) = entry {
-                if e.file_type().is_file()
-                    && e.path().extension().map_or(false, |ext| ext == "md")
-                {
-                    if let Ok(content) = std::fs::read_to_string(e.path()) {
-                        if content.to_lowercase().contains(keyword) {
-                            return true;
-                        }
+    for root in ctx.search_roots() {
+        let docs_dir = root.join("docs");
+        if !docs_dir.is_dir() {
+            continue;
+        }
+        for entry in WalkDir::new(&docs_dir).follow_links(true).into_iter().flatten() {
+            if entry.file_type().is_file()
+                && entry.path().extension().map_or(false, |ext| ext == "md")
+            {
+                if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                    if content.to_lowercase().contains(keyword) {
+                        return true;
                     }
                 }
             }
@@ -1608,5 +1619,149 @@ mod tests {
     fn suggest_closest_returns_none_for_far_match() {
         let set: HashSet<&str> = ["summary"].into_iter().collect();
         assert!(suggest_closest("completely-different", &set).is_none());
+    }
+
+    // ── Monorepo awareness ──────────────────────────────────────
+
+    /// Build a monorepo fixture holding one charm under `charms/test-charm/`.
+    ///
+    /// The charm README mentions none of the DOC002-DOC005 topics, so those
+    /// rules can only pass via a repository-level `docs/` tree.
+    fn monorepo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        let charm_dir = dir.path().join("charms/test-charm");
+        std::fs::create_dir_all(charm_dir.join("src")).unwrap();
+        write(&charm_dir.join("charmcraft.yaml"), "name: test-charm\n");
+        write(&charm_dir.join("README.md"), "# test-charm\n\nA charm.\n");
+        dir
+    }
+
+    fn write_shared_docs(repo_root: &std::path::Path, topics: &[&str]) {
+        for topic in topics {
+            write(
+                &repo_root.join("docs").join(format!("{topic}.md")),
+                &format!("# {topic}\n\nHow to {topic} the charms.\n"),
+            );
+        }
+    }
+
+    #[test]
+    fn shared_docs_tree_satisfies_doc_topics() {
+        let dir = monorepo();
+        write_shared_docs(
+            dir.path(),
+            &["installation", "configuration", "usage", "troubleshooting"],
+        );
+        let ids = rule_ids(&run_rules(&dir.path().join("charms/test-charm")));
+        for unwanted in ["DOC002", "DOC003", "DOC004", "DOC005"] {
+            assert!(!ids.contains(unwanted), "unexpected {unwanted}");
+        }
+    }
+
+    #[test]
+    fn shared_docs_tree_only_covers_the_topics_it_documents() {
+        let dir = monorepo();
+        write_shared_docs(dir.path(), &["installation"]);
+        let ids = rule_ids(&run_rules(&dir.path().join("charms/test-charm")));
+        assert!(!ids.contains("DOC002"));
+        for wanted in ["DOC003", "DOC004", "DOC005"] {
+            assert!(ids.contains(wanted), "missing {wanted}");
+        }
+    }
+
+    #[test]
+    fn repo_without_shared_docs_still_flags_topics() {
+        let dir = monorepo();
+        let ids = rule_ids(&run_rules(&dir.path().join("charms/test-charm")));
+        for wanted in ["DOC002", "DOC003", "DOC004", "DOC005"] {
+            assert!(ids.contains(wanted), "missing {wanted}");
+        }
+    }
+
+    #[test]
+    fn charm_outside_a_repository_still_flags_topics() {
+        // Regression guard — the fallback must not fire without a repository.
+        let dir = tempfile::tempdir().unwrap();
+        let charm_dir = dir.path().join("test-charm");
+        std::fs::create_dir_all(charm_dir.join("src")).unwrap();
+        write(&charm_dir.join("charmcraft.yaml"), "name: test-charm\n");
+        write_shared_docs(dir.path(), &["installation", "troubleshooting"]);
+        let ids = rule_ids(&run_rules(&charm_dir));
+        for wanted in ["DOC002", "DOC005"] {
+            assert!(ids.contains(wanted), "missing {wanted}");
+        }
+    }
+
+    #[test]
+    fn charm_local_docs_still_win() {
+        let dir = monorepo();
+        let charm_dir = dir.path().join("charms/test-charm");
+        write_shared_docs(&charm_dir, &["installation"]);
+        let ids = rule_ids(&run_rules(&charm_dir));
+        assert!(!ids.contains("DOC002"));
+    }
+
+    #[test]
+    fn shared_licence_satisfies_str001() {
+        let dir = monorepo();
+        write(&dir.path().join("LICENSE"), "Apache-2.0");
+        let ids = rule_ids(&run_rules(&dir.path().join("charms/test-charm")));
+        assert!(!ids.contains("STR001"));
+    }
+
+    #[test]
+    fn shared_british_spelling_licence_satisfies_str001() {
+        let dir = monorepo();
+        write(&dir.path().join("LICENCE"), "Apache-2.0");
+        let ids = rule_ids(&run_rules(&dir.path().join("charms/test-charm")));
+        assert!(!ids.contains("STR001"));
+    }
+
+    #[test]
+    fn repo_without_licence_still_flags_str001() {
+        let dir = monorepo();
+        let ids = rule_ids(&run_rules(&dir.path().join("charms/test-charm")));
+        assert!(ids.contains("STR001"));
+    }
+
+    #[test]
+    fn git_file_marks_a_worktree_root() {
+        // `.git` is a file, not a directory, in worktrees and submodules.
+        let dir = tempfile::tempdir().unwrap();
+        let charm_dir = dir.path().join("charms/test-charm");
+        std::fs::create_dir_all(charm_dir.join("src")).unwrap();
+        write(&charm_dir.join("charmcraft.yaml"), "name: test-charm\n");
+        write(&dir.path().join(".git"), "gitdir: /elsewhere/.git/worktrees/wt\n");
+        write(&dir.path().join("LICENSE"), "Apache-2.0");
+        let ids = rule_ids(&run_rules(&charm_dir));
+        assert!(!ids.contains("STR001"));
+    }
+
+    #[test]
+    fn search_roots_lists_charm_dir_then_repo_root() {
+        let dir = monorepo();
+        let charm_dir = dir.path().join("charms/test-charm");
+        let ctx = context::build_context(&charm_dir);
+        let repo_root = dir.path().canonicalize().unwrap();
+        assert_eq!(ctx.repo_root.as_deref(), Some(repo_root.as_path()));
+        assert_eq!(ctx.search_roots(), vec![ctx.charm_dir.as_path(), repo_root.as_path()]);
+    }
+
+    #[test]
+    fn search_roots_collapses_when_charm_is_the_repo_root() {
+        let dir = monorepo();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        write(&dir.path().join("charmcraft.yaml"), "name: test-charm\n");
+        let ctx = context::build_context(dir.path());
+        assert_eq!(ctx.search_roots(), vec![ctx.charm_dir.as_path()]);
+    }
+
+    #[test]
+    fn search_roots_is_charm_dir_only_outside_a_repository() {
+        let dir = charm_with_yaml("name: test-charm\n");
+        let ctx = context::build_context(dir.path());
+        assert!(ctx.repo_root.is_none());
+        assert_eq!(ctx.search_roots(), vec![ctx.charm_dir.as_path()]);
     }
 }

@@ -72,20 +72,27 @@ def _check_doc_topic(
     keyword: str,
     label: str,
 ) -> list[models.Diagnostic]:
-    """Check if a documentation topic is present in README or docs/."""
+    """Check if a documentation topic is present in README or a docs/ tree.
+
+    Monorepos commonly keep one ``docs/`` tree at the repository root, shared by
+    every charm under ``charms/<name>/``, so the repository root is searched as
+    well as the charm's own directory.
+    """
     # Check README.
     if keyword in context.readme_content.lower():
         return []
 
-    # Check docs/ directory.
-    docs_dir = context.charm_dir / "docs"
-    if docs_dir.is_dir():
+    # Check each docs/ directory — the charm's own, then the repository's.
+    for root in context.search_roots():
+        docs_dir = root / "docs"
+        if not docs_dir.is_dir():
+            continue
         for doc_file in docs_dir.rglob("*.md"):
             try:
                 content = doc_file.read_text(errors="replace").lower()
-                if keyword in content:
-                    return []
             except OSError:
                 continue
+            if keyword in content:
+                return []
 
     return [rule.diagnostic(f"No {label} documentation found")]

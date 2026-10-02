@@ -109,3 +109,27 @@ class TestCharm(ops.CharmBase):
     (charm_dir / "tests" / "integration" / "test_charm.py").write_text(
         "def test_placeholder(): pass\n"
     )
+
+
+def make_monorepo(tmp_path: pathlib.Path, *, charm_name: str = "test-charm") -> pathlib.Path:
+    """Create a monorepo holding one charm under ``charms/<name>/``.
+
+    Marks ``tmp_path`` as a repository root with a ``.git`` directory and gives
+    the charm a README that mentions none of the DOC002-DOC005 topics, so the
+    only way those rules can pass is via a repository-level ``docs/`` tree.
+    Returns the charm directory.
+    """
+    (tmp_path / ".git").mkdir()
+    charm_dir = tmp_path / "charms" / charm_name
+    (charm_dir / "src").mkdir(parents=True)
+    write_charmcraft_yaml(charm_dir, {"name": charm_name})
+    (charm_dir / "README.md").write_text(f"# {charm_name}\n\nA charm.\n")
+    return charm_dir
+
+
+def write_shared_docs(repo_root: pathlib.Path, *topics: str) -> None:
+    """Write a repository-level ``docs/`` page per topic in ``topics``."""
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir(exist_ok=True)
+    for topic in topics:
+        (docs_dir / f"{topic}.md").write_text(f"# {topic.title()}\n\nHow to {topic} the charms.\n")

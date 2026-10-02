@@ -95,6 +95,19 @@ def _check_tests(charm_dir: pathlib.Path) -> tuple[bool, bool]:
     return has_unit, has_integration
 
 
+def _find_repo_root(charm_dir: pathlib.Path) -> pathlib.Path | None:
+    """Return the repository root enclosing ``charm_dir``, or None.
+
+    The nearest ancestor holding a ``.git`` entry wins.  ``.git`` is tested with
+    ``exists()`` rather than ``is_dir()`` because it is a plain file in linked
+    worktrees and submodules, which are repository roots just the same.
+    """
+    for candidate in (charm_dir, *charm_dir.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
 def build_context(charm_dir: pathlib.Path) -> models.CharmContext:
     """Load all charm data into a CharmContext for rule evaluation."""
     charm_dir = charm_dir.resolve()
@@ -135,6 +148,7 @@ def build_context(charm_dir: pathlib.Path) -> models.CharmContext:
 
     return models.CharmContext(
         charm_dir=charm_dir,
+        repo_root=_find_repo_root(charm_dir),
         metadata=metadata,
         actions=actions,
         config_options=config_options,

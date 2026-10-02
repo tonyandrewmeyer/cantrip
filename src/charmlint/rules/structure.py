@@ -15,12 +15,12 @@ class NoLicence(Rule):
     default_severity = models.Severity.INFO
 
     def check(self, context: models.CharmContext) -> list[models.Diagnostic]:
-        has_licence = (context.charm_dir / "LICENSE").exists() or (
-            context.charm_dir / "LICENCE"
-        ).exists()
-        if not has_licence:
-            return [self.diagnostic("No LICENSE/LICENCE file found")]
-        return []
+        # A monorepo normally carries one licence at the repository root rather
+        # than a copy in every charm directory.
+        for root in context.search_roots():
+            if (root / "LICENSE").exists() or (root / "LICENCE").exists():
+                return []
+        return [self.diagnostic("No LICENSE/LICENCE file found")]
 
 
 class NoIcon(Rule):

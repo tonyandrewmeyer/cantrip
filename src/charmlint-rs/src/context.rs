@@ -112,6 +112,22 @@ fn value_to_map(v: &Value) -> BTreeMap<String, Value> {
     }
 }
 
+/// Find the repository root enclosing `charm_dir`, if any.
+///
+/// The nearest ancestor holding a `.git` entry wins.  Existence rather than
+/// directory-ness is tested because `.git` is a plain file in linked worktrees
+/// and submodules, which are repository roots just the same.
+fn find_repo_root(charm_dir: &Path) -> Option<PathBuf> {
+    let mut candidate = Some(charm_dir);
+    while let Some(dir) = candidate {
+        if dir.join(".git").exists() {
+            return Some(dir.to_path_buf());
+        }
+        candidate = dir.parent();
+    }
+    None
+}
+
 pub fn build_context(charm_dir: &Path) -> CharmContext {
     let charm_dir = charm_dir
         .canonicalize()
@@ -174,6 +190,8 @@ pub fn build_context(charm_dir: &Path) -> CharmContext {
 
     let (has_tests_unit, has_tests_integration) = check_tests(&charm_dir);
 
+    let repo_root = find_repo_root(&charm_dir);
+
     CharmContext {
         charm_dir,
         metadata,
@@ -184,6 +202,7 @@ pub fn build_context(charm_dir: &Path) -> CharmContext {
         readme_content,
         has_tests_unit,
         has_tests_integration,
+        repo_root,
     }
 }
 
