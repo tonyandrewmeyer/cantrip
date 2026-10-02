@@ -572,8 +572,8 @@ async def _run_git_numstat(
 async def _run_charmlint(charm_dir: pathlib.Path) -> dict[str, int]:
     """Return charmlint counts for ``charm_dir``: errors, warnings, infos.
 
-    Uses the existing :class:`CharmlintTool` so the Rust-vs-Python
-    backend selection stays in one place.  Returns zeroed counts on any
+    Uses the existing :class:`CharmlintTool` so how charmlint is invoked
+    stays in one place.  Returns zeroed counts on any
     failure — scoring should degrade gracefully when the linter isn't
     available, not crash the race.
     """
@@ -593,9 +593,7 @@ async def _run_charmlint(charm_dir: pathlib.Path) -> dict[str, int]:
     return {
         "errors": int(data.get("errors", 0) or 0),
         "warnings": int(data.get("warnings", 0) or 0),
-        # The Rust binary's JSON uses ``info`` (singular), the Python
-        # path also emits ``info``; be lenient about both spellings.
-        "infos": int(data.get("info", data.get("infos", 0)) or 0),
+        "infos": int(data.get("info", 0) or 0),
     }
 
 

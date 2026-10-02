@@ -429,7 +429,7 @@ No rockcraft or registry push needed for custom charms (unlike 12-factor).
 
 ## Common Pitfalls
 
-1. **Pebble layer hygiene** — `add_layer()` without `combine=True`, Pebble methods called without a `can_connect()` guard, or service entries missing `override` / `command` / `startup` are all checked deterministically by `charmlint` (`PEB001` / `PEB002` / `PEB003`). Run `charmlint` to surface them — the skill body no longer recites the rules.
+1. **Pebble layer hygiene** — call `add_layer()` with `combine=True`, guard Pebble methods with `container.can_connect()`, and give every service entry `override`, `command`, and `startup`.
 
 2. **Blocking the hook with long-running commands** — hooks have a timeout (default 5 minutes). For long installations, consider breaking work across events or increasing the timeout.
 

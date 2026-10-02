@@ -83,7 +83,7 @@ Coverage starts deliberately narrow: Python source plus charm metadata YAML (`ch
 | `charmcraft_fetch_libs` | Fetch charm libraries from Charmhub |
 | `analyse_framework` | Detect application framework and suggest charm path |
 | `charm_audit` | Comprehensive charm quality audit |
-| `charmlint` | Run 35+ deterministic lint rules |
+| `charmlint` | Run the [charmlint](https://github.com/canonical/charmlint) charm linter |
 | `harness_inventory` | Survey `tests/` for remaining `ops.testing.Harness` usages, with a per-file `harness`/`scenario`/`mixed` breakdown |
 | `scenario_coverage` | Audit observer-to-test coverage and flag missing `can_connect=False` / `relation-broken` event-shape tests |
 | `inspect_env_keys` | Sweep an application source tree for environment-variable references (`os.getenv`, `process.env.X`, `System.getenv`, Spring `${...}`, `.env` rows) and return a deduplicated key list plus per-file usage map; per-framework env contracts ported from canonical/skills |

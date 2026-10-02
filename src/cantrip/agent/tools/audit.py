@@ -1,4 +1,10 @@
-"""Charm audit tool — delegates to charmlint for deterministic checks."""
+"""Charm audit tool — charmlint plus cantrip's own improvement checks.
+
+Most findings come from charmlint.  The checks that feed the
+improvement planner's gaps (COS relations, ops-tracing, integration
+tests, type annotations, deprecated APIs) are not in charmlint, so
+they run here, directly against the charm's files.
+"""
 
 import contextlib
 import pathlib
@@ -7,17 +13,52 @@ from typing import Any
 
 import yaml
 
+from cantrip.agent.tools import charmlint_tool
 from cantrip.agent.tools.base import Tool, ToolResult
-from charmlint import LintConfig, lint
-from charmlint.models import Severity
 
-# COS relation descriptions for the report.
-_COS_RELATIONS = {
-    "tracing": "ops-tracing / Tempo integration",
-    "metrics-endpoint": "Prometheus metrics",
-    "logging": "Loki log forwarding",
-    "grafana-dashboard": "Grafana dashboard",
-}
+# COS relations every charm should declare: (gap key, interface, message).
+_COS_INTERFACES: list[tuple[str, str, str]] = [
+    ("cos_tracing", "tracing", "Missing tracing relation (interface: tracing)"),
+    (
+        "cos_metrics",
+        "prometheus_scrape",
+        "Missing metrics-endpoint relation (interface: prometheus_scrape)",
+    ),
+    ("cos_logging", "loki_push_api", "Missing logging relation (interface: loki_push_api)"),
+    (
+        "cos_dashboards",
+        "grafana_dashboard",
+        "Missing grafana-dashboard relation (interface: grafana_dashboard)",
+    ),
+]
+
+# Deprecated APIs in charm source: (api, pattern, message, fix hint).
+_DEPRECATED_APIS: list[tuple[str, str, str, str]] = [
+    (
+        "stored-state",
+        r"\bStoredState\b",
+        "Uses deprecated StoredState",
+        "Use instance attributes or Juju secrets instead",
+    ),
+    (
+        "harness",
+        r"\bfrom\s+ops\.testing\s+import\s+Harness\b",
+        "Imports deprecated Harness from ops.testing",
+        "Use Scenario (ops.testing.Context, State) instead",
+    ),
+    (
+        "framework-breakpoint",
+        r"\bself\.framework\.breakpoint\b",
+        "Uses removed framework.breakpoint()",
+        "Use standard Python breakpoint() or debugger",
+    ),
+    (
+        "reactive-framework",
+        r"from\s+charms\.reactive\b|@(?:when|when_not|when_any|when_all|hook)\(",
+        "Uses legacy reactive framework (charms.reactive / @when / @hook decorators)",
+        "Rewrite as an ops.CharmBase subclass with framework.observe() event handlers",
+    ),
+]
 
 # Listing fields for the report, named as the unified charmcraft.yaml
 # spells them so the agent is not told to add a legacy key.
@@ -76,34 +117,185 @@ def _check_modern_patterns(charm_dir: pathlib.Path) -> dict[str, bool]:
     return results
 
 
-def _charmlint_to_audit_report(
+def _load_yaml(path: pathlib.Path) -> dict[str, Any]:
+    """Load a YAML mapping, or return an empty dict if it is absent or unreadable."""
+    try:
+        with path.open() as f:
+            data = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _relation_interfaces(charm_dir: pathlib.Path) -> set[str]:
+    """Collect every relation interface the charm declares, in any metadata file."""
+    interfaces: set[str] = set()
+    for name in ("charmcraft.yaml", "metadata.yaml"):
+        metadata = _load_yaml(charm_dir / name)
+        for section in ("requires", "provides", "peers"):
+            relations = metadata.get(section)
+            if not isinstance(relations, dict):
+                continue
+            for relation in relations.values():
+                if isinstance(relation, dict) and relation.get("interface"):
+                    interfaces.add(str(relation["interface"]))
+    return interfaces
+
+
+def _src_sources(charm_dir: pathlib.Path) -> dict[pathlib.Path, str]:
+    """Read every Python file under the charm's ``src/``."""
+    sources: dict[pathlib.Path, str] = {}
+    src_dir = charm_dir / "src"
+    if src_dir.is_dir():
+        for path in sorted(src_dir.rglob("*.py")):
+            with contextlib.suppress(OSError):
+                sources[path] = path.read_text(errors="replace")
+    return sources
+
+
+def _has_ops_tracing(charm_dir: pathlib.Path, sources: dict[pathlib.Path, str]) -> bool:
+    """Return whether ops-tracing is a dependency or set up in source."""
+    for name in ("requirements.txt", "pyproject.toml"):
+        with contextlib.suppress(OSError):
+            if "ops-tracing" in (charm_dir / name).read_text(errors="replace"):
+                return True
+    return any(re.search(r"ops_tracing|setup_tracing", text) for text in sources.values())
+
+
+def _cantrip_checks(charm_dir: pathlib.Path) -> tuple[list[dict[str, Any]], dict[str, bool]]:
+    """Run the audit checks that charmlint does not cover.
+
+    Returns diagnostics in charmlint's JSON shape, so the report treats
+    them the same way, and the gaps they reveal.
+    """
+    diagnostics: list[dict[str, Any]] = []
+    gaps: dict[str, bool] = {}
+
+    interfaces = _relation_interfaces(charm_dir)
+    for gap, interface, message in _COS_INTERFACES:
+        gaps[gap] = interface not in interfaces
+        if gaps[gap]:
+            diagnostics.append(
+                {
+                    "rule_id": gap,
+                    "severity": "warning",
+                    "message": message,
+                    "path": "charmcraft.yaml",
+                }
+            )
+
+    sources = _src_sources(charm_dir)
+    gaps["ops_tracing"] = not _has_ops_tracing(charm_dir, sources)
+    if gaps["ops_tracing"]:
+        diagnostics.append(
+            {
+                "rule_id": "ops_tracing",
+                "severity": "warning",
+                "message": "ops-tracing not detected — add for distributed tracing",
+                "fix_hint": "Add 'ops-tracing' to requirements.txt or pyproject.toml",
+            }
+        )
+
+    integration_dir = charm_dir / "tests" / "integration"
+    gaps["integration_tests"] = not (
+        integration_dir.is_dir() and any(integration_dir.glob("test_*.py"))
+    )
+    if gaps["integration_tests"]:
+        diagnostics.append(
+            {
+                "rule_id": "integration_tests",
+                "severity": "warning",
+                "message": "No integration tests found in tests/integration/",
+                "path": "tests/",
+            }
+        )
+
+    gaps["type_annotations"] = not any(
+        re.search(r"def\s+\w+\([^)]*\)\s*->", text) for text in sources.values()
+    )
+    if gaps["type_annotations"]:
+        diagnostics.append(
+            {
+                "rule_id": "type_annotations",
+                "severity": "info",
+                "message": "No type annotations found — add return-type hints to functions",
+                "fix_hint": "Add -> ReturnType annotations to function definitions",
+            }
+        )
+
+    for api, pattern, message, fix_hint in _DEPRECATED_APIS:
+        match = _first_match(re.compile(pattern), sources)
+        if match is None:
+            continue
+        path, line = match
+        diagnostics.append(
+            {
+                "rule_id": f"deprecated:{api}",
+                "severity": "error",
+                "message": message,
+                "path": str(path.relative_to(charm_dir)),
+                "line": line,
+                "fix_hint": fix_hint,
+            }
+        )
+    gaps["reactive_framework"] = any(
+        d["rule_id"] == "deprecated:reactive-framework" for d in diagnostics
+    )
+    return diagnostics, gaps
+
+
+def _first_match(
+    pattern: re.Pattern[str], sources: dict[pathlib.Path, str]
+) -> tuple[pathlib.Path, int] | None:
+    """Return the first file and line in *sources* matching *pattern*."""
+    for path, text in sources.items():
+        for number, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line):
+                return path, number
+    return None
+
+
+def _lib_module(charm_dir: pathlib.Path, path: str) -> str:
+    """Return the dotted module for a vendored library path, e.g. ``charms.foo.v0.bar``."""
+    lib_path = pathlib.Path(path)
+    with contextlib.suppress(ValueError):
+        lib_path = lib_path.relative_to(charm_dir)
+    with contextlib.suppress(ValueError):
+        lib_path = lib_path.relative_to("lib")
+    return ".".join(lib_path.with_suffix("").parts)
+
+
+def _audit_report(
     charm_dir: pathlib.Path,
     charm_name: str,
 ) -> tuple[str, dict[str, list[str]], dict[str, Any]]:
-    """Run charmlint and convert results to the legacy audit report format.
+    """Run charmlint and cantrip's own checks, and build the audit report.
 
-    Returns (report_text, findings_dict, data_dict).
+    Returns (report_text, findings_dict, data_dict).  Raises
+    :class:`~cantrip.agent.tools.charmlint_tool.CharmlintError` if
+    charmlint cannot be run.
     """
-    report = lint(charm_dir, LintConfig())
+    lint_report = charmlint_tool.run_charmlint(charm_dir)
+    extra_diagnostics, gaps = _cantrip_checks(charm_dir)
+    diagnostics = [d for d in lint_report.get("diagnostics", []) if d.get("rule_id") != "FATAL"]
+    diagnostics.extend(extra_diagnostics)
 
     must_fix: list[str] = []
     should_fix: list[str] = []
     nice_to_have: list[str] = []
 
-    for d in report.diagnostics:
-        if d.rule_id == "FATAL":
-            continue
-        msg = d.message
-        if d.fix_hint:
-            msg += f" — {d.fix_hint}"
-        if d.severity == Severity.ERROR:
+    for d in diagnostics:
+        msg = d.get("message", "")
+        if d.get("fix_hint"):
+            msg += f" — {d['fix_hint']}"
+        if d.get("severity") == "error":
             must_fix.append(msg)
-        elif d.severity == Severity.WARNING:
+        elif d.get("severity") == "warning":
             should_fix.append(msg)
         else:
             nice_to_have.append(msg)
 
-    # Modern patterns are not in charmlint yet — check directly.
+    # Modern patterns are not in charmlint — check directly.
     modern_patterns = _check_modern_patterns(charm_dir)
     for _pattern, name, desc in _MODERN_PATTERNS:
         if not modern_patterns.get(name):
@@ -136,50 +328,44 @@ def _charmlint_to_audit_report(
         "nice_to_have": nice_to_have,
     }
 
-    # Build the gaps dict from charmlint diagnostics.
-    rule_ids = {d.rule_id for d in report.diagnostics}
-    gaps = {
-        "cos_tracing": "COS001" in rule_ids,
-        "cos_metrics": "COS002" in rule_ids,
-        "cos_logging": "COS003" in rule_ids,
-        "cos_dashboards": "COS004" in rule_ids,
-        "ops_tracing": "COS005" in rule_ids,
-        "unit_tests": "TEST001" in rule_ids,
-        "integration_tests": "TEST002" in rule_ids,
-        "readme": "DOC001" in rule_ids,
-        "licence": "STR001" in rule_ids,
-        "icon": "STR002" in rule_ids,
-        "type_annotations": "STR003" in rule_ids,
-        "modern_patterns": any(not v for v in modern_patterns.values()),
-        "reactive_framework": "DEP004" in rule_ids,
-    }
+    rule_ids = {d.get("rule_id") for d in diagnostics}
+    gaps.update(
+        {
+            "unit_tests": "TESTING-001" in rule_ids,
+            "readme": "DOCUMENTATION-001" in rule_ids,
+            "licence": "STRUCTURE-001" in rule_ids,
+            "icon": "STRUCTURE-002" in rule_ids,
+            "modern_patterns": any(not v for v in modern_patterns.values()),
+        }
+    )
 
-    # Build deprecated_apis list from DEP diagnostics.
     deprecated_apis = [
-        {"api": d.rule_id, "file": d.path or "", "advice": d.message}
-        for d in report.diagnostics
-        if d.rule_id.startswith("DEP")
+        {
+            "api": d["rule_id"].removeprefix("deprecated:"),
+            "file": d.get("path", ""),
+            "advice": d.get("message", ""),
+        }
+        for d in diagnostics
+        if d["rule_id"].startswith("deprecated:")
     ]
 
-    # Build fetch_libs list from LIB diagnostics.
     fetch_libs = [
-        {"lib_prefix": d.message.split(" ")[0] if d.message else "", "advice": d.message}
-        for d in report.diagnostics
-        if d.rule_id.startswith("LIB")
+        {"lib_prefix": _lib_module(charm_dir, d.get("path", "")), "advice": d.get("message", "")}
+        for d in diagnostics
+        if d.get("rule_id", "").startswith("LIBRARY-")
     ]
 
-    # Build listing_fields from META diagnostics.
     listing_present = dict.fromkeys(_LISTING_FIELDS, True)
-    meta_to_field = {
-        "META002": "title",
-        "META003": "summary",
-        "META004": "description",
-        "META005": "links.documentation",
-        "META006": "links.issues",
-        "META007": "links.source",
+    metadata_to_field = {
+        "METADATA-002": "title",
+        "METADATA-003": "summary",
+        "METADATA-004": "description",
+        "METADATA-005": "links.documentation",
+        "METADATA-006": "links.issues",
+        "METADATA-007": "links.source",
     }
-    for rid, field in meta_to_field.items():
-        if rid in rule_ids:
+    for rule_id, field in metadata_to_field.items():
+        if rule_id in rule_ids:
             listing_present[field] = False
 
     data = {
@@ -199,7 +385,7 @@ def _charmlint_to_audit_report(
 class CharmAuditTool(Tool):
     """Tool to audit an existing charm against best practices.
 
-    Delegates to charmlint for deterministic checks.
+    Runs charmlint plus the improvement checks charmlint does not cover.
     """
 
     @property
@@ -269,7 +455,10 @@ class CharmAuditTool(Tool):
         else:
             charm_name = charm_dir.name
 
-        report_text, _findings, data = _charmlint_to_audit_report(charm_dir, charm_name)
+        try:
+            report_text, _findings, data = _audit_report(charm_dir, charm_name)
+        except charmlint_tool.CharmlintError as exc:
+            return ToolResult(success=False, output="", error=str(exc))
 
         total = data.get("total_issues", 0)
         caption = "clean" if total == 0 else f"{total} issue{'s' if total != 1 else ''}"

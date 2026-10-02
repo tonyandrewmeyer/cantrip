@@ -42,7 +42,6 @@
       <li><a href="explanation-repo-map.html">The repository map</a></li>
       <li><a href="explanation-observability.html">Observability and debugging</a></li>
       <li><a href="explanation-quickpack-rs.html">Quickpack Rust backend</a></li>
-      <li><a href="explanation-charmlint-rs.html">Charmlint Rust backend</a></li>
       <li><a href="explanation-emotions.html">Emotion subagents</a></li>
       <li><a href="explanation-race.html" class="current">Multi-model patterns</a></li>
       <li><a href="explanation-tui-screens.html">TUI screens and shortcuts</a></li>
@@ -88,7 +87,7 @@
 </div>
 <h2 id="why-race">Why race at all</h2>
 <p>Charm building has an unusually clean success signal. A generated
-charm can be packed, linted with <a href="explanation-charmlint-rs.html">charmlint</a>,
+charm can be packed, linted with <a href="https://github.com/canonical/charmlint" target="_blank" rel="noopener">charmlint</a>,
 unit-tested, and scored against an operational-readiness
 checklist. Unlike open-ended writing tasks, the output is
 <em>measurable</em>: a charm with zero charmlint errors and 95 %
@@ -209,9 +208,8 @@ a charm with three errors and several warnings falls below 0.25.
 Errors dominate because they block shipping; warnings are a
 speed bump; infos are advisory.</p>
 <p>The scorer calls the same
-<a href="explanation-charmlint-rs.html">charmlint tool</a> the
-agent uses elsewhere, so the Rust-vs-Python backend selection
-stays in one place. A tool failure degrades to zeroed counts
+<code>charmlint</code> tool the agent uses elsewhere, so how charmlint is
+invoked stays in one place. A tool failure degrades to zeroed counts
 rather than crashing the race.</p>
 <h3>Readiness &mdash; linear on the overall score</h3>
 <p>The operational-readiness tool produces an overall percentage
@@ -553,7 +551,6 @@ surfaced to the rubric.</li>
 <ul>
 <li><a href="reference-cli.html#slash-commands">CLI reference &mdash; slash commands</a></li>
 <li><a href="howto-memory.html">Using durable memory</a></li>
-<li><a href="explanation-charmlint-rs.html">Charmlint Rust backend</a></li>
 <li><a href="explanation-architecture.html">How Cantrip works</a></li>
 </ul>
   </main>

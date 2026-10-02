@@ -280,71 +280,27 @@ def _parse_ty_line(line: str) -> FileDiagnostic | None:
 async def _run_charmlint(charm_dir: pathlib.Path, *, timeout: float) -> DiagnosticsReport:
     """Run charmlint against *charm_dir*.
 
-    Prefers the Rust binary when available — same probe as
-    :class:`cantrip.agent.tools.charmlint_tool.CharmlintTool` — and
-    falls back to the Python library on any failure.  We do not call
-    the agent tool directly because it returns a ``ToolResult``
-    shaped for the LLM; the structured ``data`` is enough for our
-    purposes.
+    Uses the same command line as
+    :class:`cantrip.agent.tools.charmlint_tool.CharmlintTool`.  We do
+    not call the agent tool directly because it returns a
+    ``ToolResult`` shaped for the LLM; the JSON report is enough for
+    our purposes.
     """
-    binary = _find_charmlint_binary()
-    if binary is not None:
-        cmd = [binary, str(charm_dir), "--format", "json"]
-        stdout, _stderr, error = await _run_subprocess(cmd, timeout=timeout)
-        if error is None:
-            try:
-                payload = json.loads(stdout or "{}")
-            except json.JSONDecodeError as exc:
-                log.debug("charmlint Rust output unparseable, falling back: %s", exc)
-                return await asyncio.to_thread(_charmlint_python, charm_dir)
-            return _charmlint_report_from_payload(payload)
-        log.debug("charmlint Rust binary failed (%s); falling back to Python", error)
+    from cantrip.agent.tools import charmlint_tool
 
-    return await asyncio.to_thread(_charmlint_python, charm_dir)
-
-
-def _find_charmlint_binary() -> str | None:
-    """Return the Rust charmlint binary path, mirroring the agent tool."""
-    rust_bin = shutil.which("charmlint-rs")
-    if rust_bin:
-        return rust_bin
-    import cantrip
-
-    pkg_dir = pathlib.Path(cantrip.__file__).resolve().parent
-    candidate = pkg_dir.parent.parent / "charmlint-rs" / "target" / "release" / "charmlint"
-    if candidate.is_file():
-        return str(candidate)
-    return None
-
-
-def _charmlint_python(charm_dir: pathlib.Path) -> DiagnosticsReport:
-    """Run the Python charmlint library and convert its report."""
+    cmd = charmlint_tool.charmlint_command(charm_dir)
+    returncode, stdout, stderr, error = await _run_subprocess_with_status(cmd, timeout=timeout)
+    if error is not None:
+        return DiagnosticsReport(skipped=[f"charmlint: {error}"])
     try:
-        from charmlint import LintConfig, lint
-    except ImportError:
-        return DiagnosticsReport(skipped=["charmlint: library not installed"])
-
-    try:
-        report = lint(charm_dir, LintConfig())
-    except (OSError, ValueError, RuntimeError) as exc:
+        payload = charmlint_tool.parse_charmlint_output(returncode, stdout, stderr)
+    except charmlint_tool.CharmlintError as exc:
         return DiagnosticsReport(skipped=[f"charmlint: {exc}"])
-
-    diagnostics: list[FileDiagnostic] = [
-        FileDiagnostic(
-            tool="charmlint",
-            file=str(getattr(d, "path", "")),
-            severity=str(getattr(d, "severity", "warning")),
-            code=str(getattr(d, "rule_id", "")),
-            message=str(getattr(d, "message", "")),
-            line=getattr(d, "line", None),
-        )
-        for d in report.diagnostics
-    ]
-    return DiagnosticsReport(diagnostics=diagnostics)
+    return _charmlint_report_from_payload(payload)
 
 
 def _charmlint_report_from_payload(payload: dict[str, Any]) -> DiagnosticsReport:
-    """Convert the Rust binary's JSON payload into a diagnostics report."""
+    """Convert charmlint's JSON report into a diagnostics report."""
     diagnostics: list[FileDiagnostic] = [
         FileDiagnostic(
             tool="charmlint",
@@ -368,6 +324,19 @@ async def _run_subprocess(cmd: list[str], *, timeout: float) -> tuple[str, str, 
     itself failed (missing binary, timeout, OS error) and the caller
     should surface a "skipped" note rather than diagnostics.
     """
+    _returncode, stdout, stderr, error = await _run_subprocess_with_status(cmd, timeout=timeout)
+    return stdout, stderr, error
+
+
+async def _run_subprocess_with_status(
+    cmd: list[str], *, timeout: float
+) -> tuple[int | None, str, str, str | None]:
+    """Run *cmd* and return ``(returncode, stdout, stderr, error)``.
+
+    The same as :func:`_run_subprocess`, for callers that need the exit
+    code to tell "found issues" apart from "could not lint".
+    *returncode* is ``None`` whenever *error* is set.
+    """
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -375,16 +344,21 @@ async def _run_subprocess(cmd: list[str], *, timeout: float) -> tuple[str, str, 
             stderr=asyncio.subprocess.PIPE,
         )
     except (FileNotFoundError, OSError) as exc:
-        return "", "", str(exc)
+        return None, "", "", str(exc)
 
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
-        return "", "", f"timed out after {timeout:.0f}s"
+        return None, "", "", f"timed out after {timeout:.0f}s"
 
-    return stdout_bytes.decode(errors="replace"), stderr_bytes.decode(errors="replace"), None
+    return (
+        proc.returncode,
+        stdout_bytes.decode(errors="replace"),
+        stderr_bytes.decode(errors="replace"),
+        None,
+    )
 
 
 def collect_touched_paths(

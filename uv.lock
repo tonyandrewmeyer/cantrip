@@ -246,6 +246,18 @@ wheels = [
 ]
 
 [[package]]
+name = "charmlint"
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/36/32f4333055378ea3e378342ce91941121c15b26d7b0af3979dc6ae26f116/charmlint-0.2.1.tar.gz", hash = "sha256:14643e17ebeaee084dd468f8105522975dd3078766cc9b02b4e6f56c3f480a86", size = 167322, upload-time = "2026-09-23T06:55:35.389Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/b5/2ab28be0808a034e914f3300c80cce198707093561682fe9af66b39b49e9/charmlint-0.2.1-py3-none-any.whl", hash = "sha256:fc1d753de3d53a4a6e7029856e78eeb05911cecf8c125f37ec6bfbd85ad37af3", size = 93390, upload-time = "2026-09-23T06:55:33.788Z" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.4"
 source = { registry = "https://pypi.org/simple" }
@@ -926,6 +938,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
+    { name = "charmlint" },
     { name = "cryptography" },
     { name = "defusedxml" },
     { name = "google-genai" },
@@ -964,6 +977,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.4" },
     { name = "anthropic", specifier = ">=0.97.0" },
+    { name = "charmlint", specifier = "~=0.2.1" },
     { name = "cryptography", specifier = ">=46.0.7" },
     { name = "defusedxml", specifier = ">=0.7" },
     { name = "google-genai", specifier = ">=1.73.1" },

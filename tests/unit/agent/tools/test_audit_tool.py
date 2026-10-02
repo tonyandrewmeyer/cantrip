@@ -1,16 +1,17 @@
 """Tests for the charm audit tool.
 
-Unit tests for internal helper functions that were previously in audit.py
-have been moved to tests/unit/charmlint/ since audit.py now delegates to
-charmlint.  This file retains integration tests for CharmAuditTool and
-tests for the modern-patterns check (which remains in audit.py).
+Most findings come from charmlint, which has its own test suite upstream.
+These tests cover CharmAuditTool end to end and the checks that live in
+audit.py itself.
 """
 
 import pathlib
 import tempfile
+from unittest import mock
 
 import pytest
 
+from cantrip.agent.tools import audit
 from cantrip.agent.tools.audit import (
     CharmAuditTool,
     _check_modern_patterns,
@@ -192,26 +193,23 @@ class TestCharmAuditTool:
     async def test_fetch_libs_in_data(self, tool, temp_dir) -> None:
         """Fetch-libs findings are reported in the data dict."""
         _write_charmcraft_yaml(temp_dir)
-        src = temp_dir / "src"
-        src.mkdir()
-        (src / "charm.py").write_text(
-            "from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires\n"
-        )
+        lib = temp_dir / "lib" / "charms" / "tls_certificates_interface" / "v3"
+        lib.mkdir(parents=True)
+        (lib / "tls_certificates.py").write_text("LIBID = 'x'\n")
 
         result = await tool.execute(path=str(temp_dir))
 
-        assert len(result.data["fetch_libs"]) >= 1
+        assert result.data["fetch_libs"][0]["lib_prefix"] == (
+            "charms.tls_certificates_interface.v3.tls_certificates"
+        )
 
     @pytest.mark.asyncio
     async def test_fetch_libs_in_report(self, tool, temp_dir) -> None:
         """Fetch-libs with known PyPI equivalents appear in the report."""
         _write_charmcraft_yaml(temp_dir)
-        src = temp_dir / "src"
-        src.mkdir()
-        (src / "charm.py").write_text(
-            "from charms.tls_certificates_interface.v3.tls_certificates "
-            "import TLSCertificatesRequiresV3\n"
-        )
+        lib = temp_dir / "lib" / "charms" / "tls_certificates_interface" / "v3"
+        lib.mkdir(parents=True)
+        (lib / "tls_certificates.py").write_text("LIBID = 'x'\n")
 
         result = await tool.execute(path=str(temp_dir))
 
@@ -313,3 +311,77 @@ class TestAuditToolModernisation:
 
         assert "modern_patterns" in result.data
         assert result.data["modern_patterns"]["holistic_status"] is True
+
+
+# ===================================================================
+# TestAuditToolCantripChecks
+# ===================================================================
+
+
+class TestAuditToolCantripChecks:
+    """Tests for the gap checks that run in audit.py rather than charmlint."""
+
+    @pytest.fixture
+    def tool(self) -> CharmAuditTool:
+        return CharmAuditTool()
+
+    @pytest.mark.asyncio
+    async def test_cos_gaps_read_split_metadata(self, tool, temp_dir) -> None:
+        """Relations declared in a legacy metadata.yaml count."""
+        _write_charmcraft_yaml(temp_dir)
+        (temp_dir / "metadata.yaml").write_text(
+            "name: test-charm\nprovides:\n  metrics-endpoint:\n    interface: prometheus_scrape\n"
+        )
+
+        result = await tool.execute(path=str(temp_dir))
+
+        gaps = result.data["gaps"]
+        assert gaps["cos_metrics"] is False
+        assert gaps["cos_tracing"] is True
+        assert "Missing tracing relation" in result.output
+
+    @pytest.mark.asyncio
+    async def test_ops_tracing_detected_in_source(self, tool, temp_dir) -> None:
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("import ops_tracing\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.data["gaps"]["ops_tracing"] is False
+
+    @pytest.mark.asyncio
+    async def test_reactive_framework_flagged(self, tool, temp_dir) -> None:
+        _write_charmcraft_yaml(temp_dir)
+        src = temp_dir / "src"
+        src.mkdir()
+        (src / "charm.py").write_text("from charms.reactive import when\n")
+
+        result = await tool.execute(path=str(temp_dir))
+
+        assert result.data["gaps"]["reactive_framework"] is True
+        assert result.data["deprecated_apis"] == [
+            {
+                "api": "reactive-framework",
+                "file": "src/charm.py",
+                "advice": (
+                    "Uses legacy reactive framework (charms.reactive / @when / @hook decorators)"
+                ),
+            }
+        ]
+        assert "## Must Fix" in result.output
+
+    @pytest.mark.asyncio
+    async def test_charmlint_failure_fails_the_audit(self, tool, temp_dir) -> None:
+        _write_charmcraft_yaml(temp_dir)
+
+        with mock.patch.object(
+            audit.charmlint_tool,
+            "run_charmlint",
+            side_effect=audit.charmlint_tool.CharmlintError("charmlint timed out"),
+        ):
+            result = await tool.execute(path=str(temp_dir))
+
+        assert not result.success
+        assert result.error == "charmlint timed out"

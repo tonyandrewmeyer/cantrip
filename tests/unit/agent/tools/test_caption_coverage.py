@@ -611,7 +611,7 @@ class TestAcceptanceCaptions:
 
         (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
 
-        with mock.patch.object(audit_mod, "_charmlint_to_audit_report") as fake_report:
+        with mock.patch.object(audit_mod, "_audit_report") as fake_report:
             fake_report.return_value = ("# Audit Report\n", {}, {"total_issues": 0})
             result = await CharmAuditTool().execute(path=str(temp_dir))
 
@@ -625,7 +625,7 @@ class TestAcceptanceCaptions:
 
         (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
 
-        with mock.patch.object(audit_mod, "_charmlint_to_audit_report") as fake_report:
+        with mock.patch.object(audit_mod, "_audit_report") as fake_report:
             fake_report.return_value = ("# Audit Report\n", {}, {"total_issues": 2})
             result = await CharmAuditTool().execute(path=str(temp_dir))
 
@@ -639,7 +639,7 @@ class TestAcceptanceCaptions:
 
         (temp_dir / "charmcraft.yaml").write_text("name: my-charm\n")
 
-        with mock.patch.object(audit_mod, "_charmlint_to_audit_report") as fake_report:
+        with mock.patch.object(audit_mod, "_audit_report") as fake_report:
             fake_report.return_value = ("# Audit Report\n", {}, {"total_issues": 1})
             result = await CharmAuditTool().execute(path=str(temp_dir))
 

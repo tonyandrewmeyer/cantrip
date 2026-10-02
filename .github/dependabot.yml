@@ -33,8 +33,6 @@ updates:
   # Rust crates (both production crates and their fuzz targets)
   - package-ecosystem: "cargo"
     directories:
-      - "/src/charmlint-rs"
-      - "/src/charmlint-rs/fuzz"
       - "/src/quickpack-rs"
       - "/src/quickpack-rs/fuzz"
     schedule:

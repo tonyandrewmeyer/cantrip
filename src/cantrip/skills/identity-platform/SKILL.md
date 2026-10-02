@@ -79,7 +79,7 @@ charm-libs:
 
 Then run `charmcraft fetch-libs` once.  The libraries land under `lib/charms/hydra/v0/oauth.py` (etc.) and import as `from charms.hydra.v0.oauth import OAuthRequirer`.
 
-**Revisit:** When the libs land on PyPI under the `charmlibs-*` namespace, the LIB001 mapping (`design/UPSTREAM_AUDIT.md`) will be updated and this skill should switch to `uv add charmlibs-hydra-oauth` (or whatever the published name is).  Until then, the fetch-libs instruction is correct.
+**Revisit:** When the libs land on PyPI under the `charmlibs-*` namespace, charmlint's `LIBRARY-001` mapping will pick them up and this skill should switch to `uv add charmlibs-hydra-oauth` (or whatever the published name is).  Until then, the fetch-libs instruction is correct.
 
 ## Secret-Relation Wiring for Client Credentials
 

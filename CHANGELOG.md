@@ -4,6 +4,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ## Unreleased
 
+### Changed
+- **charmlint now comes from PyPI.**  The vendored ``src/charmlint``
+  package and its Rust port (``src/charmlint-rs``) are gone; cantrip
+  depends on the standalone [charmlint](https://github.com/canonical/charmlint)
+  package (``charmlint~=0.2.1``) and runs it as ``python -m charmlint
+  --format json`` from the ``charmlint`` tool, the post-edit lint hook,
+  ``/diagnostics``, ``@problems`` and race scoring.  The ``charmlint``
+  console script is still installed alongside cantrip, now by the
+  dependency.  Rule IDs follow the upstream ``CATEGORY-###`` scheme
+  (``SECURITY-001``, ``METADATA-003``, …), and the tool's ``severity``
+  filter maps to ``--min-severity``.  The upstream rule set is smaller:
+  the COS, ops-tracing, integration-test, type-annotation and
+  deprecated-API checks that drive ``--improve`` planning now run
+  inside ``charm_audit`` itself, and the skills that pointed at dropped
+  rules (Pebble hygiene, relation-data guards, action results, config
+  reads, library metadata) state the guidance directly again.
+
 ### Fixed
 - **``subtask: true`` on a ``primary`` custom command no longer fails.**
   ``docs/src/howto-custom-commands.md`` documents ``subtask`` as "force

@@ -58,7 +58,7 @@ Status: active | 3 subagents working
 - **Improvement mode**: Audit existing charms, modernise deprecated APIs, add tests, fill observability gaps, check operational readiness
 - **Day-2 aware**: Researches backup/restore, scaling, HA, upgrades, and security hardening after initial build
 - **Quickpack**: Ultra-fast local charm packing — 20-100x faster than `charmcraft pack`, skipping LXD, linting, and analysis. Optional Rust backend with ~50 ms startup for tight build-test loops
-- **Charm linting**: Standalone `charmlint` tool with 40+ deterministic rules across 12 categories. Optional Rust backend completes a full lint in under 30 ms
+- **Charm linting**: Runs [charmlint](https://github.com/canonical/charmlint), the standalone charm linter, after every charm YAML edit, in `/diagnostics`, and as an agent tool
 - **Durable memory**: Persistent lessons across sessions and charms — user corrections are auto-captured as rules, hard-won workarounds become lessons with SHA-256 citations that self-quarantine when the source drifts. Manage with `/memory`, `/remember`, `/forget`
 - **MCP-extensible**: Plug in third-party tools via the Model Context Protocol — stdio or HTTP servers, OAuth 2.1, token storage, mid-task elicitation, and marketplace discovery
 - **Ecosystem showcase**: Juju, Charmcraft, Rockcraft, Ops, Jubilant, Concierge, Scenario, Showboat

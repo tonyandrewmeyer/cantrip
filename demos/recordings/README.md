@@ -8,7 +8,6 @@ artefact.
 
 | File | Mode | Length | Format | Source |
 |------|------|--------|--------|--------|
-| [`charmlint.cast`](charmlint.cast) | CLI tool | ~30 s | asciicast | [`charmlint.sh`](charmlint.sh) |
 | [`quickpack.cast`](quickpack.cast) | CLI tool | ~40 s | asciicast | [`quickpack.sh`](quickpack.sh) |
 | [`transcript-export.cast`](transcript-export.cast) | CLI tool | ~55 s | asciicast | [`transcript-export.sh`](transcript-export.sh) |
 | [`improve.cast`](improve.cast) | `--improve` audit | ~50 s | asciicast | [`improve.sh`](improve.sh) |
@@ -68,8 +67,8 @@ root so its `git rev-parse --show-toplevel` resolves correctly:
 # asciicast clips — drive a shell script under asciinema rec.
 TERM=xterm-256color uvx asciinema rec --overwrite \
     --cols 110 --rows 30 --idle-time-limit 2 \
-    --command demos/recordings/charmlint.sh \
-    demos/recordings/charmlint.cast
+    --command demos/recordings/quickpack.sh \
+    demos/recordings/quickpack.cast
 
 # TUI GIF — render a VHS .tape.  Needs ffmpeg + ttyd on $PATH.
 ~/go/bin/vhs demos/recordings/tui.tape

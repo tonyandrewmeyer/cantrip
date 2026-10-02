@@ -208,8 +208,8 @@ class TestRunPostEditDiagnostics:
         assert any(d.code.startswith("F4") or "unused" in d.message for d in ruff_hits)
 
     async def test_charm_yaml_triggers_charmlint(self, tmp_path):
-        # An almost-empty metadata.yaml is enough to draw missing-action
-        # warnings from charmlint's library backend.
+        # An almost-empty metadata.yaml is enough to draw missing-metadata
+        # findings from charmlint.
         meta = tmp_path / "metadata.yaml"
         meta.write_text("name: test\n")
         report = await run_post_edit_diagnostics([meta], charm_path=tmp_path)
@@ -352,7 +352,7 @@ class TestExecuteToolWithMissingBinary:
         original_which = post_edit_lint.shutil.which
 
         def fake_which(name: str) -> str | None:
-            if name in ("ruff", "ty", "charmlint-rs"):
+            if name in ("ruff", "ty"):
                 return None
             return original_which(name)
 
@@ -371,31 +371,42 @@ class TestExecuteToolWithMissingBinary:
         # to run — the hook's job is feedback, not gating.
         assert "Wrote" in result.output
 
-    async def test_charmlint_python_fallback_records_skip_when_uninstalled(
-        self, tmp_path, monkeypatch
-    ):
-        from cantrip.agent.tools import post_edit_lint
+    async def test_charmlint_records_skip_when_it_cannot_run(self, tmp_path, monkeypatch):
+        from cantrip.agent.tools import charmlint_tool, post_edit_lint
 
-        # No Rust binary, and force the Python-side import to look
-        # like the library is missing.
-        monkeypatch.setattr(post_edit_lint, "_find_charmlint_binary", lambda: None)
-
-        import builtins
-
-        real_import = builtins.__import__
-
-        def fake_import(name: str, *args, **kwargs):
-            if name == "charmlint":
-                raise ImportError("simulated")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
+        monkeypatch.setattr(
+            charmlint_tool,
+            "charmlint_command",
+            lambda _charm_dir: [str(tmp_path / "no-such-python"), "-m", "charmlint"],
+        )
 
         meta = tmp_path / "metadata.yaml"
         meta.write_text("name: test\n")
         report = await post_edit_lint.run_post_edit_diagnostics([meta], charm_path=tmp_path)
         assert report.diagnostics == []
-        assert any("charmlint" in note for note in report.skipped)
+        assert any(note.startswith("charmlint:") for note in report.skipped)
+
+    async def test_charmlint_records_skip_on_usage_error(self, tmp_path, monkeypatch):
+        """A non-zero exit other than 1 is a failed run, not a clean charm."""
+        import sys
+
+        from cantrip.agent.tools import charmlint_tool, post_edit_lint
+
+        monkeypatch.setattr(
+            charmlint_tool,
+            "charmlint_command",
+            lambda _charm_dir: [
+                sys.executable,
+                "-c",
+                "import sys; sys.stderr.write('bad selector'); sys.exit(2)",
+            ],
+        )
+
+        meta = tmp_path / "metadata.yaml"
+        meta.write_text("name: test\n")
+        report = await post_edit_lint.run_post_edit_diagnostics([meta], charm_path=tmp_path)
+        assert report.diagnostics == []
+        assert any("bad selector" in note for note in report.skipped)
 
 
 @pytest.fixture(autouse=True)

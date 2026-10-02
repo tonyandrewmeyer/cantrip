@@ -184,6 +184,6 @@ def test_backup_action_invalid_path():
 
 ## Common Pitfalls
 
-- **Forgetting the observer or the terminating call.** The action-name → event-attribute mapping (`my-action` → `self.on.my_action_action`) and the requirement that every handler call `event.set_results()` or `event.fail()` are checked deterministically by `charmlint` (rules `ACT006` and `ACT007`). Run `charmlint` to surface these — the skill body no longer recites them.
+- **Forgetting the observer or the terminating call.** Every declared action needs an observer, and the action-name → event-attribute mapping is `my-action` → `self.on.my_action_action`; `charmlint` flags a declared action with no observer (`ACTIONS-001`). Every handler must also end by calling `event.set_results()` or `event.fail()`.
 - **Modifying charm state in actions without guards** — actions can run concurrently with hooks. Be careful about shared state.
 - **Returning sensitive data** — action results are stored in Juju's database and visible to anyone with model access. Use Juju secrets for sensitive values.

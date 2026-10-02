@@ -10,11 +10,10 @@ uvx showboat verify demos/<file>.md
 
 | File | Focus |
 |------|-------|
-| [01-overview.md](01-overview.md) | The top-level `cantrip` CLI and its sibling tools |
-| [02-charmlint.md](02-charmlint.md) | The standalone `charmlint` linter — categories, filtering, JSON output |
+| [01-overview.md](01-overview.md) | The top-level `cantrip` CLI and its sibling `quickpack` tool |
 | [03-quickpack.md](03-quickpack.md) | The `quickpack` fast charm packer |
 | [04-skills.md](04-skills.md) | Load-on-demand charm-building skills |
 | [05-transcript-export.md](05-transcript-export.md) | Exporting session transcripts to HTML, Markdown, or JSONL |
 | [06-agent-architecture.md](06-agent-architecture.md) | The two-loop agent, work queue, subagents, and tool catalogue |
 | [07-build-ntfy-from-scratch.md](07-build-ntfy-from-scratch.md) | Hero demo — Cantrip building a full ntfy charm end-to-end (companion to [`recordings/hero-ntfy.cast`](recordings/hero-ntfy.cast)) |
-| [recordings/](recordings/README.md) | Marketing clips: TUI, Web, CLI, charmlint, quickpack, transcript-export, --improve, hero ntfy |
+| [recordings/](recordings/README.md) | Marketing clips: TUI, Web, CLI, quickpack, transcript-export, --improve, hero ntfy |

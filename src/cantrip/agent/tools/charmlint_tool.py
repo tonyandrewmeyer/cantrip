@@ -1,12 +1,18 @@
-"""Charmlint agent tool — run the standalone charm linter."""
+"""Charmlint agent tool — run the standalone charm linter.
+
+charmlint is a dependency installed from PyPI.  It documents no stable
+Python API, so cantrip always drives it through its CLI and parses the
+``--format json`` report.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import pathlib
-import shutil
 import subprocess
+import sys
 from typing import TYPE_CHECKING, Any
 
 from cantrip.agent.tools.base import Tool, ToolResult
@@ -24,6 +30,74 @@ log = logging.getLogger(__name__)
 _CHARMCRAFT_MCP_SERVER = "charmcraft"
 _CHARMCRAFT_MCP_TOOLS = ("lint", "analyse")
 
+# charmlint exits 1 when it reports an error-severity finding; only other
+# non-zero codes (2 for a bad selector or config) mean the run failed.
+_CHARMLINT_OK_EXIT_CODES = (0, 1)
+
+
+class CharmlintError(RuntimeError):
+    """charmlint could not be run, or did not produce a report."""
+
+
+def charmlint_command(
+    charm_dir: pathlib.Path,
+    *,
+    select: str = "",
+    ignore: str = "",
+    severity: str = "",
+) -> list[str]:
+    """Return the argv that lints *charm_dir* and prints a JSON report.
+
+    The linter runs as ``python -m charmlint`` under cantrip's own
+    interpreter, so it is found even when cantrip is installed as a uv
+    tool and charmlint's console script is not on ``PATH``.
+    """
+    cmd = [sys.executable, "-m", "charmlint", str(charm_dir), "--format", "json"]
+    if select:
+        cmd.extend(["--select", select])
+    if ignore:
+        cmd.extend(["--ignore", ignore])
+    if severity:
+        cmd.extend(["--min-severity", severity])
+    return cmd
+
+
+def parse_charmlint_output(returncode: int, stdout: str, stderr: str) -> dict[str, Any]:
+    """Return the JSON report from a finished charmlint run.
+
+    Raises :class:`CharmlintError` when the exit code says the run
+    failed or the output is not a JSON object.
+    """
+    if returncode not in _CHARMLINT_OK_EXIT_CODES:
+        detail = stderr.strip() or f"exit code {returncode}"
+        raise CharmlintError(f"charmlint failed: {detail}")
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise CharmlintError(f"charmlint output was not JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CharmlintError("charmlint output was not a JSON object")
+    return data
+
+
+def run_charmlint(
+    charm_dir: pathlib.Path,
+    *,
+    select: str = "",
+    ignore: str = "",
+    severity: str = "",
+    timeout: float = 30,
+) -> dict[str, Any]:
+    """Lint *charm_dir* and return charmlint's JSON report as a dict."""
+    cmd = charmlint_command(charm_dir, select=select, ignore=ignore, severity=severity)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise CharmlintError("charmlint timed out") from exc
+    except OSError as exc:
+        raise CharmlintError(f"charmlint could not be run: {exc}") from exc
+    return parse_charmlint_output(result.returncode, result.stdout, result.stderr)
+
 
 class CharmlintTool(Tool):
     """Run charmlint against a charm directory.
@@ -31,9 +105,6 @@ class CharmlintTool(Tool):
     This exposes the standalone charmlint linter as an agent tool,
     returning ruff-style diagnostics with rule IDs, severities, and
     fix hints.  Supports filtering by category and severity.
-
-    Prefers the Rust binary (``charmlint-rs`` on PATH, or the in-tree
-    release build) for speed, falling back to the Python library.
 
     When a ``charmcraft`` MCP server is configured and connected
     (Phase 95.3), its ``lint`` / ``analyse`` outputs are appended as a
@@ -52,9 +123,10 @@ class CharmlintTool(Tool):
     def description(self) -> str:
         return (
             "Lint a charm directory for best practices using charmlint. "
-            "Returns diagnostics with rule IDs (COS001, TEST001, DEP001, etc.), "
-            "severities (error/warning/info), and fix hints. Supports filtering "
-            "by category (e.g. COS, META, TEST) and minimum severity."
+            "Returns diagnostics with rule IDs (SECURITY-001, METADATA-003, "
+            "TESTING-001, etc.), severities (error/warning/info), and fix hints. "
+            "Supports filtering by category (e.g. METADATA, CONFIG, TESTING), "
+            "rule ID, or rule name, and by minimum severity."
         )
 
     @property
@@ -70,14 +142,15 @@ class CharmlintTool(Tool):
                 "select": {
                     "type": "string",
                     "description": (
-                        "Comma-separated categories to check "
-                        "(e.g. 'COS,META,TEST'). Empty means all."
+                        "Comma-separated categories, rule IDs, or rule names to "
+                        "check (e.g. 'METADATA,SECURITY,TESTING'). Empty means all."
                     ),
                 },
                 "ignore": {
                     "type": "string",
                     "description": (
-                        "Comma-separated rule IDs or categories to skip (e.g. 'STR002,DOC')"
+                        "Comma-separated categories, rule IDs, or rule names to skip "
+                        "(e.g. 'STRUCTURE-002,DOCUMENTATION')"
                     ),
                 },
                 "severity": {
@@ -88,21 +161,6 @@ class CharmlintTool(Tool):
             },
         }
 
-    @staticmethod
-    def _find_rust_binary() -> str | None:
-        """Return the path to the Rust charmlint binary, or None."""
-        rust_bin = shutil.which("charmlint-rs")
-        if rust_bin:
-            return rust_bin
-        # Check the in-tree build location.
-        import cantrip
-
-        pkg_dir = pathlib.Path(cantrip.__file__).resolve().parent
-        candidate = pkg_dir.parent.parent / "charmlint-rs" / "target" / "release" / "charmlint"
-        if candidate.is_file():
-            return str(candidate)
-        return None
-
     async def execute(
         self,
         path: str = ".",
@@ -110,7 +168,7 @@ class CharmlintTool(Tool):
         ignore: str = "",
         severity: str = "",
     ) -> ToolResult:
-        """Run charmlint, preferring the Rust binary when available."""
+        """Run charmlint against *path*."""
         charm_dir = pathlib.Path(path).resolve()
         if not charm_dir.is_dir():
             return ToolResult(
@@ -119,11 +177,8 @@ class CharmlintTool(Tool):
                 error=f"Path not found: {path}",
             )
 
-        rust_bin = self._find_rust_binary()
-        if rust_bin is not None:
-            local = self._execute_rust(rust_bin, charm_dir, select, ignore, severity)
-        else:
-            local = self._execute_python(charm_dir, select, ignore, severity)
+        # charmlint runs as a subprocess; keep the event loop free meanwhile.
+        local = await asyncio.to_thread(self._execute_cli, charm_dir, select, ignore, severity)
 
         second_opinion = await self._charmcraft_mcp_second_opinion(charm_dir)
         if second_opinion is None:
@@ -171,8 +226,8 @@ class CharmlintTool(Tool):
     def _merge_second_opinion(local: ToolResult, second_opinion: dict[str, Any]) -> ToolResult:
         """Append a Markdown-shaped second-opinion block to *local*.
 
-        The block is plain text so it composes with both the Rust- and
-        Python-backed local outputs unchanged.  The structured
+        The block is plain text so it composes with the local output
+        unchanged.  The structured
         ``data`` dict gains a ``mcp_second_opinion`` key so downstream
         consumers can inspect MCP findings without re-parsing the text.
         """
@@ -202,43 +257,19 @@ class CharmlintTool(Tool):
             error=local.error,
         )
 
-    def _execute_rust(
-        self,
-        binary: str,
+    @staticmethod
+    def _execute_cli(
         charm_dir: pathlib.Path,
         select: str,
         ignore: str,
         severity: str,
     ) -> ToolResult:
-        """Lint using the compiled Rust binary."""
-        cmd = [binary, str(charm_dir), "--format", "json"]
-        if select:
-            cmd.extend(["--select", select])
-        if ignore:
-            cmd.extend(["--ignore", ignore])
-        if severity:
-            cmd.extend(["--severity", severity])
-
+        """Lint with the ``charmlint`` CLI and render its JSON report."""
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except FileNotFoundError:
-            return self._execute_python(charm_dir, select, ignore, severity)
-        except subprocess.TimeoutExpired:
-            return ToolResult(success=False, output="", error="charmlint timed out")
+            data = run_charmlint(charm_dir, select=select, ignore=ignore, severity=severity)
+        except CharmlintError as exc:
+            return ToolResult(success=False, output="", error=str(exc))
 
-        # Parse JSON output from the Rust binary.
-        try:
-            data = json.loads(result.stdout)
-        except (json.JSONDecodeError, ValueError):
-            # Fallback on unparseable output.
-            return self._execute_python(charm_dir, select, ignore, severity)
-
-        # Format text output from the parsed diagnostics.
         lines: list[str] = []
         for d in data.get("diagnostics", []):
             location = d.get("path", "")
@@ -248,87 +279,24 @@ class CharmlintTool(Tool):
             lines.append(f"{prefix}{d['rule_id']} {d['message']}")
 
         total = data.get("total", 0)
-        errors = data.get("errors", 0)
-        warnings = data.get("warnings", 0)
-        infos = data.get("info", 0)
+        counts: list[str] = []
+        if errors := data.get("errors", 0):
+            counts.append(f"{errors} error{'s' if errors != 1 else ''}")
+        if warnings := data.get("warnings", 0):
+            counts.append(f"{warnings} warning{'s' if warnings != 1 else ''}")
+        if infos := data.get("info", 0):
+            counts.append(f"{infos} info")
 
         if total == 0:
             lines.append("No issues found.")
-        else:
-            parts = []
-            if errors:
-                s = "s" if errors != 1 else ""
-                parts.append(f"{errors} error{s}")
-            if warnings:
-                s = "s" if warnings != 1 else ""
-                parts.append(f"{warnings} warning{s}")
-            if infos:
-                parts.append(f"{infos} info")
-            s = "s" if total != 1 else ""
-            lines.append(f"Found {total} issue{s} ({', '.join(parts)})")
-
-        if total == 0:
             caption = "clean"
         else:
-            caption_parts: list[str] = []
-            if errors:
-                caption_parts.append(f"{errors} error{'s' if errors != 1 else ''}")
-            if warnings:
-                caption_parts.append(f"{warnings} warning{'s' if warnings != 1 else ''}")
-            if infos:
-                caption_parts.append(f"{infos} info")
-            caption = ", ".join(caption_parts)
-        return ToolResult(
-            success=True,
-            output="\n".join(lines),
-            data={**data, "backend": "rust"},
-            caption=caption,
-        )
-
-    @staticmethod
-    def _execute_python(
-        charm_dir: pathlib.Path,
-        select: str,
-        ignore: str,
-        severity: str,
-    ) -> ToolResult:
-        """Lint using the Python charmlint library."""
-        from charmlint import LintConfig, lint
-
-        config = LintConfig(
-            select=[s.strip() for s in select.split(",") if s.strip()],
-            ignore=[s.strip() for s in ignore.split(",") if s.strip()],
-        )
-        if severity:
-            from charmlint.models import Severity
-
-            config.min_severity = Severity(severity)
-
-        report = lint(charm_dir, config)
-
-        lines: list[str] = [d.format_text(charm_dir) for d in report.diagnostics]
-        if lines:
             lines.append("")
-        lines.append(report.summary_line())
-
-        d = report.to_dict()
-        total = d.get("total", 0)
-        if total == 0:
-            caption = "clean"
-        else:
-            caption_parts: list[str] = []
-            if d.get("errors"):
-                n = d["errors"]
-                caption_parts.append(f"{n} error{'s' if n != 1 else ''}")
-            if d.get("warnings"):
-                n = d["warnings"]
-                caption_parts.append(f"{n} warning{'s' if n != 1 else ''}")
-            if d.get("info"):
-                caption_parts.append(f"{d['info']} info")
-            caption = ", ".join(caption_parts) or f"{total} issue{'s' if total != 1 else ''}"
+            lines.append(f"Found {total} issue{'s' if total != 1 else ''} ({', '.join(counts)})")
+            caption = ", ".join(counts) or f"{total} issue{'s' if total != 1 else ''}"
         return ToolResult(
             success=True,
             output="\n".join(lines),
-            data={**d, "backend": "python"},
+            data=data,
             caption=caption,
         )
