@@ -57,7 +57,6 @@ sections:
       - { slug: explanation-repo-map, label: "The repository map" }
       - { slug: explanation-observability, label: "Observability and debugging" }
       - { slug: explanation-quickpack-rs, label: "Quickpack Rust backend" }
-      - { slug: explanation-charmlint-rs, label: "Charmlint Rust backend" }
       - { slug: explanation-emotions, label: "Emotion subagents" }
       - { slug: explanation-race, label: "Multi-model patterns" }
       - { slug: explanation-tui-screens, label: "TUI screens and shortcuts" }

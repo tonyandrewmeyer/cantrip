@@ -204,28 +204,27 @@ def parse_status(data: dict[str, Any]) -> ModelStatus:
 ```
 cantrip/
 ├── src/
-│   ├── cantrip/
-│   │   ├── main.py              # Entry point, arg parsing
-│   │   ├── cli.py               # CLI mode (no TUI)
-│   │   ├── agent/
-│   │   │   ├── core.py          # Conversation loop, tool execution
-│   │   │   ├── state.py         # AgentState and Decision dataclasses
-│   │   │   ├── store.py         # SQLite-backed session store
-│   │   │   ├── queue.py         # Work queue, task scheduling
-│   │   │   ├── planner.py       # Task planner (LLM decomposition)
-│   │   │   ├── executor.py      # Background executor (subagent dispatch)
-│   │   │   ├── subagent.py      # Isolated LLM context per task
-│   │   │   ├── tools/           # Agent tools (40+ tools across domains)
-│   │   │   └── prompts/         # System prompts and subagent guidance
-│   │   ├── llm/                 # LLM providers (Gemini, Claude, inference snap)
-│   │   ├── tui/                 # Textual TUI (app, screens, widgets, themes)
-│   │   ├── web/                 # Web UI (server, templates, static assets)
-│   │   ├── transcript/          # Session transcript export (HTML, JSONL, Markdown)
-│   │   ├── juju/                # Juju integration via Jubilant
-│   │   ├── charm/               # Charm project templates
-│   │   ├── skills/              # Skill definitions (SKILL.md per skill)
-│   │   └── ui/                  # Shared event bus for TUI/Web/CLI
-│   └── charmlint/               # Standalone charm linter (35 rules, 10 categories)
+│   └── cantrip/
+│       ├── main.py              # Entry point, arg parsing
+│       ├── cli.py               # CLI mode (no TUI)
+│       ├── agent/
+│       │   ├── core.py          # Conversation loop, tool execution
+│       │   ├── state.py         # AgentState and Decision dataclasses
+│       │   ├── store.py         # SQLite-backed session store
+│       │   ├── queue.py         # Work queue, task scheduling
+│       │   ├── planner.py       # Task planner (LLM decomposition)
+│       │   ├── executor.py      # Background executor (subagent dispatch)
+│       │   ├── subagent.py      # Isolated LLM context per task
+│       │   ├── tools/           # Agent tools (40+ tools across domains)
+│       │   └── prompts/         # System prompts and subagent guidance
+│       ├── llm/                 # LLM providers (Gemini, Claude, inference snap)
+│       ├── tui/                 # Textual TUI (app, screens, widgets, themes)
+│       ├── web/                 # Web UI (server, templates, static assets)
+│       ├── transcript/          # Session transcript export (HTML, JSONL, Markdown)
+│       ├── juju/                # Juju integration via Jubilant
+│       ├── charm/               # Charm project templates
+│       ├── skills/              # Skill definitions (SKILL.md per skill)
+│       └── ui/                  # Shared event bus for TUI/Web/CLI
 ├── tests/
 │   ├── unit/                    # Unit tests
 │   └── integration/             # Integration tests (require Juju)

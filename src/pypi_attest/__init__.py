@@ -1,6 +1,6 @@
 """PEP 740 attestation checks against the PyPI simple API.
 
-A small, dependency-free helper shared by ``charmlint`` and ``quickpack``.
+A small, dependency-free helper used by ``quickpack``.
 It answers one question per package: does PyPI hold a verified provenance
 attestation for this distribution?
 
@@ -97,10 +97,9 @@ class ProvenanceResult:
 
 
 # Process-wide cache keyed by (normalised name, version or None).  Avoids
-# hammering PyPI when a single lint run inspects many dependencies, and
+# hammering PyPI when a single pack inspects many dependencies, and
 # makes tests easier to reason about.  Threading lock guards re-entry
-# from parallel callers (charmlint rules are serial today, but we do not
-# want a future parallel driver to double-fetch).
+# from parallel callers, so a parallel driver never double-fetches.
 _CACHE: dict[tuple[str, str | None], ProvenanceResult] = {}
 _CACHE_LOCK = threading.Lock()
 

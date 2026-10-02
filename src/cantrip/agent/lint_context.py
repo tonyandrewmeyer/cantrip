@@ -13,7 +13,7 @@ the complementary case — *before* a turn starts.  Two callers:
 Same external tools as Phase 71.4; the runners are imported from
 :mod:`cantrip.agent.tools.post_edit_lint` so the wire format
 (``ruff check --output-format json``, ``ty check --output-format
-concise``, charmlint Rust binary with Python fallback) lives in one
+concise``, ``charmlint --format json``) lives in one
 place.  The new piece here is project-wide aggregation, severity
 grouping, a token-budget truncation tail, and a 30-second TTL cache
 keyed on charm path.

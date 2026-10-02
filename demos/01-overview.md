@@ -5,7 +5,7 @@
 
 Cantrip is an AI-powered autonomous agent that builds production-quality Juju charms. Describe your workload, and Cantrip researches it, designs the charm, writes the code, deploys it, tests it, and debugs it.
 
-This demo introduces the top-level CLI and the sibling tools shipped in the same package: `charmlint` and `quickpack`.
+This demo introduces the top-level CLI and the sibling tool shipped in the same package: `quickpack`.
 
 ## Version and top-level help
 
@@ -96,34 +96,7 @@ Notable flags:
 
 ## Sibling tools
 
-The same package installs two standalone helpers that Cantrip uses internally but can be run on their own:
-
-```bash
-uv run charmlint --help | head -20
-```
-
-```output
-usage: charmlint [-h] [--format {text,json}] [--select SELECT]
-                 [--ignore IGNORE] [--severity {error,warning,info}]
-                 [--config CONFIG] [--strict] [--no-colour]
-                 [path]
-
-Lint a Juju charm for best practices, observability, testing, and more.
-
-positional arguments:
-  path                  Path to the charm directory (default: current
-                        directory)
-
-options:
-  -h, --help            show this help message and exit
-  --format {text,json}  Output format (default: text)
-  --select SELECT       Comma-separated list of rule categories to enable
-                        (e.g. COS,META)
-  --ignore IGNORE       Comma-separated list of rule IDs or categories to skip
-  --severity {error,warning,info}
-                        Minimum severity to report
-  --config CONFIG       Path to .charmlint.yaml config file
-```
+The same package installs a standalone helper that Cantrip uses internally but can be run on its own:
 
 ```bash
 uv run quickpack --help
@@ -153,4 +126,4 @@ options:
                         enforced even without this flag.
 ```
 
-See `demos/02-charmlint.md` and `demos/03-quickpack.md` for full walkthroughs of each tool.
+See `demos/03-quickpack.md` for a full walkthrough.

@@ -15,8 +15,9 @@ exist for something you need to replace).
 
 ## When to load
 
-- The `charm_audit` tool reports `DEP001` (StoredState), `DEP002` (Harness),
-  `DEP004` (reactive framework), or `LIB001`/`LIB002` (fetch-libs imports).
+- The `charm_audit` tool reports a deprecated API (StoredState, Harness,
+  `framework.breakpoint()`, or the reactive framework) or a vendored
+  library with a PyPI replacement.
 - You are running under `cantrip run --improve <legacy-charm>/` and the
   modernise-code task has started.
 - A user asks "migrate this reactive charm to ops" or "drop StoredState".
@@ -26,18 +27,17 @@ migration, load the more focused `harness-migration` skill instead.
 
 ## Inventory before editing
 
-Run `charm_audit` first — it delegates to charmlint and returns the exact
-set of migration types that apply. The diagnostic IDs map onto this skill
-as follows:
+Run `charm_audit` first — it returns the exact set of migration types
+that apply. Its `deprecated_apis` entries and charmlint findings map onto
+this skill as follows:
 
-| Rule ID | What it flags | Section below |
+| Audit finding | What it flags | Section below |
 | --- | --- | --- |
-| `DEP001` | `StoredState` usage | StoredState → modern storage |
-| `DEP002` | `from ops.testing import Harness` | Harness → Scenario |
-| `DEP003` | `self.framework.breakpoint()` | Small replacement (see section) |
-| `DEP004` | `charms.reactive` import or `@when` / `@when_not` / `@when_any` / `@when_all` / `@hook` decorator | Reactive → ops |
-| `LIB001` | fetch-libs import with a known PyPI replacement | fetch-libs → PyPI |
-| `LIB002` | fetch-libs import with no PyPI replacement yet | fetch-libs → PyPI (stay-put case) |
+| `stored-state` | `StoredState` usage | StoredState → modern storage |
+| `harness` | `from ops.testing import Harness` | Harness → Scenario |
+| `framework-breakpoint` | `self.framework.breakpoint()` | Small replacement (see section) |
+| `reactive-framework` | `charms.reactive` import or `@when` / `@when_not` / `@when_any` / `@when_all` / `@hook` decorator | Reactive → ops |
+| `LIBRARY-001` | vendored library with a known PyPI replacement | fetch-libs → PyPI |
 
 If you can't run the tool, grep for the four anchors yourself:
 
@@ -96,7 +96,7 @@ or status change needed to get there.
    modern repository layout.
 6. Delete handlers for events the charm no longer cares about
    (`upgrade-charm` almost always collapses into `_reconcile()`).
-7. Run the audit again — `DEP004` should drop off the report.
+7. Run the audit again — the reactive-framework finding should drop off the report.
 
 ### Testing the rewrite
 
@@ -197,7 +197,7 @@ def _ensure_admin_password(self) -> str:
 3. Replace writes first, then reads, one attribute at a time. Run
    `charm_validate` between each so unit tests catch regressions early.
 4. Remove `_stored = StoredState()` and the `StoredState` import. Re-run
-   the audit — `DEP001` should drop off.
+   the audit — the StoredState finding should drop off.
 
 ## Harness → Scenario
 
@@ -212,7 +212,7 @@ load it and follow the per-file workflow there. The short form:
   read `ctx.action_results`.
 - `ops[testing]` replaces `ops-scenario`; clean up `pyproject.toml`.
 
-Audit rule: `DEP002`. The harness-migration skill has the full detector
+Audit finding: `harness` (and charmlint's `TESTING-003` for test files). The harness-migration skill has the full detector
 and event-by-event recipes.
 
 ## fetch-libs → PyPI imports
@@ -224,10 +224,10 @@ and does not require `charmcraft fetch-libs` to fire before every pack.
 
 ### What the audit tells you
 
-- `LIB001` — the import has a known PyPI replacement. The diagnostic
-  message quotes the PyPI package name and the new import path.
-- `LIB002` — no PyPI replacement yet. Keep using fetch-libs for this
-  one; the entry is informational.
+- `LIBRARY-001` — a vendored library under `lib/charms/` has a known PyPI
+  replacement. The diagnostic message quotes the PyPI package name.
+- A vendored library with no finding has no PyPI replacement yet. Keep
+  using fetch-libs for that one.
 
 ### Mapping imports
 
@@ -259,7 +259,7 @@ Canonical publishes new `charmlibs-*` packages.
 5. Run `uv sync` and `charm_validate` to make sure the pack still works
    and the library surface is unchanged.
 
-For libraries with no PyPI alternative (LIB002), keep the `lib/charms/...`
+For libraries with no PyPI alternative, keep the `lib/charms/...`
 layout — nothing to migrate until Canonical publishes the package. If
 you maintain the charm yourself and the library is general-purpose,
 consider publishing it to PyPI yourself (see the `charm-library` skill
@@ -269,13 +269,12 @@ for the publisher workflow).
 
 `self.framework.breakpoint()` was removed from ops. Replace with
 `breakpoint()` from the standard library (or a conditional debugger
-import that only fires when running outside Juju). Audit rule: `DEP003`.
+import that only fires when running outside Juju). Audit finding: `framework-breakpoint`.
 
 ## Done criteria
 
-- Running `charm_audit` again shows no `DEP001`, `DEP002`, `DEP003`,
-  `DEP004`, or `LIB001` diagnostics (LIB002 may remain where no PyPI
-  replacement exists).
+- Running `charm_audit` again shows no deprecated-API or `LIBRARY-001`
+  findings.
 - `charm_validate` passes with unit-test coverage at or above the 80%
   floor from the improvement pipeline.
 - The charm packs cleanly with `charmcraft pack` (or the faster

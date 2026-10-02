@@ -36,7 +36,7 @@ on_this_page:
 ## Why race at all
 
 Charm building has an unusually clean success signal. A generated
-charm can be packed, linted with [charmlint](explanation-charmlint-rs.html),
+charm can be packed, linted with [charmlint](https://github.com/canonical/charmlint),
 unit-tested, and scored against an operational-readiness
 checklist. Unlike open-ended writing tasks, the output is
 *measurable*: a charm with zero charmlint errors and 95 %
@@ -102,9 +102,8 @@ Errors dominate because they block shipping; warnings are a
 speed bump; infos are advisory.
 
 The scorer calls the same
-[charmlint tool](explanation-charmlint-rs.html) the
-agent uses elsewhere, so the Rust-vs-Python backend selection
-stays in one place. A tool failure degrades to zeroed counts
+`charmlint` tool the agent uses elsewhere, so how charmlint is
+invoked stays in one place. A tool failure degrades to zeroed counts
 rather than crashing the race.
 
 ### Readiness — linear on the overall score
@@ -447,5 +446,4 @@ See also:
 
 - [CLI reference — slash commands](reference-cli.html#slash-commands)
 - [Using durable memory](howto-memory.html)
-- [Charmlint Rust backend](explanation-charmlint-rs.html)
 - [How Cantrip works](explanation-architecture.html)

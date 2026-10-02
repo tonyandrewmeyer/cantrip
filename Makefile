@@ -62,8 +62,7 @@ coverage:
 # Run cargo test for each Rust crate (skip gracefully when cargo is absent)
 rust-test:
 	@if command -v cargo >/dev/null 2>&1; then \
-		cd src/charmlint-rs && cargo test && \
-		cd ../quickpack-rs && cargo test; \
+		cd src/quickpack-rs && cargo test; \
 	else \
 		echo "cargo not found — skipping Rust tests"; \
 	fi
@@ -84,7 +83,6 @@ rust-coverage:
 		echo "Install: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview"; \
 		exit 1; \
 	}
-	cd src/charmlint-rs && cargo llvm-cov --summary-only
 	cd src/quickpack-rs && cargo llvm-cov --summary-only
 
 # Rebuild the user docs site from docs/src/*.md into docs/docs/*.html.
@@ -143,7 +141,7 @@ help:
 	@echo "  all         - Run format + check"
 	@echo "  coverage    - Run unit tests with coverage report"
 	@echo "  go-test     - Run go test for cantrip-kdiag binary"
-	@echo "  rust-test   - Run cargo test for charmlint-rs and quickpack-rs"
+	@echo "  rust-test   - Run cargo test for quickpack-rs"
 	@echo "  rust-coverage - Run cargo-llvm-cov summary for each Rust crate"
 	@echo "  docs        - Rebuild docs/docs/*.html from docs/src/*.md"
 	@echo "  docs-check  - Semantic-DOM diff of the rebuild against committed HTML"

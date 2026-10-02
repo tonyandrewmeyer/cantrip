@@ -348,9 +348,15 @@ class TestSkillsIndexWithBundledSkills:
         names = {s.name for s in index.list_skills()}
         assert "charm-migration" in names
         body = index.load_skill("charm-migration").lower()
-        # Audit rule IDs the skill maps migrations to.
-        for rule_id in ("dep001", "dep002", "dep003", "dep004", "lib001", "lib002"):
-            assert rule_id in body, f"charm-migration missing rule mapping: {rule_id!r}"
+        # Audit findings the skill maps migrations to.
+        for finding in (
+            "stored-state",
+            "harness",
+            "framework-breakpoint",
+            "reactive-framework",
+            "library-001",
+        ):
+            assert finding in body, f"charm-migration missing finding mapping: {finding!r}"
         # Reactive framework anchors.
         for anchor in ("charms.reactive", "@when", "framework.observe", "_reconcile"):
             assert anchor in body, f"charm-migration missing reactive anchor: {anchor!r}"
