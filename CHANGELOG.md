@@ -22,6 +22,23 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   reads, library metadata) state the guidance directly again.
 
 ### Fixed
+- **``cantrip export-transcript --since`` works with an ISO 8601
+  timestamp.**  Session rows are stamped by SQLite's
+  ``datetime('now')``, which writes ``YYYY-MM-DD HH:MM:SS``, and both
+  ``--since`` filters compare timestamps as strings.  A value using
+  the canonical ``T`` separator therefore sorted *after* every row
+  stamped on the same day (``'T'`` > ``' '``) and silently dropped the
+  whole day the user asked to keep — including
+  ``--since 2026-04-15T10:00:00Z``, the exact shape
+  ``docs/src/howto-export.md`` shows.  The value is now normalised to
+  the stored shape first: ``T`` or space separator, with or without a
+  UTC offset, date-only meaning midnight, and a naive value read as
+  UTC to match the store.  A value that is not a date or timestamp
+  (``--since yesterday``) is now a clear error rather than an empty
+  transcript with a zero exit code.  The existing regression test
+  missed this because it back-filled its fixture timestamp in the
+  ``T``-separated shape rather than the store's own.
+
 - **``subtask: true`` on a ``primary`` custom command no longer fails.**
   ``docs/src/howto-custom-commands.md`` documents ``subtask`` as "force
   work-queue dispatch even when ``agent`` is ``primary``", but the

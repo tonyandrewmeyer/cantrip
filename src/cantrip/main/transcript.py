@@ -19,14 +19,24 @@ def _export_transcript(args: argparse.Namespace) -> int:
         print(f"Error: no .cantrip file found in {charm_path}")
         return 1
 
-    from cantrip.transcript.export import load_transcript
+    from cantrip.transcript import export as transcript_export
+
+    # Validate ``--since`` up front so a typo is a clear error rather
+    # than a silently-empty transcript.
+    since = getattr(args, "filter_since", None)
+    if since is not None:
+        try:
+            since = transcript_export.normalise_since(since)
+        except ValueError as exc:
+            print(f"Error: --since {exc}", file=sys.stderr)
+            return 1
 
     try:
-        data = load_transcript(
+        data = transcript_export.load_transcript(
             db_path,
             task_id=getattr(args, "filter_task", None),
             phase=getattr(args, "filter_phase", None),
-            since=getattr(args, "filter_since", None),
+            since=since,
             branch=getattr(args, "filter_branch", None),
         )
     except sqlite3.DatabaseError as exc:

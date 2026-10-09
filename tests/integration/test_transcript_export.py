@@ -245,11 +245,15 @@ class TestTranscriptFilters:
         # (raw INSERTs leave ``parent_turn_id`` NULL, which makes
         # ``load_active_branch`` rightfully treat the row as orphaned),
         # then back-fill its timestamp to a known future value the
-        # ``since`` filter can match against.
+        # ``since`` filter can match against.  The back-fill uses the
+        # store's own shape — space-separated, whole seconds, as
+        # SQLite's ``datetime('now')`` writes it — so the filter is
+        # exercised against realistic rows rather than ones that happen
+        # to sort the way the test wants.
         store.record_message("user", "A late message")
         store._db.execute(
             "UPDATE messages SET timestamp = ? WHERE id = (SELECT MAX(id) FROM messages)",
-            ("2099-01-01T00:00:00",),
+            ("2099-01-01 00:00:00",),
         )
         store._db.commit()
         store.close()
