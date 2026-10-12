@@ -448,8 +448,17 @@ straight to drift.</p>
   </dd>
   <dt>--since TIMESTAMP</dt>
   <dd>
-    Export only messages and events at or after the given ISO
-    timestamp (e.g. <code>2026-04-15T10:00:00Z</code>).
+    Export only messages and events at or after the given ISO 8601
+    date or timestamp &mdash; <code>2026-04-15</code>,
+    <code>2026-04-15T10:00:00</code>,
+    <code>2026-04-15T10:00:00Z</code> and
+    <code>2026-04-15 10:00:00</code> are all accepted, as is any
+    UTC offset (<code>+02:00</code>). A value with no offset is read
+    as UTC, matching the timestamps the session file stores; a date
+    on its own means midnight. Sub-second precision is ignored.
+    A value that is not a date or timestamp is an error, so a typo
+    fails loudly instead of exporting an empty transcript.
+    Tasks and token-usage totals are not narrowed by this filter.
   </dd>
   <dt>--branch TURN_ID</dt>
   <dd>

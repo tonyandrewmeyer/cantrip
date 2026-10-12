@@ -1,6 +1,7 @@
 """Transcript export -- reads session data and dispatches to formatters."""
 
 import dataclasses
+import datetime
 import pathlib
 
 from cantrip.agent import store as store_mod
@@ -42,6 +43,41 @@ _PHASE_CATEGORIES: dict[str, set[str]] = {
 }
 
 
+#: The shape SQLite's ``datetime('now')`` default writes into every
+#: session row: UTC, space-separated, whole seconds.
+_STORE_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def normalise_since(value: str) -> str:
+    """Return *value* as a store-format UTC timestamp.
+
+    Both ``since`` filters in :func:`load_transcript` compare
+    timestamps as strings, so the value has to be in the same shape
+    the store writes.  A canonical ISO 8601 timestamp is not: ``'T'``
+    sorts after ``' '``, so ``2026-04-15T10:00:00`` compares greater
+    than every row stamped on 2026-04-15 and silently drops the whole
+    day the user asked to keep.
+
+    A value with no UTC offset is read as UTC, matching the stored
+    rows.  Sub-second precision is discarded — the store keeps whole
+    seconds, and truncating keeps the filter inclusive rather than
+    dropping a row that falls inside the requested second.
+
+    Raises :exc:`ValueError` when *value* is not a date or timestamp.
+    """
+    try:
+        parsed = datetime.datetime.fromisoformat(value.strip())
+    except ValueError:
+        raise ValueError(
+            f"{value!r} is not a date or timestamp.  Expected an ISO 8601 "
+            "value such as '2026-04-15', '2026-04-15T10:00:00' or "
+            "'2026-04-15T10:00:00Z'."
+        ) from None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(datetime.UTC)
+    return parsed.strftime(_STORE_TIMESTAMP_FORMAT)
+
+
 def load_transcript(
     db_path: pathlib.Path,
     *,
@@ -62,8 +98,10 @@ def load_transcript(
     (``research``, ``build``, ``deploy``, ``test``).
 
     *since* — include only messages and events at or after the given
-    ISO 8601 timestamp.  Tasks and token-usage totals are not narrowed
-    by this filter; messages without a timestamp are kept.
+    ISO 8601 date or timestamp, normalised by :func:`normalise_since`
+    (which raises :exc:`ValueError` on anything unparseable).  Tasks
+    and token-usage totals are not narrowed by this filter; messages
+    without a timestamp are kept.
 
     *branch* — Phase 67.1: export the conversation path leading to
     a specific turn id rather than the currently active branch.
@@ -72,6 +110,7 @@ def load_transcript(
     turns are reachable via ``/tree`` and a deliberate
     ``--branch <id>`` re-export).
     """
+    cutoff = normalise_since(since) if since else None
     session_store = store_mod.SessionStore(db_path)
     session_store.open()
     try:
@@ -88,11 +127,11 @@ def load_transcript(
         # excluded — the export should reflect a single linear
         # conversation, not every dead end the user explored.
         all_messages = session_store.load_active_branch(head=branch)
-        if since:
+        if cutoff:
             # Keep messages with no timestamp — losing data silently
             # is worse than over-including a row whose time is unknown.
             data.messages = [
-                m for m in all_messages if not m.get("timestamp") or str(m["timestamp"]) >= since
+                m for m in all_messages if not m.get("timestamp") or str(m["timestamp"]) >= cutoff
             ]
         else:
             data.messages = all_messages
@@ -131,7 +170,7 @@ def load_transcript(
                 data.subagent_messages[task.id] = msgs
 
         # Load events, with optional time filter.
-        data.events = session_store.load_events(since=since)
+        data.events = session_store.load_events(since=cutoff)
 
         # Load token usage.  Whole-session totals — `since` narrows the
         # displayed messages and events but not the token totals, which

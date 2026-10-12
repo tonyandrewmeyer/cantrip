@@ -69,7 +69,14 @@ For long sessions, filter the export to focus on what matters:
 
 ### By timestamp
 
-<pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --since 2026-04-15T10:00:00Z</code></pre>
+<pre><code><span class="prompt">$</span> cantrip export-transcript ./my-charm --since 2026-04-15T10:00:00Z
+<span class="comment"># A bare date works too, and means midnight UTC:</span>
+<span class="prompt">$</span> cantrip export-transcript ./my-charm --since 2026-04-15</code></pre>
+
+A value without a UTC offset is read as UTC, which is what the
+session file stores. Only messages and events are narrowed &mdash;
+the task list and the token-usage totals still cover the whole
+session.
 
 {#pagination}
 ## Paginate HTML output

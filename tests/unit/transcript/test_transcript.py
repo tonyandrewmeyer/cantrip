@@ -1,5 +1,6 @@
 """Tests for transcript export and formatters."""
 
+import datetime
 import json
 import pathlib
 
@@ -7,7 +8,7 @@ import pytest
 
 from cantrip.agent.state import AgentState
 from cantrip.agent.store import SessionStore
-from cantrip.transcript.export import TranscriptData, load_transcript
+from cantrip.transcript.export import TranscriptData, load_transcript, normalise_since
 from cantrip.transcript.html import render_html, render_html_paginated
 from cantrip.transcript.jsonl import render_jsonl
 from cantrip.transcript.markdown import render_markdown
@@ -631,6 +632,36 @@ class TestFilteredExport:
         assert len(data.messages) == 2
         assert len(data.events) >= 1
 
+    @pytest.mark.parametrize(
+        "cutoff",
+        [
+            "{today}",
+            "{today}T00:00:00",
+            "{today}T00:00:00Z",
+            "{today}T00:00:00+00:00",
+            "{today} 00:00:00",
+        ],
+    )
+    def test_filter_by_since_keeps_today(self, db_path, cutoff: str):
+        """Midnight today keeps today's rows, whatever the value's shape.
+
+        Regression: the store stamps rows with SQLite's
+        ``datetime('now')`` (``YYYY-MM-DD HH:MM:SS``) and both filters
+        compare timestamps as strings, so the canonical ISO 8601 ``T``
+        separator sorted *after* every same-day row and silently
+        dropped the day the user asked to keep — including the
+        ``--since 2026-04-15T10:00:00Z`` shape the docs show.
+        """
+        today = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+        data = load_transcript(db_path, since=cutoff.format(today=today))
+        assert len(data.messages) == 2
+        assert len(data.events) >= 1
+
+    def test_filter_by_since_rejects_unparseable(self, db_path):
+        """A value that is not a timestamp errors rather than filtering to nothing."""
+        with pytest.raises(ValueError, match="not a date or timestamp"):
+            load_transcript(db_path, since="yesterday")
+
     def test_filter_by_since_keeps_timestampless(self, db_path, monkeypatch):
         """A message without a timestamp survives --since filtering.
 
@@ -660,3 +691,59 @@ class TestFilteredExport:
     def test_unknown_phase_gives_empty(self, db_path):
         data = load_transcript(db_path, phase="unknown")
         assert len(data.tasks) == 0
+
+
+class TestNormaliseSince:
+    """``--since`` values become store-format UTC timestamps."""
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            # Date only — midnight, as the store would have written it.
+            ("2026-04-15", "2026-04-15 00:00:00"),
+            # The canonical ISO 8601 separator, which the docs use.
+            ("2026-04-15T10:00:00", "2026-04-15 10:00:00"),
+            # The store's own shape round-trips unchanged.
+            ("2026-04-15 10:00:00", "2026-04-15 10:00:00"),
+            # Explicit UTC, spelled both ways.
+            ("2026-04-15T10:00:00Z", "2026-04-15 10:00:00"),
+            ("2026-04-15T10:00:00+00:00", "2026-04-15 10:00:00"),
+            # A non-UTC offset converts; the store is UTC.
+            ("2026-04-15T10:00:00+02:00", "2026-04-15 08:00:00"),
+            ("2026-04-15T10:00:00-05:30", "2026-04-15 15:30:00"),
+            # Minute precision is allowed; sub-second precision truncates
+            # down, keeping the filter inclusive.
+            ("2026-04-15T10:00", "2026-04-15 10:00:00"),
+            ("2026-04-15T10:00:00.750000", "2026-04-15 10:00:00"),
+            # Surrounding whitespace is forgiven.
+            ("  2026-04-15T10:00:00  ", "2026-04-15 10:00:00"),
+        ],
+    )
+    def test_accepted_shapes(self, value: str, expected: str) -> None:
+        assert normalise_since(value) == expected
+
+    def test_is_idempotent(self) -> None:
+        """Normalising an already-normalised value is a no-op.
+
+        The CLI normalises up front to report a bad ``--since`` against
+        the flag, then hands the result to ``load_transcript``, which
+        normalises again.
+        """
+        once = normalise_since("2026-04-15T10:00:00Z")
+        assert normalise_since(once) == once
+
+    @pytest.mark.parametrize(
+        "value",
+        ["", "   ", "yesterday", "last week", "2026-13-45", "10:00:00", "1713168000"],
+    )
+    def test_rejects_non_timestamps(self, value: str) -> None:
+        with pytest.raises(ValueError, match="not a date or timestamp"):
+            normalise_since(value)
+
+    def test_error_names_the_accepted_shapes(self) -> None:
+        """The message has to tell the user what to type instead."""
+        with pytest.raises(ValueError) as excinfo:
+            normalise_since("yesterday")
+        message = str(excinfo.value)
+        assert "'yesterday'" in message
+        assert "2026-04-15T10:00:00Z" in message

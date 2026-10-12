@@ -562,6 +562,59 @@ class TestExportTranscript:
         assert rc == 1
         assert "not a valid Cantrip session file" in captured.err
 
+    def test_unparseable_since_errors_before_loading(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A bad ``--since`` is rejected, not silently filtered to nothing.
+
+        Both ``since`` filters compare timestamps as strings, so a value
+        argparse happily accepts but nobody can parse used to produce an
+        empty transcript with a zero exit code.
+        """
+        (tmp_path / ".cantrip").write_text("")
+        args = SimpleNamespace(
+            path=tmp_path,
+            fmt="html",
+            output=None,
+            filter_task=None,
+            filter_phase=None,
+            filter_since="yesterday",
+            filter_branch=None,
+        )
+        with mock.patch("cantrip.transcript.export.load_transcript") as load:
+            rc = cantrip_main._export_transcript(args)
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "--since" in captured.err
+        assert "not a date or timestamp" in captured.err
+        load.assert_not_called()
+
+    def test_since_is_normalised_before_loading(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The handler hands ``load_transcript`` a store-format cutoff."""
+        (tmp_path / ".cantrip").write_text("")
+        args = SimpleNamespace(
+            path=tmp_path,
+            fmt="jsonl",
+            output=None,
+            filter_task=None,
+            filter_phase=None,
+            filter_since="2026-04-15T10:00:00Z",
+            filter_branch=None,
+        )
+        with (
+            mock.patch(
+                "cantrip.transcript.export.load_transcript",
+                return_value=SimpleNamespace(messages=[], tasks=[]),
+            ) as load,
+            mock.patch("cantrip.transcript.jsonl.render_jsonl", return_value=""),
+        ):
+            rc = cantrip_main._export_transcript(args)
+        capsys.readouterr()
+        assert rc == 0
+        assert load.call_args.kwargs["since"] == "2026-04-15 10:00:00"
+
     @pytest.mark.parametrize(
         "fmt, expected_suffix, renderer",
         [
