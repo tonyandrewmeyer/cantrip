@@ -40,6 +40,7 @@ from cantrip.main.parser import _add_run_print_options as _add_run_print_options
 from cantrip.main.parser import _add_run_session_options as _add_run_session_options
 from cantrip.main.parser import _add_run_subparser as _add_run_subparser
 from cantrip.main.parser import _add_skill_subparser as _add_skill_subparser
+from cantrip.main.parser import _build_parser as _build_parser
 from cantrip.main.parser import _normalise_argv as _normalise_argv
 from cantrip.main.parser import parse_args as parse_args
 from cantrip.main.permissions import _load_permissions_for_cli as _load_permissions_for_cli
