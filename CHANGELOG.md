@@ -22,6 +22,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   reads, library metadata) state the guidance directly again.
 
 ### Fixed
+
+- **``cantrip checkpoints`` and ``cantrip audit`` accept their shared
+  option after the sub-subcommand.**  ``--db`` was declared only on the
+  ``checkpoints`` group parser and ``--path`` only on the ``audit``
+  one, and argparse resolves an option against the parser owning the
+  position it appears in.  Every spelling in
+  ``docs/src/reference-cli.md`` — ``cantrip checkpoints list --db
+  PATH``, ``cantrip checkpoints show TASK STEP N --db PATH``,
+  ``cantrip checkpoints delete --task-id ID --db PATH``,
+  ``cantrip audit list --path PATH``, ``cantrip audit export --path
+  PATH`` — therefore exited with "unrecognized arguments", and only the
+  undocumented ``cantrip checkpoints --db PATH list`` order worked.
+  Both options are now re-declared on each leaf parser with
+  ``default=argparse.SUPPRESS``, so either order parses and the group
+  default still applies when the flag is absent.  A structural test
+  walks the subcommand tree and fails if any future group option
+  forgets its leaf copies.
+
 - **``cantrip export-transcript --since`` works with an ISO 8601
   timestamp.**  Session rows are stamped by SQLite's
   ``datetime('now')``, which writes ``YYYY-MM-DD HH:MM:SS``, and both
