@@ -47,7 +47,7 @@ dependencies = [
     "pillow>=11.0",                # Observability diagnostics (Phase 48.3 waterfall renderer)
     "jsonschema>=4.18.0",          # Structured-output validation (Phase 73.3)
     "packaging>=26.2",             # Version parsing in cantrip.update
-    "charmlint~=0.2.1",            # Charm linter; minor bumps add rules, so pin the patch range
+    "charmlint>=0.2.1,<0.4.0",            # Charm linter; minor bumps add rules, so pin the patch range
 ]
 
 [dependency-groups]
