@@ -31,6 +31,17 @@ _DEFAULT_TOP_K = 5
 _MAX_TOP_K = 20
 
 
+def _site_list() -> str:
+    """Return the registered site slugs as a comma-separated string.
+
+    Derived from :data:`cantrip.docs_index.sites.SITES` rather than
+    written out, so a site added to or renamed in the registry can
+    never leave the tool advertising a slug that
+    :func:`cantrip.docs_index.sites.by_name` will reject.
+    """
+    return ", ".join(sites.names())
+
+
 class DocsSearchTool(Tool):
     """Similarity-search the indexed Canonical doc surfaces."""
 
@@ -62,7 +73,7 @@ class DocsSearchTool(Tool):
     def description(self) -> str:
         return (
             "Search the indexed Canonical documentation for charm-ecosystem "
-            "topics (Juju, ops, charmcraft, rockcraft, jubilant, charmhub). "
+            f"topics ({_site_list()}). "
             "Use this BEFORE answering 'how do I ...' questions about charm "
             "authoring instead of relying on memory — the index has the "
             "current canonical reference. Returns up to top_k hits as "
@@ -82,9 +93,8 @@ class DocsSearchTool(Tool):
                 "site": {
                     "type": "string",
                     "description": (
-                        "Restrict search to one site (juju, ops, charmcraft, "
-                        "rockcraft, jubilant, charmhub).  Omit to search every "
-                        "indexed site."
+                        f"Restrict search to one site ({_site_list()}).  "
+                        "Omit to search every indexed site."
                     ),
                 },
                 "top_k": {
@@ -113,6 +123,16 @@ class DocsSearchTool(Tool):
                 error="docs_search requires a non-empty query.",
                 caption="docs_search → empty query",
             )
+        requested: sites.DocSite | None = None
+        if site is not None:
+            requested = sites.by_name(site)
+            if requested is None:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=f"Unknown docs site {site!r}.  Registered sites: {_site_list()}.",
+                    caption=f"docs_search → unknown site '{site}'",
+                )
         capped = max(1, min(int(top_k), _MAX_TOP_K))
 
         try:
@@ -125,7 +145,7 @@ class DocsSearchTool(Tool):
                 caption="docs_search → no embed provider",
             )
 
-        target_sites = self._resolve_sites(site)
+        target_sites = self._resolve_sites(requested)
         if not target_sites:
             return ToolResult(
                 success=False,
@@ -188,27 +208,23 @@ class DocsSearchTool(Tool):
             caption=f"docs_search '{_short(query)}' → {len(payload)} hits",
         )
 
-    def _resolve_sites(self, requested: str | None) -> list[sites.DocSite]:
+    def _resolve_sites(self, requested: sites.DocSite | None) -> list[sites.DocSite]:
         """Return the list of sites to search.
 
         Filters to sites that actually have an on-disk index — a site
         registered but never crawled would otherwise return no
-        results without explanation.  An explicit *requested* name
-        that doesn't match any indexed site returns an empty list so
-        the caller can render a "run `cantrip docs index`" hint.
+        results without explanation, so an empty list lets the caller
+        render a "run `cantrip docs index`" hint.  *requested* is an
+        already-resolved registry entry (:meth:`execute` rejects
+        unregistered names before calling here) or ``None`` to
+        consider every registered site.
         """
-        if requested:
-            site = sites.by_name(requested)
-            if site is None:
-                return []
-            path = index.store_path_for(site.name, root=self._cache_root)
-            return [site] if path.exists() else []
-        out: list[sites.DocSite] = []
-        for site in sites.SITES:
-            path = index.store_path_for(site.name, root=self._cache_root)
-            if path.exists():
-                out.append(site)
-        return out
+        candidates = (requested,) if requested is not None else sites.SITES
+        return [
+            site
+            for site in candidates
+            if index.store_path_for(site.name, root=self._cache_root).exists()
+        ]
 
 
 def _short(text: str, *, length: int = 40) -> str:

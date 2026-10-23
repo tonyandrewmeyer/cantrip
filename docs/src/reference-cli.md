@@ -806,7 +806,7 @@ a glance instead of looking the same as a missing one.
 ## cantrip docs
 
 Index Canonical's documentation surfaces (Juju, ops,
-charmcraft, rockcraft, jubilant, Charmhub) so the agent's
+charmcraft, rockcraft, jubilant, charmlibs) so the agent's
 `docs_search` tool and the `@docs <site> <query>` mention can
 return cited passages instead of paraphrasing from memory.
 Requires an embed provider configured via the

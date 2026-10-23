@@ -22,6 +22,20 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
   reads, library metadata) state the guidance directly again.
 
 ### Fixed
+- **The docs index no longer advertises a site that does not exist.**
+  The registry has six sites — ``juju``, ``ops``, ``charmcraft``,
+  ``rockcraft``, ``jubilant`` and ``charmlibs`` — but the
+  ``docs_search`` tool schema, the ``cantrip docs index --site``
+  help text and two user-doc pages all listed ``charmhub`` in
+  ``charmlibs``'s place.  An agent that took the tool schema at its
+  word and called ``docs_search(site="charmhub")`` was told
+  ``No docs index found.  Run `cantrip docs index --site charmhub```
+  — a command that cannot succeed, because no such site is
+  registered.  All four lists are now generated from
+  ``cantrip.docs_index.sites`` so they cannot drift again, and
+  ``docs_search`` distinguishes an unregistered site (names the
+  registered ones) from a registered site that has not been crawled
+  yet (keeps the ``cantrip docs index`` hint).
 - **``cantrip export-transcript --since`` works with an ISO 8601
   timestamp.**  Session rows are stamped by SQLite's
   ``datetime('now')``, which writes ``YYYY-MM-DD HH:MM:SS``, and both

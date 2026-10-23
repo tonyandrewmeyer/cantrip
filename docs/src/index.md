@@ -111,7 +111,7 @@ section: index
     <h3>Index the charm docs</h3>
     <p>
       Crawl Canonical's documentation surfaces (Juju, ops,
-      charmcraft, rockcraft, jubilant, Charmhub) and let the agent
+      charmcraft, rockcraft, jubilant, charmlibs) and let the agent
       cite passages via <code>docs_search</code> and
       <code>@docs &lt;site&gt; &lt;query&gt;</code> instead of
       paraphrasing from memory.

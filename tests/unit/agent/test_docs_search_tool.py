@@ -16,7 +16,7 @@ from cantrip.agent.context_providers_builtin import (
     build_default_registry,
 )
 from cantrip.agent.tools.docs_search import DocsSearchTool
-from cantrip.docs_index import index
+from cantrip.docs_index import index, sites
 from cantrip.docs_index.store import Chunk, DocsStore
 from cantrip.llm.roles import RoleRouter
 from tests.support.roles import StubEmbed as _StubEmbed
@@ -135,11 +135,59 @@ class TestDocsSearchTool:
         assert "no matches" in result.output.lower()
 
     @pytest.mark.asyncio
-    async def test_unknown_site_treated_as_no_index(self, tmp_path: pathlib.Path) -> None:
+    async def test_unknown_site_names_the_registry(self, tmp_path: pathlib.Path) -> None:
+        """An unregistered slug says so and lists the real ones.
+
+        Regression: the tool used to fold "no such site" into the
+        "not indexed yet" branch, so a typo (or the ``charmhub``
+        slug the tool schema itself used to advertise) produced
+        ``Run `cantrip docs index --site charmhub``` — a command
+        that cannot succeed because the site does not exist.
+        """
         tool = DocsSearchTool(_router_with_embed(), cache_root=tmp_path)
         result = await tool.execute(query="x", site="not-registered")
         assert result.success is False
+        assert "unknown docs site" in result.error.lower()
+        for name in sites.names():
+            assert name in result.error
+        assert "cantrip docs index" not in result.error
+
+    @pytest.mark.asyncio
+    async def test_registered_but_unindexed_site_keeps_the_index_hint(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        tool = DocsSearchTool(_router_with_embed(), cache_root=tmp_path)
+        result = await tool.execute(query="x", site="ops")
+        assert result.success is False
         assert "no docs index" in result.error.lower()
+        assert "cantrip docs index --site ops" in result.error
+
+
+class TestDocsSearchSchema:
+    """The advertised site slugs must match the registry."""
+
+    def test_description_lists_every_registered_site(self) -> None:
+        tool = DocsSearchTool(_router_with_embed())
+        for name in sites.names():
+            assert name in tool.description
+
+    def test_site_parameter_lists_every_registered_site(self) -> None:
+        tool = DocsSearchTool(_router_with_embed())
+        described = tool.parameters["properties"]["site"]["description"]
+        for name in sites.names():
+            assert name in described
+
+    def test_schema_advertises_no_unregistered_slug(self) -> None:
+        """Guard against the stale ``charmhub`` slug coming back.
+
+        ``charmhub`` is a real Charmhub *tool* prefix elsewhere in the
+        agent, but it has never been a registered docs site — the
+        registry calls that corpus ``charmlibs``.
+        """
+        tool = DocsSearchTool(_router_with_embed())
+        described = tool.parameters["properties"]["site"]["description"]
+        assert "charmhub" not in tool.description
+        assert "charmhub" not in described
 
 
 # ---------------------------------------------------------------------------
