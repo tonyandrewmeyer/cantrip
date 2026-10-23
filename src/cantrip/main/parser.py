@@ -13,6 +13,7 @@ import pathlib
 import sys
 
 from cantrip import __version__
+from cantrip.docs_index import sites as doc_sites
 
 # Type alias for the value returned by ``ArgumentParser.add_subparsers``.
 # Spelt out so the per-subcommand helpers below can be annotated; the
@@ -654,7 +655,7 @@ def _add_docs_subparser(subparsers: _SubParsers) -> None:
     docs_index_p = docs_sub.add_parser("index", help="Crawl and index a doc site")
     docs_index_p.add_argument(
         "--site",
-        help="Site name (juju, ops, charmcraft, rockcraft, jubilant, charmhub)",
+        help=f"Site name ({', '.join(doc_sites.names())})",
     )
     docs_index_p.add_argument(
         "--all",

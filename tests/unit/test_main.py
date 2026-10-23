@@ -16,6 +16,7 @@ from unittest import mock
 import pytest
 
 from cantrip import main as cantrip_main
+from cantrip.docs_index import sites as doc_sites
 from tests import conftest
 
 
@@ -115,6 +116,24 @@ class TestParseArgs:
         args = cantrip_main.parse_args()
         assert args.command == "docs"
         assert args.docs_command == "list"
+
+    def test_docs_index_help_lists_the_registered_sites(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """``--site`` help is generated from the site registry.
+
+        Regression: the help string was written out by hand and had
+        drifted — it advertised ``charmhub``, which
+        ``cantrip docs index --site charmhub`` rejects as an unknown
+        site.  The registry calls that corpus ``charmlibs``.
+        """
+        _set_argv(monkeypatch, "docs", "index", "--help")
+        with pytest.raises(SystemExit):
+            cantrip_main.parse_args()
+        help_text = capsys.readouterr().out
+        for name in doc_sites.names():
+            assert name in help_text
+        assert "charmhub" not in help_text
 
     def test_audit_list_subcommand(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_argv(monkeypatch, "audit", "list", "--action", "denied", "--tool", "read_file")
