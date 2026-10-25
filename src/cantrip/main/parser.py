@@ -36,8 +36,67 @@ _SUBCOMMANDS = frozenset(
 )
 
 
+# Help strings for the two options declared on a group parser *and* on
+# each of its leaf parsers (see ``_checkpoints_db_parent``), kept in one
+# place so the two declarations cannot drift apart.
+_CHECKPOINTS_DB_HELP = "Path to the .cantrip session file (default: ./.cantrip)"
+_AUDIT_PATH_HELP = (
+    "Path to the audit file (default: ``<cwd>/.cantrip-audit.jsonl``). "
+    "Matches the file the subagent writes under ``context.charm_path``."
+)
+
+
+def _checkpoints_db_parent() -> argparse.ArgumentParser:
+    """Re-declare ``cantrip checkpoints --db`` for the leaf parsers.
+
+    argparse only accepts an option declared on a *group* parser before
+    the sub-subcommand — ``cantrip checkpoints --db PATH list``.  The
+    spelling everyone reaches for, and the one
+    ``docs/src/reference-cli.md`` documents, puts it after:
+    ``cantrip checkpoints list --db PATH``.  Re-declaring the option on
+    every leaf parser via ``parents=`` makes both work.  The leaf copy
+    defaults to :data:`argparse.SUPPRESS` so that an absent flag
+    contributes nothing to the namespace and the group parser's real
+    default survives, rather than being clobbered by a second ``None``.
+    """
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument(
+        "--db",
+        type=pathlib.Path,
+        default=argparse.SUPPRESS,
+        help=_CHECKPOINTS_DB_HELP,
+    )
+    return shared
+
+
+def _audit_path_parent() -> argparse.ArgumentParser:
+    """Re-declare ``cantrip audit --path`` for the leaf parsers.
+
+    Same group-versus-leaf argument-order problem as
+    :func:`_checkpoints_db_parent`, which carries the explanation.
+    """
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument(
+        "--path",
+        type=pathlib.Path,
+        default=argparse.SUPPRESS,
+        dest="audit_path",
+        help=_AUDIT_PATH_HELP,
+    )
+    return shared
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
+    return _build_parser().parse_args(_normalise_argv(sys.argv[1:]))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the fully-populated top-level parser.
+
+    Split out from :func:`parse_args` so tests can walk the subcommand
+    tree without going through ``sys.argv``.
+    """
     parser = argparse.ArgumentParser(
         prog="cantrip",
         description="A small spell for building Juju charms",
@@ -59,7 +118,7 @@ def parse_args() -> argparse.Namespace:
     _add_audit_subparser(subparsers)
     _add_permissions_subparser(subparsers)
 
-    return parser.parse_args(_normalise_argv(sys.argv[1:]))
+    return parser
 
 
 def _normalise_argv(argv: list[str]) -> list[str]:
@@ -606,12 +665,14 @@ def _add_checkpoints_subparser(subparsers: _SubParsers) -> None:
         "--db",
         type=pathlib.Path,
         default=pathlib.Path(".cantrip"),
-        help="Path to the .cantrip session file (default: ./.cantrip)",
+        help=_CHECKPOINTS_DB_HELP,
     )
+    db_parent = _checkpoints_db_parent()
     checkpoints_sub = checkpoints_parser.add_subparsers(dest="checkpoints_command", required=True)
     cps_list = checkpoints_sub.add_parser(
         "list",
         help="List checkpoint rows for a task (or all tasks).",
+        parents=[db_parent],
     )
     cps_list.add_argument(
         "--task-id",
@@ -621,6 +682,7 @@ def _add_checkpoints_subparser(subparsers: _SubParsers) -> None:
     cps_show = checkpoints_sub.add_parser(
         "show",
         help="Pretty-print one stored checkpoint blob as JSON.",
+        parents=[db_parent],
     )
     cps_show.add_argument("task_id", help="Task id the checkpoint belongs to")
     cps_show.add_argument("step_name", help="Step name, e.g. llm_turn or tool:read_file")
@@ -628,6 +690,7 @@ def _add_checkpoints_subparser(subparsers: _SubParsers) -> None:
     cps_delete = checkpoints_sub.add_parser(
         "delete",
         help="Delete every checkpoint for a task.",
+        parents=[db_parent],
     )
     cps_delete.add_argument(
         "--task-id",
@@ -703,15 +766,14 @@ def _add_audit_subparser(subparsers: _SubParsers) -> None:
         type=pathlib.Path,
         default=None,
         dest="audit_path",
-        help=(
-            "Path to the audit file (default: ``<cwd>/.cantrip-audit.jsonl``). "
-            "Matches the file the subagent writes under ``context.charm_path``."
-        ),
+        help=_AUDIT_PATH_HELP,
     )
+    path_parent = _audit_path_parent()
     audit_sub = audit_parser.add_subparsers(dest="audit_command", required=True)
     audit_list = audit_sub.add_parser(
         "list",
         help="Print audit lines filtered by task, action, or tool.",
+        parents=[path_parent],
     )
     audit_list.add_argument("--task-id", default=None, help="Filter to a single task id.")
     audit_list.add_argument(
@@ -728,6 +790,7 @@ def _add_audit_subparser(subparsers: _SubParsers) -> None:
     audit_export = audit_sub.add_parser(
         "export",
         help="Re-emit the audit trail in a different format (jsonl passthrough or csv).",
+        parents=[path_parent],
     )
     audit_export.add_argument(
         "--format",

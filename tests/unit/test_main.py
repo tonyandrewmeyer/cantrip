@@ -9,6 +9,7 @@ launching any actual mode.
 
 from __future__ import annotations
 
+import argparse
 import pathlib
 from types import SimpleNamespace
 from unittest import mock
@@ -132,6 +133,114 @@ class TestParseArgs:
         assert args.command == "audit"
         assert args.audit_command == "export"
         assert args.format == "csv"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ("audit", "list", "--path", "/tmp/a.jsonl"),
+            ("audit", "export", "--path", "/tmp/a.jsonl"),
+            ("audit", "--path", "/tmp/a.jsonl", "list"),
+            ("audit", "--path", "/tmp/a.jsonl", "export"),
+        ],
+        ids=["list-after", "export-after", "list-before", "export-before"],
+    )
+    def test_audit_path_accepted_either_side_of_the_subcommand(
+        self, monkeypatch: pytest.MonkeyPatch, argv: tuple[str, ...]
+    ) -> None:
+        """``--path`` works before *and* after the sub-subcommand.
+
+        Regression: ``--path`` was declared only on the ``audit`` group
+        parser, so argparse accepted it only ahead of the
+        sub-subcommand.  ``cantrip audit list --path PATH`` — the
+        spelling ``docs/src/reference-cli.md`` documents — died with
+        "unrecognized arguments: --path PATH".
+        """
+        _set_argv(monkeypatch, *argv)
+        args = cantrip_main.parse_args()
+        assert args.command == "audit"
+        assert args.audit_path == pathlib.Path("/tmp/a.jsonl")
+
+    def test_audit_path_defaults_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The leaf copy of ``--path`` must not clobber the group default."""
+        _set_argv(monkeypatch, "audit", "list")
+        args = cantrip_main.parse_args()
+        assert args.audit_path is None
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ("checkpoints", "list", "--db", "/tmp/x.cantrip"),
+            ("checkpoints", "--db", "/tmp/x.cantrip", "list"),
+            ("checkpoints", "show", "t1", "llm_turn", "1", "--db", "/tmp/x.cantrip"),
+            ("checkpoints", "--db", "/tmp/x.cantrip", "show", "t1", "llm_turn", "1"),
+            ("checkpoints", "delete", "--task-id", "t1", "--db", "/tmp/x.cantrip"),
+            ("checkpoints", "--db", "/tmp/x.cantrip", "delete", "--task-id", "t1"),
+        ],
+        ids=[
+            "list-after",
+            "list-before",
+            "show-after",
+            "show-before",
+            "delete-after",
+            "delete-before",
+        ],
+    )
+    def test_checkpoints_db_accepted_either_side_of_the_subcommand(
+        self, monkeypatch: pytest.MonkeyPatch, argv: tuple[str, ...]
+    ) -> None:
+        """``--db`` works before *and* after the sub-subcommand.
+
+        Same regression as ``audit --path``: the option lived only on
+        the ``checkpoints`` group parser, so every ``--db`` spelling in
+        ``docs/src/reference-cli.md`` exited with "unrecognized
+        arguments".
+        """
+        _set_argv(monkeypatch, *argv)
+        args = cantrip_main.parse_args()
+        assert args.command == "checkpoints"
+        assert args.db == pathlib.Path("/tmp/x.cantrip")
+
+    def test_checkpoints_db_defaults_to_dot_cantrip(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The leaf copy of ``--db`` must not clobber the group default."""
+        _set_argv(monkeypatch, "checkpoints", "list")
+        args = cantrip_main.parse_args()
+        assert args.db == pathlib.Path(".cantrip")
+
+    def test_every_group_option_is_also_declared_on_its_leaves(self) -> None:
+        """No subcommand group may hide an option from its leaf parsers.
+
+        argparse resolves an option against the parser that owns the
+        position it appears in, so an option declared only on a group
+        parser is rejected after the sub-subcommand.  Users do not think
+        in those terms and the reference docs do not write it that way,
+        so every group option has to be re-declared on each leaf (see
+        ``_checkpoints_db_parent``).  This walks the real tree rather
+        than naming today's two cases, so a new group option that
+        forgets its leaf copies fails here instead of in the field.
+        """
+        parser = cantrip_main._build_parser()
+
+        def leaf_parsers(ap: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
+            for action in ap._actions:
+                if isinstance(action, argparse._SubParsersAction):
+                    return dict(action.choices)
+            return {}
+
+        def flags(ap: argparse.ArgumentParser) -> set[str]:
+            return {flag for action in ap._actions for flag in action.option_strings}
+
+        missing: dict[str, set[str]] = {}
+        for group_name, group in leaf_parsers(parser).items():
+            leaves = leaf_parsers(group)
+            if not leaves:
+                continue
+            group_only = flags(group) - {"-h", "--help"}
+            for leaf_name, leaf in leaves.items():
+                gap = group_only - flags(leaf)
+                if gap:
+                    missing[f"{group_name} {leaf_name}"] = gap
+
+        assert missing == {}
 
     def test_export_transcript_subcommand(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
