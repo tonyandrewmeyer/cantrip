@@ -205,6 +205,45 @@ Start the agent and build or improve a charm.
   </dd>
 </dl>
 
+### Retrieval roles (embed and rerank)
+
+Retrieval features — <code>@docs</code>, <code>docs_search</code>,
+and memory recall — run on their own provider roles, independent of
+the chat provider chosen with <code>--provider</code>. Each flag
+overrides the matching environment variable for one session; see
+<a href="#env-vars">Environment variables</a> for the variables
+themselves.
+
+<dl>
+  <dt>--embed-provider {voyage,openai}</dt>
+  <dd>
+    Provider for the <code>embed</code> role. Overrides
+    <code>CANTRIP_EMBED_PROVIDER</code>. See
+    <a href="howto-docs-index.html">Index the charm docs</a>.
+  </dd>
+
+  <dt>--embed-model MODEL</dt>
+  <dd>
+    Embed model identifier, e.g. <code>voyage-3</code> or
+    <code>text-embedding-3-small</code>. Defaults vary per
+    provider. Overrides <code>CANTRIP_EMBED_MODEL</code>.
+  </dd>
+
+  <dt>--rerank-provider {voyage}</dt>
+  <dd>
+    Provider for the <code>rerank</code> role. Voyage is the only
+    first-class option today; OpenAI users pair its embeds with
+    Voyage rerank. Overrides <code>CANTRIP_RERANK_PROVIDER</code>.
+  </dd>
+
+  <dt>--rerank-model MODEL</dt>
+  <dd>
+    Rerank model identifier, e.g. <code>rerank-2</code> or
+    <code>rerank-2-lite</code>. Overrides
+    <code>CANTRIP_RERANK_MODEL</code>.
+  </dd>
+</dl>
+
 ### Interface
 
 <dl>
@@ -253,13 +292,6 @@ Start the agent and build or improve a charm.
   <dd>
     Audit and improve an existing charm at the given path instead of
     building a new one.
-  </dd>
-
-  <dt>--watcher</dt>
-  <dd>
-    Start the event watcher on launch. The watcher monitors the dev
-    model for status changes and creates diagnostic tasks
-    automatically.
   </dd>
 
   <dt>--concurrency N</dt>
@@ -333,6 +365,124 @@ Start the agent and build or improve a charm.
     <a href="howto-auto-commit.html">Auto-commit per turn</a>.
   </dd>
 </dl>
+
+### Goal budget
+
+Caps on how much autonomous work one goal may consume before the
+executor stops picking up new tasks and the queue goes
+<code>BUDGET LIMITED</code>. Both flags seed the same budget the
+<a href="#pause-resume"><code>/budget</code></a> slash command
+adjusts mid-session.
+
+<dl>
+  <dt>--max-iterations N</dt>
+  <dd>
+    Hard cap on LLM request count before the work queue blocks.
+    Falls back to <code>CANTRIP_MAX_ITERATIONS</code> when
+    omitted.
+  </dd>
+
+  <dt>--max-tokens N</dt>
+  <dd>
+    Hard cap on total (prompt + completion) tokens before the work
+    queue blocks. The cap splits evenly across the prompt and
+    completion axes. Falls back to <code>CANTRIP_MAX_TOKENS</code>
+    when omitted.
+  </dd>
+</dl>
+
+{#print-mode}
+### Non-interactive runs
+
+<dl>
+  <dt>-p GOAL, --print GOAL</dt>
+  <dd>
+    Print mode: run the autonomous loop until it accomplishes
+    <code>GOAL</code>, with no TUI. Progress goes to stdout and the
+    process exits when the work queue drains. Pending
+    <code>CONFIRM</code> tasks refuse the run and exit non-zero
+    unless <code>--yolo</code> is also given. See
+    <a href="howto-print-mode.html">Run a single goal
+    non-interactively</a>.
+  </dd>
+
+  <dt>--json</dt>
+  <dd>
+    Emit the event stream as newline-delimited JSON on stdout, one
+    event per line, instead of the human-readable progress lines.
+    Only honoured together with <code>--print</code>. See
+    <a href="#print-events">Print-mode event stream</a> for the
+    envelope.
+  </dd>
+
+  <dt>-y, --yolo</dt>
+  <dd>
+    Unattended mode: auto-approve every <code>ask</code> permission
+    for the session so CI scripts don't stall on prompts. In
+    <code>--print</code> runs it also auto-approves any work-queue
+    <code>CONFIRM</code> task left pending after the conversation
+    loop drains. <code>deny</code> rules still block — review your
+    <code>permissions.yaml</code> before a destructive run. Toggle
+    mid-session with <code>/yolo</code>. See
+    <a href="howto-unattended.html">Run Cantrip unattended</a>.
+  </dd>
+
+  <dt>--ralph N</dt>
+  <dd>
+    Bounded iterate-until-green Ralph loop: re-seed the agent with
+    the same goal up to <code>N</code> times until it emits
+    <code>STOP</code> on a line by itself or stall detection trips.
+    <code>0</code> (the default) disables the loop;
+    <code>-1</code> is unlimited, still bounded by stall detection
+    and an internal safety ceiling. Most useful inside a
+    <code>--print</code> run. See
+    <a href="howto-ralph.html">Run a Ralph loop</a>.
+  </dd>
+</dl>
+
+{#print-events}
+### Print-mode event stream
+
+Under <code>--print --json</code> every event the TUI and Web UI
+consume is written to stdout as one compact JSON object per line,
+flushed as it happens so <code>jq</code> and line-buffered pipes see
+it immediately. The envelope is always the same three keys:
+
+<dl>
+  <dt><code>type</code></dt>
+  <dd>
+    Event-type string, e.g. <code>task_updated</code>,
+    <code>chat_message</code>, <code>tool_invoked</code>,
+    <code>permission_decided</code>,
+    <code>goal_budget_exceeded</code>,
+    <code>ralph_converged</code>. The full set is the
+    <code>cantrip.ui.events.EventType</code> enumeration.
+  </dd>
+
+  <dt><code>data</code></dt>
+  <dd>
+    Per-event payload object. The keys depend on
+    <code>type</code> — a <code>task_updated</code> event carries
+    <code>title</code>, <code>status</code> and
+    <code>category</code>; a <code>chat_message</code> carries
+    <code>role</code> and <code>content</code>.
+  </dd>
+
+  <dt><code>timestamp</code></dt>
+  <dd>
+    Unix epoch seconds as a float, taken when the agent published
+    the event.
+  </dd>
+</dl>
+
+```
+{"type": "chat_message", "data": {"role": "user", "content": "Pack the charm"}, "timestamp": 1761799200.12}
+{"type": "task_updated", "data": {"title": "Pack the charm", "status": "in_progress", "category": "build"}, "timestamp": 1761799201.44}
+```
+
+Unknown event types should be skipped rather than treated as an
+error: new ones are added as the agent grows, and consumers that
+filter on the types they care about keep working across upgrades.
 
 {#compare}
 ## cantrip compare
@@ -1337,8 +1487,7 @@ is off but you can't write it as a regex").
 Three checks ship by default: <code>charm-readme-coherence</code>,
 <code>action-ergonomics</code>, <code>relation-data-hygiene</code>.
 
-{#project-diagnostics}
-{#pause-resume}
+{#session-objective}
 ### Session objective
 
 <dl>
@@ -1424,6 +1573,7 @@ disables that particular axis.  The lifecycle badge (see
 <code>/cost</code> surfaces the same numbers alongside provider
 spend so you can spot a runaway loop before it eats the cap.
 
+{#pause-resume}
 ### Pause and resume the autonomous loop
 
 <dl>
@@ -1458,6 +1608,7 @@ specific than <code>blocked</code>, and a session with pending
 or active work always reads as <code>running</code> regardless
 of stale blockers.
 
+{#project-diagnostics}
 ### Project diagnostics
 
 <dl>

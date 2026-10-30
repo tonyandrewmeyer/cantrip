@@ -23,6 +23,26 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Fixed
 
+- **The CLI reference documents every ``cantrip run`` flag again.**
+  Ten options were missing from ``docs/src/reference-cli.md``:
+  ``--print``, ``--json``, ``--yolo`` and ``--ralph`` (the whole
+  non-interactive surface, covered only by the how-to guides),
+  ``--max-iterations`` and ``--max-tokens`` (the goal-budget caps,
+  previously documented only as ``/budget`` sub-flags), and
+  ``--embed-provider``, ``--embed-model``, ``--rerank-provider`` and
+  ``--rerank-model`` (mentioned only as environment-variable
+  cross-references).  A ``--watcher`` entry documented a flag that
+  does not exist — the watcher starts with the session and toggles on
+  <kbd>F5</kbd> — and ``explanation-observability.md`` repeated the
+  same claim.  The ``#print-events`` anchor that
+  ``howto-print-mode.md`` and ``howto-ralph.md`` link to was never
+  written, and two stacked ``{#…}`` directives put ``#pause-resume``
+  on the "Session objective" heading while dropping
+  ``#project-diagnostics`` entirely.  All four are fixed, and
+  ``tests/unit/test_reference_cli_docs.py`` now guards both
+  directions of the flag correspondence plus every internal link in
+  the rendered site.
+
 - **``cantrip checkpoints`` and ``cantrip audit`` accept their shared
   option after the sub-subcommand.**  ``--db`` was declared only on the
   ``checkpoints`` group parser and ``--path`` only on the ``audit``
