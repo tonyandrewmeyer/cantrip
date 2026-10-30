@@ -81,10 +81,10 @@ reaches active/idle or the agent exhausts its retry budget.
 {#watcher}
 ## The event watcher
 
-The watcher is an optional component (`--watcher` flag)
-that monitors the Juju model in real time. It polls for status
-changes and creates tasks automatically when something interesting
-happens:
+The watcher monitors the Juju model in real time. It starts with
+the session — retrying until a model is available — and polls for
+status changes, creating tasks automatically when something
+interesting happens:
 
 - **Status changes** — if a unit transitions from
   active to error, the watcher creates a diagnostic task.

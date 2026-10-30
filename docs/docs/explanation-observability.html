@@ -119,10 +119,10 @@ for hook errors and status messages.</li>
 code, repacks, and redeploys. This cycle repeats until the charm
 reaches active/idle or the agent exhausts its retry budget.</p>
 <h2 id="watcher">The event watcher</h2>
-<p>The watcher is an optional component (<code>--watcher</code> flag)
-that monitors the Juju model in real time. It polls for status
-changes and creates tasks automatically when something interesting
-happens:</p>
+<p>The watcher monitors the Juju model in real time. It starts with
+the session &mdash; retrying until a model is available &mdash; and polls for
+status changes, creating tasks automatically when something
+interesting happens:</p>
 <ul>
 <li><strong>Status changes</strong> &mdash; if a unit transitions from
 active to error, the watcher creates a diagnostic task.</li>
