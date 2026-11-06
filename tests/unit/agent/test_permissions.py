@@ -164,6 +164,210 @@ class TestEvaluate:
 
 
 # ---------------------------------------------------------------------------
+# Chained / piped bash commands
+# ---------------------------------------------------------------------------
+
+
+class TestChainedBashCommands:
+    """``bash`` globs match each top-level segment, not just the whole string.
+
+    A glob is anchored at the start of its subject, so matching only
+    the full command string let any operator smuggle a rule-breaking
+    command past the gate: ``cd /tmp && rm -rf /`` matched neither
+    ``rm -rf *`` nor anything else and fell through to default allow.
+    """
+
+    def test_and_chain_segment_is_matched(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "cd /tmp && rm -rf /tmp/build"},
+        )
+        assert decision.outcome is PermissionOutcome.DENY
+
+    def test_semicolon_chain_segment_is_matched(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "make build; sudo systemctl restart snapd"},
+        )
+        assert decision.outcome is PermissionOutcome.ASK
+
+    def test_or_chain_segment_is_matched(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "git diff --quiet || git push --force"},
+        )
+        assert decision.outcome is PermissionOutcome.ASK
+
+    def test_pipeline_segment_is_matched(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "echo 127.0.0.1 | sudo tee -a /etc/hosts"},
+        )
+        assert decision.outcome is PermissionOutcome.ASK
+
+    def test_subshell_segment_is_matched(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "(cd /tmp && rm -rf cache)"},
+        )
+        assert decision.outcome is PermissionOutcome.DENY
+
+    def test_newline_separated_segment_is_matched(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "set -e\nrm -rf /tmp/build"},
+        )
+        assert decision.outcome is PermissionOutcome.DENY
+
+    def test_trailing_background_ampersand_is_not_a_segment(self):
+        """``cmd &`` backgrounds one command; it does not add a second."""
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "rm -rf /tmp/build &"},
+        )
+        assert decision.outcome is PermissionOutcome.DENY
+
+    def test_leading_whitespace_still_matches(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "   rm -rf /tmp/build"},
+        )
+        assert decision.outcome is PermissionOutcome.DENY
+
+    def test_operator_inside_double_quotes_does_not_split(self):
+        """A quoted operator is data, not a command separator."""
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": 'echo "run make && sudo reboot afterwards"'},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_operator_inside_single_quotes_does_not_split(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "grep -r 'rm -rf /' ."},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_escaped_separator_does_not_split(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "printf a\\;sudo b"},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_escaped_quote_inside_double_quotes_keeps_the_string_open(self):
+        """A backslash-escaped quote does not close the string.
+
+        The operator that follows it is therefore still quoted text.
+        """
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": 'echo "a\\" && sudo b"'},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_backslash_inside_single_quotes_is_literal(self):
+        """Within single quotes a backslash escapes nothing.
+
+        The closing quote therefore still closes the string and the
+        trailing ``sudo`` is a real second command.
+        """
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "printf 'a\\'; sudo b"},
+        )
+        assert decision.outcome is PermissionOutcome.ASK
+
+    def test_unchained_command_keeps_its_whole_command_reason(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "rm -rf /tmp/build"},
+        )
+        assert decision.reason.startswith("bash command matches")
+
+    def test_segment_match_names_the_segment_in_the_reason(self):
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "cd /tmp && rm -rf cache"},
+        )
+        assert "bash segment 'rm -rf cache' of the command" in decision.reason
+        assert "rm -rf *" in decision.reason
+
+    def test_user_allow_on_a_segment_overrides_a_builtin_ask(self):
+        """Last-match-wins still lets a user rule relax a segment."""
+        ruleset = compose_rulesets(
+            BUILTIN_PERMISSIONS,
+            PermissionRuleset(
+                bash=(
+                    PermissionRule(
+                        "git push origin main",
+                        PermissionOutcome.ALLOW,
+                        source="repo:bash",
+                    ),
+                ),
+            ),
+        )
+        decision = evaluate(
+            ruleset,
+            "run_command",
+            {"command": "git fetch && git push origin main"},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_non_bash_tool_ignores_segments(self):
+        """The ``bash_tools`` gate is unchanged by segment matching."""
+        ruleset = PermissionRuleset(bash=(PermissionRule("rm -rf *", PermissionOutcome.DENY),))
+        decision = evaluate(ruleset, "fs_read", {"command": "cd /tmp && rm -rf x"})
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_argv_elements_are_not_treated_as_operators(self):
+        """An argv list is exec-shaped, so an ``&&`` element is an argument.
+
+        :func:`_bash_command_string` ``shlex.quote``-joins the list, so
+        the operator arrives quoted and does not split — which matches
+        what an ``execve`` would do with it.
+        """
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"argv": ["cd", "/tmp", "&&", "rm", "-rf", "x"]},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_quoted_shell_payload_is_not_split(self):
+        """A shell-quoted script body stays one subject.
+
+        ``sh -c '<script>'`` hides its payload behind quoting, and
+        unquoting it would also make an innocent
+        ``grep 'rm -rf /' .`` match the ``rm -rf *`` rule.  Globs are
+        a convenience layer, not the security boundary — the
+        subprocess sandbox is — so this one stays open on purpose.
+        """
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "sh -c 'rm -rf /tmp/x'"},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+
+# ---------------------------------------------------------------------------
 # YAML loading
 # ---------------------------------------------------------------------------
 

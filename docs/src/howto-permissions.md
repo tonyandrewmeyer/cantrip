@@ -82,12 +82,59 @@ case-sensitive.</p>
 (<code>fs_read</code>, <code>juju_deploy</code>, <code>git_*</code>).</li>
   <li><strong><code>bash</code></strong> &mdash; globs on the shell command
 string passed to tools listed in <code>bash_tools</code>
-(default: <code>run_command</code>). An <code>argv</code> list is
-shell-joined before matching.</li>
+(default: <code>run_command</code>). A compound command is also
+matched segment by segment &mdash; see
+<a href="#compound-commands">compound commands</a>. An
+<code>argv</code> list is shell-joined before matching.</li>
   <li><strong><code>paths</code></strong> &mdash; globs on the <code>path</code>,
 <code>file_path</code>, or <code>filename</code> argument of any
 tool call.</li>
 </ul>
+
+<h2 id="compound-commands">Compound commands</h2>
+
+<p>A glob is anchored at the start of the string it matches, so a
+rule like <code>rm -rf *</code> would miss
+<code>cd /tmp &amp;&amp; rm -rf /tmp/build</code> if only the whole
+command string were tested. Cantrip therefore matches the
+<code>bash</code> section against the whole command <em>and</em>
+against each top-level command inside it, splitting on
+<code>;</code>, <code>&amp;</code>, <code>&amp;&amp;</code>,
+<code>|</code>, <code>||</code>, subshell parentheses, and
+newlines.</p>
+
+<p>Quoting is respected, so an operator that the shell would treat
+as text is treated as text here too &mdash;
+<code>grep -r 'rm -rf /' .</code> is one command, not two.</p>
+
+<p>Because the most restrictive outcome wins, matching the extra
+segments can only ever <em>tighten</em> a decision; it cannot turn a
+<code>deny</code> into an <code>allow</code>. A rule you wrote for a
+specific whole command still applies to that command, and
+last-match-wins still lets a later <code>allow</code> relax a
+segment:</p>
+
+<pre><code>bash:
+  "git push origin main": "allow"</code></pre>
+
+<p>&hellip; allows <code>git fetch &amp;&amp; git push origin main</code>
+even though the built-in <code>git push *</code> rule asks.</p>
+
+<p>Two things this does <em>not</em> cover, both deliberate:</p>
+
+<ul>
+  <li>A script body hidden behind quoting
+(<code>sh -c 'rm -rf /'</code>) is one subject. Unquoting it would
+also make an innocent <code>grep 'rm -rf /' .</code> match the
+<code>rm -rf *</code> rule.</li>
+  <li>A wrapper prefix (<code>sudo rm -rf /</code>,
+<code>env FOO=1 rm -rf /</code>) matches the wrapper's rule, not
+<code>rm</code>'s. Write the rule you mean, or leave
+<code>sudo *</code> on <code>ask</code>.</li>
+</ul>
+
+<p>Glob rules are a convenience layer, not the security boundary
+&mdash; the subprocess sandbox is.</p>
 
 <h2 id="example">A typical file</h2>
 
