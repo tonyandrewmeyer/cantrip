@@ -313,6 +313,29 @@ class TestShellChecks:
         assert "refused by permissions policy" in outcome.failures[0].detail
 
     @pytest.mark.asyncio
+    async def test_chained_shell_check_denied_by_permissions(self, repo_root: pathlib.Path):
+        """A rule-breaking command cannot hide behind a leading ``cd``.
+
+        Shell checks run through a real ``sh -c``, so the permission
+        gate is the only thing standing between a recipe-authored
+        check and the command it chains on the end.
+        """
+        cfg = RetryConfig(
+            max_retries=0,
+            checks=(ShellCheck(command="cd /tmp && rm -rf /"),),
+        )
+        ruleset = PermissionRuleset(bash=(PermissionRule("rm *", PermissionOutcome.DENY),))
+        outcome = await run_with_retry(
+            _task_returning("done"),
+            "go",
+            config=cfg,
+            repo_root=repo_root,
+            permissions=ruleset,
+        )
+        assert outcome.converged is False
+        assert "refused by permissions policy" in outcome.failures[0].detail
+
+    @pytest.mark.asyncio
     async def test_shell_check_ask_without_manager(self, repo_root: pathlib.Path):
         cfg = RetryConfig(
             max_retries=0,

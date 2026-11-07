@@ -23,6 +23,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Fixed
 
+- **``bash`` permission rules now match inside a compound command.**
+  A glob is anchored at the start of the string it matches, and the
+  ``bash`` section only ever tested the whole command, so any shell
+  operator walked straight past the built-in safe floor:
+  ``cd /tmp && rm -rf /`` resolved to ``allow`` rather than the
+  ``deny`` that ``rm -rf *`` promises, and ``make build; sudo rm -rf
+  /`` or ``true || git push --force`` skipped their ``ask``.  The
+  evaluator now matches the ``bash`` section against the whole command
+  *and* against each top-level command inside it, splitting on ``;``,
+  ``&``, ``&&``, ``|``, ``||``, subshell parentheses and newlines
+  while respecting quoting and backslash escapes.  Because the most
+  restrictive candidate wins, segment matching can only tighten a
+  decision — a rule that allowed something before still allows it.
+  This matters most for the two surfaces that run their command
+  through a real ``sh -c`` with the permission gate as the only check:
+  recipe / retry ``shell`` checks and the ``!`cmd` `` expansion in
+  custom slash commands.  A quoted script body (``sh -c 'rm -rf /'``)
+  and a wrapper prefix (``sudo rm -rf /``) are still matched as what
+  they literally are, which ``docs/src/howto-permissions.md`` now
+  states explicitly.
+
 - **The CLI reference documents every ``cantrip run`` flag again.**
   Ten options were missing from ``docs/src/reference-cli.md``:
   ``--print``, ``--json``, ``--yolo`` and ``--ralph`` (the whole

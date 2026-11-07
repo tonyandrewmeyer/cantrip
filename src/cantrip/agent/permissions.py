@@ -107,6 +107,15 @@ DEFAULT_BASH_TOOLS: frozenset[str] = frozenset({"run_command"})
 _BASH_ARGUMENT_KEYS: tuple[str, ...] = ("command", "argv", "cmd")
 
 
+#: Characters that end one shell command and begin the next.  Covers
+#: ``;``, ``&`` / ``&&``, ``|`` / ``||``, subshell parentheses, and a
+#: literal newline; doubled operators simply yield an empty middle
+#: segment, which :func:`_split_shell_segments` drops.  Redirections
+#: (``>``, ``<``) are deliberately absent — they bound an argument,
+#: not a command.
+_SEGMENT_BREAK_CHARS: frozenset[str] = frozenset(";&|()\n")
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class PermissionRule:
     """One ``glob → outcome`` entry with its source file / section.
@@ -228,6 +237,82 @@ def _bash_command_string(arguments: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _split_shell_segments(command: str) -> list[str]:
+    """Split *command* into its top-level shell commands.
+
+    ``cd /tmp && rm -rf build`` yields ``["cd /tmp", "rm -rf build"]``.
+    Quoting is respected, so ``echo "a && b"`` stays one segment and a
+    rule cannot be tripped by an operator that the shell would never
+    act on.  Only the separators in :data:`_SEGMENT_BREAK_CHARS` split;
+    everything else — including redirections and command substitution
+    bodies — is left inside its segment.
+
+    Blank segments are dropped, which is what makes the doubled
+    operators (``&&``, ``||``) fall out for free: the second character
+    closes an empty segment.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    index = 0
+    length = len(command)
+    while index < length:
+        char = command[index]
+        if quote is not None:
+            current.append(char)
+            # A backslash only escapes inside double quotes; within
+            # single quotes the shell passes it through verbatim.
+            if char == "\\" and quote == '"' and index + 1 < length:
+                current.append(command[index + 1])
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            current.append(char)
+            index += 1
+            continue
+        if char == "\\" and index + 1 < length:
+            current.append(char)
+            current.append(command[index + 1])
+            index += 2
+            continue
+        if char in _SEGMENT_BREAK_CHARS:
+            segments.append("".join(current))
+            current = []
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+    segments.append("".join(current))
+    return [stripped for segment in segments if (stripped := segment.strip())]
+
+
+def _bash_subjects(command: str) -> tuple[str, ...]:
+    """Return every string the ``bash`` section should be matched against.
+
+    The whole command comes first — it is the subject users write
+    their globs against, and keeping it first means an unchained
+    command produces exactly the decision (and the reason text) it
+    always has.  Each top-level segment follows, so a rule like the
+    built-in ``rm -rf *`` still bites inside
+    ``make clean && rm -rf /``, which ``fnmatch`` would otherwise miss
+    because a glob is anchored at the start of the subject.
+
+    Extra subjects can only add candidates, and :func:`evaluate` takes
+    the most restrictive candidate, so segment matching can never
+    loosen a decision — it only closes the gap.
+    """
+    subjects = [command]
+    for segment in _split_shell_segments(command):
+        if segment not in subjects:
+            subjects.append(segment)
+    return tuple(subjects)
+
+
 def evaluate(
     ruleset: PermissionRuleset,
     tool_name: str,
@@ -241,7 +326,11 @@ def evaluate(
 
     1. Within each section (``tools``, ``bash``, ``paths``) a walk
        in reverse insertion order stops on the first glob hit —
-       i.e., the last-written rule wins.
+       i.e., the last-written rule wins.  The ``bash`` section walks
+       once per subject returned by :func:`_bash_subjects` (the whole
+       command plus each top-level segment of a compound one), so a
+       glob anchored at the start of a command still bites when that
+       command is chained behind another.
     2. If a per-agent ruleset is registered for *agent_name*, its
        sections are evaluated *after* the global sections.  A later
        hit overrides an earlier one, so per-agent rules can either
@@ -268,9 +357,16 @@ def evaluate(
         if tool_name in sub.bash_tools:
             command = _bash_command_string(args)
             if command is not None:
-                bash_hit = _walk_rules(sub.bash, command)
-                if bash_hit is not None:
-                    candidates.append((bash_hit, f"bash command matches {bash_hit.pattern!r}"))
+                for subject in _bash_subjects(command):
+                    bash_hit = _walk_rules(sub.bash, subject)
+                    if bash_hit is None:
+                        continue
+                    where = (
+                        "bash command"
+                        if subject == command
+                        else f"bash segment {subject!r} of the command"
+                    )
+                    candidates.append((bash_hit, f"{where} matches {bash_hit.pattern!r}"))
         for candidate_path in _path_candidates(args):
             path_hit = _walk_rules(sub.paths, candidate_path)
             if path_hit is not None:

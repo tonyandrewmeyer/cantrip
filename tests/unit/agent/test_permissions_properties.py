@@ -39,6 +39,11 @@ hold across *any* shape of ruleset and tool call:
 * *Compose preserves concatenation order.*  For any two rulesets A
   and B, ``compose_rulesets(A, B).tools == A.tools + B.tools`` (and
   similarly for ``bash`` and ``paths``).
+* *Chaining never loosens.*  The ``bash`` section matches each
+  top-level segment of a compound command as well as the whole
+  string, and the evaluator keeps the most restrictive candidate, so
+  ``a && b`` is at least as restrictive as ``a`` and as ``b``
+  individually.
 """
 
 from __future__ import annotations
@@ -112,6 +117,16 @@ def _ruleset() -> st.SearchStrategy[PermissionRuleset]:
         paths=st.lists(_rule("paths"), max_size=3).map(tuple),
         name=st.just("hypothesis"),
     )
+
+
+def _shell_word() -> st.SearchStrategy[str]:
+    """A single command string with no quotes and no shell operators.
+
+    Keeping operators and quotes out means each generated string is
+    exactly one segment, so chaining two of them is guaranteed to
+    produce the two segments the invariant reasons about.
+    """
+    return st.text(alphabet="abc -/", min_size=1, max_size=8).map(str.strip).filter(bool)
 
 
 def _arguments() -> st.SearchStrategy[dict]:
@@ -448,3 +463,52 @@ class TestCompose:
         assert left.tools == right.tools
         assert left.bash == right.bash
         assert left.paths == right.paths
+
+
+# ---------------------------------------------------------------------------
+# Chaining never loosens
+# ---------------------------------------------------------------------------
+
+
+class TestChainingNeverLoosens:
+    """Compound bash commands are at least as restricted as their parts.
+
+    The ``bash`` walk takes the whole command string *and* each
+    top-level segment as subjects, and the evaluator keeps the most
+    restrictive candidate.  Adding subjects can only add candidates,
+    so no operator can be used to talk the gate down.
+    """
+
+    @given(
+        ruleset=_ruleset(),
+        left=_shell_word(),
+        right=_shell_word(),
+        separator=st.sampled_from(("&&", "||", ";", "|", "\n")),
+    )
+    def test_chained_is_at_least_as_restrictive_as_each_part(
+        self,
+        ruleset: PermissionRuleset,
+        left: str,
+        right: str,
+        separator: str,
+    ) -> None:
+        chained = f"{left} {separator} {right}"
+        combined = evaluate(ruleset, "run_command", {"command": chained}).outcome
+        for part in (left, right):
+            part_outcome = evaluate(ruleset, "run_command", {"command": part}).outcome
+            assert _OUTCOME_ORDINAL[combined] >= _OUTCOME_ORDINAL[part_outcome]
+
+    @given(ruleset=_ruleset(), command=_shell_word())
+    def test_single_command_decision_is_unchanged_by_segmenting(
+        self,
+        ruleset: PermissionRuleset,
+        command: str,
+    ) -> None:
+        """A command with no operators has exactly one subject.
+
+        Its decision therefore reads as the whole command, not as a
+        segment — the reason text users see for the common case is
+        untouched.
+        """
+        decision = evaluate(ruleset, "run_command", {"command": command})
+        assert "bash segment" not in decision.reason
