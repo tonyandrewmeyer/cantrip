@@ -26,6 +26,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: getsentry/warden@d6880aa0a4afbe3499da6e3bf8d489eaa2deab8b  # v0.51.1
+      - uses: getsentry/warden@764b9c9427d88648158f107d4d92a12cd8c1c0a0  # v0.52.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
