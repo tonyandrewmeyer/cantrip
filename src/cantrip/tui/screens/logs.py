@@ -275,7 +275,7 @@ class LogScreen(ModalScreen):
         if event.worker.state != WorkerState.SUCCESS:
             return
 
-        result = event.worker.result
+        result = event.worker.result or ""
         log_widget = self.query_one("#log-output", RichLog)
         log_widget.clear()
 

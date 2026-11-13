@@ -23,6 +23,27 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Fixed
 
+- **The TUI survives a failed provider initialisation.**  When
+  ``_init_agent`` cannot construct a provider it posts "Failed to
+  initialise provider" and leaves the app running with no agent
+  attached.  Four code paths then reached straight through the
+  ``None``: streaming a turn, reading back the trailing reasoning
+  text, running the ``/feelings`` parliament, and persisting state
+  when the turn worker finished.  Each now returns cleanly instead of
+  raising ``AttributeError``.  The log screen had the same shape of
+  bug — ``Worker.result`` is ``Any | None`` and the handler called
+  ``str`` methods on it unguarded.
+
+- **``make lint`` is green again.**  ``ruff`` 0.17 flags the
+  nested-``if`` in ``bootstrap_github_repo`` (SIM102), which also
+  carried a duplicated initial-commit branch; the two paths now share
+  one call.  ``ty`` 0.0.100 renamed two of the rules suppressed in
+  ``pyproject.toml`` (``unresolved-attribute`` →
+  ``missing-attribute``, ``invalid-method-override`` →
+  ``incompatible-method-override``) and started enforcing parameter
+  names on overrides, so ``_HTMLTextExtractor.handle_starttag`` takes
+  ``attrs`` rather than ``_attrs`` to match ``HTMLParser``.
+
 - **``bash`` permission rules now match inside a compound command.**
   A glob is anchored at the start of the string it matches, and the
   ``bash`` section only ever tested the whole command, so any shell

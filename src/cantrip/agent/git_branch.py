@@ -363,15 +363,17 @@ def bootstrap_github_repo(
     Handles git init, initial commit, ``gh repo create``, and push.
     Returns ``(success, message)``.
     """
-    # Ensure we have a git repo with at least one commit.
-    if not has_git_repo(charm_path):
-        if not git_init(charm_path):
-            return False, "Failed to initialise git repository."
-        if not git_add_and_commit(charm_path, f"Initial commit: {name}"):
-            return False, "Failed to create initial commit."
-    elif not _has_commits(charm_path):
-        if not git_add_and_commit(charm_path, f"Initial commit: {name}"):
-            return False, "Failed to create initial commit."
+    # Ensure we have a git repo with at least one commit.  A repo we just
+    # initialised always needs the first commit; an existing one only
+    # needs it when ``git rev-parse HEAD`` finds nothing.
+    if has_git_repo(charm_path):
+        needs_commit = not _has_commits(charm_path)
+    elif git_init(charm_path):
+        needs_commit = True
+    else:
+        return False, "Failed to initialise git repository."
+    if needs_commit and not git_add_and_commit(charm_path, f"Initial commit: {name}"):
+        return False, "Failed to create initial commit."
 
     # Build gh repo create command.
     repo_name = f"{org}/{name}" if org else name

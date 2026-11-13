@@ -275,6 +275,44 @@ class TestTrailingReasoning:
             async with CantripApp().run_test(size=_TERMINAL) as pilot:
                 assert pilot.app._trailing_reasoning() == ""
 
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_agent(self) -> None:
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test(size=_TERMINAL) as pilot:
+                pilot.app._agent = None
+                assert pilot.app._trailing_reasoning() == ""
+
+
+# ---------------------------------------------------------------------------
+# Agent-less fallbacks
+#
+# ``_init_agent`` swallows a provider-construction failure and leaves
+# ``_agent`` as ``None`` while the app stays up, so every worker body
+# that reaches for the agent has to cope with its absence.
+# ---------------------------------------------------------------------------
+
+
+class TestWithoutAnAgent:
+    @pytest.mark.asyncio
+    async def test_process_agent_message_is_a_no_op(self) -> None:
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test(size=_TERMINAL) as pilot:
+                pilot.app._agent = None
+                chat = pilot.app.query_one("#chat", chat_widget.ChatWidget)
+                before = len(chat._messages)
+                await pilot.app._process_agent_message("hello")
+                assert len(chat._messages) == before
+
+    @pytest.mark.asyncio
+    async def test_run_feelings_returns_empty(self) -> None:
+        p1, p2, _ = _patch_app()
+        with p1, p2:
+            async with CantripApp().run_test(size=_TERMINAL) as pilot:
+                pilot.app._agent = None
+                assert await pilot.app._run_feelings(["joy"]) == ""
+
 
 # ---------------------------------------------------------------------------
 # Resume-prompt modal (also covers tui/screens/resume.py)

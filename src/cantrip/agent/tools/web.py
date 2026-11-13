@@ -96,7 +96,7 @@ class _HTMLTextExtractor(html.parser.HTMLParser):
         self._pieces: list[str] = []
         self._skip_depth = 0
 
-    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
         elif self._skip_depth == 0:
