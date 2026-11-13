@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from textual.app import App, ComposeResult
 from textual.widgets import RichLog
+from textual.worker import WorkerState
 
 from cantrip.tui.screens.logs import LogScreen
 
@@ -105,6 +106,25 @@ class TestWorkerStateChanged:
             async with _Host().run_test(size=_TERMINAL) as pilot:
                 screen = await _push_log(pilot, model="dev")
                 assert "No log entries at level WARNING." in _log_text(screen)
+
+    @pytest.mark.asyncio
+    async def test_missing_result_is_treated_as_empty(self) -> None:
+        """A worker that lands on SUCCESS with no result must not raise.
+
+        ``Worker.result`` is typed ``Any | None``; the handler coerces
+        it rather than calling ``str`` methods on ``None``.
+        """
+        result = MagicMock(returncode=0, stdout="alpha", stderr="")
+        with patch("subprocess.run", return_value=result):
+            async with _Host().run_test(size=_TERMINAL) as pilot:
+                screen = await _push_log(pilot, model="dev")
+                fake_event = MagicMock()
+                fake_event.worker.name = "fetch_logs"
+                fake_event.worker.state = WorkerState.SUCCESS
+                fake_event.worker.result = None
+                screen.on_worker_state_changed(fake_event)
+                await pilot.pause()
+                assert _log_text(screen).strip() == ""
 
     @pytest.mark.asyncio
     async def test_unrelated_worker_is_ignored(self) -> None:

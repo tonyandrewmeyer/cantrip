@@ -86,11 +86,11 @@ python-version = "3.12"
 
 [tool.ty.rules]
 # Third-party library type stubs are incomplete or inaccurate.
-invalid-method-override = "ignore"  # Tool.execute intentional dispatch pattern
+incompatible-method-override = "ignore"  # Tool.execute intentional dispatch pattern
 possibly-missing-attribute = "ignore"  # Third-party lib types
 not-subscriptable = "ignore"  # Third-party lib types (e.g. google-genai)
 no-matching-overload = "ignore"  # Third-party lib types (e.g. google-genai)
-unresolved-attribute = "ignore"  # Textual internals
+missing-attribute = "ignore"  # Textual internals
 invalid-assignment = "ignore"  # Textual reactive types
 not-iterable = "ignore"  # Async iterator typing
 invalid-argument-type = "ignore"  # Third-party lib calls

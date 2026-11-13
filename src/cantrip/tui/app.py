@@ -1799,11 +1799,18 @@ class CantripApp(App):
         message; subsequent chunks are appended to
         that same widget.  The worker returns ``None`` — success is
         observed via the chat widget, not the worker result.
+
+        Returns immediately when no agent is attached: provider
+        initialisation can fail at mount, and the app stays up so the
+        user can read the error rather than exiting on a traceback.
         """
+        agent = self._agent
+        if agent is None:
+            return
         chat = self.query_one("#chat", chat_widget.ChatWidget)
         status_bar = self.query_one("#status-bar", statusbar_widget.StatusBar)
 
-        async for chunk in self._agent.process_message_streaming(message):
+        async for chunk in agent.process_message_streaming(message):
             if not chunk:
                 continue
             if self._streaming_widget is None:
@@ -1825,7 +1832,12 @@ class CantripApp(App):
                 chat.set_reasoning(self._streaming_widget, reasoning)
 
     def _trailing_reasoning(self) -> str:
-        """Return the reasoning text on the most recent assistant message."""
+        """Return the reasoning text on the most recent assistant message.
+
+        Empty when no agent is attached — there is no transcript to read.
+        """
+        if self._agent is None:
+            return ""
         for msg in reversed(self._agent.state.messages):
             if msg.role == Role.ASSISTANT:
                 return str(msg.metadata.get("_thinking_content", ""))
@@ -1890,8 +1902,14 @@ class CantripApp(App):
         )
 
     async def _run_feelings(self, enabled: list[str]) -> str:
-        """Run the parliament and return the formatted markdown report."""
-        result = await self._agent.run_parliament(enabled)
+        """Run the parliament and return the formatted markdown report.
+
+        Empty when no agent is attached — the parliament needs a provider.
+        """
+        agent = self._agent
+        if agent is None:
+            return ""
+        result = await agent.run_parliament(enabled)
         return emotions.format_report(result, enabled=enabled)
 
     async def _handle_shell_command(
@@ -2043,14 +2061,18 @@ class CantripApp(App):
             input_widget.disabled = False
             input_widget.placeholder = "Type your message..."
             input_widget.focus()
-            # Persist session state and check for new charm type.
-            self._agent.save_state()
+            # Persist session state and check for new charm type.  The
+            # agent is absent only when provider initialisation failed at
+            # mount, and then there is no turn to persist.
+            agent = self._agent
+            if agent is not None:
+                agent.save_state()
             self._start_bootstrap()
             self._update_header_subtitle()
             self._update_model_info()
             self._update_test_summary()
             # Offer repo bootstrap if conditions are met.
-            if not self._bootstrap_offered and self._agent.state.charm_name:
+            if agent is not None and not self._bootstrap_offered and agent.state.charm_name:
                 self._offer_repo_bootstrap()
 
         elif event.state == WorkerState.CANCELLED:
