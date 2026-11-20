@@ -5,6 +5,24 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 ## Unreleased
 
 ### Changed
+
+- **The CLI reference now carries a complete slash-command index.**
+  ``docs/src/reference-cli.md`` is the page that claims to catalogue
+  every slash command, but thirteen verbs from ``COMMAND_CATALOGUE``
+  had no entry under its *Slash commands* heading and six
+  (``/help``, ``/quit``, ``/exit`` and the surface-native ``/tasks``,
+  ``/status``, ``/feelings``) appeared nowhere on the page at all —
+  ``/cost``, which reports what a session has spent, was documented
+  nowhere in ``docs/`` beyond passing mentions.  A ``{#command-index}``
+  table now lists all 41 shared verbs plus the 3 surface-native ones
+  with a one-line summary and a link to the section or how-to that
+  covers each in full, and new *Usage and cost*, *Transcript export*,
+  *Session control* and *Surface-native commands* sections document
+  the verbs that had no home.  Three drift tests in
+  ``tests/unit/test_reference_cli_docs.py`` pin the table against the
+  code in both directions, so a new verb cannot ship undocumented and
+  a removed one cannot linger.
+
 - **charmlint now comes from PyPI.**  The vendored ``src/charmlint``
   package and its Rust port (``src/charmlint-rs``) are gone; cantrip
   depends on the standalone [charmlint](https://github.com/canonical/charmlint)
