@@ -53,6 +53,7 @@
       <li><a href="#permissions">cantrip permissions</a></li>
       <li><a href="#docs">cantrip docs</a></li>
       <li><a href="#slash-commands">Slash commands</a></li>
+      <li><a href="#command-index">Command index</a></li>
       <li><a href="#mentions">@-mention context providers</a></li>
       <li><a href="#auto-commit">Auto-commit per turn</a></li>
       <li><a href="#architect-mode">Architect / editor mode</a></li>
@@ -924,7 +925,257 @@ setup and the in-chat surfaces.</p>
 <p>Type these directly into the chat (TUI or Web) to drive features
 that don&rsquo;t go through the LLM. Output renders as a system
 message; the agent is not consulted.</p>
-<h3>Memory</h3>
+<h3 id="command-index">Command index</h3>
+<p>Every slash command the chat accepts, with the section or guide
+that covers it in full. <code>?</code> is an alias for <code>/help</code>. Verbs are
+listed in the order the surfaces offer them &mdash; help and discovery
+first, leaving Cantrip last.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+<th>Full details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/help</code></td>
+<td>Show command help</td>
+<td><a href="#session-control">Session control</a></td>
+</tr>
+<tr>
+<td><code>/memory</code></td>
+<td>List memories</td>
+<td><a href="#memory-commands">Memory</a></td>
+</tr>
+<tr>
+<td><code>/remember</code></td>
+<td>Save a memory</td>
+<td><a href="#memory-commands">Memory</a></td>
+</tr>
+<tr>
+<td><code>/forget</code></td>
+<td>Delete a memory</td>
+<td><a href="#memory-commands">Memory</a></td>
+</tr>
+<tr>
+<td><code>/mcp</code></td>
+<td>Manage MCP servers</td>
+<td><a href="#mcp-commands">MCP</a></td>
+</tr>
+<tr>
+<td><code>/cost</code></td>
+<td>Show token usage and cost</td>
+<td><a href="#usage-and-cost">Usage and cost</a></td>
+</tr>
+<tr>
+<td><code>/budget</code></td>
+<td>Show or raise the per-goal iteration / token budget</td>
+<td><a href="#goal-budget">Goal budget</a></td>
+</tr>
+<tr>
+<td><code>/goal</code></td>
+<td>Show, set, or clear the user-prose session objective</td>
+<td><a href="#session-objective">Session objective</a></td>
+</tr>
+<tr>
+<td><code>/arena</code></td>
+<td>Blind A/B compare two models</td>
+<td><a href="#arena">Arena</a></td>
+</tr>
+<tr>
+<td><code>/model</code></td>
+<td>Show or switch the active model</td>
+<td><a href="#model-switching">Mid-session model switching</a></td>
+</tr>
+<tr>
+<td><code>/export</code></td>
+<td>Export the live session transcript</td>
+<td><a href="#transcript-export">Transcript export</a></td>
+</tr>
+<tr>
+<td><code>/share</code></td>
+<td>Upload the session as a secret GitHub gist</td>
+<td><a href="#share">Share session as a gist</a></td>
+</tr>
+<tr>
+<td><code>/copy</code></td>
+<td>Copy a chat message to the system clipboard</td>
+<td><a href="#copy">Copy a chat message</a></td>
+</tr>
+<tr>
+<td><code>/update</code></td>
+<td>Check PyPI for a newer release</td>
+<td><a href="#self-update-check">Self-update check</a></td>
+</tr>
+<tr>
+<td><code>/sandbox</code></td>
+<td>Show subprocess sandbox status</td>
+<td><a href="#subprocess-sandbox">Subprocess sandbox</a></td>
+</tr>
+<tr>
+<td><code>/hooks</code></td>
+<td>List configured hooks and invocation stats</td>
+<td><a href="howto-hooks.html">Hooks how-to</a></td>
+</tr>
+<tr>
+<td><code>/undo</code></td>
+<td>Roll back the last user turn (files + messages)</td>
+<td><a href="#undo">Undo and redo</a></td>
+</tr>
+<tr>
+<td><code>/redo</code></td>
+<td>Re-apply the most recently undone turn</td>
+<td><a href="#undo">Undo and redo</a></td>
+</tr>
+<tr>
+<td><code>/branch</code></td>
+<td>Rewind to a prior turn and start a new branch</td>
+<td><a href="#branching">Branch and tree</a></td>
+</tr>
+<tr>
+<td><code>/tree</code></td>
+<td>Show the session as a tree of turns and branches</td>
+<td><a href="#branching">Branch and tree</a></td>
+</tr>
+<tr>
+<td><code>/plan</code></td>
+<td>Enter read-only plan mode (no file edits or shells)</td>
+<td><a href="howto-plan-mode.html">Plan-mode how-to</a></td>
+</tr>
+<tr>
+<td><code>/build</code></td>
+<td>Leave plan mode and resume executing changes</td>
+<td><a href="howto-plan-mode.html">Plan-mode how-to</a></td>
+</tr>
+<tr>
+<td><code>/architect</code></td>
+<td>Toggle architect/editor two-model split</td>
+<td><a href="#architect-mode">Architect / editor mode</a></td>
+</tr>
+<tr>
+<td><code>/auto-commit</code></td>
+<td>Toggle per-turn auto-commit of agent edits</td>
+<td><a href="#auto-commit">Auto-commit per turn</a></td>
+</tr>
+<tr>
+<td><code>/yolo</code></td>
+<td>Toggle unattended mode</td>
+<td><a href="howto-unattended.html">Unattended how-to</a></td>
+</tr>
+<tr>
+<td><code>/pause</code></td>
+<td>Pause the autonomous loop</td>
+<td><a href="#pause-resume">Pause and resume</a></td>
+</tr>
+<tr>
+<td><code>/resume</code></td>
+<td>Resume a paused autonomous loop</td>
+<td><a href="#pause-resume">Pause and resume</a></td>
+</tr>
+<tr>
+<td><code>/ralph</code></td>
+<td>Run a bounded iterate-until-green loop</td>
+<td><a href="howto-ralph.html">Ralph how-to</a></td>
+</tr>
+<tr>
+<td><code>/recipe</code></td>
+<td>Run a parameterised recipe</td>
+<td><a href="howto-recipes.html">Recipes how-to</a></td>
+</tr>
+<tr>
+<td><code>/flow</code></td>
+<td>Walk a Mermaid decision tree</td>
+<td><a href="howto-flows.html">Flows how-to</a></td>
+</tr>
+<tr>
+<td><code>/map</code></td>
+<td>Show top-ranked repository files</td>
+<td><a href="#repository-map">Repository map</a></td>
+</tr>
+<tr>
+<td><code>/map-refresh</code></td>
+<td>Rebuild the repository map and reprint</td>
+<td><a href="#repository-map">Repository map</a></td>
+</tr>
+<tr>
+<td><code>/symbols</code></td>
+<td>Search workspace symbols by name</td>
+<td><a href="#code-intel-cli">Code intelligence</a></td>
+</tr>
+<tr>
+<td><code>/definition</code></td>
+<td>Resolve a symbol to its defining file/line</td>
+<td><a href="#code-intel-cli">Code intelligence</a></td>
+</tr>
+<tr>
+<td><code>/references</code></td>
+<td>List every recorded callsite for a symbol</td>
+<td><a href="#code-intel-cli">Code intelligence</a></td>
+</tr>
+<tr>
+<td><code>/diagnostics</code></td>
+<td>Show ruff/ty/charmlint issues for the active charm</td>
+<td><a href="#project-diagnostics">Project diagnostics</a></td>
+</tr>
+<tr>
+<td><code>/review</code></td>
+<td>Run prompt-based review checks</td>
+<td><a href="#review-checks">Review checks</a></td>
+</tr>
+<tr>
+<td><code>/search-charms</code></td>
+<td>Search Charmhub and Launchpad for existing charms</td>
+<td><a href="howto-charm-library.html">Charm-library how-to</a></td>
+</tr>
+<tr>
+<td><code>/icon</code></td>
+<td>Generate a Charmhub-style <code>icon.svg</code></td>
+<td><a href="howto-charm-icon.html">Charm-icon how-to</a></td>
+</tr>
+<tr>
+<td><code>/quit</code></td>
+<td>Leave Cantrip</td>
+<td><a href="#session-control">Session control</a></td>
+</tr>
+<tr>
+<td><code>/exit</code></td>
+<td>Leave Cantrip</td>
+<td><a href="#session-control">Session control</a></td>
+</tr>
+</tbody>
+</table>
+<p>Three more verbs exist on one surface only, because they render
+with that surface's own widgets rather than through the shared
+dispatcher &mdash; see <a href="#surface-native">surface-native commands</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Surface</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/tasks</code></td>
+<td>CLI REPL</td>
+<td>Print the work-queue table</td>
+</tr>
+<tr>
+<td><code>/status</code></td>
+<td>CLI REPL</td>
+<td>Print the Juju status table</td>
+</tr>
+<tr>
+<td><code>/feelings</code></td>
+<td>TUI</td>
+<td>Convene the inner parliament</td>
+</tr>
+</tbody>
+</table>
+<h3 id="memory-commands">Memory</h3>
 <p>Manage durable lessons across sessions. See
 <a href="howto-memory.html">the memory how-to</a> for workflow.</p>
 <dl>
@@ -1005,7 +1256,7 @@ neutral &ldquo;rated equivalent&rdquo; entry;
 Requires a configured light provider (<code>--light-provider</code>
 or <code>CANTRIP_LIGHT_PROVIDER</code>)&mdash;without one the
 command prints a setup hint and exits.</p>
-<h3>Mid-session model switching</h3>
+<h3 id="model-switching">Mid-session model switching</h3>
 <dl>
   <dt><code>/model</code></dt>
   <dd>
@@ -1144,7 +1395,7 @@ inline so the user can still grab it manually.  The Web UI has
 no equivalent server-pushed clipboard channel; <code>/copy</code>
 inlines the payload in a fenced code block for browser
 select-and-copy instead.</p>
-<h3>MCP (Model Context Protocol)</h3>
+<h3 id="mcp-commands">MCP (Model Context Protocol)</h3>
 <p>Inspect configured MCP servers and discover new ones from
 marketplaces. See <a href="howto-mcp.html">the MCP how-to</a>
 for configuration.</p>
@@ -1373,7 +1624,7 @@ resume</code> picks up the same value without the
 <code>--objective</code> flag being re-supplied.  A
 <code>/goal</code> issued mid-Ralph takes effect on the very
 next iteration without restarting the loop.</p>
-<h3>Goal budget</h3>
+<h3 id="goal-budget">Goal budget</h3>
 <p>A goal budget caps how much autonomous work a single goal may
 consume before the executor stops picking up new tasks and marks
 the queue <code>BUDGET LIMITED</code>.  Useful when you want to
@@ -1470,7 +1721,7 @@ already knowing what's broken.  Tools that aren't installed are
 listed as <code>[skipped]</code> notes rather than silently
 masking issues &mdash; a missing <code>ty</code> doesn't look the same
 as &quot;all clear.&quot;</p>
-<h3>Subprocess sandbox</h3>
+<h3 id="subprocess-sandbox">Subprocess sandbox</h3>
 <p>The agent's <code>run_command</code> tool, charm packing, and
 the in-process test runner all run subprocesses inside a sandbox
 when one is available, so a misbehaving build script can't reach
@@ -1497,6 +1748,110 @@ mechanism the host is actually using and the default policy
 <p>The command is read-only and safe to run mid-task; it does not
 spawn a probe subprocess, so reading the status never disturbs an
 in-flight build.</p>
+<h3 id="usage-and-cost">Usage and cost</h3>
+<p>Token spend for the live session, read straight out of the
+<code>.cantrip</code> session file. Costs are estimates from published list
+prices and can drift &mdash; treat them as a magnitude check, not
+an invoice.</p>
+<dl>
+  <dt><code>/cost</code></dt>
+  <dd>
+    Print the usage rollup. Always shows prompt / completion /
+    total tokens and a <strong>Context</strong> block naming the
+    active compaction strategy, how many compactions and
+    emergency truncations have fired, and how many tools are
+    currently offered to the model (phase-curated tool sets mean
+    this is often fewer than the full registry). Further blocks
+    appear only when they have something to say: a cache
+    hit-rate line when the provider reported cache tokens, a
+    <em>Cached from checkpoint</em> line when durable-execution
+    replay avoided live calls, <strong>By model</strong>,
+    <strong>By category</strong> (one row per subagent category,
+    summed across models), <strong>By role</strong> (chat /
+    embed / rerank &mdash; shown once a non-chat role has spent
+    anything), an estimated total, and a warning when
+    <code>edit_file</code> calls are still missing on
+    unresolved <code>old_string</code> values.
+  </dd>
+</dl>
+<p>With no usage recorded yet the command says so rather than
+printing a table of zeroes.</p>
+<p>The CLI REPL prints a plain-text subset of the same numbers: the
+token, cache, checkpoint, per-model and per-category blocks, but
+not the <strong>Context</strong> block, the <strong>By
+role</strong> rollup, or the unresolved-<code>old_string</code>
+warning. Use the TUI or Web surface for the full picture.</p>
+<h3 id="transcript-export">Transcript export</h3>
+<p>Write the live session out to a file without leaving the chat.
+The same renderers back
+<a href="#export-transcript"><code>cantrip export-transcript</code></a>; see
+<a href="howto-export.html">the export how-to</a> for the formats and what
+each one is good for.</p>
+<dl>
+  <dt><code>/export [html|jsonl|markdown] [path]</code></dt>
+  <dd>
+    Render the session store to <code>path</code>. The format
+    defaults to <code>html</code>; the destination defaults to
+    <code>transcript.html</code> / <code>.jsonl</code> /
+    <code>.md</code> beside the charm. Both arguments are
+    positional and optional, and anything beyond those two tokens
+    is an error rather than a guess &mdash; so a mistyped format
+    (<code>/export htmll out.html</code>) is refused instead of
+    being read as a path and written somewhere you did not
+    name.
+    Requires a charm path with a <code>.cantrip</code> file &mdash;
+    a session that has not persisted anything yet is refused with
+    an explanatory message.
+  </dd>
+</dl>
+<h3 id="session-control">Session control</h3>
+<dl>
+  <dt><code>/help</code></dt>
+  <dd>
+    Print the full command help &mdash; one line per verb with
+    its argument syntax, terser than this page but always in sync
+    with the running build. User-defined commands discovered in
+    <code>.cantrip/commands/</code> are appended after the
+    built-ins, and each surface adds its own native verbs.
+    <code>?</code> is an accepted alias.
+  </dd>
+  <dt><code>/quit</code>, <code>/exit</code></dt>
+  <dd>
+    Leave Cantrip cleanly: the surface shuts down after the
+    confirmation renders, so in-flight work is not left
+    half-written. The CLI REPL and the TUI both act on it; the
+    Web UI has no process to end and ignores it.
+  </dd>
+</dl>
+<h3 id="surface-native">Surface-native commands</h3>
+<p>Three verbs do not go through the shared dispatcher, because
+what they print only makes sense on one surface. They appear in
+that surface's completion and nowhere else.</p>
+<dl>
+  <dt><code>/tasks</code> &mdash; CLI REPL</dt>
+  <dd>
+    Print the work queue: one line per task with a status
+    icon, its category, and its title, a <em>Blocked</em> line
+    under anything that is stuck, and a closing count by status.
+    The TUI shows the same data continuously in its task
+    checklist, so the verb is CLI-only.
+  </dd>
+  <dt><code>/status</code> &mdash; CLI REPL</dt>
+  <dd>
+    Print the development model's Juju status &mdash; each
+    application with its status and unit count, then each unit
+    with its workload and agent status. Says so plainly when no
+    development model is set. The TUI has a dedicated Juju status
+    panel instead.
+  </dd>
+  <dt><code>/feelings</code> &mdash; TUI</dt>
+  <dd>
+    Convene the inner parliament for a multi-perspective read on
+    the current state. See
+    <a href="howto-feelings.html">the feelings how-to</a> for the
+    emotions, what each one is good for, and how to run a subset.
+  </dd>
+</dl>
 <h2 id="mentions">@-mention context providers</h2>
 <p>Type <code>@&lt;name&gt; [args]</code> in the chat input and the mention is replaced
 with structured context <em>before</em> the message reaches the LLM &mdash;

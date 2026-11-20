@@ -6,7 +6,14 @@ in ``cantrip.main.parser`` without a matching ``<dt>`` entry, and a
 ``--watcher`` entry outlived the flag it documented.  The first two
 tests pin the two directions of that correspondence.
 
-The third test resolves every internal link in the rendered site.
+The next pair does the same for the slash-command catalogue, which
+the page claims to be complete about and was not: thirteen verbs from
+``COMMAND_CATALOGUE`` — ``/cost`` and ``/export`` among them — had no
+entry anywhere on the page.  The ``{#command-index}`` table is now the
+single place a verb has to be listed, and these tests pin it in both
+directions.
+
+The last test resolves every internal link in the rendered site.
 ``{#anchor}`` directives are attached to the *following* heading by
 the attrs-block plugin, so a stray blank line — or two stacked
 directives, where only the last one applies — silently moves or drops
@@ -21,6 +28,8 @@ import re
 
 import pytest
 
+from cantrip import cli as cantrip_cli
+from cantrip.agent.commands import slash as slash_commands
 from cantrip.main import parser as cli_parser
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -35,6 +44,11 @@ _ID_RE = re.compile(r'id="([^"]+)"')
 
 # Flags argparse supplies that no reference page should have to repeat.
 _IMPLICIT_FLAGS = frozenset({"--help", "--version"})
+
+# A ``| `/verb` | … |`` row in one of the command-index tables.  Only the
+# first cell counts — later cells name sections and how-to pages, and a
+# verb mentioned in passing there is not a catalogue entry.
+_INDEX_ROW_RE = re.compile(r"^\|\s*`(/[a-z][a-z-]*)`\s*\|", re.MULTILINE)
 
 
 def _subcommand_parsers() -> dict[str, argparse.ArgumentParser]:
@@ -118,6 +132,72 @@ def test_every_subcommand_flag_is_mentioned(subcommand: str) -> None:
     missing = sorted(flag for flag in expected if flag not in text)
     assert not missing, (
         f"cantrip {subcommand} flags absent from docs/src/reference-cli.md: {missing}"
+    )
+
+
+def _slash_section() -> str:
+    """The ``## Slash commands`` section, up to the next top-level heading."""
+    lines = _reference_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == "## Slash commands")
+    rest = lines[start + 1 :]
+    length = next(
+        (i for i, line in enumerate(rest) if line.startswith("## ")),
+        len(rest),
+    )
+    return "\n".join(lines[start : start + 1 + length])
+
+
+def _indexed_verbs() -> set[str]:
+    """Verbs carrying a row in one of the command-index tables."""
+    return set(_INDEX_ROW_RE.findall(_slash_section()))
+
+
+def _accepted_verbs() -> set[str]:
+    """Every slash verb a surface offers the user.
+
+    The shared catalogue plus the two surface-native sets: the CLI
+    REPL's Rich-table verbs and the TUI's extra popup entries.  ``?``
+    is excluded — it is an alias for ``/help`` and the index documents
+    it as prose rather than as a row of its own.
+    """
+    from cantrip.tui import app as tui_app
+
+    verbs = {cmd.verb for cmd in slash_commands.COMMAND_CATALOGUE}
+    verbs |= set(cantrip_cli._CLI_ONLY_VERBS)
+    verbs |= {cmd.verb for cmd in tui_app.CantripApp._build_command_catalogue()}
+    return verbs
+
+
+def test_every_slash_verb_has_a_command_index_row() -> None:
+    """Each verb a surface offers is listed in the command index."""
+    missing = sorted(_accepted_verbs() - _indexed_verbs())
+    assert not missing, (
+        "slash verbs with no row in the '{#command-index}' tables under"
+        f" '## Slash commands' in docs/src/reference-cli.md: {missing}"
+    )
+
+
+def test_command_index_documents_no_phantom_verbs() -> None:
+    """Each verb the command index lists is one a surface still offers."""
+    phantom = sorted(_indexed_verbs() - _accepted_verbs())
+    assert not phantom, (
+        f"docs/src/reference-cli.md indexes slash commands that no surface dispatches: {phantom}"
+    )
+
+
+def test_indexed_verbs_are_dispatchable() -> None:
+    """Shared-dispatcher verbs in the index are accepted by ``dispatch``.
+
+    Guards the narrower claim the page makes about the first table: a
+    row there means the chat will route the verb.  Surface-native verbs
+    live in their own table and are deliberately absent from
+    :data:`~cantrip.agent.commands.slash.SHARED_VERBS`.
+    """
+    surface_native = set(cantrip_cli._CLI_ONLY_VERBS) | {"/feelings"}
+    unroutable = sorted(_indexed_verbs() - surface_native - slash_commands.SHARED_VERBS)
+    assert not unroutable, (
+        "docs/src/reference-cli.md indexes verbs that the shared dispatcher"
+        f" does not accept: {unroutable}"
     )
 
 
