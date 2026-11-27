@@ -41,6 +41,31 @@ All notable changes to Cantrip are documented here. This project is pre-1.0; onl
 
 ### Fixed
 
+- **``paths`` permission rules now apply to every path-carrying tool
+  argument.**  The ``paths`` section finds filenames by reading a
+  fixed list of argument names, and that list held only ``path``,
+  ``file_path`` and ``filename`` — the three used in
+  ``agent/tools/files.py``.  Thirteen other tools spell the same
+  thing differently, so a rule against them never ran at all rather
+  than merely matching late: the built-in ``.env`` deny stopped
+  ``read_file(path=".env")`` but allowed ``showboat(file=".env")``,
+  ``charmcraft_upload(charm_file="secrets.env")``,
+  ``extract_design_decisions(db_path="prod.env")``,
+  ``juju_get_app_config(charm_path="a/.env")`` and
+  ``quick_pack(output_dir="x.env")``.  List-valued path arguments
+  were invisible too, so ``git_add(files=[".env"])`` staged the file
+  a user had explicitly denied.  The section now reads
+  ``charm_dir``, ``charm_file``, ``charm_path``, ``cwd``, ``db_path``,
+  ``directories``, ``file``, ``files``, ``kubeconfig``,
+  ``output_dir``, ``rock_file``, ``terraform_path`` and ``workdir``
+  as well, and matches a list element by element so a glob still
+  bites one bad path among many.  Because most-restrictive-wins,
+  widening the set can only tighten a decision.
+  ``juju_deploy``'s ``charm`` stays out: it is usually a Charmhub
+  name, and matching a bare name against path globs would mis-fire.
+  A new drift test walks the live tool registry and fails the build
+  when a tool grows a path argument the section cannot see.
+
 - **The TUI survives a failed provider initialisation.**  When
   ``_init_agent`` cannot construct a provider it posts "Failed to
   initialise provider" and leaves the app running with no agent

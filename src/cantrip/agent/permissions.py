@@ -88,10 +88,42 @@ _RESTRICTIVENESS = {
 
 
 #: Names of arguments the ``paths`` section walks when matching a tool
-#: call.  Covers every path-carrying tool in ``agent/tools/files.py``
-#: plus the common ``file_path`` alias used elsewhere; unknown tools
-#: contribute nothing to path-based matching.
-_PATH_ARGUMENT_KEYS: tuple[str, ...] = ("path", "file_path", "filename")
+#: call.  A path argument missing from this tuple is invisible to the
+#: ``paths`` section, and because the section is the only one that
+#: looks at filenames at all, the rule simply never fires: the
+#: built-in ``*.env`` deny stopped ``read_file(path=".env")`` but let
+#: ``showboat(file=".env")`` and ``git_add(files=[".env"])`` straight
+#: through.  Every path-carrying parameter in the tool catalogue is
+#: therefore listed here, not just the ``files.py`` trio.
+#:
+#: ``path`` / ``file_path`` / ``filename`` stay at the front so the
+#: reason text on a tool that carries several path arguments still
+#: names the primary one; the rest are alphabetical.  List-valued
+#: entries (``directories``, ``files``) are matched element by
+#: element — see :func:`_path_candidates`.
+#:
+#: ``tests/unit/agent/test_permissions_path_keys.py`` walks the real
+#: tool registry and fails when a tool grows a path argument that is
+#: neither listed here nor explicitly exempted, so the next tool to
+#: land cannot quietly reopen the gap.
+_PATH_ARGUMENT_KEYS: tuple[str, ...] = (
+    "path",
+    "file_path",
+    "filename",
+    "charm_dir",
+    "charm_file",
+    "charm_path",
+    "cwd",
+    "db_path",
+    "directories",
+    "file",
+    "files",
+    "kubeconfig",
+    "output_dir",
+    "rock_file",
+    "terraform_path",
+    "workdir",
+)
 
 
 #: Tool name whose first positional argument is a bash command and so
@@ -211,11 +243,24 @@ def _walk_rules(
 
 
 def _path_candidates(arguments: Mapping[str, Any]) -> Iterator[str]:
-    """Yield path-like argument values for ``paths`` matching."""
+    """Yield path-like argument values for ``paths`` matching.
+
+    A path argument may carry one path or a list of them
+    (``git_add``'s ``files``, ``charm_sync``'s ``directories``).
+    List elements are yielded individually rather than joined,
+    because a glob is anchored at the start of the subject it
+    matches: ``*.env`` bites ``".env"`` but would miss a joined
+    ``"src .env"``.
+    """
     for key in _PATH_ARGUMENT_KEYS:
         value = arguments.get(key)
-        if isinstance(value, str) and value:
-            yield value
+        if isinstance(value, str):
+            if value:
+                yield value
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item:
+                    yield item
 
 
 def _bash_command_string(arguments: Mapping[str, Any]) -> str | None:
