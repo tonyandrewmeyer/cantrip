@@ -150,10 +150,42 @@ string passed to tools listed in <code>bash_tools</code>
 matched segment by segment &mdash; see
 <a href="#compound-commands">compound commands</a>. An
 <code>argv</code> list is shell-joined before matching.</li>
-  <li><strong><code>paths</code></strong> &mdash; globs on the <code>path</code>,
-<code>file_path</code>, or <code>filename</code> argument of any
-tool call.</li>
+  <li><strong><code>paths</code></strong> &mdash; globs on the
+path-carrying arguments of any tool call &mdash; <code>path</code>
+and <code>file_path</code>, but also the names individual tools use
+for the same thing (<code>charm_path</code>, <code>charm_file</code>,
+<code>db_path</code>, <code>output_dir</code>,
+<code>terraform_path</code>, <code>rock_file</code>,
+<code>kubeconfig</code>, <code>cwd</code>, <code>workdir</code>,
+&hellip;). An argument that carries a <em>list</em> of paths
+(<code>git_add</code>'s <code>files</code>,
+<code>charm_sync</code>'s <code>directories</code>) is matched one
+element at a time, so <code>*.env</code> catches a single
+<code>.env</code> among a dozen innocent files. See
+<a href="#path-arguments">which arguments count as paths</a>.</li>
 </ul>
+<h2 id="path-arguments">Which arguments count as paths</h2>
+<p>A <code>paths</code> rule only fires on arguments the gate knows
+to be filesystem locations, so a tool that spells its path argument
+some unexpected way would slip past the rule entirely rather than
+merely matching it late. Every path argument across the tool
+catalogue is covered, and a test walks the live tool registry and
+fails the build if a newly added tool grows a path argument the
+section cannot see.</p>
+<p>Two arguments are deliberately <em>not</em> treated as paths:</p>
+<ul>
+  <li><code>juju_deploy</code>'s <code>charm</code>, which is usually
+a Charmhub name rather than a local file &mdash; matching a bare name
+against path globs would mis-fire. Gate deploys through the
+<code>tools</code> section instead.</li>
+  <li>Arguments that merely mention paths in passing, such as
+<code>glob</code>'s <code>max_results</code>.</li>
+</ul>
+<p>Paths are matched as the tool received them. A rule written
+against an absolute path will not match a relative argument, and vice
+versa, so write the shape your tools actually use &mdash; or cover
+both with a leading <code>*</code>, as the built-in
+<code>*/.env</code> rule does.</p>
 <h2 id="compound-commands">Compound commands</h2>
 <p>A glob is anchored at the start of the string it matches, so a
 rule like <code>rm -rf *</code> would miss

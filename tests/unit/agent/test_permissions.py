@@ -114,6 +114,78 @@ class TestEvaluate:
             evaluate(ruleset, "fs_read", {"path": "config.env"}).outcome is PermissionOutcome.DENY
         )
 
+    def test_paths_section_matches_every_path_argument_name(self):
+        """A path rule applies however the tool spells its path argument.
+
+        The section used to read only ``path`` / ``file_path`` /
+        ``filename``, so the built-in ``.env`` deny stopped
+        ``read_file`` but not ``showboat(file=...)`` or
+        ``charmcraft_upload(charm_file=...)`` — the rule never ran
+        rather than losing to a later one.
+        """
+        for argument_name in (
+            "charm_dir",
+            "charm_file",
+            "charm_path",
+            "cwd",
+            "db_path",
+            "file",
+            "file_path",
+            "filename",
+            "kubeconfig",
+            "output_dir",
+            "path",
+            "rock_file",
+            "terraform_path",
+            "workdir",
+        ):
+            decision = evaluate(BUILTIN_PERMISSIONS, "some_tool", {argument_name: "prod.env"})
+            assert decision.outcome is PermissionOutcome.DENY, (
+                f"{argument_name!r} escaped the built-in .env deny"
+            )
+
+    def test_paths_section_matches_list_valued_arguments(self):
+        """``files`` / ``directories`` are matched element by element.
+
+        Joining them would defeat the glob: ``*.env`` matches
+        ``".env"`` but not ``"src/charm.py .env"``.
+        """
+        staged = evaluate(
+            BUILTIN_PERMISSIONS,
+            "git_add",
+            {"files": ["src/charm.py", "tests/unit/test_charm.py", ".env"]},
+        )
+        assert staged.outcome is PermissionOutcome.DENY
+        assert ".env" in staged.reason
+
+        clean = evaluate(
+            BUILTIN_PERMISSIONS,
+            "git_add",
+            {"files": ["src/charm.py", "tests/unit/test_charm.py"]},
+        )
+        assert clean.outcome is PermissionOutcome.ALLOW
+
+    def test_paths_section_ignores_non_string_list_members(self):
+        """A malformed argument contributes nothing rather than raising."""
+        ruleset = PermissionRuleset(paths=(PermissionRule("*", PermissionOutcome.DENY),))
+        decision = evaluate(ruleset, "git_add", {"files": [None, 7, {}, []]})
+        assert decision.outcome is PermissionOutcome.ALLOW
+
+    def test_paths_section_skips_empty_values(self):
+        """An empty string is not a path and must not match ``*``."""
+        ruleset = PermissionRuleset(paths=(PermissionRule("*", PermissionOutcome.DENY),))
+        assert evaluate(ruleset, "read_file", {"path": ""}).outcome is PermissionOutcome.ALLOW
+        assert evaluate(ruleset, "git_add", {"files": ["", ""]}).outcome is PermissionOutcome.ALLOW
+
+    def test_benign_working_directory_is_untouched(self):
+        """Widening the key list must not make ordinary calls ask or deny."""
+        decision = evaluate(
+            BUILTIN_PERMISSIONS,
+            "run_command",
+            {"command": "charmcraft pack", "cwd": "."},
+        )
+        assert decision.outcome is PermissionOutcome.ALLOW
+
     def test_most_restrictive_wins_across_sections(self):
         """Cross-section disagreement resolves deny > ask > allow."""
         ruleset = PermissionRuleset(
